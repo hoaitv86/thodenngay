@@ -17,7 +17,9 @@ import {
   DropletIcon,
   CameraIcon,
   CogIcon,
-  BellIcon
+  BellIcon,
+  LayoutDashboardIcon,
+  DollarSignIcon
 } from "../components/icons";
 
 // Mock Data
