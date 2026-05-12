@@ -45,7 +45,7 @@ export default function WorkerLayout({
   };
 
   return (
-    <div className="flex flex-col min-h-screen max-w-md mx-auto bg-surface border-x border-outline-variant shadow-2xl relative">
+    <div className="flex flex-col w-full min-h-screen max-w-md mx-auto bg-surface border-x border-outline-variant shadow-2xl relative">
       {/* Premium Header */}
       <header className="sticky top-0 z-50 glass h-16 flex items-center justify-between px-6">
         <div className="flex items-center gap-3">
@@ -65,7 +65,7 @@ export default function WorkerLayout({
             <BellIcon size={22} />
             <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-error border-2 border-white rounded-full" />
           </button>
-          <button 
+          <button
             onClick={handleLogout}
             className="flex items-center gap-2 px-3 py-2 hover:bg-error-container hover:text-error rounded-lg text-on-surface-variant transition-colors border border-transparent hover:border-error/20"
             title="Đăng xuất"
@@ -96,8 +96,8 @@ export default function WorkerLayout({
                 key={item.href}
                 href={item.href}
                 className={`flex flex-col items-center justify-center gap-1.5 transition-all ${isActive
-                    ? "text-[#003178] scale-110"
-                    : "text-[#434652] hover:bg-slate-50"
+                  ? "text-[#003178] scale-110"
+                  : "text-[#434652] hover:bg-slate-50"
                   }`}
               >
                 <item.icon size={22} className={isActive ? "stroke-[2.5px]" : ""} />
