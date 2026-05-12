@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -16,6 +16,7 @@ type UserRole = "customer" | "worker";
 import { createClient } from "@/lib/supabase/client";
 
 export default function RegisterPage() {
+
   const searchParams = useSearchParams();
   const initialRole = searchParams.get("role") === "worker" ? "worker" : "customer";
 
@@ -181,7 +182,7 @@ export default function RegisterPage() {
         <div className="w-full max-w-[500px] mx-auto py-8">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <LogoIcon size={36} color="#003178" />
+            <LogoIcon size={36} />
             <span className="text-2xl font-bold text-[#003178]">Alo Thợ</span>
           </div>
 
@@ -354,5 +355,13 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-surface">Đang tải...</div>}>
+      <RegisterContent />
+    </Suspense>
   );
 }

@@ -109,7 +109,7 @@ export default function LoginPage() {
         <div className="w-full max-w-[440px] mx-auto py-8">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-10">
-            <LogoIcon size={36} color="#003178" />
+            <LogoIcon size={36} />
             <span className="text-2xl font-bold text-[#003178]">Alo Thợ</span>
           </div>
 
