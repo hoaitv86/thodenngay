@@ -15,7 +15,7 @@ type UserRole = "customer" | "worker";
 
 import { createClient } from "@/lib/supabase/client";
 
-export default function RegisterPage() {
+function RegisterContent() {
 
   const searchParams = useSearchParams();
   const initialRole = searchParams.get("role") === "worker" ? "worker" : "customer";
