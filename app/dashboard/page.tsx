@@ -1,12 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   LogoIcon,
   BriefcaseIcon,
   ClockIcon,
-  MapPinIcon,
+  UserIcon,
   ChevronRightIcon,
   BellIcon,
   PlusIcon,
@@ -15,20 +17,59 @@ import {
   CameraIcon,
   CogIcon,
   StarIcon,
-  UserIcon,
   CheckCircleIcon,
   UsersIcon,
-  LayoutDashboardIcon
+  LayoutDashboardIcon,
+  LogOutIcon
 } from "../components/icons";
 
-// Mock Data
-const myJobs = [
-  { id: "JOB-9401", service: "Sửa nước", status: "in_progress", time: "Hôm nay, 09:15 AM", worker: "Lê Văn C", price: "180,000đ" },
-  { id: "JOB-9390", service: "Sửa điện", status: "done", time: "02/05/2026", worker: "Nguyễn Văn E", price: "250,000đ", rated: true },
-  { id: "JOB-9350", service: "Lắp camera", status: "done", time: "25/04/2026", worker: "Hoàng Văn D", price: "1,200,000đ", rated: false },
-];
-
 export default function CustomerDashboard() {
+  const [userName, setUserName] = useState("Khách");
+  const [loading, setLoading] = useState(true);
+  const [recentJobs, setRecentJobs] = useState<any[]>([]);
+  const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Fetch profile
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserName(profile.full_name);
+
+        // Fetch recent jobs
+        const { data: jobs } = await supabase
+          .from('jobs')
+          .select('*, service:services(*), worker:workers(user:profiles(full_name))')
+          .eq('customer_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        
+        if (jobs) setRecentJobs(jobs);
+      }
+      setLoading(false);
+    };
+    fetchData();
+  }, [supabase]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface">
+        <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-surface flex flex-col">
       {/* Header */}
@@ -43,47 +84,57 @@ export default function CustomerDashboard() {
             <BellIcon size={20} />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full" />
           </button>
-          <div className="flex items-center gap-2 pl-4 border-l border-outline-variant">
-            <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container font-bold text-xs">
-              NT
+          <div className="flex items-center gap-4 pl-4 border-l border-outline-variant">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container font-bold text-xs shadow-sm">
+                {userName.charAt(0)}
+              </div>
+              <span className="text-body-sm font-bold text-on-surface hidden sm:inline truncate max-w-[120px]">{userName}</span>
             </div>
-            <span className="text-body-sm font-bold text-on-surface hidden sm:inline">Nguyễn Thảo</span>
+            <button 
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-error-container hover:text-error rounded-lg text-on-surface-variant transition-colors border border-transparent hover:border-error/20"
+              title="Đăng xuất"
+            >
+              <LogOutIcon size={18} />
+              <span className="text-body-sm font-bold hidden md:inline">Đăng xuất</span>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl mx-auto w-full p-6 py-10 space-y-10">
+      <main className="flex-1 max-w-5xl mx-auto w-full p-6 py-8 md:py-12 space-y-12">
         {/* Welcome & CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-headline-lg mb-1">Chào Thảo!</h1>
-            <p className="text-body-md text-on-surface-variant">Bạn cần thợ giúp gì hôm nay không?</p>
+            <h1 className="text-4xl font-extrabold text-[#003178] mb-2 tracking-tight">Chào {userName.split(' ').pop()}! 👋</h1>
+            <p className="text-lg text-[#434652] font-medium">Bạn cần thợ giúp gì hôm nay không?</p>
           </div>
-          <Link href="/booking" className="btn-primary !py-3.5 !px-6 shadow-lg shadow-primary-container/20">
-            <PlusIcon size={20} />
+          <Link href="/booking" className="btn-primary !py-4 !px-8 text-lg">
+            <PlusIcon size={24} />
             Đặt dịch vụ mới
           </Link>
         </div>
 
         {/* Quick Services */}
-        <section className="space-y-4">
-          <h2 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Dịch vụ phổ biến</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <section className="space-y-6">
+          <h2 className="text-sm font-bold text-[#003178] uppercase tracking-[0.2em] px-2">Dịch vụ phổ biến</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
-              { name: "Điện", icon: ZapIcon, color: "text-amber-500", bg: "bg-amber-50" },
-              { name: "Nước", icon: DropletIcon, color: "text-blue-500", bg: "bg-blue-50" },
-              { name: "Camera", icon: CameraIcon, color: "text-purple-500", bg: "bg-purple-50" },
-              { name: "Cơ khí", icon: CogIcon, color: "text-green-500", bg: "bg-green-50" },
+              { name: "Sửa Điện", icon: ZapIcon, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
+              { name: "Sửa Nước", icon: DropletIcon, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
+              { name: "Camera", icon: CameraIcon, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
+              { name: "Cơ khí", icon: CogIcon, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
             ].map(svc => (
               <Link 
                 key={svc.name} 
                 href="/booking" 
-                className="card !p-4 flex flex-col items-center gap-3 hover:scale-105 transition-transform"
+                className={`card !p-6 flex flex-col items-center gap-4 hover:shadow-lg hover:-translate-y-1 transition-all group bg-white border ${svc.border}`}
               >
-                <div className={`w-12 h-12 rounded-xl ${svc.bg} ${svc.color} flex items-center justify-center`}>
-                  <svc.icon size={24} />
+                <div className={`w-16 h-16 rounded-2xl ${svc.bg} ${svc.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                  <svc.icon size={32} />
                 </div>
-                <span className="text-body-sm font-bold text-on-surface">{svc.name}</span>
+                <span className="text-base font-bold text-[#1a1c1e]">{svc.name}</span>
               </Link>
             ))}
           </div>
@@ -96,60 +147,59 @@ export default function CustomerDashboard() {
             <button className="text-body-sm font-bold text-primary-container hover:underline">Tất cả</button>
           </div>
 
-          <div className="space-y-4">
-            {myJobs.map(job => (
-              <div key={job.id} className="card-elevated !p-0 overflow-hidden">
-                <div className="p-5 flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-low/30">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-primary-container shadow-sm border border-outline-variant">
-                      <BriefcaseIcon size={18} />
-                    </div>
-                    <div>
-                      <div className="text-body-sm font-bold text-on-surface">{job.service}</div>
-                      <div className="text-label-sm text-on-surface-variant">{job.id}</div>
-                    </div>
-                  </div>
-                  <span className={`badge badge-${job.status}`}>
-                    {job.status === "in_progress" ? "Đang thực hiện" : "Hoàn thành"}
-                  </span>
-                </div>
-
-                <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 text-on-surface-variant">
-                      <ClockIcon size={16} />
-                      <span className="text-body-sm">{job.time}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-on-surface-variant">
-                      <UserIcon size={16} />
-                      <span className="text-body-sm">Thợ: {job.worker}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col sm:items-end justify-between gap-4">
-                    <div className="text-headline-md text-on-surface">{job.price}</div>
-                    
-                    {job.status === "done" && !job.rated && (
-                      <button className="btn-outline !py-2 !px-4 !text-sm !rounded-xl flex items-center gap-2">
-                        <StarIcon size={16} className="text-secondary-container" />
-                        Đánh giá thợ
-                      </button>
-                    )}
-                    
-                    {job.status === "done" && job.rated && (
-                      <div className="flex items-center gap-1 text-secondary-container text-body-sm font-bold">
-                        <StarIcon size={14} className="fill-current" /> Đã đánh giá
+          <div className="grid grid-cols-1 gap-6">
+            {recentJobs.length > 0 ? (
+              recentJobs.map(job => (
+                <div key={job.id} className="card-elevated !p-0 overflow-hidden hover:shadow-2xl transition-shadow group">
+                  <div className="p-6 flex items-center justify-between border-b border-slate-50 bg-slate-50/50">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#003178] shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">
+                        <BriefcaseIcon size={20} />
                       </div>
-                    )}
+                      <div>
+                        <div className="text-lg font-bold text-[#1a1c1e]">{job.service?.name}</div>
+                        <div className="text-sm font-medium text-[#434652]">{job.job_code}</div>
+                      </div>
+                    </div>
+                    <span className={`badge badge-${job.status} px-4 py-1.5 uppercase text-[10px] font-bold`}>
+                      {job.status === 'pending' ? 'Đang tìm thợ' : 
+                       job.status === 'in_progress' ? 'Đang thực hiện' : 
+                       job.status === 'completed' ? 'Hoàn thành' : job.status}
+                    </span>
+                  </div>
 
-                    {job.status === "in_progress" && (
-                      <button className="btn-primary !py-2 !px-4 !text-sm !rounded-xl">
+                  <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 text-on-surface-variant">
+                        <ClockIcon size={16} />
+                        <span className="text-body-sm">
+                          {new Date(job.scheduled_at).toLocaleDateString('vi-VN')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-on-surface-variant">
+                        <UserIcon size={16} />
+                        <span className="text-body-sm">
+                          Thợ: {job.worker?.user?.full_name || "Đang chờ..."}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:items-end justify-between gap-4">
+                      <div className="text-headline-md text-on-surface">
+                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(job.quoted_price)}
+                      </div>
+                      
+                      <Link href={`/customer/jobs/${job.id}`} className="btn-primary !py-2 !px-4 !text-sm !rounded-xl">
                         Xem chi tiết
-                      </button>
-                    )}
+                      </Link>
+                    </div>
                   </div>
                 </div>
+              ))
+            ) : (
+              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <p className="text-on-surface-variant">Bạn chưa có yêu cầu nào.</p>
               </div>
-            ))}
+            )}
           </div>
         </section>
 
@@ -158,10 +208,10 @@ export default function CustomerDashboard() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-secondary-container/10 rounded-full -ml-24 -mb-24 blur-3xl" />
           
-          <div className="flex-1 space-y-4 text-center md:text-left z-10">
-            <h3 className="text-headline-md">Bạn muốn trở thành đối tác?</h3>
-            <p className="text-body-sm text-white/80 max-w-md">Đăng ký làm thợ để nhận hàng ngàn công việc sửa chữa mỗi ngày với thu nhập ổn định.</p>
-            <Link href="/register?role=worker" className="btn-secondary !inline-flex !py-2.5 !px-6 !text-sm">
+          <div className="w-full flex-1 space-y-4 text-center md:text-left z-10">
+            <h3 className="text-2xl md:text-3xl font-bold text-white">Bạn muốn trở thành đối tác?</h3>
+            <p className="text-sm md:text-base text-white/80">Đăng ký làm thợ để nhận hàng ngàn công việc sửa chữa mỗi ngày với thu nhập ổn định.</p>
+            <Link href="/register?role=worker" className="btn-secondary !inline-flex !py-3 !px-8 !text-base">
               Tìm hiểu thêm
             </Link>
           </div>
@@ -173,14 +223,14 @@ export default function CustomerDashboard() {
 
       {/* Footer */}
       <footer className="h-16 bg-white border-t border-outline-variant flex items-center justify-center gap-10">
-        <button className="flex flex-col items-center gap-1 text-primary-container">
+        <Link href="/dashboard" className="flex flex-col items-center gap-1 text-primary-container">
           <LayoutDashboardIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Trang chủ</span>
-        </button>
-        <button className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
+        </Link>
+        <Link href="/customer/jobs" className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
           <BriefcaseIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Jobs</span>
-        </button>
+        </Link>
         <button className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
           <StarIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Yêu thích</span>

@@ -56,11 +56,11 @@
   --font-sans: var(--font-be-vietnam-pro), sans-serif;
 
   /* — Spacing (8px grid) — */
-  --spacing-xs: 4px;
-  --spacing-sm: 12px;
-  --spacing-md: 24px;
-  --spacing-lg: 48px;
-  --spacing-xl: 80px;
+  --alo-space-xs: 4px;
+  --alo-space-sm: 12px;
+  --alo-space-md: 24px;
+  --alo-space-lg: 48px;
+  --alo-space-xl: 80px;
 
   /* — Border Radius — */
   --radius-sm: 0.25rem;
@@ -87,3 +87,65 @@ body {
   color: var(--color-on-surface);
   min-height: 100vh;
 }
+
+/* ===== Component Utilities (Stitch Design System) ===== */
+
+/* Buttons */
+@layer components {
+  .btn-primary {
+    @apply flex items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-xl font-bold transition-all hover:bg-primary-container active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-primary/20;
+  }
+  
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2 px-6 py-3 bg-secondary-container text-white rounded-xl font-bold transition-all hover:brightness-110 active:scale-95 shadow-lg shadow-secondary-container/20;
+  }
+  
+  .btn-outline {
+    @apply flex items-center justify-center gap-2 px-6 py-3 border-2 border-outline-variant text-on-surface-variant rounded-xl font-bold transition-all hover:bg-surface-container-low hover:border-primary-container hover:text-primary-container;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white p-6 rounded-2xl border border-outline-variant/30 transition-all;
+  }
+  
+  .card-elevated {
+    @apply bg-white p-6 rounded-2xl shadow-xl shadow-blue-900/5 border border-white transition-all;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider;
+  }
+  
+  .badge-done {
+    @apply bg-success-container text-success;
+  }
+  
+  .badge-in_progress {
+    @apply bg-warning-container text-warning;
+  }
+  
+  .badge-cancelled {
+    @apply bg-error-container text-error;
+  }
+
+  /* Glassmorphism */
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border-b border-white/20;
+  }
+
+  /* Input Fields */
+  .input-field {
+    @apply w-full px-4 py-3 bg-surface-container-low border border-outline-variant rounded-xl text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-on-surface-variant/50;
+  }
+}
+
+/* Typography Overrides */
+.text-headline-lg { @apply text-3xl font-bold tracking-tight text-on-surface; }
+.text-headline-md { @apply text-2xl font-bold tracking-tight text-on-surface; }
+.text-body-lg { @apply text-lg text-on-surface-variant; }
+.text-body-md { @apply text-base text-on-surface-variant; }
+.text-body-sm { @apply text-sm text-on-surface-variant; }
+.text-body-xs { @apply text-xs text-on-surface-variant; }
+.text-label-md { @apply text-sm font-bold uppercase tracking-wider text-on-surface-variant; }

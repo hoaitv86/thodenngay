@@ -17,9 +17,22 @@ export default function RedirectPage() {
         return;
       }
 
-      // In a real app, we'd fetch the user's role from a 'profiles' table
-      // For this MVP/Demo, we can check user metadata or just simulate
-      const role = user.user_metadata?.role || "customer";
+      console.log("Checking profile in /redirect for ID:", user.id);
+      // Fetch role from profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error("Profile not found in /redirect:", profileError);
+        router.replace("/login");
+        return;
+      }
+
+      console.log("Profile found in /redirect:", profile);
+      const role = profile.role;
 
       if (role === "admin") {
         router.replace("/admin");

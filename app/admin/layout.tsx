@@ -15,7 +15,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -36,8 +36,24 @@ export default function AdminLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [userName, setUserName] = useState("Admin");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const supabase = createClient();
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserName(profile.full_name);
+      }
+    };
+    getUser();
+  }, [supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -52,7 +68,7 @@ export default function AdminLayout({
           <WrenchIcon className="w-4.5 h-4.5 text-on-secondary" />
         </div>
         <div>
-          <span className="font-bold text-on-primary text-body-md">Alo Thợ</span>
+          <span className="font-bold text-on-primary text-body-md truncate max-w-[140px] block">{userName}</span>
           <span className="block text-label-sm text-on-primary/50">Admin Panel</span>
         </div>
       </div>
@@ -68,8 +84,8 @@ export default function AdminLayout({
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-body-sm font-medium transition-all ${
                 isActive
-                  ? "bg-on-primary/15 text-on-primary"
-                  : "text-on-primary/60 hover:bg-on-primary/8 hover:text-on-primary/90"
+                  ? "bg-white/15 text-white shadow-sm"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
               }`}
             >
               <item.icon className="w-5 h-5 shrink-0" />
@@ -83,7 +99,7 @@ export default function AdminLayout({
       <div className="px-3 py-4 border-t border-on-primary/10">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-body-sm font-medium text-on-primary/60 hover:bg-error/20 hover:text-error-container transition-all"
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-body-sm font-medium text-white/70 hover:bg-error/20 hover:text-error-container transition-all"
         >
           <LogOut className="w-5 h-5" />
           Đăng xuất
@@ -131,7 +147,7 @@ export default function AdminLayout({
               <span className="absolute top-1 right-1 w-2 h-2 bg-secondary-container rounded-full" />
             </button>
             <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-label-sm font-bold text-primary">
-              A
+              {userName.charAt(0)}
             </div>
           </div>
         </header>

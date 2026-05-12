@@ -1,8 +1,9 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Search, ClipboardList, User, Wrench } from "lucide-react";
+import { Home, Search, ClipboardList, User, Wrench, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const navItems = [
@@ -20,6 +21,27 @@ export default function CustomerLayout({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [userName, setUserName] = useState("Khách");
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserName(profile.full_name);
+      }
+    };
+    getUser();
+  }, [supabase]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   return (
     <div className="flex flex-col min-h-screen max-w-md mx-auto bg-surface relative">
@@ -29,8 +51,16 @@ export default function CustomerLayout({
           <div className="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
             <Wrench className="w-4 h-4 text-on-primary" />
           </div>
-          <span className="font-bold text-primary text-body-md">Alo Thợ</span>
+          <span className="font-bold text-primary text-body-md truncate max-w-[150px]">{userName}</span>
         </div>
+        <button 
+          onClick={handleLogout}
+          className="flex items-center gap-2 px-3 py-2 hover:bg-error-container hover:text-error rounded-lg text-on-surface-variant transition-colors border border-transparent hover:border-error/20"
+          title="Đăng xuất"
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="text-[11px] font-bold uppercase tracking-wider hidden sm:inline">Đăng xuất</span>
+        </button>
       </header>
 
       {/* Page Content */}
