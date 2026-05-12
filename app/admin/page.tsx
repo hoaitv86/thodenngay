@@ -27,36 +27,50 @@ import {
   DollarSignIcon
 } from "../components/icons";
 
-// Mock Data
-const stats = [
-  { label: "Tổng Jobs", value: "1,284", change: "+12%", icon: BriefcaseIcon, color: "text-blue-600", bg: "bg-blue-50" },
-  { label: "Doanh thu", value: "42.5M", change: "+8%", icon: DollarSignIcon, color: "text-green-600", bg: "bg-green-50" },
-  { label: "Thợ hoạt động", value: "86", change: "+4", icon: UsersIcon, color: "text-purple-600", bg: "bg-purple-50" },
-  { label: "Đánh giá TB", value: "4.85", change: "+0.2", icon: BarChartIcon, color: "text-amber-600", bg: "bg-amber-50" },
-];
-
-const recentJobs = [
-  { id: "JOB-9402", customer: "Nguyễn Văn A", service: "Sửa điện", price: "250,000đ", status: "pending", time: "10:30 AM", worker: null },
-  { id: "JOB-9401", customer: "Trần Thị B", service: "Sửa nước", price: "180,000đ", status: "assigned", time: "09:15 AM", worker: "Lê Văn C" },
-  { id: "JOB-9400", customer: "Phạm Minh C", service: "Lắp camera", price: "1,200,000đ", status: "in_progress", time: "08:45 AM", worker: "Hoàng Văn D" },
-  { id: "JOB-9399", customer: "Lê Thu H", service: "Cơ khí", price: "450,000đ", status: "done", time: "Yesterday", worker: "Nguyễn Văn E" },
-  { id: "JOB-9398", customer: "Đặng Văn F", service: "Sửa điện", price: "300,000đ", status: "cancelled", time: "Yesterday", worker: null },
+// Real data will be fetched from database
+const statsPlaceholder = [
+  { label: "Tổng Jobs", value: "...", change: "", icon: BriefcaseIcon, color: "text-blue-600", bg: "bg-blue-50" },
+  { label: "Doanh thu", value: "...", change: "", icon: DollarSignIcon, color: "text-green-600", bg: "bg-green-50" },
+  { label: "Thợ hoạt động", value: "...", change: "", icon: UsersIcon, color: "text-purple-600", bg: "bg-purple-50" },
+  { label: "Đánh giá TB", value: "4.8", change: "", icon: BarChartIcon, color: "text-amber-600", bg: "bg-amber-50" },
 ];
 
 export default function AdminDashboard() {
   const [recentJobs, setRecentJobs] = useState<any[]>([]);
+  const [pendingWorkers, setPendingWorkers] = useState<any[]>([]);
+  const [stats, setStats] = useState<any[]>(statsPlaceholder);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
   useEffect(() => {
     const fetchData = async () => {
+      // 1. Fetch Recent Jobs
       const { data: jobs } = await supabase
         .from('jobs')
-        .select('*, customer:profiles(*), service:services(*), worker:workers(user:profiles(full_name))')
+        .select('*, customer:profiles!customer_id(*), service:services(*), worker:workers(profiles(full_name))')
         .order('created_at', { ascending: false })
         .limit(5);
-      
+
       if (jobs) setRecentJobs(jobs);
+
+      // 2. Fetch Pending Workers
+      const { data: workers } = await supabase
+        .from('workers')
+        .select('*, profiles(full_name, created_at)')
+        .eq('status', 'pending')
+        .limit(2);
+      
+      if (workers) setPendingWorkers(workers);
+
+      // 3. Fetch Stats (Simple counts)
+      const { count: jobsCount } = await supabase.from('jobs').select('*', { count: 'exact', head: true });
+      const { count: workersCount } = await supabase.from('workers').select('*', { count: 'exact', head: true });
+      
+      const updatedStats = [...statsPlaceholder];
+      updatedStats[0].value = jobsCount?.toString() || "0";
+      updatedStats[2].value = workersCount?.toString() || "0";
+      setStats(updatedStats);
+
       setLoading(false);
     };
     fetchData();
@@ -136,48 +150,48 @@ export default function AdminDashboard() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-body-sm text-on-surface-variant">
-                      {job.worker?.user?.full_name ? (
+                      {job.worker?.profiles?.full_name ? (
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-bold">
-                            {job.worker.user.full_name[0]}
+                            {job.worker.profiles.full_name[0]}
                           </div>
-                          {job.worker.user.full_name}
+                          {job.worker.profiles.full_name}
                         </div>
                       ) : (
-                        <span className="italic text-outline">Chưa gán</span>
+                        <Link href="/admin/jobs" className="italic text-primary-container hover:underline text-xs font-bold">Chưa gán →</Link>
                       )}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`badge badge-${job.status} uppercase text-[10px] font-bold`}>
-                        {job.status === "pending" ? "Chờ xử lý" : 
-                         job.status === "assigned" ? "Đã gán" :
-                         job.status === "in_progress" ? "Đang làm" :
-                         job.status === "completed" ? "Xong" : "Hủy"}
+                        {job.status === "pending" ? "Chờ xử lý" :
+                          job.status === "assigned" ? "Đã gán" :
+                            job.status === "in_progress" ? "Đang làm" :
+                              job.status === "completed" ? "Xong" : "Hủy"}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="p-2 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant opacity-0 group-hover:opacity-100">
+                      <Link href="/admin/jobs" className="p-2 inline-block hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant opacity-0 group-hover:opacity-100">
                         <ChevronRightIcon size={18} />
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="p-4 border-t border-outline-variant bg-surface-container-lowest text-center">
-              <button className="text-body-sm font-bold text-primary-container hover:underline">Xem tất cả Jobs</button>
+              <Link href="/admin/jobs" className="text-body-sm font-bold text-primary-container hover:underline">Xem tất cả Jobs</Link>
             </div>
           </div>
         </div>
 
         {/* Sidebar Stats / Pending Workers */}
         <div className="space-y-8">
-          <div className="card-elevated !p-6 bg-[#003178] text-white">
-            <h3 className="text-headline-md text-lg font-bold mb-4">Dispatcher Tip</h3>
-            <p className="text-body-sm text-white/80 mb-6 leading-relaxed">
+          <div className="card-elevated p-6! bg-[#003178] text-white">
+            <h3 className="text-headline-md text-lg text-white! font-bold mb-4">Dispatcher Tip</h3>
+            <p className="text-body-sm text-white! mb-6 leading-relaxed">
               Hãy gán thợ ngay để đảm bảo KPI phục vụ khách hàng tốt nhất.
             </p>
-            <button className="btn-secondary w-full !rounded-xl !bg-amber-500 !text-white !border-none">Xem danh sách chờ</button>
+            <button className="btn-secondary w-full rounded-xl! bg-amber-500! text-white! border-none!">Xem danh sách chờ</button>
           </div>
 
           <div className="space-y-4">
@@ -185,20 +199,19 @@ export default function AdminDashboard() {
               <h3 className="text-label-md font-bold text-on-surface uppercase tracking-wider">Thợ mới đăng ký</h3>
               <span className="badge badge-pending">2 mới</span>
             </div>
-            
+
             <div className="space-y-3">
-              {[
-                { name: "Phạm Văn Nam", exp: "Sửa điện • 3 năm", time: "2h trước" },
-                { name: "Trần Thế Anh", exp: "Lắp camera • 5 năm", time: "5h trước" }
-              ].map((worker) => (
-                <div key={worker.name} className="card !p-4 flex items-center justify-between">
+              {pendingWorkers.map((worker) => (
+                <div key={worker.id} className="card !p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center font-bold text-sm">
-                      {worker.name[0]}
+                      {worker.profiles?.full_name?.[0] || "W"}
                     </div>
                     <div>
-                      <div className="text-body-sm font-bold text-on-surface">{worker.name}</div>
-                      <div className="text-label-sm text-on-surface-variant">{worker.exp}</div>
+                      <div className="text-body-sm font-bold text-on-surface">{worker.profiles?.full_name}</div>
+                      <div className="text-label-sm text-on-surface-variant">
+                        {worker.specialties?.join(' • ') || "Thợ mới"}
+                      </div>
                     </div>
                   </div>
                   <button className="p-2 hover:bg-primary-fixed rounded-lg text-primary-container transition-colors">
@@ -206,6 +219,9 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               ))}
+              {pendingWorkers.length === 0 && (
+                <p className="text-xs text-center text-on-surface-variant py-4 italic">Không có thợ mới chờ duyệt</p>
+              )}
               <button className="w-full py-3 text-body-sm font-bold text-on-surface-variant hover:text-primary-container transition-colors text-center">Xem tất cả thợ</button>
             </div>
           </div>

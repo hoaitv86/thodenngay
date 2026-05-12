@@ -118,7 +118,7 @@ body {
     @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider;
   }
   
-  .badge-done {
+  .badge-done, .badge-completed {
     @apply bg-success-container text-success;
   }
   
@@ -126,8 +126,24 @@ body {
     @apply bg-warning-container text-warning;
   }
   
-  .badge-cancelled {
+  .badge-cancelled, .badge-canceled, .badge-blocked {
     @apply bg-error-container text-error;
+  }
+
+  .badge-pending {
+    @apply bg-surface-container-high text-on-surface-variant;
+  }
+
+  .badge-assigned {
+    @apply bg-primary-fixed text-primary-container;
+  }
+
+  .badge-active {
+    @apply bg-success-container text-success;
+  }
+
+  .badge-inactive {
+    @apply bg-surface-container-high text-on-surface-variant;
   }
 
   /* Glassmorphism */
