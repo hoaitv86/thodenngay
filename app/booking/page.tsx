@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   LogoIcon,
   ZapIcon,
@@ -18,16 +19,11 @@ import {
   XIcon
 } from "../components/icons";
 
-const services = [
-  { id: "svc_1", icon: ZapIcon, name: "Sửa điện", desc: "Sửa ổ cắm, chập điện, thay bóng đèn, lắp quạt...", price: "Từ 250,000đ", color: "#f59e0b", bgColor: "#fef3c7" },
-  { id: "svc_2", icon: DropletIcon, name: "Sửa nước", desc: "Sửa vòi rò rỉ, thông nghẹt, thay bồn cầu...", price: "Từ 180,000đ", color: "#3b82f6", bgColor: "#dbeafe" },
-  { id: "svc_3", icon: CameraIcon, name: "Lắp camera", desc: "Lắp đặt camera IP, Wifi, cấu hình đầu ghi...", price: "Từ 1,200,000đ", color: "#8b5cf6", bgColor: "#ede9fe" },
-  { id: "svc_4", icon: CogIcon, name: "Cơ khí", desc: "Hàn xì, sửa cửa sắt, mái tôn, cầu thang...", price: "Từ 450,000đ", color: "#10b981", bgColor: "#d1fae5" },
-];
-
 export default function BookingPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [step, setStep] = useState(1);
+  const [services, setServices] = useState<any[]>([]);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [bookingData, setBookingData] = useState({
     address: "",
@@ -35,6 +31,44 @@ export default function BookingPage() {
     description: "",
   });
   const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace("/login?redirect=/booking");
+        return;
+      }
+      setUser(user);
+
+      // Fetch real services
+      const { data: svcs } = await supabase
+        .from('services')
+        .select('*')
+        .eq('is_active', true);
+      
+      if (svcs) {
+        // Map icon component and colors (using fallbacks for Phase 1)
+        const iconMap: Record<string, any> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+        const colorMap: Record<string, any> = {
+          'Sửa điện': { color: "#f59e0b", bgColor: "#fef3c7" },
+          'Sửa nước': { color: "#3b82f6", bgColor: "#dbeafe" },
+          'Lắp camera': { color: "#8b5cf6", bgColor: "#ede9fe" },
+          'Cơ khí': { color: "#10b981", bgColor: "#d1fae5" },
+        };
+
+        const mapped = svcs.map(s => ({
+          ...s,
+          iconComponent: iconMap[s.icon] || BriefcaseIcon,
+          formattedPrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(s.base_price),
+          ...(colorMap[s.name] || { color: "#003178", bgColor: "#f0f4f9" })
+        }));
+        setServices(mapped);
+      }
+    };
+    init();
+  }, [router, supabase]);
 
   const handleNext = () => {
     if (step === 1 && !selectedService) return;
@@ -43,9 +77,35 @@ export default function BookingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !selectedService) return;
+    
     setLoading(true);
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 2000));
+    
+    const jobCode = `JOB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const scheduledAt = bookingData.time === "Đến ngay" 
+      ? new Date().toISOString() 
+      : new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // Simple placeholder for "Hẹn giờ"
+
+    const { error } = await supabase.from('jobs').insert({
+      job_code: jobCode,
+      customer_id: user.id,
+      service_id: selectedService.id,
+      address: bookingData.address,
+      description: bookingData.description,
+      quoted_price: selectedService.base_price,
+      scheduled_at: scheduledAt,
+      status: 'pending',
+      source: 'app',
+      created_by: user.id
+    });
+
+    if (error) {
+      console.error("Booking error:", error);
+      alert("Có lỗi xảy ra khi đặt lịch. Vui lòng thử lại.");
+      setLoading(false);
+      return;
+    }
+
     setLoading(false);
     setStep(4); // Success
   };
@@ -81,7 +141,6 @@ export default function BookingPage() {
             
             <div className="grid grid-cols-1 gap-4">
               {services.map((svc) => {
-                const Icon = svc.icon;
                 const isSelected = selectedService?.id === svc.id;
                 return (
                   <button
@@ -93,12 +152,12 @@ export default function BookingPage() {
                       className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: svc.bgColor, color: svc.color }}
                     >
-                      <Icon size={28} />
+                      <svc.iconComponent size={28} />
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-on-surface">{svc.name}</h3>
-                      <p className="text-body-sm text-on-surface-variant">{svc.desc}</p>
-                      <div className="text-label-sm text-primary-container mt-1 font-semibold">{svc.price}</div>
+                      <p className="text-body-sm text-on-surface-variant">{svc.description}</p>
+                      <div className="text-label-sm text-primary-container mt-1 font-semibold">Từ {svc.formattedPrice}</div>
                     </div>
                     <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-outline-variant'}`}>
                       {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
@@ -201,7 +260,7 @@ export default function BookingPage() {
                   className="w-12 h-12 rounded-xl flex items-center justify-center"
                   style={{ backgroundColor: selectedService.bgColor, color: selectedService.color }}
                 >
-                  {React.createElement(selectedService.icon, { size: 24 })}
+                  <selectedService.iconComponent size={24} />
                 </div>
                 <div>
                   <div className="text-label-sm text-on-surface-variant uppercase tracking-wider">Dịch vụ</div>

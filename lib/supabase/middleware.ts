@@ -34,8 +34,8 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Public routes that don't require auth (added dashboard routes for mock testing)
-  const publicPaths = ['/login', '/register', '/', '/admin', '/worker', '/customer', '/dashboard'];
+  // Public routes that don't require auth
+  const publicPaths = ['/login', '/register', '/'];
   const isPublicPath = publicPaths.some((path) =>
     request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith('/api/auth')
   );
@@ -48,11 +48,44 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
-    // If logged in and trying to access login/register, redirect to appropriate dashboard
     const url = request.nextUrl.clone();
-    // Role-based redirect will be handled by the role page
     url.pathname = '/redirect';
     return NextResponse.redirect(url);
+  }
+
+  // Role-based route protection
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (profile) {
+      const path = request.nextUrl.pathname;
+      const role = profile.role;
+
+      // 1. Admin protection
+      if (path.startsWith('/admin') && role !== 'admin') {
+        const url = request.nextUrl.clone();
+        url.pathname = '/redirect';
+        return NextResponse.redirect(url);
+      }
+
+      // 2. Worker protection
+      if (path.startsWith('/worker') && role !== 'worker') {
+        const url = request.nextUrl.clone();
+        url.pathname = '/redirect';
+        return NextResponse.redirect(url);
+      }
+
+      // 3. Customer protection (dashboard)
+      if ((path.startsWith('/dashboard') || path.startsWith('/customer')) && role !== 'customer') {
+        const url = request.nextUrl.clone();
+        url.pathname = '/redirect';
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   return supabaseResponse;

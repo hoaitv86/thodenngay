@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   LogoIcon,
@@ -17,67 +17,115 @@ import {
   DropletIcon,
   CameraIcon,
   CogIcon,
-  BellIcon
+  BellIcon,
+  LayoutDashboardIcon,
+  DollarSignIcon
 } from "../components/icons";
 
-// Mock Data
-const newJobs = [
-  { id: "JOB-9402", service: "Sửa điện", icon: ZapIcon, price: "250,000đ", time: "10:30 AM", distance: "1.2 km", address: "15 Lê Lợi, Q.1" },
-  { id: "JOB-9405", service: "Sửa nước", icon: DropletIcon, price: "180,000đ", time: "11:15 AM", distance: "2.5 km", address: "202 Nguyễn Huệ, Q.1" },
-];
-
-const activeJobs = [
-  { id: "JOB-9401", customer: "Trần Thị B", service: "Sửa nước", status: "in_progress", time: "09:15 AM", address: "456 CMT8, Q.3" },
-];
+import { createClient } from "@/lib/supabase/client";
+import { User, Worker, Job } from "@/lib/types";
 
 export default function WorkerDashboard() {
   const [tab, setTab] = useState<"new" | "active">("new");
+  const [loading, setLoading] = useState(true);
+  const [worker, setWorker] = useState<Worker | null>(null);
+  const [newJobs, setNewJobs] = useState<any[]>([]);
+  const [activeJobs, setActiveJobs] = useState<any[]>([]);
+  const supabase = createClient();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      
+      // 1. Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 2. Get worker profile
+      const { data: workerData } = await supabase
+        .from('workers')
+        .select('*, user:profiles(*)')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (workerData) {
+        setWorker(workerData);
+
+        // 3. Get New Jobs (Pending)
+        const { data: pendingJobs } = await supabase
+          .from('jobs')
+          .select('*, service:services(*)')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+        
+        // Map icon component
+        const iconMap: Record<string, any> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+        const mappedNew = (pendingJobs || []).map(j => ({
+          ...j,
+          serviceName: j.service?.name,
+          icon: iconMap[j.service?.icon] || BriefcaseIcon,
+          price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          distance: "1.2 km" // Mock distance for now
+        }));
+        setNewJobs(mappedNew);
+
+        // 4. Get Active Jobs (Assigned to this worker)
+        const { data: assignedJobs } = await supabase
+          .from('jobs')
+          .select('*, service:services(*), customer:profiles(*)')
+          .eq('worker_id', workerData.id)
+          .eq('status', 'in_progress');
+        
+        const mappedActive = (assignedJobs || []).map(j => ({
+          ...j,
+          customerName: j.customer?.full_name,
+          serviceName: j.service?.name,
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+        }));
+        setActiveJobs(mappedActive);
+      }
+      
+      setLoading(false);
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col max-w-md mx-auto border-x border-outline-variant shadow-sm">
-      {/* App Bar */}
-      <header className="h-16 glass sticky top-0 z-50 flex items-center justify-between px-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary font-bold shadow-sm">
-            LV
-          </div>
-          <div>
-            <div className="text-label-sm text-on-surface-variant">Chào buổi sáng,</div>
-            <div className="text-body-sm font-bold text-on-surface">Lê Văn C</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <button className="p-2 hover:bg-surface-container rounded-lg text-on-surface-variant relative">
-            <BellIcon size={20} />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full" />
-          </button>
-        </div>
-      </header>
-
+    <div className="flex flex-col w-full">
       {/* Stats Bar */}
-      <div className="p-6">
-        <div className="card-elevated !p-4 bg-gradient-to-br from-primary-container to-primary text-on-primary flex justify-around">
+      <div className="p-4">
+        <div className="card-elevated !p-5 bg-gradient-to-br from-[#003178] to-[#0d47a1] text-white flex justify-around rounded-2xl shadow-xl shadow-blue-900/10">
           <div className="text-center">
-            <div className="text-headline-md font-bold">12</div>
-            <div className="text-[10px] uppercase tracking-wider opacity-80">Jobs tháng</div>
+            <div className="text-3xl font-extrabold">{worker?.total_jobs || 0}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">Jobs tháng</div>
           </div>
-          <div className="h-10 w-px bg-white/20" />
+          <div className="h-12 w-px bg-white/20 self-center" />
           <div className="text-center">
-            <div className="text-headline-md font-bold">4.9</div>
-            <div className="text-[10px] uppercase tracking-wider opacity-80 flex items-center justify-center gap-1">
-              Rating <StarIcon size={8} className="fill-current" />
+            <div className="text-3xl font-extrabold">{worker?.avg_rating || 0}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1 flex items-center justify-center gap-1">
+              Rating <StarIcon size={10} className="fill-current text-amber-400" />
             </div>
           </div>
-          <div className="h-10 w-px bg-white/20" />
+          <div className="h-12 w-px bg-white/20 self-center" />
           <div className="text-center">
-            <div className="text-headline-md font-bold">2.4M</div>
-            <div className="text-[10px] uppercase tracking-wider opacity-80">Thu nhập</div>
+            <div className="text-3xl font-extrabold text-amber-400">0</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">Thu nhập</div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="px-6 flex gap-8 border-b border-outline-variant">
+      <div className="px-4 flex gap-8 border-b border-outline-variant">
         <button 
           onClick={() => setTab("new")}
           className={`pb-4 text-label-md font-bold transition-all relative ${tab === "new" ? "text-primary-container" : "text-on-surface-variant"}`}
@@ -96,7 +144,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Job Feed */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => (
@@ -107,8 +155,8 @@ export default function WorkerDashboard() {
                       <job.icon size={20} />
                     </div>
                     <div>
-                      <div className="text-body-sm font-bold text-on-surface">{job.service}</div>
-                      <div className="text-label-sm text-on-surface-variant">{job.id}</div>
+                      <div className="text-body-sm font-bold text-on-surface">{job.serviceName}</div>
+                      <div className="text-label-sm text-on-surface-variant">{job.job_code}</div>
                     </div>
                   </div>
                   <div className="text-headline-md text-primary-container">{job.price}</div>
@@ -149,8 +197,8 @@ export default function WorkerDashboard() {
               </div>
 
               <div>
-                <h3 className="text-body-md font-bold text-on-surface">{job.customer}</h3>
-                <p className="text-body-sm text-on-surface-variant">{job.service}</p>
+                <h3 className="text-body-md font-bold text-on-surface">{job.customerName}</h3>
+                <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
               </div>
 
               <div className="flex items-center gap-4 py-3 border-y border-outline-variant/50">
@@ -172,14 +220,6 @@ export default function WorkerDashboard() {
           ))
         )}
       </div>
-
-      {/* Bottom Nav */}
-      <footer className="h-20 bg-white border-t border-outline-variant flex items-center justify-around px-6">
-        <NavAction icon={LayoutDashboardIcon} label="Việc làm" active />
-        <NavAction icon={BriefcaseIcon} label="Lịch sử" />
-        <NavAction icon={DollarSignIcon} label="Ví" />
-        <NavAction icon={UserIcon} label="Hồ sơ" />
-      </footer>
     </div>
   );
 }
