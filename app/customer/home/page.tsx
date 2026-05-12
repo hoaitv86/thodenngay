@@ -19,9 +19,9 @@ export default function CustomerHome() {
     <div className="space-y-6 px-4 pt-4">
       {/* Greeting */}
       <div className="bg-gradient-to-br from-primary-container to-primary rounded-2xl p-5 text-on-primary">
-        <p className="text-body-sm opacity-80">Xin chào 👋</p>
-        <h1 className="text-headline-md mt-1">Bạn cần sửa gì?</h1>
-        <p className="text-body-sm opacity-70 mt-1">
+        <p className="text-sm opacity-80">Xin chào 👋</p>
+        <h1 className="text-md mt-1">Bạn cần sửa gì?</h1>
+        <p className="text-sm opacity-70 mt-1">
           Chọn dịch vụ bên dưới hoặc mô tả vấn đề
         </p>
         <Link

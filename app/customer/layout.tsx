@@ -44,7 +44,7 @@ export default function CustomerLayout({
   };
 
   return (
-    <div className="flex flex-col min-h-screen max-w-md mx-auto bg-surface relative">
+    <div className="flex flex-col min-h-screen w-full bg-surface relative">
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant/20 px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-2">

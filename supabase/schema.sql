@@ -128,7 +128,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Profiles: Users can view their own profile, Admins view all
 CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT USING (public.is_admin());
+
 
 -- Workers: Everyone can view active workers, Admins view all
 CREATE POLICY "Public view active workers" ON public.workers FOR SELECT USING (status = 'active');

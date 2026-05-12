@@ -31,7 +31,13 @@ export default function LoginPage() {
     });
 
     if (authError) {
-      setError("Email hoặc mật khẩu không chính xác.");
+      if (authError.message === "Email not confirmed" || (authError as any).code === "email_not_confirmed") {
+        setError("Tài khoản chưa được xác thực. Vui lòng kiểm tra hòm thư email của bạn.");
+      } else if (authError.message === "Invalid login credentials") {
+        setError("Email hoặc mật khẩu không chính xác.");
+      } else {
+        setError(authError.message || "Đã xảy ra lỗi khi đăng nhập.");
+      }
       setLoading(false);
       return;
     }

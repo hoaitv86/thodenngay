@@ -35,14 +35,29 @@ export default function CustomerBooking() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
+      
       // Fetch active services
-      const { data } = await supabase
+      const { data: servicesData } = await supabase
         .from('services')
         .select('*')
         .eq('is_active', true)
         .order('name');
 
-      if (data) setServices(data);
+      if (servicesData) setServices(servicesData);
+
+      // Fetch user profile for address
+      let userAddress = "";
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('address')
+          .eq('id', user.id)
+          .single();
+        if (profile?.address) {
+          userAddress = profile.address;
+        }
+      }
 
       // Default time: Tomorrow 9:00 AM
       const tomorrow = new Date();
@@ -51,7 +66,7 @@ export default function CustomerBooking() {
       const tzoffset = (new Date()).getTimezoneOffset() * 60000;
       const localISOTime = new Date(tomorrow.getTime() - tzoffset).toISOString().slice(0, 16);
 
-      setFormData(prev => ({ ...prev, scheduledAt: localISOTime }));
+      setFormData(prev => ({ ...prev, scheduledAt: localISOTime, address: userAddress }));
       setLoading(false);
     };
     init();
