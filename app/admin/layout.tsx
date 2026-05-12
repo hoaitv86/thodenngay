@@ -84,8 +84,8 @@ export default function AdminLayout({
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-white/15 !text-white shadow-sm"
-                  : "!text-white/70 hover:bg-white/10 hover:!text-white"
+                  ? "bg-white/15 text-white! shadow-sm"
+                  : "text-white/70! hover:bg-white/10 hover:text-white!"
               }`}
             >
               <item.icon className="w-5 h-5 shrink-0" />
@@ -99,7 +99,7 @@ export default function AdminLayout({
       <div className="px-3 py-4 border-t border-on-primary/10">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium !text-white/70 hover:bg-error/20 hover:!text-error-container transition-all"
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-white/70! hover:bg-error/20 hover:text-error-container! transition-all"
         >
           <LogOut className="w-5 h-5" />
           Đăng xuất
