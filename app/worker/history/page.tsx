@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
   CalendarIcon,
@@ -12,7 +13,8 @@ import {
   CogIcon,
   MapPinIcon,
   BriefcaseIcon,
-  UserIcon
+  UserIcon,
+  ChevronRightIcon
 } from "../../components/icons";
 
 export default function WorkerHistory() {
@@ -91,49 +93,55 @@ export default function WorkerHistory() {
           {historyJobs.map(job => {
             const isCompleted = job.status === 'completed' || job.status === 'done';
             return (
-              <div key={job.id} className="card-elevated !p-4 flex gap-4 opacity-90 transition-opacity hover:opacity-100 relative overflow-hidden">
-                <div className={`w-1 shrink-0 absolute top-0 bottom-0 left-0 ${isCompleted ? 'bg-success' : 'bg-error'}`} />
-                
-                <div className="flex flex-col items-center min-w-[50px] border-r border-outline-variant pr-3">
-                  <span className="text-label-sm font-bold text-on-surface-variant uppercase">{job.timeStr}</span>
-                  <span className="text-[10px] text-on-surface-variant mt-1 whitespace-nowrap">{job.dateStr}</span>
-                  <div className={`mt-2 w-8 h-8 rounded-full flex items-center justify-center ${isCompleted ? 'bg-success-container text-on-success-container' : 'bg-error-container text-on-error-container'}`}>
-                    {isCompleted ? <CheckCircleIcon size={18} /> : <XIcon size={18} />}
-                  </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-body-md font-bold text-on-surface truncate pr-2">{job.serviceName}</h3>
-                    <span className="text-body-md font-bold text-primary-container whitespace-nowrap">
-                      {(job.quoted_price || 0).toLocaleString('vi-VN')}đ
-                    </span>
-                  </div>
+              <Link href={`/worker/history/${job.id}`} key={job.id} className="block">
+                <div className="card-elevated !p-4 flex gap-4 opacity-90 transition-all hover:opacity-100 hover:shadow-lg relative overflow-hidden cursor-pointer active:scale-[0.98]">
+                  <div className={`w-1 shrink-0 absolute top-0 bottom-0 left-0 ${isCompleted ? 'bg-success' : 'bg-error'}`} />
                   
-                  <div className="space-y-1.5 mt-2">
-                    <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
-                      <UserIcon size={14} className="shrink-0" />
-                      <span className="truncate font-medium">{job.customerName}</span>
+                  <div className="flex flex-col items-center min-w-[50px] border-r border-outline-variant pr-3">
+                    <span className="text-label-sm font-bold text-on-surface-variant uppercase">{job.timeStr}</span>
+                    <span className="text-[10px] text-on-surface-variant mt-1 whitespace-nowrap">{job.dateStr}</span>
+                    <div className={`mt-2 w-8 h-8 rounded-full flex items-center justify-center ${isCompleted ? 'bg-success-container text-on-success-container' : 'bg-error-container text-on-error-container'}`}>
+                      {isCompleted ? <CheckCircleIcon size={18} /> : <XIcon size={18} />}
                     </div>
-                    {job.address && (
-                      <div className="flex items-start gap-2 text-label-sm text-on-surface-variant">
-                        <MapPinIcon size={14} className="shrink-0 mt-0.5" />
-                        <span className="line-clamp-2">{job.address}</span>
-                      </div>
-                    )}
                   </div>
-                  
-                  <div className="mt-3 inline-flex">
-                    <span className={`text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-wider ${
-                      isCompleted 
-                        ? 'bg-success/10 text-success' 
-                        : 'bg-error/10 text-error'
-                    }`}>
-                      {isCompleted ? 'Hoàn thành' : 'Đã hủy'}
-                    </span>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-1">
+                      <h3 className="text-body-md font-bold text-on-surface truncate pr-2">{job.serviceName}</h3>
+                      <span className="text-body-md font-bold text-primary-container whitespace-nowrap">
+                        {(job.quoted_price || 0).toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1.5 mt-2">
+                      <div className="flex items-center gap-2 text-label-sm text-on-surface-variant">
+                        <UserIcon size={14} className="shrink-0" />
+                        <span className="truncate font-medium">{job.customerName}</span>
+                      </div>
+                      {job.address && (
+                        <div className="flex items-start gap-2 text-label-sm text-on-surface-variant">
+                          <MapPinIcon size={14} className="shrink-0 mt-0.5" />
+                          <span className="line-clamp-2">{job.address}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className={`text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-wider ${
+                        isCompleted 
+                          ? 'bg-success/10 text-success' 
+                          : 'bg-error/10 text-error'
+                      }`}>
+                        {isCompleted ? 'Hoàn thành' : 'Đã hủy'}
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-primary-container uppercase tracking-wider">
+                        Xem chi tiết
+                        <ChevronRightIcon size={14} />
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

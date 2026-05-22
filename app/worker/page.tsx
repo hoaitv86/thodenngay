@@ -36,6 +36,12 @@ export default function WorkerDashboard() {
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' | null }>({ message: '', type: null });
   const supabase = createClient();
 
+  // Completion modal states
+  const [activeJobToComplete, setActiveJobToComplete] = useState<any | null>(null);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast({ message: '', type: null }), 3000);
@@ -127,32 +133,100 @@ export default function WorkerDashboard() {
     fetchData();
   }, []);
 
-  const handleCompleteJob = async (job: any) => {
-    if (!window.confirm(`Xác nhận hoàn thành công việc cho: ${job.customerName}?`)) return;
+  const triggerCompleteJob = (job: any) => {
+    setActiveJobToComplete(job);
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+  };
 
-    setCompletingJobId(job.id);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+    
+    // Add to selected files
+    setSelectedFiles(prev => [...prev, ...files]);
+    
+    // Create preview URLs
+    const urls = files.map(file => URL.createObjectURL(file));
+    setPreviewUrls(prev => [...prev, ...urls]);
+  };
 
-    // Default the final price to quoted_price for UI stats
-    const finalPrice = job.quoted_price || 0;
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    // Revoke URL to avoid memory leak
+    if (previewUrls[index]) {
+      URL.revokeObjectURL(previewUrls[index]);
+    }
+    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  };
 
-    const { error } = await supabase
-      .from('jobs')
-      .update({ status: 'completed' })
-      .eq('id', job.id);
+  const handleConfirmCompleteJob = async () => {
+    if (!activeJobToComplete) return;
 
-    setCompletingJobId(null);
+    setUploadingImages(true);
+    const job = activeJobToComplete;
+    const imageUrls: string[] = [];
 
-    if (error) {
-      alert("Lỗi khi cập nhật trạng thái: " + error.message);
-      console.error(error);
-    } else {
-      // Optimistic UI update
+    try {
+      // 1. Upload images to Supabase Storage if any are selected
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${i}.${fileExt}`;
+        const filePath = `jobs/${job.id}/${fileName}`;
+
+        const { data, error: uploadError } = await supabase.storage
+          .from('job-photos')
+          .upload(filePath, file);
+
+        if (uploadError) {
+          throw new Error("Không thể tải hình ảnh lên: " + uploadError.message);
+        }
+
+        if (data) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('job-photos')
+            .getPublicUrl(filePath);
+          imageUrls.push(publicUrl);
+        }
+      }
+
+      // 2. Update job status to completed & save images
+      const { data: updatedJobs, error: updateError } = await supabase
+        .from('jobs')
+        .update({ 
+          status: 'completed',
+          images: imageUrls
+        })
+        .eq('id', job.id)
+        .select();
+
+      if (updateError) {
+        throw new Error("Không thể cập nhật trạng thái: " + updateError.message);
+      }
+
+      if (!updatedJobs || updatedJobs.length === 0) {
+        throw new Error("Cập nhật thất bại. Vui lòng kiểm tra chính sách bảo mật RLS hoặc cấu trúc bảng của dữ liệu.");
+      }
+
+      // 3. Optimistic UI update
       setActiveJobs(prev => prev.filter(j => j.id !== job.id));
+      const finalPrice = job.quoted_price || 0;
       setWorkerStats(prev => ({
         ...prev,
         jobsDone: prev.jobsDone + 1,
         income: prev.income + finalPrice
       }));
+
+      showToast("Đã hoàn thành công việc thành công!", "success");
+      setActiveJobToComplete(null);
+      setSelectedFiles([]);
+      setPreviewUrls([]);
+    } catch (err: any) {
+      showToast(err.message || "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
+      console.error(err);
+    } finally {
+      setUploadingImages(false);
     }
   };
 
@@ -306,23 +380,126 @@ export default function WorkerDashboard() {
               </div>
 
               <button
-                onClick={() => handleCompleteJob(job)}
-                disabled={completingJobId === job.id}
+                onClick={() => triggerCompleteJob(job)}
                 className="w-full btn-primary !bg-success !border-success !py-3.5 !rounded-xl"
               >
-                {completingJobId === job.id ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Đang xử lý...
-                  </span>
-                ) : (
-                  "Hoàn thành Job"
-                )}
+                Hoàn thành Job
               </button>
             </div>
           ))
         )}
       </div>
+
+      {/* Complete Job Modal */}
+      {activeJobToComplete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-fade-in-up">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-outline-variant/50">
+              <h2 className="text-lg font-bold text-on-surface">Hoàn thành công việc</h2>
+              <button 
+                onClick={() => {
+                  if (!uploadingImages) {
+                    setActiveJobToComplete(null);
+                    setSelectedFiles([]);
+                    setPreviewUrls([]);
+                  }
+                }}
+                className="p-1.5 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+                disabled={uploadingImages}
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              <div className="bg-surface-container-low p-4 rounded-xl space-y-2">
+                <p className="text-body-sm font-bold text-on-surface">Khách hàng: {activeJobToComplete.customerName}</p>
+                <p className="text-body-sm text-on-surface-variant">Dịch vụ: {activeJobToComplete.serviceName}</p>
+                <p className="text-body-sm text-on-surface-variant">Mã đơn: {activeJobToComplete.job_code}</p>
+                <p className="text-body-sm text-primary font-bold">
+                  Thanh toán: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(activeJobToComplete.quoted_price)}
+                </p>
+              </div>
+
+              {/* Upload Section */}
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-on-surface block">Hình ảnh thực tế sau khi làm</label>
+                <p className="text-xs text-on-surface-variant">Hãy chụp và tải ảnh kết quả công việc để khách hàng nghiệm thu.</p>
+                
+                {/* File picker */}
+                <div className="mt-2">
+                  <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-outline-variant/60 rounded-xl cursor-pointer hover:bg-surface-container-low transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <CameraIcon size={28} className="text-on-surface-variant/80 mb-2" />
+                      <p className="text-xs font-bold text-primary">Tải ảnh lên (Nhiều ảnh)</p>
+                      <p className="text-[10px] text-on-surface-variant mt-1">PNG, JPG, JPEG</p>
+                    </div>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={handleFileChange}
+                      disabled={uploadingImages}
+                    />
+                  </label>
+                </div>
+
+                {/* Previews */}
+                {previewUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {previewUrls.map((url, idx) => (
+                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant group">
+                        <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeSelectedFile(idx)}
+                          className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
+                          disabled={uploadingImages}
+                        >
+                          <XIcon size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
+              <button 
+                type="button"
+                onClick={() => {
+                  setActiveJobToComplete(null);
+                  setSelectedFiles([]);
+                  setPreviewUrls([]);
+                }}
+                className="btn-outline !py-2 !px-4 text-sm"
+                disabled={uploadingImages}
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                type="button" 
+                onClick={handleConfirmCompleteJob}
+                className="btn-primary !py-2 !px-5 text-sm !bg-success !border-success min-w-[140px]"
+                disabled={uploadingImages}
+              >
+                {uploadingImages ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Đang lưu...
+                  </span>
+                ) : "Hoàn thành Job"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

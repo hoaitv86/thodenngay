@@ -162,11 +162,11 @@ export default function AdminDashboard() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`badge badge-${job.status} uppercase text-[10px] font-bold`}>
+                      <span className={`badge badge-${job.status === 'done' ? 'completed' : job.status} uppercase text-[10px] font-bold`}>
                         {job.status === "pending" ? "Chờ xử lý" :
                           job.status === "assigned" ? "Đã gán" :
                             job.status === "in_progress" ? "Đang làm" :
-                              job.status === "completed" ? "Xong" : "Hủy"}
+                              (job.status === "completed" || job.status === "done") ? "Xong" : "Hủy"}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">

@@ -79,7 +79,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10">
-          <h2 className="text-headline-lg mb-4 text-white font-bold">
+          <h2 className="text-lg mb-4 text-white font-bold">
             Dịch vụ sửa chữa{" "}
             <span className="text-[#fd6c00]">chuyên nghiệp</span>
           </h2>

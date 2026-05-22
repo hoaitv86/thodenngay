@@ -147,7 +147,7 @@ export default function HomePage() {
       </header>
 
       {/* ===== HERO SECTION ===== */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary via-primary-container to-[#1565c0] text-on-primary">
+      <section className="relative overflow-hidden bg-linear-to-br from-primary via-primary-container to-[#1565c0] text-on-primary">
         {/* Background pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-10 left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
@@ -163,13 +163,13 @@ export default function HomePage() {
               <span className="text-label-sm text-white/90">Đang hoạt động 24/7</span>
             </div>
 
-            <h1 className="text-headline-xl leading-tight mb-6">
+            <h1 className="text-xl leading-tight mb-6">
               Thợ giỏi,{" "}
               <span className="text-secondary-container">đến ngay</span>{" "}
               khi bạn cần
             </h1>
 
-            <p className="text-body-lg text-white/80 max-w-xl mb-10">
+            <p className="text-lg text-white/80 max-w-xl mb-10">
               Nền tảng kết nối bạn với thợ sửa chữa chuyên nghiệp, được xác minh.
               Đặt dịch vụ điện, nước, camera, cơ khí chỉ trong vài bước.
             </p>
@@ -219,7 +219,7 @@ export default function HomePage() {
             {stats.map((s) => (
               <div key={s.label} className="text-center">
                 <div className="text-headline-md text-primary-container">{s.value}</div>
-                <div className="text-body-sm text-on-surface-variant mt-1">{s.label}</div>
+                <div className="text-sm text-on-surface-variant mt-1">{s.label}</div>
               </div>
             ))}
           </div>
@@ -445,18 +445,18 @@ export default function HomePage() {
       </section>
 
       {/* ===== CTA SECTION ===== */}
-      <section className="py-20 lg:py-28 bg-gradient-to-r from-primary-container to-primary text-on-primary">
+      <section className="py-20 lg:py-28 bg-linear-to-r from-primary-container to-primary text-on-primary">
         <div className="max-w-4xl mx-auto px-6 lg:px-8 text-center">
-          <h2 className="text-headline-lg mb-4">
+          <h2 className="text-lg mb-4">
             Bắt đầu sử dụng Alo Thợ ngay hôm nay
           </h2>
-          <p className="text-body-lg text-white/80 mb-10 max-w-2xl mx-auto">
+          <p className="text-lg text-white/80 mb-10 max-w-2xl mx-auto">
             Đăng ký miễn phí và trải nghiệm dịch vụ sửa chữa tại nhà chuyên nghiệp nhất
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/register"
-              className="btn-secondary !text-lg !py-4 !px-10 !rounded-xl"
+              className="btn-secondary text-lg! py-4! px-10! rounded-xl!"
               id="cta-register"
             >
               Đăng ký miễn phí
@@ -482,18 +482,18 @@ export default function HomePage() {
                 <LogoIcon size={32} />
                 <span className="text-xl font-bold">Alo Thợ</span>
               </div>
-              <p className="text-body-sm text-surface-container-high max-w-sm">
+              <p className="text-sm text-surface-container-high max-w-sm">
                 Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Dịch vụ uy tín, giá cả minh bạch.
               </p>
               <div className="flex items-center gap-2 mt-4 text-surface-container-high">
                 <PhoneIcon size={16} />
-                <span className="text-body-sm">Hotline: 1900 xxxx</span>
+                <span className="text-sm">Hotline: 1900 xxxx</span>
               </div>
             </div>
 
             <div>
               <h4 className="font-semibold mb-4">Dịch vụ</h4>
-              <ul className="space-y-2 text-body-sm text-surface-container-high">
+              <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Sửa điện</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Sửa nước</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Lắp camera</a></li>
@@ -503,7 +503,7 @@ export default function HomePage() {
 
             <div>
               <h4 className="font-semibold mb-4">Thông tin</h4>
-              <ul className="space-y-2 text-body-sm text-surface-container-high">
+              <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Về chúng tôi</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Điều khoản</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Chính sách</a></li>

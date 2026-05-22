@@ -13,7 +13,16 @@ import {
   WrenchIcon,
   SettingsIcon,
   DollarSignIcon,
-  XIcon
+  XIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon
 } from "../../components/icons";
 
 const iconMap: Record<string, any> = {
@@ -21,7 +30,16 @@ const iconMap: Record<string, any> = {
   DropletIcon,
   CameraIcon,
   CogIcon,
-  WrenchIcon
+  WrenchIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon
 };
 
 const iconColorMap: Record<string, string> = {
@@ -30,6 +48,15 @@ const iconColorMap: Record<string, string> = {
   CameraIcon: 'bg-purple-50 text-purple-600',
   CogIcon: 'bg-green-50 text-green-600',
   WrenchIcon: 'bg-primary-fixed text-primary-container',
+  ShieldCheckIcon: 'bg-emerald-50 text-emerald-600',
+  StarIcon: 'bg-yellow-50 text-yellow-600',
+  ClockIcon: 'bg-indigo-50 text-indigo-600',
+  MapPinIcon: 'bg-red-50 text-red-600',
+  BriefcaseIcon: 'bg-slate-50 text-slate-600',
+  BarChartIcon: 'bg-cyan-50 text-cyan-600',
+  CalendarIcon: 'bg-rose-50 text-rose-600',
+  PhoneIcon: 'bg-teal-50 text-teal-600',
+  UsersIcon: 'bg-orange-50 text-orange-600',
   default: 'bg-surface-container text-on-surface-variant'
 };
 

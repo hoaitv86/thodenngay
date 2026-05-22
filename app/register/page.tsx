@@ -96,7 +96,7 @@ function RegisterContent() {
           address: formData.address
         })
         .eq('id', data.user.id);
-      
+
       if (role === 'worker' && formData.specialties.length > 0) {
         await supabase
           .from('workers')
@@ -152,7 +152,7 @@ function RegisterContent() {
         </div>
 
         <div className="relative z-10">
-          <h2 className="text-headline-lg mb-4 text-white font-bold">
+          <h2 className="text-lg mb-4 text-white font-bold">
             {role === "customer" ? (
               <>
                 Tìm thợ giỏi{" "}
@@ -197,11 +197,10 @@ function RegisterContent() {
               <button
                 type="button"
                 onClick={() => setRole("customer")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-                  role === "customer"
+                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-lg text-sm font-semibold transition-all ${role === "customer"
                     ? "bg-white text-[#003178] shadow-sm"
                     : "text-[#434652] hover:text-[#1a1c1e]"
-                }`}
+                  }`}
               >
                 <UserIcon size={18} />
                 Khách hàng
@@ -209,11 +208,10 @@ function RegisterContent() {
               <button
                 type="button"
                 onClick={() => setRole("worker")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-                  role === "worker"
+                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-lg text-sm font-semibold transition-all ${role === "worker"
                     ? "bg-white text-[#003178] shadow-sm"
                     : "text-[#434652] hover:text-[#1a1c1e]"
-                }`}
+                  }`}
               >
                 <WrenchIcon size={18} />
                 Đăng ký thợ
@@ -300,11 +298,10 @@ function RegisterContent() {
                           key={sp}
                           type="button"
                           onClick={() => toggleSpecialty(sp)}
-                          className={`px-4 py-2.5 rounded-xl text-sm transition-all border ${
-                            formData.specialties.includes(sp)
+                          className={`px-4 py-2.5 rounded-xl text-sm transition-all border ${formData.specialties.includes(sp)
                               ? "bg-[#003178] border-[#003178] text-white shadow-md font-semibold"
                               : "bg-[#f3f3f6] border-transparent text-[#434652] hover:border-[#003178]/30"
-                          }`}
+                            }`}
                         >
                           {formData.specialties.includes(sp) && "✓ "}
                           {sp}
