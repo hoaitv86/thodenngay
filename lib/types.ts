@@ -2,7 +2,7 @@
 
 export type UserRole = 'customer' | 'worker' | 'admin';
 export type WorkerStatus = 'pending' | 'active' | 'blocked';
-export type JobStatus = 'pending' | 'assigned' | 'in_progress' | 'done' | 'cancelled';
+export type JobStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'done' | 'cancelled';
 export type JobSource = 'app' | 'call';
 export type PaymentMethod = 'cash' | 'transfer';
 export type PaymentStatus = 'pending' | 'paid';
@@ -65,6 +65,7 @@ export interface Job {
   status: JobStatus;
   source: JobSource;
   created_by: string;
+  images?: string[];
   created_at: string;
   updated_at: string;
   // Joined fields

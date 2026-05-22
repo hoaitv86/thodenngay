@@ -161,10 +161,10 @@ export default function CustomerDashboard() {
                         <div className="text-sm font-medium text-[#434652]">{job.job_code}</div>
                       </div>
                     </div>
-                    <span className={`badge badge-${job.status} px-4 py-1.5 uppercase text-[10px] font-bold`}>
+                    <span className={`badge badge-${job.status === 'done' ? 'completed' : job.status} px-4 py-1.5 uppercase text-[10px] font-bold`}>
                       {job.status === 'pending' ? 'Đang tìm thợ' : 
                        job.status === 'in_progress' ? 'Đang thực hiện' : 
-                       job.status === 'completed' ? 'Hoàn thành' : job.status}
+                       (job.status === 'completed' || job.status === 'done') ? 'Hoàn thành' : job.status}
                     </span>
                   </div>
 

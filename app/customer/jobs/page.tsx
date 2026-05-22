@@ -51,6 +51,7 @@ export default function CustomerJobs() {
       case 'in_progress':
         return { label: 'Đang thực hiện', color: 'bg-primary-container text-white', icon: Wrench };
       case 'completed':
+      case 'done':
         return { label: 'Hoàn thành', color: 'bg-success-container text-success', icon: CheckCircle };
       case 'cancelled':
         return { label: 'Đã hủy', color: 'bg-error-container text-error', icon: AlertCircle };

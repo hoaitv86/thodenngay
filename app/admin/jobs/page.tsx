@@ -184,7 +184,10 @@ export default function AdminJobs() {
     
     const matchesSearch = jobCode.includes(searchLower) || customerName.includes(searchLower) || serviceName.includes(searchLower);
      
-    const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'completed' 
+        ? (job.status === 'completed' || job.status === 'done')
+        : job.status === statusFilter);
     
     return matchesSearch && matchesStatus;
   });
@@ -335,11 +338,11 @@ export default function AdminJobs() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`badge badge-${job.status} uppercase text-[10px] font-bold px-2.5 py-1`}>
+                      <span className={`badge badge-${job.status === 'done' ? 'completed' : job.status} uppercase text-[10px] font-bold px-2.5 py-1`}>
                         {job.status === "pending" ? "Chờ xử lý" :
                           job.status === "assigned" ? "Đã gán" :
                             job.status === "in_progress" ? "Đang làm" :
-                              job.status === "completed" ? "Hoàn thành" : "Đã hủy"}
+                              (job.status === "completed" || job.status === "done") ? "Hoàn thành" : "Đã hủy"}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
