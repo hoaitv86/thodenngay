@@ -37,7 +37,7 @@ export default function AdminWorkers() {
 
   useEffect(() => {
     fetchWorkers();
-  }, []); 
+  }, []);
 
   const fetchWorkers = async () => {
     setLoading(true);
@@ -45,7 +45,7 @@ export default function AdminWorkers() {
       .from('workers')
       .select('*, profiles(*)')
       .order('created_at', { ascending: false });
-    
+
     const { data } = await query;
     if (data) setWorkers(data);
     setLoading(false);
@@ -98,13 +98,13 @@ export default function AdminWorkers() {
   const filteredWorkers = workers.filter(worker => {
     const searchLower = searchQuery.toLowerCase();
     const matchesSearch = (
-      worker.profiles?.full_name?.toLowerCase().includes(searchLower) || 
+      worker.profiles?.full_name?.toLowerCase().includes(searchLower) ||
       worker.profiles?.phone?.toLowerCase().includes(searchLower) ||
       (worker.specialties && worker.specialties.some((s: string) => s.toLowerCase().includes(searchLower)))
     );
-     
+
     const matchesStatus = statusFilter === 'all' || worker.status === statusFilter;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -112,9 +112,8 @@ export default function AdminWorkers() {
     <div className="space-y-6 animate-fade-in relative">
       {/* Toast Notification */}
       {toast.type && (
-        <div className={`fixed top-4 right-4 z-50 max-w-sm px-5 py-3.5 rounded-xl shadow-lg border animate-fade-in flex items-center gap-3 ${
-          toast.type === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32] border-[#2e7d32]/20' : 'bg-[#ffebee] text-[#c62828] border-[#c62828]/20'
-        }`}>
+        <div className={`fixed top-4 right-4 z-50 max-w-sm px-5 py-3.5 rounded-xl shadow-lg border animate-fade-in flex items-center gap-3 ${toast.type === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32] border-[#2e7d32]/20' : 'bg-[#ffebee] text-[#c62828] border-[#c62828]/20'
+          }`}>
           {toast.type === 'success' ? <CheckCircleIcon size={20} /> : <XIcon size={20} />}
           <span className="text-body-sm font-bold">{toast.message}</span>
         </div>
@@ -147,25 +146,24 @@ export default function AdminWorkers() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        
+
         <div className="flex gap-2 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 scrollbar-hide">
           {['all', 'pending', 'active', 'blocked'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors border ${
-                statusFilter === status 
-                  ? 'bg-primary-container text-on-primary-container border-primary-container shadow-sm' 
+              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors border ${statusFilter === status
+                  ? 'bg-primary-container text-on-primary-container border-primary-container shadow-sm'
                   : 'bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant'
-              }`}
+                }`}
             >
               {status === 'all' ? 'Tất cả' :
-               status === 'pending' ? 'Chờ duyệt' :
-               status === 'active' ? 'Hoạt động' : 'Đã khóa'}
+                status === 'pending' ? 'Chờ duyệt' :
+                  status === 'active' ? 'Hoạt động' : 'Đã khóa'}
             </button>
           ))}
           <button className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors border bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant flex items-center gap-2 ml-2">
-             <FilterIcon size={16} /> Lọc thêm
+            <FilterIcon size={16} /> Lọc thêm
           </button>
         </div>
       </div>
@@ -174,7 +172,7 @@ export default function AdminWorkers() {
       <div className="bg-white rounded-2xl border border-outline-variant overflow-hidden shadow-sm">
         {loading ? (
           <div className="flex justify-center items-center h-64">
-             <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -191,22 +189,22 @@ export default function AdminWorkers() {
               </thead>
               <tbody className="divide-y divide-outline-variant">
                 {filteredWorkers.length === 0 ? (
-                   <tr>
-                     <td colSpan={6} className="px-6 py-12 text-center text-on-surface-variant">
-                       <div className="flex flex-col items-center justify-center">
-                         <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mb-4 text-outline">
-                           <UserIcon size={32} />
-                         </div>
-                         <p className="text-body-md font-medium">Không tìm thấy thợ nào phù hợp.</p>
-                         <button 
-                           onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}
-                           className="mt-2 text-primary-container font-bold hover:underline"
-                         >
-                           Xóa bộ lọc
-                         </button>
-                       </div>
-                     </td>
-                   </tr>
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-on-surface-variant">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mb-4 text-outline">
+                          <UserIcon size={32} />
+                        </div>
+                        <p className="text-body-md font-medium">Không tìm thấy thợ nào phù hợp.</p>
+                        <button
+                          onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}
+                          className="mt-2 text-primary-container font-bold hover:underline"
+                        >
+                          Xóa bộ lọc
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ) : filteredWorkers.map((worker) => (
                   <tr key={worker.id} className="hover:bg-surface-container-lowest transition-colors group">
                     <td className="px-6 py-4">
@@ -256,7 +254,7 @@ export default function AdminWorkers() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                       <div className="flex items-center gap-1.5 text-label-sm text-on-surface-variant">
+                      <div className="flex items-center gap-1.5 text-label-sm text-on-surface-variant">
                         <CalendarIcon size={14} />
                         {new Date(worker.created_at).toLocaleDateString('vi-VN', {
                           day: '2-digit', month: '2-digit', year: 'numeric'
@@ -271,19 +269,19 @@ export default function AdminWorkers() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       {worker.status === 'pending' ? (
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button 
-                             onClick={() => setConfirmDialog({ type: 'approve', worker })}
-                             className="px-3 py-1.5 rounded-lg bg-success-container text-success text-xs font-bold hover:brightness-95 transition-all"
-                           >
-                             Duyệt
-                           </button>
-                           <button 
-                             onClick={() => setConfirmDialog({ type: 'reject', worker })}
-                             className="px-3 py-1.5 rounded-lg bg-error-container text-error text-xs font-bold hover:brightness-95 transition-all"
-                           >
-                             Từ chối
-                           </button>
+                        <div className="flex items-center justify-end gap-2 opacity-100 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => setConfirmDialog({ type: 'approve', worker })}
+                            className="px-3 py-1.5 rounded-lg bg-success-container text-success text-xs font-bold hover:brightness-95 transition-all"
+                          >
+                            Duyệt
+                          </button>
+                          <button
+                            onClick={() => setConfirmDialog({ type: 'reject', worker })}
+                            className="px-3 py-1.5 rounded-lg bg-error-container text-error text-xs font-bold hover:brightness-95 transition-all"
+                          >
+                            Từ chối
+                          </button>
                         </div>
                       ) : (
                         <button className="p-2 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-primary-container">
@@ -297,7 +295,7 @@ export default function AdminWorkers() {
             </table>
           </div>
         )}
-        
+
         {/* Pagination placeholder */}
         {!loading && filteredWorkers.length > 0 && (
           <div className="p-4 border-t border-outline-variant bg-surface-container-lowest flex items-center justify-between">
@@ -317,11 +315,10 @@ export default function AdminWorkers() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fade-in-up">
             <div className="p-6 space-y-4">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                  confirmDialog.type === 'approve' 
-                    ? 'bg-success-container text-success' 
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${confirmDialog.type === 'approve'
+                    ? 'bg-success-container text-success'
                     : 'bg-error-container text-error'
-                }`}>
+                  }`}>
                   {confirmDialog.type === 'approve' ? <CheckCircleIcon size={24} /> : <XIcon size={24} />}
                 </div>
                 <div>
@@ -370,11 +367,10 @@ export default function AdminWorkers() {
                     handleRejectWorker(confirmDialog.worker);
                   }
                 }}
-                className={`!py-2 !px-5 text-sm min-w-[120px] font-bold rounded-xl border transition-all ${
-                  confirmDialog.type === 'approve'
+                className={`!py-2 !px-5 text-sm min-w-[120px] font-bold rounded-xl border transition-all ${confirmDialog.type === 'approve'
                     ? 'bg-success text-white border-success hover:brightness-95'
                     : 'bg-error text-white border-error hover:brightness-95'
-                }`}
+                  }`}
                 disabled={processing}
               >
                 {processing ? (
