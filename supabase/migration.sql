@@ -21,7 +21,14 @@ CREATE POLICY "Customers can insert ratings"
 ON public.ratings FOR INSERT 
 WITH CHECK (auth.uid() = customer_id);
 
+-- 2b. Prevent duplicate ratings (one rating per customer per job)
+ALTER TABLE public.ratings 
+  DROP CONSTRAINT IF EXISTS ratings_job_customer_unique;
+ALTER TABLE public.ratings 
+  ADD CONSTRAINT ratings_job_customer_unique UNIQUE (job_id, customer_id);
+
 -- 3. Automatic worker rating & total jobs update trigger
+-- total_jobs counts from jobs table (completed/done) for accuracy
 CREATE OR REPLACE FUNCTION public.update_worker_rating()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -33,9 +40,10 @@ BEGIN
       WHERE worker_id = NEW.worker_id
     ),
     total_jobs = (
-      SELECT COUNT(DISTINCT job_id)
-      FROM public.ratings
+      SELECT COUNT(*)
+      FROM public.jobs
       WHERE worker_id = NEW.worker_id
+        AND status IN ('completed', 'done')
     )
   WHERE id = NEW.worker_id;
   RETURN NEW;
