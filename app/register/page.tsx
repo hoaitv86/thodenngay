@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -35,7 +35,7 @@ function RegisterContent() {
   const router = useRouter();
   const supabase = createClient();
 
-  const specialtyOptions = [
+  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([
     "Sửa điện",
     "Sửa nước",
     "Lắp camera",
@@ -43,7 +43,21 @@ function RegisterContent() {
     "Điều hòa",
     "Sơn nhà",
     "Mộc",
-  ];
+  ]);
+
+  useEffect(() => {
+    async function fetchServices() {
+      const { data, error } = await supabase
+        .from("services")
+        .select("name")
+        .eq("is_active", true);
+
+      if (data && !error) {
+        setSpecialtyOptions(data.map((svc: { name: string }) => svc.name));
+      }
+    }
+    fetchServices();
+  }, [supabase]);
 
   const toggleSpecialty = (sp: string) => {
     setFormData((prev) => ({

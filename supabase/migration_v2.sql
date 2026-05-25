@@ -34,3 +34,7 @@ DROP POLICY IF EXISTS "Customer Upload Rating Photos" ON storage.objects;
 CREATE POLICY "Customer Upload Rating Photos" 
 ON storage.objects FOR INSERT 
 WITH CHECK (bucket_id = 'rating-photos' AND auth.role() = 'authenticated');
+
+-- 6. Add status column to profiles table for block/unblock feature
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' CHECK (status IN ('active', 'blocked'));
+
