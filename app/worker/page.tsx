@@ -24,6 +24,7 @@ import {
 
 import { createClient } from "@/lib/supabase/client";
 import { User, Worker, Job } from "@/lib/types";
+import PendingApproval from "./pending-approval";
 
 export default function WorkerDashboard() {
   const [tab, setTab] = useState<"new" | "active">("new");
@@ -133,6 +134,34 @@ export default function WorkerDashboard() {
     fetchData();
   }, []);
 
+  const handleAcceptJob = async (jobId: string) => {
+    if (!worker) return;
+    const { error } = await supabase
+      .from('jobs')
+      .update({ worker_id: worker.id, status: 'assigned' })
+      .eq('id', jobId);
+
+    if (error) {
+      showToast('Lỗi khi nhận việc: ' + error.message, 'error');
+      console.error(error);
+    } else {
+      const acceptedJob = newJobs.find(j => j.id === jobId);
+      showToast('Nhận việc thành công!', 'success');
+      // Move from newJobs to activeJobs
+      setNewJobs(prev => prev.filter(j => j.id !== jobId));
+      if (acceptedJob) {
+        setActiveJobs(prev => [{ ...acceptedJob, status: 'assigned', customerName: 'Khách hàng' }, ...prev]);
+      }
+      setTab('active');
+    }
+  };
+
+  const handleDeclineJob = (jobId: string) => {
+    // Just hide from feed (don't change job status)
+    setNewJobs(prev => prev.filter(j => j.id !== jobId));
+    showToast('Đã bỏ qua công việc này.', 'info');
+  };
+
   const triggerCompleteJob = (job: any) => {
     setActiveJobToComplete(job);
     setSelectedFiles([]);
@@ -238,6 +267,11 @@ export default function WorkerDashboard() {
     );
   }
 
+  // Check worker status — show pending/blocked screen
+  if (worker && (worker.status === 'pending' || worker.status === 'blocked')) {
+    return <PendingApproval worker={worker} workerName={(worker as any).user?.full_name || 'Thợ'} />;
+  }
+
   return (
     <div className="flex flex-col w-full relative">
       {/* Toast Notification */}
@@ -332,8 +366,18 @@ export default function WorkerDashboard() {
                 </div>
 
                 <div className="flex gap-3 pt-2">
-                  <button className="flex-1 btn-outline py-2.5 rounded-xl! text-error border-error/20 hover:bg-error-container">Từ chối</button>
-                  <button className="flex-2 btn-primary py-2.5! rounded-xl!">Nhận việc</button>
+                  <button 
+                    onClick={() => handleDeclineJob(job.id)}
+                    className="flex-1 btn-outline py-2.5 rounded-xl! text-error border-error/20 hover:bg-error-container"
+                  >
+                    Từ chối
+                  </button>
+                  <button 
+                    onClick={() => handleAcceptJob(job.id)}
+                    className="flex-2 btn-primary py-2.5! rounded-xl!"
+                  >
+                    Nhận việc
+                  </button>
                 </div>
               </div>
             ))

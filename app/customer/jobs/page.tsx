@@ -11,7 +11,8 @@ import {
   CheckCircle, 
   AlertCircle,
   Timer,
-  Wrench
+  Wrench,
+  Star
 } from "lucide-react";
 
 export default function CustomerJobs() {
@@ -28,7 +29,8 @@ export default function CustomerJobs() {
         .from('jobs')
         .select(`
           *,
-          service:services(*)
+          service:services(*),
+          ratings(*)
         `)
         .eq('customer_id', user.id)
         .order('created_at', { ascending: false });
@@ -106,6 +108,17 @@ export default function CustomerJobs() {
                     {status.label}
                   </div>
                 </div>
+
+                {/* Unrated badge for completed jobs */}
+                {(job.status === 'completed' || job.status === 'done') && (!job.ratings || job.ratings.length === 0) && (
+                  <Link 
+                    href={`/customer/jobs/${job.id}`}
+                    className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200/50 rounded-xl text-amber-700 hover:bg-amber-100 transition-colors"
+                  >
+                    <Star size={14} className="animate-pulse" />
+                    <span className="text-[11px] font-bold">Chưa đánh giá — nhấn để gửi nhận xét</span>
+                  </Link>
+                )}
 
                 <div className="space-y-2 py-3 border-y border-outline-variant/10">
                   <div className="flex items-center gap-2 text-on-surface-variant">

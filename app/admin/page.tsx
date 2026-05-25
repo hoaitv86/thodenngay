@@ -40,7 +40,30 @@ export default function AdminDashboard() {
   const [pendingWorkers, setPendingWorkers] = useState<any[]>([]);
   const [stats, setStats] = useState<any[]>(statsPlaceholder);
   const [loading, setLoading] = useState(true);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | null }>({ message: '', type: null });
   const supabase = createClient();
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast({ message: '', type: null }), 3500);
+  };
+
+  const handleQuickApprove = async (worker: any) => {
+    setApprovingId(worker.id);
+    const { error } = await supabase
+      .from('workers')
+      .update({ status: 'active', approved_at: new Date().toISOString() })
+      .eq('id', worker.id);
+
+    setApprovingId(null);
+    if (error) {
+      showToast('Lỗi: ' + error.message, 'error');
+    } else {
+      showToast(`Đã duyệt "${worker.profiles?.full_name}"!`, 'success');
+      setPendingWorkers(prev => prev.filter(w => w.id !== worker.id));
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -85,7 +108,15 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in relative">
+      {/* Toast */}
+      {toast.type && (
+        <div className={`fixed top-4 right-4 z-50 max-w-sm px-5 py-3.5 rounded-xl shadow-lg border animate-fade-in flex items-center gap-3 ${
+          toast.type === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32] border-[#2e7d32]/20' : 'bg-[#ffebee] text-[#c62828] border-[#c62828]/20'
+        }`}>
+          <span className="text-body-sm font-bold">{toast.message}</span>
+        </div>
+      )}
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat) => (
@@ -197,7 +228,7 @@ export default function AdminDashboard() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-label-md font-bold text-on-surface uppercase tracking-wider">Thợ mới đăng ký</h3>
-              <span className="badge badge-pending">2 mới</span>
+              {pendingWorkers.length > 0 && <span className="badge badge-pending">{pendingWorkers.length} mới</span>}
             </div>
 
             <div className="space-y-3">
@@ -214,15 +245,24 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   </div>
-                  <button className="p-2 hover:bg-primary-fixed rounded-lg text-primary-container transition-colors">
-                    <CheckCircleIcon size={20} />
+                  <button 
+                    onClick={() => handleQuickApprove(worker)}
+                    disabled={approvingId === worker.id}
+                    className="p-2 hover:bg-primary-fixed rounded-lg text-primary-container transition-colors disabled:opacity-50"
+                    title="Duyệt nhanh"
+                  >
+                    {approvingId === worker.id ? (
+                      <span className="w-5 h-5 border-2 border-primary-container/30 border-t-primary-container rounded-full animate-spin inline-block" />
+                    ) : (
+                      <CheckCircleIcon size={20} />
+                    )}
                   </button>
                 </div>
               ))}
               {pendingWorkers.length === 0 && (
                 <p className="text-xs text-center text-on-surface-variant py-4 italic">Không có thợ mới chờ duyệt</p>
               )}
-              <button className="w-full py-3 text-body-sm font-bold text-on-surface-variant hover:text-primary-container transition-colors text-center">Xem tất cả thợ</button>
+              <Link href="/admin/workers" className="block w-full py-3 text-body-sm font-bold text-on-surface-variant hover:text-primary-container transition-colors text-center">Xem tất cả thợ →</Link>
             </div>
           </div>
         </div>

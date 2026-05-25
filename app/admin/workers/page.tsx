@@ -13,7 +13,8 @@ import {
   BriefcaseIcon,
   CheckCircleIcon,
   ShieldCheckIcon,
-  CalendarIcon
+  CalendarIcon,
+  XIcon
 } from "../../components/icons";
 
 export default function AdminWorkers() {
@@ -22,6 +23,17 @@ export default function AdminWorkers() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const supabase = createClient();
+
+  // Approval/Rejection states
+  const [confirmDialog, setConfirmDialog] = useState<{ type: 'approve' | 'reject'; worker: any } | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | null }>({ message: '', type: null });
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast({ message: '', type: null }), 3500);
+  };
 
   useEffect(() => {
     fetchWorkers();
@@ -39,6 +51,50 @@ export default function AdminWorkers() {
     setLoading(false);
   };
 
+  const handleApproveWorker = async (worker: any) => {
+    setProcessing(true);
+    const { error } = await supabase
+      .from('workers')
+      .update({ status: 'active', approved_at: new Date().toISOString() })
+      .eq('id', worker.id);
+
+    setProcessing(false);
+    setConfirmDialog(null);
+
+    if (error) {
+      showToast('Lỗi khi duyệt thợ: ' + error.message, 'error');
+      console.error(error);
+    } else {
+      showToast(`Đã duyệt thợ "${worker.profiles?.full_name}" thành công!`, 'success');
+      // Optimistic UI update
+      setWorkers(prev => prev.map(w =>
+        w.id === worker.id ? { ...w, status: 'active', approved_at: new Date().toISOString() } : w
+      ));
+    }
+  };
+
+  const handleRejectWorker = async (worker: any) => {
+    setProcessing(true);
+    const { error } = await supabase
+      .from('workers')
+      .update({ status: 'blocked', rejection_reason: rejectionReason || null })
+      .eq('id', worker.id);
+
+    setProcessing(false);
+    setConfirmDialog(null);
+    setRejectionReason("");
+
+    if (error) {
+      showToast('Lỗi khi từ chối thợ: ' + error.message, 'error');
+      console.error(error);
+    } else {
+      showToast(`Đã từ chối thợ "${worker.profiles?.full_name}".`, 'success');
+      setWorkers(prev => prev.map(w =>
+        w.id === worker.id ? { ...w, status: 'blocked', rejection_reason: rejectionReason || null } : w
+      ));
+    }
+  };
+
   const filteredWorkers = workers.filter(worker => {
     const searchLower = searchQuery.toLowerCase();
     const matchesSearch = (
@@ -53,7 +109,16 @@ export default function AdminWorkers() {
   });
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative">
+      {/* Toast Notification */}
+      {toast.type && (
+        <div className={`fixed top-4 right-4 z-50 max-w-sm px-5 py-3.5 rounded-xl shadow-lg border animate-fade-in flex items-center gap-3 ${
+          toast.type === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32] border-[#2e7d32]/20' : 'bg-[#ffebee] text-[#c62828] border-[#c62828]/20'
+        }`}>
+          {toast.type === 'success' ? <CheckCircleIcon size={20} /> : <XIcon size={20} />}
+          <span className="text-body-sm font-bold">{toast.message}</span>
+        </div>
+      )}
       {/* Header section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -207,10 +272,16 @@ export default function AdminWorkers() {
                     <td className="px-6 py-4 text-right">
                       {worker.status === 'pending' ? (
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button className="px-3 py-1.5 rounded-lg bg-success-container text-success text-xs font-bold hover:brightness-95 transition-all">
+                           <button 
+                             onClick={() => setConfirmDialog({ type: 'approve', worker })}
+                             className="px-3 py-1.5 rounded-lg bg-success-container text-success text-xs font-bold hover:brightness-95 transition-all"
+                           >
                              Duyệt
                            </button>
-                           <button className="px-3 py-1.5 rounded-lg bg-error-container text-error text-xs font-bold hover:brightness-95 transition-all">
+                           <button 
+                             onClick={() => setConfirmDialog({ type: 'reject', worker })}
+                             className="px-3 py-1.5 rounded-lg bg-error-container text-error text-xs font-bold hover:brightness-95 transition-all"
+                           >
                              Từ chối
                            </button>
                         </div>
@@ -239,6 +310,84 @@ export default function AdminWorkers() {
           </div>
         )}
       </div>
+
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fade-in-up">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                  confirmDialog.type === 'approve' 
+                    ? 'bg-success-container text-success' 
+                    : 'bg-error-container text-error'
+                }`}>
+                  {confirmDialog.type === 'approve' ? <CheckCircleIcon size={24} /> : <XIcon size={24} />}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-on-surface">
+                    {confirmDialog.type === 'approve' ? 'Duyệt thợ?' : 'Từ chối thợ?'}
+                  </h3>
+                  <p className="text-body-sm text-on-surface-variant">
+                    {confirmDialog.worker.profiles?.full_name}
+                  </p>
+                </div>
+              </div>
+
+              {confirmDialog.type === 'approve' ? (
+                <p className="text-body-sm text-on-surface-variant">
+                  Sau khi duyệt, thợ sẽ có thể truy cập hệ thống và nhận việc. Bạn có chắc chắn?
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-body-sm text-on-surface-variant">
+                    Thợ sẽ bị khóa và không thể đăng nhập vào hệ thống.
+                  </p>
+                  <label className="text-sm font-bold text-on-surface block">Lý do từ chối (tùy chọn)</label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="VD: Thiếu chứng chỉ, thông tin không hợp lệ..."
+                    className="w-full px-4 py-3 bg-surface-container-lowest border border-outline-variant/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary text-body-sm min-h-[80px] resize-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
+              <button
+                onClick={() => { setConfirmDialog(null); setRejectionReason(""); }}
+                className="btn-outline !py-2 !px-4 text-sm"
+                disabled={processing}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmDialog.type === 'approve') {
+                    handleApproveWorker(confirmDialog.worker);
+                  } else {
+                    handleRejectWorker(confirmDialog.worker);
+                  }
+                }}
+                className={`!py-2 !px-5 text-sm min-w-[120px] font-bold rounded-xl border transition-all ${
+                  confirmDialog.type === 'approve'
+                    ? 'bg-success text-white border-success hover:brightness-95'
+                    : 'bg-error text-white border-error hover:brightness-95'
+                }`}
+                disabled={processing}
+              >
+                {processing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Đang xử lý...
+                  </span>
+                ) : confirmDialog.type === 'approve' ? 'Xác nhận duyệt' : 'Xác nhận từ chối'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
