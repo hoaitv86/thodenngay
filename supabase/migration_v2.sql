@@ -16,3 +16,21 @@ DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles 
   FOR UPDATE 
   USING (auth.uid() = id);
+
+-- 4. Add images column to ratings table for review photos
+ALTER TABLE public.ratings ADD COLUMN IF NOT EXISTS images TEXT[] DEFAULT '{}';
+
+-- 5. Create storage bucket for rating photos (reuse existing policies pattern)
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('rating-photos', 'rating-photos', true) 
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Public Access Rating Photos" ON storage.objects;
+CREATE POLICY "Public Access Rating Photos" 
+ON storage.objects FOR SELECT 
+USING (bucket_id = 'rating-photos');
+
+DROP POLICY IF EXISTS "Customer Upload Rating Photos" ON storage.objects;
+CREATE POLICY "Customer Upload Rating Photos" 
+ON storage.objects FOR INSERT 
+WITH CHECK (bucket_id = 'rating-photos' AND auth.role() = 'authenticated');

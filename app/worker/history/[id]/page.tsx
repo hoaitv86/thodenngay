@@ -269,6 +269,26 @@ export default function WorkerJobDetailPage() {
               ) : (
                 <p className="text-body-sm text-on-surface-variant/50 italic">Khách hàng không để lại bình luận.</p>
               )}
+              {/* Rating images from customer */}
+              {job.ratings[0].images && job.ratings[0].images.length > 0 && (
+                <div className="pt-3 border-t border-amber-200/30">
+                  <p className="text-label-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Ảnh đánh giá từ khách</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {job.ratings[0].images.map((imgUrl: string, idx: number) => (
+                      <a key={idx} href={imgUrl} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low group">
+                        <img 
+                          src={imgUrl} 
+                          alt={`Ảnh đánh giá ${idx + 1}`} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" 
+                        />
+                        <div className="absolute bottom-1 right-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm">
+                          {idx + 1}/{job.ratings[0].images.length}
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

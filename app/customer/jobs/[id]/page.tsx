@@ -12,7 +12,9 @@ import {
   Phone, 
   ShieldCheck,
   Star,
-  AlertCircle
+  AlertCircle,
+  Camera,
+  X
 } from "lucide-react";
 import Link from "next/link";
 
@@ -28,6 +30,10 @@ export default function JobDetailPage() {
   const [ratingComment, setRatingComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | null }>({ message: '', type: null });
+
+  // Rating image upload states
+  const [ratingFiles, setRatingFiles] = useState<File[]>([]);
+  const [ratingPreviews, setRatingPreviews] = useState<string[]>([]);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -80,36 +86,85 @@ export default function JobDetailPage() {
     }
   };
 
+  const handleRatingFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+    setRatingFiles(prev => [...prev, ...files]);
+    const urls = files.map(file => URL.createObjectURL(file));
+    setRatingPreviews(prev => [...prev, ...urls]);
+  };
+
+  const removeRatingFile = (index: number) => {
+    if (ratingPreviews[index]) URL.revokeObjectURL(ratingPreviews[index]);
+    setRatingFiles(prev => prev.filter((_, i) => i !== index));
+    setRatingPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmitRating = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!job || !job.worker_id) return;
 
     setSubmittingRating(true);
 
-    const { data: ratingData, error } = await supabase
-      .from('ratings')
-      .insert({
-        job_id: job.id,
-        customer_id: job.customer_id,
-        worker_id: job.worker_id,
-        score: ratingScore,
-        comment: ratingComment
-      })
-      .select()
-      .single();
+    try {
+      // 1. Upload rating images if any
+      const imageUrls: string[] = [];
+      for (let i = 0; i < ratingFiles.length; i++) {
+        const file = ratingFiles[i];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${i}.${fileExt}`;
+        const filePath = `ratings/${job.id}/${fileName}`;
 
-    setSubmittingRating(false);
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('rating-photos')
+          .upload(filePath, file);
 
-    if (error) {
-      showToast("Lỗi khi gửi đánh giá: " + error.message, "error");
-      console.error(error);
-    } else {
-      showToast("Cảm ơn bạn đã đánh giá dịch vụ!", "success");
-      // Update job locally to include the new rating
-      setJob((prev: any) => ({
-        ...prev,
-        ratings: [ratingData]
-      }));
+        if (uploadError) {
+          throw new Error('Không thể tải ảnh lên: ' + uploadError.message);
+        }
+
+        if (uploadData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('rating-photos')
+            .getPublicUrl(filePath);
+          imageUrls.push(publicUrl);
+        }
+      }
+
+      // 2. Insert rating with images
+      const { data: ratingData, error } = await supabase
+        .from('ratings')
+        .insert({
+          job_id: job.id,
+          customer_id: job.customer_id,
+          worker_id: job.worker_id,
+          score: ratingScore,
+          comment: ratingComment,
+          images: imageUrls
+        })
+        .select()
+        .single();
+
+      setSubmittingRating(false);
+
+      if (error) {
+        showToast('Lỗi khi gửi đánh giá: ' + error.message, 'error');
+        console.error(error);
+      } else {
+        showToast('Cảm ơn bạn đã đánh giá dịch vụ!', 'success');
+        setJob((prev: any) => ({
+          ...prev,
+          ratings: [ratingData]
+        }));
+        // Clean up previews
+        ratingPreviews.forEach(url => URL.revokeObjectURL(url));
+        setRatingFiles([]);
+        setRatingPreviews([]);
+      }
+    } catch (err: any) {
+      setSubmittingRating(false);
+      showToast(err.message || 'Đã xảy ra lỗi.', 'error');
+      console.error(err);
     }
   };
 
@@ -270,6 +325,19 @@ export default function JobDetailPage() {
                 ) : (
                   <p className="text-body-sm text-on-surface-variant/60 italic">Không có bình luận.</p>
                 )}
+                {/* Rating images */}
+                {job.ratings[0].images && job.ratings[0].images.length > 0 && (
+                  <div className="pt-2 border-t border-outline-variant/20">
+                    <p className="text-label-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Ảnh đánh giá</p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {job.ratings[0].images.map((imgUrl: string, idx: number) => (
+                        <a key={idx} href={imgUrl} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low">
+                          <img src={imgUrl} alt={`Ảnh đánh giá ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               // Not Rated Yet: Show Rating Form
@@ -315,13 +383,57 @@ export default function JobDetailPage() {
                   />
                 </div>
 
+                {/* Rating Image Upload */}
+                <div className="space-y-2">
+                  <label className="text-label-sm font-semibold text-on-surface">Ảnh chứng minh (tùy chọn)</label>
+                  <p className="text-[11px] text-on-surface-variant">Thêm ảnh để đánh giá khách quan hơn về chất lượng công việc.</p>
+                  
+                  <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-outline-variant/50 rounded-xl cursor-pointer hover:bg-surface-container-low/50 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Camera size={20} className="text-on-surface-variant/60" />
+                      <span className="text-xs font-bold text-primary">Thêm ảnh</span>
+                      <span className="text-[10px] text-on-surface-variant">(PNG, JPG)</span>
+                    </div>
+                    <input 
+                      type="file" 
+                      multiple 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={handleRatingFileChange}
+                      disabled={submittingRating}
+                    />
+                  </label>
+
+                  {/* Previews */}
+                  {ratingPreviews.length > 0 && (
+                    <div className="grid grid-cols-4 gap-1.5 mt-2">
+                      {ratingPreviews.map((url, idx) => (
+                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 group">
+                          <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeRatingFile(idx)}
+                            className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
+                            disabled={submittingRating}
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="submit"
                   disabled={submittingRating}
                   className="w-full btn-primary !py-3 rounded-xl! text-sm font-bold flex items-center justify-center gap-2"
                 >
                   {submittingRating ? (
-                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span className="flex items-center gap-2">
+                      <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      {ratingFiles.length > 0 ? 'Đang tải ảnh...' : 'Đang gửi...'}
+                    </span>
                   ) : "Gửi đánh giá ⭐"}
                 </button>
               </form>
