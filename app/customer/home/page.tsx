@@ -1,11 +1,47 @@
-import { Zap, Droplets, Camera, Wrench, ArrowRight, Star, MapPin } from "lucide-react";
-import Link from "next/link";
+"use client";
 
-const services = [
-  { id: "1", icon: Zap, name: "Sửa điện", price: "200.000đ", color: "bg-amber-50 text-amber-600" },
-  { id: "2", icon: Droplets, name: "Sửa nước", price: "150.000đ", color: "bg-blue-50 text-blue-600" },
-  { id: "3", icon: Camera, name: "Lắp camera", price: "500.000đ", color: "bg-violet-50 text-violet-600" },
-  { id: "4", icon: Wrench, name: "Cơ khí", price: "250.000đ", color: "bg-emerald-50 text-emerald-600" },
+import { useState, useEffect } from "react";
+import { 
+  ZapIcon, 
+  DropletIcon, 
+  CameraIcon, 
+  CogIcon, 
+  WrenchIcon, 
+  ArrowRightIcon, 
+  StarIcon 
+} from "@/app/components/icons";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+
+interface Service {
+  id: string;
+  name: string;
+  price: string;
+  iconName: string;
+  color: string;
+}
+
+const iconMap: Record<string, any> = {
+  ZapIcon: ZapIcon,
+  DropletIcon: DropletIcon,
+  CameraIcon: CameraIcon,
+  CogIcon: CogIcon,
+  WrenchIcon: WrenchIcon
+};
+
+const serviceStyles: Record<string, string> = {
+  ZapIcon: "bg-amber-50 text-amber-600",
+  DropletIcon: "bg-blue-50 text-blue-600",
+  CameraIcon: "bg-violet-50 text-violet-600",
+  CogIcon: "bg-emerald-50 text-emerald-600",
+  WrenchIcon: "bg-rose-50 text-rose-600",
+};
+
+const defaultServices: Service[] = [
+  { id: "1", iconName: "ZapIcon", name: "Sửa điện", price: "200.000đ", color: "bg-amber-50 text-amber-600" },
+  { id: "2", iconName: "DropletIcon", name: "Sửa nước", price: "150.000đ", color: "bg-blue-50 text-blue-600" },
+  { id: "3", iconName: "CameraIcon", name: "Lắp camera", price: "500.000đ", color: "bg-violet-50 text-violet-600" },
+  { id: "4", iconName: "CogIcon", name: "Cơ khí", price: "250.000đ", color: "bg-emerald-50 text-emerald-600" },
 ];
 
 const topWorkers = [
@@ -15,6 +51,37 @@ const topWorkers = [
 ];
 
 export default function CustomerHome() {
+  const [services, setServices] = useState<Service[]>(defaultServices);
+  const supabase = createClient();
+
+  useEffect(() => {
+    async function fetchServices() {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id, name, base_price, icon")
+        .eq("is_active", true);
+
+      if (data && !error) {
+        const formattedServices = data.map((svc) => {
+          const iconName = svc.icon || "WrenchIcon";
+          const color = serviceStyles[iconName] || "bg-primary-fixed/10 text-primary";
+          const formattedPrice = svc.base_price 
+            ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ` 
+            : "Miễn phí";
+          return {
+            id: svc.id,
+            name: svc.name,
+            price: formattedPrice,
+            iconName,
+            color,
+          };
+        });
+        setServices(formattedServices);
+      }
+    }
+    fetchServices();
+  }, [supabase]);
+
   return (
     <div className="space-y-6 px-4 pt-4">
       {/* Greeting */}
@@ -29,7 +96,7 @@ export default function CustomerHome() {
           className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-xl text-body-sm hover:opacity-90 transition-opacity shadow-sm"
         >
           Đặt dịch vụ ngay
-          <ArrowRight className="w-4 h-4" />
+          <ArrowRightIcon size={16} />
         </Link>
       </div>
 
@@ -39,21 +106,24 @@ export default function CustomerHome() {
           Dịch vụ
         </h2>
         <div className="grid grid-cols-2 gap-3">
-          {services.map((svc) => (
-            <Link
-              key={svc.id}
-              href={`/customer/booking?service=${svc.id}`}
-              className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 hover:border-primary/30 hover:shadow-md transition-all active:scale-[0.98]"
-            >
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 ${svc.color}`}>
-                <svc.icon className="w-5.5 h-5.5" />
-              </div>
-              <p className="text-body-sm font-semibold text-on-surface">{svc.name}</p>
-              <p className="text-label-sm text-on-surface-variant mt-0.5">
-                Từ {svc.price}
-              </p>
-            </Link>
-          ))}
+          {services.map((svc) => {
+            const IconComponent = iconMap[svc.iconName] || WrenchIcon;
+            return (
+              <Link
+                key={svc.id}
+                href={`/customer/booking?service=${svc.id}`}
+                className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 hover:border-primary/30 hover:shadow-md transition-all active:scale-[0.98]"
+              >
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 ${svc.color}`}>
+                  <IconComponent size={22} />
+                </div>
+                <p className="text-body-sm font-semibold text-on-surface">{svc.name}</p>
+                <p className="text-label-sm text-on-surface-variant mt-0.5">
+                  Từ {svc.price}
+                </p>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
@@ -80,7 +150,7 @@ export default function CustomerHome() {
                 </p>
               </div>
               <div className="flex items-center gap-1 text-label-sm font-semibold text-warning shrink-0">
-                <Star className="w-4 h-4 fill-warning" />
+                <StarIcon size={16} className="text-warning fill-warning" />
                 {w.rating}
               </div>
             </div>
@@ -90,3 +160,4 @@ export default function CustomerHome() {
     </div>
   );
 }
+
