@@ -293,6 +293,16 @@ export default function JobDetailPage() {
                       </button>
                     ))}
                   </div>
+                  
+                  {/* Star label */}
+                  <p className={`text-sm font-bold transition-colors ${
+                    ratingScore >= 4 ? 'text-success' : ratingScore >= 3 ? 'text-amber-600' : 'text-error'
+                  }`}>
+                    {ratingScore === 1 ? '😞 Rất tệ' : 
+                     ratingScore === 2 ? '😕 Chưa hài lòng' : 
+                     ratingScore === 3 ? '😐 Bình thường' : 
+                     ratingScore === 4 ? '😊 Hài lòng' : '🤩 Tuyệt vời!'}
+                  </p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -312,7 +322,7 @@ export default function JobDetailPage() {
                 >
                   {submittingRating ? (
                     <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : "Gửi đánh giá"}
+                  ) : "Gửi đánh giá ⭐"}
                 </button>
               </form>
             )}
