@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   SearchIcon,
   FilterIcon,
@@ -30,6 +31,27 @@ export default function AdminWorkers() {
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | null }>({ message: '', type: null });
 
+  // Add new worker states
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newWorkerFormData, setNewWorkerFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    phone: "",
+    address: "",
+    specialties: [] as string[],
+    status: "active" as "active" | "pending"
+  });
+  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([
+    "Sửa điện",
+    "Sửa nước",
+    "Lắp camera",
+    "Cơ khí",
+    "Điều hòa",
+    "Sơn nhà",
+    "Mộc"
+  ]);
+
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast({ message: '', type: null }), 3500);
@@ -37,7 +59,107 @@ export default function AdminWorkers() {
 
   useEffect(() => {
     fetchWorkers();
+    fetchServices();
   }, []);
+
+  const fetchServices = async () => {
+    const { data, error } = await supabase
+      .from("services")
+      .select("name")
+      .eq("is_active", true);
+
+    if (data && !error) {
+      setSpecialtyOptions(data.map((svc: { name: string }) => svc.name));
+    }
+  };
+
+  const handleCreateWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkerFormData.name || !newWorkerFormData.email || !newWorkerFormData.password) {
+      showToast("Vui lòng nhập đầy đủ thông tin bắt buộc", "error");
+      return;
+    }
+    if (newWorkerFormData.password.length < 6) {
+      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      // Create non-session-persisting supabase client to avoid signing out the admin
+      const tempSupabase = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        }
+      );
+
+      const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+        email: newWorkerFormData.email,
+        password: newWorkerFormData.password,
+        options: {
+          data: {
+            full_name: newWorkerFormData.name,
+            role: 'worker',
+            specialties: newWorkerFormData.specialties
+          }
+        }
+      });
+
+      if (authError) {
+        showToast("Lỗi đăng ký: " + authError.message, "error");
+        setProcessing(false);
+        return;
+      }
+
+      if (authData.user) {
+        // Update profile
+        await supabase
+          .from('profiles')
+          .update({
+            phone: newWorkerFormData.phone || null,
+            address: newWorkerFormData.address || null,
+            status: 'active'
+          })
+          .eq('id', authData.user.id);
+
+        // Update worker details
+        const approvedAt = newWorkerFormData.status === 'active' ? new Date().toISOString() : null;
+        await supabase
+          .from('workers')
+          .update({
+            specialties: newWorkerFormData.specialties,
+            status: newWorkerFormData.status,
+            approved_at: approvedAt
+          })
+          .eq('user_id', authData.user.id);
+
+        showToast(`Đã thêm thợ "${newWorkerFormData.name}" thành công!`, 'success');
+        setIsAddModalOpen(false);
+        setNewWorkerFormData({
+          name: "",
+          email: "",
+          password: "",
+          phone: "",
+          address: "",
+          specialties: [] as string[],
+          status: "active"
+        });
+        fetchWorkers();
+      }
+    } catch (err: any) {
+      showToast("Lỗi hệ thống: " + err.message, "error");
+      console.error(err);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   const fetchWorkers = async () => {
     setLoading(true);
@@ -126,7 +248,10 @@ export default function AdminWorkers() {
             Duyệt, quản lý, và theo dõi đội ngũ thợ trên hệ thống
           </p>
         </div>
-        <button className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2">
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2"
+        >
           <PlusIcon size={20} />
           <span>Thêm thợ mới</span>
         </button>
@@ -381,6 +506,201 @@ export default function AdminWorkers() {
                 ) : confirmDialog.type === 'approve' ? 'Xác nhận duyệt' : 'Xác nhận từ chối'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Worker Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fade-in-up flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
+                  <PlusIcon size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-on-surface">Thêm thợ mới</h3>
+                  <p className="text-xs text-on-surface-variant">Tạo hồ sơ và tài khoản truy cập cho thợ mới</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <form onSubmit={handleCreateWorker} className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="space-y-4">
+                {/* Name & Email */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Họ và tên <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nguyễn Văn A"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newWorkerFormData.name}
+                      onChange={(e) => setNewWorkerFormData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Email đăng nhập <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="tho@alotho.vn"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newWorkerFormData.email}
+                      onChange={(e) => setNewWorkerFormData(prev => ({ ...prev, email: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Password & Phone */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Mật khẩu <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Tối thiểu 6 ký tự"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newWorkerFormData.password}
+                      onChange={(e) => setNewWorkerFormData(prev => ({ ...prev, password: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Số điện thoại
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="09xx xxx xxx"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newWorkerFormData.phone}
+                      onChange={(e) => setNewWorkerFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Address */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-on-surface">
+                    Địa chỉ liên hệ
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Q. Bình Thạnh, TP. Hồ Chí Minh"
+                    className="input-field !py-2.5 !rounded-xl text-sm"
+                    value={newWorkerFormData.address}
+                    onChange={(e) => setNewWorkerFormData(prev => ({ ...prev, address: e.target.value }))}
+                  />
+                </div>
+
+                {/* Specialties */}
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-on-surface block">
+                    Chuyên môn sửa chữa
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-surface-container-low rounded-xl border border-outline-variant/30">
+                    {specialtyOptions.map((sp) => {
+                      const isSelected = newWorkerFormData.specialties.includes(sp);
+                      return (
+                        <button
+                          key={sp}
+                          type="button"
+                          onClick={() => {
+                            setNewWorkerFormData(prev => ({
+                              ...prev,
+                              specialties: isSelected
+                                ? prev.specialties.filter(s => s !== sp)
+                                : [...prev.specialties, sp]
+                            }));
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                            isSelected
+                              ? "bg-primary text-white border-primary shadow-sm"
+                              : "bg-white border-outline-variant/60 text-on-surface-variant hover:border-primary/50"
+                          }`}
+                        >
+                          {isSelected && "✓ "}
+                          {sp}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Initial Status */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-on-surface">
+                    Trạng thái kích hoạt
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setNewWorkerFormData(prev => ({ ...prev, status: "active" }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        newWorkerFormData.status === "active"
+                          ? "bg-success-container text-success border-success/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <CheckCircleIcon size={16} />
+                      Hoạt động ngay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewWorkerFormData(prev => ({ ...prev, status: "pending" }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        newWorkerFormData.status === "pending"
+                          ? "bg-surface-container-high text-on-surface-variant border-outline-variant/40 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <CalendarIcon size={16} />
+                      Chờ phê duyệt
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest -mx-6 -mb-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="btn-outline !py-2 !px-4 text-sm"
+                  disabled={processing}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary !py-2 !px-6 text-sm min-w-[120px]"
+                  disabled={processing}
+                >
+                  {processing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang xử lý...
+                    </span>
+                  ) : "Xác nhận thêm"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
