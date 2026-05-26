@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   SearchIcon,
   FilterIcon,
@@ -14,7 +15,8 @@ import {
   BriefcaseIcon,
   XIcon,
   DollarSignIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  PlusIcon
 } from "../../components/icons";
 
 interface CustomerProfile {
@@ -45,9 +47,213 @@ export default function AdminCustomers() {
   const [loadingJobs, setLoadingJobs] = useState(false);
 
   // Modals & Confirm states
-  const [confirmDialog, setConfirmDialog] = useState<{ type: "block" | "unblock"; customer: CustomerProfile } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "block" | "unblock" | "delete"; customer: CustomerProfile } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | null }>({ message: "", type: null });
   const [processing, setProcessing] = useState(false);
+
+  // Add customer states
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newCustomerFormData, setNewCustomerFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    phone: "",
+    address: "",
+    status: "active" as "active" | "blocked"
+  });
+
+  // Edit customer states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<CustomerProfile | null>(null);
+  const [editCustomerFormData, setEditCustomerFormData] = useState({
+    id: "",
+    name: "",
+    phone: "",
+    address: "",
+    status: "active" as "active" | "blocked"
+  });
+
+  const handleCreateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustomerFormData.name || !newCustomerFormData.email || !newCustomerFormData.password) {
+      showToast("Vui lòng nhập đầy đủ thông tin bắt buộc", "error");
+      return;
+    }
+    if (newCustomerFormData.password.length < 6) {
+      showToast("Mật khẩu phải có ít nhất 6 ký tự", "error");
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      // Create non-session-persisting supabase client to avoid signing out the admin
+      const tempSupabase = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        }
+      );
+
+      const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+        email: newCustomerFormData.email,
+        password: newCustomerFormData.password,
+        options: {
+          data: {
+            full_name: newCustomerFormData.name,
+            role: 'customer'
+          }
+        }
+      });
+
+      if (authError) {
+        showToast("Lỗi đăng ký: " + authError.message, "error");
+        setProcessing(false);
+        return;
+      }
+
+      if (authData.user) {
+        // Update profile with status, phone, address
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            phone: newCustomerFormData.phone || null,
+            address: newCustomerFormData.address || null,
+            status: newCustomerFormData.status
+          })
+          .eq('id', authData.user.id);
+
+        if (profileError) {
+          console.error("Error updating profile details:", profileError);
+        }
+
+        showToast(`Đã thêm khách hàng "${newCustomerFormData.name}" thành công!`, 'success');
+        setIsAddModalOpen(false);
+        setNewCustomerFormData({
+          name: "",
+          email: "",
+          password: "",
+          phone: "",
+          address: "",
+          status: "active"
+        });
+        fetchCustomers();
+      }
+    } catch (err: any) {
+      showToast("Lỗi hệ thống: " + err.message, "error");
+      console.error(err);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleOpenEditModal = (customer: CustomerProfile) => {
+    setEditingCustomer(customer);
+    setEditCustomerFormData({
+      id: customer.id,
+      name: customer.full_name || "",
+      phone: customer.phone || "",
+      address: customer.address || "",
+      status: customer.status || "active"
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editCustomerFormData.name) {
+      showToast("Họ và tên không được để trống", "error");
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: editCustomerFormData.name,
+          phone: editCustomerFormData.phone || null,
+          address: editCustomerFormData.address || null,
+          status: editCustomerFormData.status
+        })
+        .eq('id', editCustomerFormData.id);
+
+      if (profileError) {
+        showToast("Lỗi cập nhật: " + profileError.message, "error");
+        setProcessing(false);
+        return;
+      }
+
+      showToast(`Cập nhật thông tin khách hàng "${editCustomerFormData.name}" thành công!`, 'success');
+      setIsEditModalOpen(false);
+      
+      // Update local state
+      setCustomers(prev => prev.map(c =>
+        c.id === editCustomerFormData.id
+          ? {
+              ...c,
+              full_name: editCustomerFormData.name,
+              phone: editCustomerFormData.phone || "",
+              address: editCustomerFormData.address || "",
+              status: editCustomerFormData.status
+            }
+          : c
+      ));
+
+      if (selectedCustomer && selectedCustomer.id === editCustomerFormData.id) {
+        setSelectedCustomer(prev => prev ? {
+          ...prev,
+          full_name: editCustomerFormData.name,
+          phone: editCustomerFormData.phone || "",
+          address: editCustomerFormData.address || "",
+          status: editCustomerFormData.status
+        } : null);
+      }
+    } catch (err: any) {
+      showToast("Lỗi hệ thống: " + err.message, "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDeleteCustomer = async (customer: CustomerProfile) => {
+    setProcessing(true);
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", customer.id);
+
+      setProcessing(false);
+      setConfirmDialog(null);
+
+      if (error) {
+        if (error.code === "23503") {
+          showToast("Không thể xóa khách hàng này vì đã có lịch sử đặt việc. Hãy khóa tài khoản thay thế.", "error");
+        } else {
+          showToast("Lỗi khi xóa khách hàng: " + error.message, "error");
+        }
+        console.error(error);
+      } else {
+        showToast(`Đã xóa khách hàng "${customer.full_name}" thành công!`, "success");
+        setCustomers(prev => prev.filter(c => c.id !== customer.id));
+        if (selectedCustomer && selectedCustomer.id === customer.id) {
+          handleCloseDrawer();
+        }
+      }
+    } catch (err: any) {
+      showToast("Lỗi hệ thống: " + err.message, "error");
+      setProcessing(false);
+      setConfirmDialog(null);
+    }
+  };
 
   const supabase = createClient();
 
@@ -183,6 +389,13 @@ export default function AdminCustomers() {
             Quản lý danh sách khách hàng, theo dõi lịch sử dịch vụ và thông tin trạng thái hoạt động
           </p>
         </div>
+        <button 
+          onClick={() => setIsAddModalOpen(true)}
+          className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2"
+        >
+          <PlusIcon size={20} />
+          <span>Thêm khách hàng</span>
+        </button>
       </div>
 
       {/* Filters and Search */}
@@ -324,22 +537,34 @@ export default function AdminCustomers() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1.5">
                           {cStatus === "active" ? (
                             <button 
                               onClick={() => setConfirmDialog({ type: "block", customer })}
-                              className="px-2.5 py-1.5 text-label-sm font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              className="px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                             >
                               Khóa
                             </button>
                           ) : (
                             <button 
                               onClick={() => setConfirmDialog({ type: "unblock", customer })}
-                              className="px-2.5 py-1.5 text-label-sm font-bold text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                              className="px-2 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                             >
                               Mở khóa
                             </button>
                           )}
+                          <button 
+                            onClick={() => handleOpenEditModal(customer)}
+                            className="px-2 py-1 text-xs font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                          >
+                            Sửa
+                          </button>
+                          <button 
+                            onClick={() => setConfirmDialog({ type: "delete", customer })}
+                            className="px-2 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            Xóa
+                          </button>
                           <button 
                             onClick={() => handleOpenDrawer(customer)}
                             className="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-primary"
@@ -371,12 +596,15 @@ export default function AdminCustomers() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100 transform scale-100 transition-all duration-300">
             <h3 className="text-title-lg font-bold text-on-surface">
-              {confirmDialog.type === "block" ? "Khóa tài khoản khách hàng?" : "Mở khóa tài khoản?"}
+              {confirmDialog.type === "block" ? "Khóa tài khoản khách hàng?" : 
+               confirmDialog.type === "unblock" ? "Mở khóa tài khoản?" : "Xóa khách hàng?"}
             </h3>
             <p className="text-body-md text-on-surface-variant mt-3 leading-relaxed">
               {confirmDialog.type === "block" 
                 ? `Bạn có chắc chắn muốn khóa tài khoản của khách hàng "${confirmDialog.customer.full_name}"? Khách hàng này sẽ không thể đăng nhập hoặc đặt dịch vụ mới.`
-                : `Mở khóa tài khoản cho khách hàng "${confirmDialog.customer.full_name}". Khách hàng có thể đăng nhập và sử dụng dịch vụ bình thường.`}
+                : confirmDialog.type === "unblock"
+                  ? `Mở khóa tài khoản cho khách hàng "${confirmDialog.customer.full_name}". Khách hàng có thể đăng nhập và sử dụng dịch vụ bình thường.`
+                  : `Bạn có chắc chắn muốn xóa khách hàng "${confirmDialog.customer.full_name}"? Hành động này sẽ xóa vĩnh viễn dữ liệu tài khoản khỏi hệ thống và không thể khôi phục.`}
             </p>
             <div className="flex justify-end gap-3 mt-6">
               <button 
@@ -387,18 +615,26 @@ export default function AdminCustomers() {
                 Hủy
               </button>
               <button 
-                onClick={() => handleUpdateStatus(
-                  confirmDialog.customer, 
-                  confirmDialog.type === "block" ? "blocked" : "active"
-                )}
+                onClick={() => {
+                  if (confirmDialog.type === "delete") {
+                    handleDeleteCustomer(confirmDialog.customer);
+                  } else {
+                    handleUpdateStatus(
+                      confirmDialog.customer, 
+                      confirmDialog.type === "block" ? "blocked" : "active"
+                    );
+                  }
+                }}
                 disabled={processing}
                 className={`px-5 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-sm ${
-                  confirmDialog.type === "block" 
+                  confirmDialog.type === "block" || confirmDialog.type === "delete"
                     ? "bg-rose-600 hover:bg-rose-700 shadow-rose-100" 
                     : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100"
                 }`}
               >
-                {processing ? "Đang xử lý..." : confirmDialog.type === "block" ? "Khóa tài khoản" : "Mở khóa"}
+                {processing ? "Đang xử lý..." : 
+                 confirmDialog.type === "block" ? "Khóa tài khoản" : 
+                 confirmDialog.type === "delete" ? "Xác nhận xóa" : "Mở khóa"}
               </button>
             </div>
           </div>
@@ -598,6 +834,310 @@ export default function AdminCustomers() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Add Customer Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fade-in-up flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
+                  <PlusIcon size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-on-surface">Thêm khách hàng mới</h3>
+                  <p className="text-xs text-on-surface-variant">Tạo tài khoản và hồ sơ cho khách hàng mới</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <form onSubmit={handleCreateCustomer} className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="space-y-4">
+                {/* Họ tên & Email */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Họ và tên <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nguyễn Văn A"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newCustomerFormData.name}
+                      onChange={(e) => setNewCustomerFormData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Email đăng nhập <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="khach@gmail.com"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newCustomerFormData.email}
+                      onChange={(e) => setNewCustomerFormData(prev => ({ ...prev, email: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Mật khẩu & Số điện thoại */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Mật khẩu <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Tối thiểu 6 ký tự"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newCustomerFormData.password}
+                      onChange={(e) => setNewCustomerFormData(prev => ({ ...prev, password: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Số điện thoại
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="09xx xxx xxx"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={newCustomerFormData.phone}
+                      onChange={(e) => setNewCustomerFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Địa chỉ */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-on-surface">
+                    Địa chỉ liên hệ
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Q.1, TP. Hồ Chí Minh"
+                    className="input-field !py-2.5 !rounded-xl text-sm"
+                    value={newCustomerFormData.address}
+                    onChange={(e) => setNewCustomerFormData(prev => ({ ...prev, address: e.target.value }))}
+                  />
+                </div>
+
+                {/* Trạng thái hoạt động */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-on-surface">
+                    Trạng thái kích hoạt
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setNewCustomerFormData(prev => ({ ...prev, status: "active" }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        newCustomerFormData.status === "active"
+                          ? "bg-success-container text-success border-success/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <CheckCircleIcon size={16} />
+                      Hoạt động
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewCustomerFormData(prev => ({ ...prev, status: "blocked" }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        newCustomerFormData.status === "blocked"
+                          ? "bg-error-container text-error border-error/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <XIcon size={16} />
+                      Đã khóa
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest -mx-6 -mb-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="btn-outline !py-2 !px-4 text-sm"
+                  disabled={processing}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary !py-2 !px-6 text-sm min-w-[120px]"
+                  disabled={processing}
+                >
+                  {processing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang xử lý...
+                    </span>
+                  ) : "Xác nhận thêm"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Customer Modal */}
+      {isEditModalOpen && editingCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fade-in-up flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
+                  <UserIcon size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-on-surface">Chỉnh sửa thông tin khách hàng</h3>
+                  <p className="text-xs text-on-surface-variant">Cập nhật hồ sơ và trạng thái của khách hàng</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <form onSubmit={handleUpdateCustomer} className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="space-y-4">
+                {/* Họ tên & Email (Disabled) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Họ và tên <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nguyễn Văn A"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={editCustomerFormData.name}
+                      onChange={(e) => setEditCustomerFormData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Email (Không thể thay đổi)
+                    </label>
+                    <input
+                      type="email"
+                      disabled
+                      className="input-field !py-2.5 !rounded-xl text-sm opacity-60 bg-surface-container cursor-not-allowed"
+                      value={editingCustomer.email || ""}
+                    />
+                  </div>
+                </div>
+
+                {/* Phone & Address */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Số điện thoại
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="09xx xxx xxx"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={editCustomerFormData.phone}
+                      onChange={(e) => setEditCustomerFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Địa chỉ liên hệ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Q.1, TP. Hồ Chí Minh"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={editCustomerFormData.address}
+                      onChange={(e) => setEditCustomerFormData(prev => ({ ...prev, address: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Trạng thái hoạt động */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-on-surface">
+                    Trạng thái kích hoạt
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditCustomerFormData(prev => ({ ...prev, status: "active" }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        editCustomerFormData.status === "active"
+                          ? "bg-success-container text-success border-success/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <CheckCircleIcon size={16} />
+                      Hoạt động
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditCustomerFormData(prev => ({ ...prev, status: "blocked" }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        editCustomerFormData.status === "blocked"
+                          ? "bg-error-container text-error border-error/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <XIcon size={16} />
+                      Đã khóa
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest -mx-6 -mb-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="btn-outline !py-2 !px-4 text-sm"
+                  disabled={processing}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary !py-2 !px-6 text-sm min-w-[120px]"
+                  disabled={processing}
+                >
+                  {processing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang xử lý...
+                    </span>
+                  ) : "Lưu thay đổi"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

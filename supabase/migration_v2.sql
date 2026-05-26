@@ -16,11 +16,21 @@ CREATE POLICY "Workers update own record" ON public.workers
   FOR UPDATE 
   USING (user_id = auth.uid());
 
--- 3. Ensure profiles table allows users to update their own profile
+-- 3. Ensure profiles table allows users to update their own profile and admin to manage all
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles 
   FOR UPDATE 
   USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Admins can update all profiles" ON public.profiles;
+CREATE POLICY "Admins can update all profiles" ON public.profiles 
+  FOR UPDATE 
+  USING (public.is_admin());
+
+DROP POLICY IF EXISTS "Admins can delete all profiles" ON public.profiles;
+CREATE POLICY "Admins can delete all profiles" ON public.profiles 
+  FOR DELETE 
+  USING (public.is_admin());
 
 -- 4. Add images column to ratings table for review photos
 ALTER TABLE public.ratings ADD COLUMN IF NOT EXISTS images TEXT[] DEFAULT '{}';
