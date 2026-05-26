@@ -11,6 +11,11 @@ CREATE POLICY "Workers view own record" ON public.workers
   FOR SELECT 
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Workers update own record" ON public.workers;
+CREATE POLICY "Workers update own record" ON public.workers 
+  FOR UPDATE 
+  USING (user_id = auth.uid());
+
 -- 3. Ensure profiles table allows users to update their own profile
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles 

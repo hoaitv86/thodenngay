@@ -90,6 +90,7 @@ function RegisterContent() {
         data: {
           full_name: formData.name,
           role: role,
+          specialties: role === 'worker' ? formData.specialties : [],
         }
       }
     });
