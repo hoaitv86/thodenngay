@@ -145,7 +145,7 @@ export default function CustomerBooking() {
   }
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100vh-8rem)] bg-surface animate-fade-in relative">
+    <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface animate-fade-in relative">
       {/* Toast Notification */}
       {toast.type && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-xl shadow-lg border animate-fade-in flex items-start gap-3 ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' : 'bg-error-container text-on-error-container border-error/30'
@@ -158,16 +158,16 @@ export default function CustomerBooking() {
       )}
 
       {/* Header */}
-      <div className="bg-[#003178] text-white pt-8 pb-12 px-6">
-        <h1 className="text-2xl font-bold">Đặt dịch vụ mới</h1>
-        <p className="opacity-80 text-sm mt-1">
+      <div className="bg-[#003178] text-white pt-7 pb-11 px-4 sm:px-6">
+        <h1 className="text-2xl font-bold leading-tight text-white">Đặt dịch vụ mới</h1>
+        <p className="opacity-80 text-sm mt-1 leading-6">
           Chúng tôi sẽ tìm thợ phù hợp nhất với yêu cầu của bạn.
         </p>
       </div>
 
       {/* Booking Form */}
-      <div className="flex-1 px-4 -mt-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-outline-variant p-6">
+      <div className="flex-1 px-4 -mt-6 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white rounded-2xl shadow-lg border border-outline-variant p-4 sm:p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
 
             {/* Service Selection */}
@@ -177,7 +177,7 @@ export default function CustomerBooking() {
                 Chọn loại dịch vụ <span className="text-error">*</span>
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
                 {services.map(service => {
                   const Icon = getIcon(service.icon);
                   const isSelected = formData.serviceId === service.id;
@@ -187,7 +187,7 @@ export default function CustomerBooking() {
                       key={service.id}
                       type="button"
                       onClick={() => setFormData({ ...formData, serviceId: service.id })}
-                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${isSelected
+                      className={`flex min-h-[116px] flex-col items-center justify-center p-3 rounded-xl border-2 transition-all sm:p-4 ${isSelected
                           ? 'border-primary-container bg-primary-fixed/30'
                           : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low'
                         }`}
@@ -255,7 +255,7 @@ export default function CustomerBooking() {
             <button
               type="submit"
               disabled={isSubmitting || !formData.serviceId || !formData.address || !formData.scheduledAt}
-              className="w-full btn-primary !py-4 !rounded-xl text-base flex items-center justify-center gap-2 mt-4 shadow-md shadow-primary-container/20 disabled:opacity-50 disabled:shadow-none"
+              className="w-full btn-primary !py-4 text-base flex items-center justify-center gap-2 mt-4 shadow-md shadow-primary-container/20 disabled:opacity-50 disabled:shadow-none"
             >
               {isSubmitting ? (
                 <span className="flex items-center gap-2">
@@ -272,7 +272,7 @@ export default function CustomerBooking() {
           </form>
         </div>
       </div>
-      <div className="h-24"></div> {/* Bottom padding for navigation */}
+      <div className="h-6"></div>
     </div>
   );
 }

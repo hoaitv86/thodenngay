@@ -83,17 +83,17 @@ export default function CustomerHome() {
   }, [supabase]);
 
   return (
-    <div className="space-y-6 px-4 pt-4">
+    <div className="space-y-6 px-4 pt-4 sm:mx-auto sm:max-w-md">
       {/* Greeting */}
-      <div className="bg-gradient-to-br from-primary-container to-primary rounded-2xl p-5 text-on-primary">
+      <div className="bg-gradient-to-br from-primary-container to-primary rounded-2xl p-5 text-on-primary shadow-lg shadow-primary/10">
         <p className="text-sm opacity-80">Xin chào 👋</p>
-        <h1 className="text-md mt-1">Bạn cần sửa gì?</h1>
+        <h1 className="mt-1 text-2xl font-bold leading-tight text-white">Bạn cần sửa gì?</h1>
         <p className="text-sm opacity-70 mt-1">
           Chọn dịch vụ bên dưới hoặc mô tả vấn đề
         </p>
         <Link
           href="/customer/booking"
-          className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-xl text-body-sm hover:opacity-90 transition-opacity shadow-sm"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 mt-4 px-5 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-xl text-sm hover:opacity-90 transition-opacity shadow-sm sm:w-auto"
         >
           Đặt dịch vụ ngay
           <ArrowRightIcon size={16} />
@@ -112,7 +112,7 @@ export default function CustomerHome() {
               <Link
                 key={svc.id}
                 href={`/customer/booking?service=${svc.id}`}
-                className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 hover:border-primary/30 hover:shadow-md transition-all active:scale-[0.98]"
+                className="min-h-[132px] bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 hover:border-primary/30 hover:shadow-md transition-all active:scale-[0.98]"
               >
                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 ${svc.color}`}>
                   <IconComponent size={22} />
@@ -160,4 +160,3 @@ export default function CustomerHome() {
     </div>
   );
 }
-

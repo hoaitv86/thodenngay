@@ -89,12 +89,12 @@ export default function CustomerJobs() {
                 key={job.id} 
                 className="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/20 shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
+                <div className="grid gap-3 mb-3 sm:flex sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary">
                       <Briefcase size={20} />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h3 className="text-body-sm font-bold text-on-surface">
                         {job.service?.name || "Dịch vụ"}
                       </h3>
@@ -103,7 +103,7 @@ export default function CustomerJobs() {
                       </p>
                     </div>
                   </div>
-                  <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${status.color}`}>
+                  <div className={`w-fit px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide flex items-center gap-1.5 ${status.color}`}>
                     <StatusIcon size={12} />
                     {status.label}
                   </div>
@@ -121,9 +121,9 @@ export default function CustomerJobs() {
                 )}
 
                 <div className="space-y-2 py-3 border-y border-outline-variant/10">
-                  <div className="flex items-center gap-2 text-on-surface-variant">
-                    <MapPin size={14} />
-                    <span className="text-body-xs truncate">{job.address}</span>
+                  <div className="flex items-start gap-2 text-on-surface-variant">
+                    <MapPin size={14} className="mt-0.5 shrink-0" />
+                    <span className="text-body-xs line-clamp-2">{job.address}</span>
                   </div>
                   <div className="flex items-center gap-2 text-on-surface-variant">
                     <Clock size={14} />
@@ -157,9 +157,9 @@ export default function CustomerJobs() {
               <Briefcase size={32} />
             </div>
             <p className="text-body-sm text-on-surface-variant font-medium">Bạn chưa có đơn đặt dịch vụ nào.</p>
-            <button className="mt-4 text-primary font-bold text-body-sm underline">
+            <Link href="/customer/booking" className="mt-4 inline-flex text-primary font-bold text-body-sm underline">
               Đặt dịch vụ ngay
-            </button>
+            </Link>
           </div>
         )}
       </div>

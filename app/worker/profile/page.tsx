@@ -75,16 +75,16 @@ export default function WorkerProfile() {
   const isActive = profile.worker?.status === 'active';
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100vh-8rem)] bg-surface pb-6 animate-fade-in">
+    <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface pb-6 animate-fade-in">
       {/* Header / Avatar */}
-      <div className="bg-[#003178] text-white pt-8 pb-16 px-6 relative">
+      <div className="bg-[#003178] text-white pt-7 pb-16 px-4 sm:px-6 relative">
         <div className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-full bg-white text-[#003178] flex items-center justify-center text-3xl font-extrabold shadow-lg shadow-black/10">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white text-[#003178] flex shrink-0 items-center justify-center text-2xl sm:text-3xl font-extrabold shadow-lg shadow-black/10">
             {profile.full_name ? profile.full_name[0] : "T"}
           </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold leading-tight">{profile.full_name || "Thợ chưa có tên"}</h1>
-            <p className="opacity-80 text-sm mt-1">{profile.email}</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words text-white">{profile.full_name || "Thợ chưa có tên"}</h1>
+            <p className="opacity-80 text-sm mt-1 break-all">{profile.email}</p>
             <div className="mt-2 inline-flex items-center gap-1.5 bg-black/20 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider">
               <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-success animate-pulse' : 'bg-amber-400'}`} />
               {isActive ? 'Đang hoạt động' : 'Chờ duyệt'}
@@ -127,12 +127,12 @@ export default function WorkerProfile() {
             <span className="text-body-sm font-bold text-on-surface">Thông tin liên hệ</span>
           </div>
           <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="grid gap-2 sm:flex sm:items-center sm:justify-between">
               <div className="flex items-center gap-3 text-on-surface-variant">
                 <PhoneIcon size={18} />
                 <span className="text-body-sm">Số điện thoại</span>
               </div>
-              <span className="text-body-sm font-medium text-on-surface">{profile.phone || 'Chưa cập nhật'}</span>
+              <span className="text-body-sm font-medium text-on-surface break-all sm:text-right">{profile.phone || 'Chưa cập nhật'}</span>
             </div>
           </div>
         </div>

@@ -198,7 +198,7 @@ export default function JobDetailPage() {
 
       <main className="flex-1 p-4 space-y-6 pb-10">
         {/* Status Card */}
-        <div className="card-elevated !p-6 flex flex-col items-center text-center space-y-3">
+        <div className="card-elevated !p-5 sm:!p-6 flex flex-col items-center text-center space-y-3">
           <div className="w-16 h-16 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container">
             <ShieldCheck size={32} />
           </div>
@@ -215,7 +215,7 @@ export default function JobDetailPage() {
         {/* Service Info */}
         <div className="space-y-4">
           <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Thông tin dịch vụ</h3>
-          <div className="card !p-5 flex items-center gap-4">
+          <div className="card !p-4 sm:!p-5 flex items-center gap-3 sm:gap-4">
             <div className="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-primary-container shrink-0">
               <Briefcase size={24} />
             </div>
@@ -223,7 +223,7 @@ export default function JobDetailPage() {
               <p className="text-body-md font-bold text-on-surface truncate">{job.service?.name}</p>
               <p className="text-label-sm text-on-surface-variant">{job.service?.description}</p>
             </div>
-            <div className="text-body-md font-bold text-primary-container">
+            <div className="shrink-0 text-sm sm:text-body-md font-bold text-primary-container">
               {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(job.quoted_price)}
             </div>
           </div>
@@ -257,8 +257,8 @@ export default function JobDetailPage() {
               <div className="w-14 h-14 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container font-bold text-lg">
                 {job.worker.user?.full_name?.charAt(0)}
               </div>
-              <div className="flex-1">
-                <p className="text-body-md font-bold text-on-surface">{job.worker.user?.full_name}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-body-md font-bold text-on-surface truncate">{job.worker.user?.full_name}</p>
                 <div className="flex items-center gap-1 text-warning">
                   <Star size={14} className="fill-current" />
                   <span className="text-label-sm font-bold">{job.worker.avg_rating}</span>
@@ -276,8 +276,8 @@ export default function JobDetailPage() {
         {job.description && (
           <div className="space-y-2">
             <p className="text-label-sm font-bold text-on-surface-variant uppercase tracking-wider opacity-60">Mô tả vấn đề</p>
-            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic">
-              "{job.description}"
+            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic break-words">
+              &ldquo;{job.description}&rdquo;
             </div>
           </div>
         )}
@@ -321,7 +321,7 @@ export default function JobDetailPage() {
                   </span>
                 </div>
                 {job.ratings[0].comment ? (
-                  <p className="text-body-sm text-on-surface-variant italic">"{job.ratings[0].comment}"</p>
+                  <p className="text-body-sm text-on-surface-variant italic break-words">&ldquo;{job.ratings[0].comment}&rdquo;</p>
                 ) : (
                   <p className="text-body-sm text-on-surface-variant/60 italic">Không có bình luận.</p>
                 )}
@@ -406,7 +406,7 @@ export default function JobDetailPage() {
 
                   {/* Previews */}
                   {ratingPreviews.length > 0 && (
-                    <div className="grid grid-cols-4 gap-1.5 mt-2">
+                    <div className="grid grid-cols-3 gap-1.5 mt-2 sm:grid-cols-4">
                       {ratingPreviews.map((url, idx) => (
                         <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 group">
                           <img src={url} alt="Preview" className="w-full h-full object-cover" />
@@ -427,7 +427,7 @@ export default function JobDetailPage() {
                 <button
                   type="submit"
                   disabled={submittingRating}
-                  className="w-full btn-primary !py-3 rounded-xl! text-sm font-bold flex items-center justify-center gap-2"
+                  className="w-full btn-primary !py-3 text-sm font-bold flex items-center justify-center gap-2"
                 >
                   {submittingRating ? (
                     <span className="flex items-center gap-2">

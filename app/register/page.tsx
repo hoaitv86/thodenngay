@@ -193,26 +193,26 @@ function RegisterContent() {
       </div>
 
       {/* Right Panel - Register Form */}
-      <div className="flex-1 w-full flex items-center justify-center p-6 bg-[#f9f9fc] overflow-y-auto">
-        <div className="w-full max-w-[500px] mx-auto py-8">
+      <div className="flex-1 w-full flex items-center justify-center bg-[#f9f9fc] p-4 sm:p-6 overflow-y-auto">
+        <div className="w-full max-w-[500px] mx-auto py-6 sm:py-8">
           {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center gap-3 mb-8">
+          <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
             <span className="text-2xl font-bold text-[#003178]">Alo Thợ</span>
           </div>
 
-          <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-[0_20px_50px_rgba(0,49,120,0.05)] border border-slate-100">
-            <div className="mb-8 text-center sm:text-left">
-              <h1 className="text-3xl font-bold text-[#1a1c1e] mb-2">Đăng ký</h1>
+          <div className="bg-white p-5 sm:p-10 rounded-2xl shadow-[0_20px_50px_rgba(0,49,120,0.05)] border border-slate-100">
+            <div className="mb-7 text-center sm:text-left">
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#1a1c1e] mb-2">Đăng ký</h1>
               <p className="text-[#434652]">Tạo tài khoản mới để bắt đầu sử dụng</p>
             </div>
 
             {/* Role Toggle */}
-            <div className="flex p-1.5 bg-[#f3f3f6] rounded-xl mb-8">
+            <div className="grid grid-cols-2 gap-1.5 p-1.5 bg-[#f3f3f6] rounded-xl mb-7">
               <button
                 type="button"
                 onClick={() => setRole("customer")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-lg text-sm font-semibold transition-all ${role === "customer"
+                className={`flex min-w-0 items-center justify-center gap-2 py-3 px-2 rounded-lg text-sm font-semibold transition-all sm:py-3.5 sm:px-4 ${role === "customer"
                     ? "bg-white text-[#003178] shadow-sm"
                     : "text-[#434652] hover:text-[#1a1c1e]"
                   }`}
@@ -223,7 +223,7 @@ function RegisterContent() {
               <button
                 type="button"
                 onClick={() => setRole("worker")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 px-4 rounded-lg text-sm font-semibold transition-all ${role === "worker"
+                className={`flex min-w-0 items-center justify-center gap-2 py-3 px-2 rounded-lg text-sm font-semibold transition-all sm:py-3.5 sm:px-4 ${role === "worker"
                     ? "bg-white text-[#003178] shadow-sm"
                     : "text-[#434652] hover:text-[#1a1c1e]"
                   }`}
@@ -233,8 +233,8 @@ function RegisterContent() {
               </button>
             </div>
 
-            <form onSubmit={handleRegister} className="space-y-6">
-              <div className="grid grid-cols-1 gap-6">
+            <form onSubmit={handleRegister} className="space-y-5 sm:space-y-6">
+              <div className="grid grid-cols-1 gap-5 sm:gap-6">
                 <div>
                   <label className="block text-sm font-semibold text-[#1a1c1e] mb-2">
                     Họ và tên
@@ -307,13 +307,13 @@ function RegisterContent() {
                     <label className="block text-sm font-semibold text-[#1a1c1e] mb-3">
                       Chuyên môn <span className="text-[#ba1a1a]">*</span>
                     </label>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                       {specialtyOptions.map((sp) => (
                         <button
                           key={sp}
                           type="button"
                           onClick={() => toggleSpecialty(sp)}
-                          className={`px-4 py-2.5 rounded-xl text-sm transition-all border ${formData.specialties.includes(sp)
+                          className={`px-3 py-2.5 rounded-xl text-sm transition-all border ${formData.specialties.includes(sp)
                               ? "bg-[#003178] border-[#003178] text-white shadow-md font-semibold"
                               : "bg-[#f3f3f6] border-transparent text-[#434652] hover:border-[#003178]/30"
                             }`}
@@ -352,7 +352,7 @@ function RegisterContent() {
               </button>
             </form>
 
-            <div className="mt-8 pt-8 border-t border-slate-100 text-center">
+            <div className="mt-7 pt-7 border-t border-slate-100 text-center">
               <p className="text-sm text-[#434652]">
                 Đã có tài khoản?{" "}
                 <Link

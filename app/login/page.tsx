@@ -111,21 +111,21 @@ export default function LoginPage() {
       </div>
 
       {/* Right Panel - Login Form */}
-      <div className="flex-1 w-full flex items-center justify-center p-6 bg-[#f9f9fc]">
-        <div className="w-full max-w-[440px] mx-auto py-8">
+      <div className="flex-1 w-full flex items-center justify-center bg-[#f9f9fc] p-4 sm:p-6">
+        <div className="w-full max-w-[440px] mx-auto py-6 sm:py-8">
           {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center gap-3 mb-10">
+          <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
             <span className="text-2xl font-bold text-[#003178]">Alo Thợ</span>
           </div>
 
-          <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-[0_20px_50px_rgba(0,49,120,0.05)] border border-slate-100">
-            <div className="mb-8 text-center sm:text-left">
-              <h1 className="text-3xl font-bold text-[#1a1c1e] mb-2">Đăng nhập</h1>
+          <div className="bg-white p-5 sm:p-10 rounded-2xl shadow-[0_20px_50px_rgba(0,49,120,0.05)] border border-slate-100">
+            <div className="mb-7 text-center sm:text-left">
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#1a1c1e] mb-2">Đăng nhập</h1>
               <p className="text-[#434652]">Chào mừng bạn trở lại với Alo Thợ</p>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-6">
+            <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-[#1a1c1e] mb-2">
                   Email
@@ -191,20 +191,20 @@ export default function LoginPage() {
             </div>
 
             {/* Demo Accounts Info */}
-            <div className="mt-10 p-4 bg-blue-50 border border-blue-100 rounded-xl text-left">
+            <div className="mt-8 p-4 bg-blue-50 border border-blue-100 rounded-xl text-left">
               <p className="text-xs font-bold text-[#003178] uppercase tracking-wider mb-2">Tài khoản dùng thử (Pass: 123456)</p>
               <div className="grid grid-cols-1 gap-2 text-xs text-[#434652]">
-                <div className="flex justify-between">
+                <div className="grid gap-1 sm:flex sm:justify-between">
                   <span>Admin:</span>
-                  <span className="font-mono font-bold">admin@alotho.local</span>
+                  <span className="font-mono font-bold break-all">admin@alotho.local</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="grid gap-1 sm:flex sm:justify-between">
                   <span>Thợ (Worker):</span>
-                  <span className="font-mono font-bold">worker@alotho.local</span>
+                  <span className="font-mono font-bold break-all">worker@alotho.local</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="grid gap-1 sm:flex sm:justify-between">
                   <span>Khách (Customer):</span>
-                  <span className="font-mono font-bold">customer@alotho.local</span>
+                  <span className="font-mono font-bold break-all">customer@alotho.local</span>
                 </div>
               </div>
             </div>

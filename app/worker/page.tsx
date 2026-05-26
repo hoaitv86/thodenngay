@@ -291,32 +291,32 @@ export default function WorkerDashboard() {
 
       {/* Stats Bar */}
       <div className="p-4">
-        <div className="card-elevated !p-5 bg-gradient-to-br from-[#003178] to-[#0d47a1] text-white flex justify-around rounded-2xl shadow-xl shadow-blue-900/10">
-          <div className="text-center">
-            <div className="text-3xl font-extrabold">{workerStats.jobsDone}</div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">Jobs tháng</div>
+        <div className="card-elevated !p-4 bg-gradient-to-br from-[#003178] to-[#0d47a1] text-white grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-2xl shadow-xl shadow-blue-900/10 sm:!p-5">
+          <div className="min-w-0 text-center">
+            <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.jobsDone}</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs tháng</div>
           </div>
           <div className="h-12 w-px bg-white/20 self-center" />
-          <div className="text-center">
-            <div className="text-3xl font-extrabold">{workerStats.rating}</div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1 flex items-center justify-center gap-1">
+          <div className="min-w-0 text-center">
+            <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.rating}</div>
+            <div className="mt-1 flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">
               Rating <StarIcon size={10} className="fill-current text-amber-400" />
             </div>
           </div>
           <div className="h-12 w-px bg-white/20 self-center" />
-          <div className="text-center">
-            <div className="text-xl font-extrabold text-amber-400 leading-9">
+          <div className="min-w-0 text-center">
+            <div className="text-lg font-extrabold text-amber-400 leading-8 sm:text-xl">
               {workerStats.income >= 1000000
                 ? (workerStats.income / 1000000).toFixed(1) + 'tr'
                 : (workerStats.income / 1000).toFixed(0) + 'k'}
             </div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">Thu nhập</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Thu nhập</div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="px-4 flex gap-8 border-b border-outline-variant">
+      <div className="px-4 flex gap-8 border-b border-outline-variant overflow-x-auto">
         <button
           onClick={() => setTab("new")}
           className={`pb-4 text-label-md font-bold transition-all relative ${tab === "new" ? "text-primary-container" : "text-on-surface-variant"}`}
@@ -340,7 +340,7 @@ export default function WorkerDashboard() {
           newJobs.length > 0 ? (
             newJobs.map(job => (
               <div key={job.id} className="card animate-fade-in-up space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary-container">
                       <job.icon size={20} />
@@ -350,13 +350,13 @@ export default function WorkerDashboard() {
                       <div className="text-label-sm text-on-surface-variant">{job.job_code}</div>
                     </div>
                   </div>
-                  <div className="text-headline-md text-primary-container">{job.price}</div>
+                  <div className="shrink-0 text-right text-lg font-bold text-primary-container">{job.price}</div>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-on-surface-variant">
-                    <MapPinIcon size={14} />
-                    <span className="text-body-sm">{job.address}</span>
+                  <div className="flex items-start gap-2 text-on-surface-variant">
+                    <MapPinIcon size={14} className="mt-1 shrink-0" />
+                    <span className="min-w-0 flex-1 text-body-sm leading-6">{job.address}</span>
                     <span className="text-label-sm px-1.5 py-0.5 bg-surface-container rounded-md">~{job.distance}</span>
                   </div>
                   <div className="flex items-center gap-2 text-on-surface-variant">
@@ -368,13 +368,13 @@ export default function WorkerDashboard() {
                 <div className="flex gap-3 pt-2">
                   <button 
                     onClick={() => handleDeclineJob(job.id)}
-                    className="flex-1 btn-outline py-2.5 rounded-xl! text-error border-error/20 hover:bg-error-container"
+                    className="flex-1 btn-outline !w-auto !py-2.5 text-error border-error/20 hover:bg-error-container"
                   >
                     Từ chối
                   </button>
                   <button 
                     onClick={() => handleAcceptJob(job.id)}
-                    className="flex-2 btn-primary py-2.5! rounded-xl!"
+                    className="flex-[2] btn-primary !w-auto !py-2.5"
                   >
                     Nhận việc
                   </button>
@@ -391,16 +391,16 @@ export default function WorkerDashboard() {
           )
         ) : (
           activeJobs.map(job => (
-            <div key={job.id} className="card-elevated border-l-4 border-primary-container p-5! space-y-4">
-              <div className="flex items-center justify-between">
-                <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in-progress'} uppercase text-[10px]`}>
+            <div key={job.id} className="card-elevated border-l-4 border-primary-container !p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
                   {job.status === 'assigned' ? 'Mới nhận' : 'Đang thực hiện'}
                 </span>
                 <button className="text-primary-container font-bold text-body-sm">Chi tiết</button>
               </div>
 
-              <div>
-                <h3 className="text-body-md font-bold text-on-surface">{job.customerName}</h3>
+              <div className="min-w-0">
+                <h3 className="text-body-md font-bold text-on-surface truncate">{job.customerName}</h3>
                 <p className="text-body-sm text-on-surface-variant mb-2">{job.serviceName}</p>
                 <div className="flex items-start gap-2 text-label-sm text-on-surface-variant bg-surface-container-lowest p-2 rounded-lg ">
                   <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
@@ -514,7 +514,7 @@ export default function WorkerDashboard() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
+            <div className="p-4 sm:p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
               <button 
                 type="button"
                 onClick={() => {
@@ -522,7 +522,7 @@ export default function WorkerDashboard() {
                   setSelectedFiles([]);
                   setPreviewUrls([]);
                 }}
-                className="btn-outline !py-2 !px-4 text-sm"
+                className="btn-outline !w-auto flex-1 !py-2 !px-4 text-sm sm:flex-none"
                 disabled={uploadingImages}
               >
                 Hủy bỏ
@@ -530,7 +530,7 @@ export default function WorkerDashboard() {
               <button 
                 type="button" 
                 onClick={handleConfirmCompleteJob}
-                className="btn-primary !py-2 !px-5 text-sm !bg-success !border-success min-w-[140px]"
+                className="btn-primary !w-auto flex-[1.4] !py-2 !px-5 text-sm !bg-success !border-success sm:min-w-[140px] sm:flex-none"
                 disabled={uploadingImages}
               >
                 {uploadingImages ? (

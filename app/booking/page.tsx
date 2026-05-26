@@ -111,14 +111,14 @@ export default function BookingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col">
+    <div className="min-h-dvh bg-surface flex flex-col">
       {/* Header */}
-      <header className="h-16 glass sticky top-0 z-50 flex items-center px-6">
+      <header className="h-16 glass sticky top-0 z-50 flex items-center px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2">
           <LogoIcon size={32} />
-          <span className="font-bold text-lg text-primary-container">Alo Thợ</span>
+          <span className="font-bold text-base sm:text-lg text-primary-container">Alo Thợ</span>
         </Link>
-        <div className="flex-1 flex justify-center">
+        <div className="flex-1 flex justify-center px-3">
           <div className="flex items-center gap-3">
             {[1, 2, 3].map((s) => (
               <div 
@@ -133,11 +133,11 @@ export default function BookingPage() {
         </button>
       </header>
 
-      <main className="flex-1 max-w-2xl mx-auto w-full p-6 py-10">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 sm:p-6 sm:py-10">
         {step === 1 && (
           <div className="animate-fade-in">
             <h1 className="text-headline-lg mb-2">Bạn cần sửa gì?</h1>
-            <p className="text-body-md text-on-surface-variant mb-8">Chọn loại dịch vụ bạn đang gặp vấn đề để Alo Thợ hỗ trợ tốt nhất.</p>
+            <p className="text-body-md text-on-surface-variant mb-6 sm:mb-8">Chọn loại dịch vụ bạn đang gặp vấn đề để Alo Thợ hỗ trợ tốt nhất.</p>
             
             <div className="grid grid-cols-1 gap-4">
               {services.map((svc) => {
@@ -146,20 +146,20 @@ export default function BookingPage() {
                   <button
                     key={svc.id}
                     onClick={() => setSelectedService(svc)}
-                    className={`flex items-center gap-5 p-5 card text-left transition-all ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : ''}`}
+                    className={`card flex items-center gap-3 p-4 text-left transition-all sm:gap-5 sm:p-5 ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : ''}`}
                   >
                     <div 
-                      className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 sm:w-14 sm:h-14"
                       style={{ backgroundColor: svc.bgColor, color: svc.color }}
                     >
                       <svc.iconComponent size={28} />
                     </div>
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
                       <h3 className="font-bold text-on-surface">{svc.name}</h3>
-                      <p className="text-body-sm text-on-surface-variant">{svc.description}</p>
+                      <p className="text-body-sm text-on-surface-variant line-clamp-2">{svc.description}</p>
                       <div className="text-label-sm text-primary-container mt-1 font-semibold">Từ {svc.formattedPrice}</div>
                     </div>
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-outline-variant'}`}>
+                    <div className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-outline-variant'}`}>
                       {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
                     </div>
                   </button>
@@ -167,7 +167,7 @@ export default function BookingPage() {
               })}
             </div>
 
-            <div className="mt-10 sticky bottom-6">
+            <div className="mt-8 sticky bottom-4 sm:bottom-6">
               <button 
                 onClick={handleNext}
                 disabled={!selectedService}
@@ -186,7 +186,7 @@ export default function BookingPage() {
               ← Quay lại
             </button>
             <h1 className="text-headline-lg mb-2">Địa chỉ & Thời gian</h1>
-            <p className="text-body-md text-on-surface-variant mb-8">Cho chúng tôi biết thợ cần đến đâu và khi nào.</p>
+            <p className="text-body-md text-on-surface-variant mb-6 sm:mb-8">Cho chúng tôi biết thợ cần đến đâu và khi nào.</p>
 
             <div className="space-y-6">
               <div className="space-y-2">
@@ -252,9 +252,9 @@ export default function BookingPage() {
               ← Quay lại
             </button>
             <h1 className="text-headline-lg mb-2">Xác nhận đặt lịch</h1>
-            <p className="text-body-md text-on-surface-variant mb-8">Kiểm tra lại thông tin trước khi gửi yêu cầu cho thợ.</p>
+            <p className="text-body-md text-on-surface-variant mb-6 sm:mb-8">Kiểm tra lại thông tin trước khi gửi yêu cầu cho thợ.</p>
 
-            <div className="card-elevated !p-6 space-y-6 mb-8">
+            <div className="card-elevated !p-4 sm:!p-6 space-y-6 mb-8">
               <div className="flex items-center gap-4 border-b border-outline-variant pb-4">
                 <div 
                   className="w-12 h-12 rounded-xl flex items-center justify-center"
@@ -304,7 +304,7 @@ export default function BookingPage() {
 
               <div className="bg-primary-fixed/30 p-4 rounded-xl flex justify-between items-center">
                 <span className="text-body-sm font-semibold text-primary-container">Giá ước tính</span>
-                <span className="text-headline-md text-primary-container">{selectedService.price}</span>
+                <span className="text-xl font-bold text-primary-container sm:text-headline-md">{selectedService.formattedPrice}</span>
               </div>
             </div>
 

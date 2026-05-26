@@ -80,12 +80,33 @@ html {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-size-adjust: 100%;
 }
 
 body {
   background-color: var(--color-surface);
   color: var(--color-on-surface);
   min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
 }
 
 /* ===== Component Utilities (Stitch Design System) ===== */
@@ -93,15 +114,15 @@ body {
 /* Buttons */
 @layer components {
   .btn-primary {
-    @apply flex items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-xl font-bold transition-all hover:bg-primary-container active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-primary/20;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-xl font-bold transition-all hover:bg-primary-container active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-primary/20;
   }
   
   .btn-secondary {
-    @apply flex items-center justify-center gap-2 px-6 py-3 bg-secondary-container text-white rounded-xl font-bold transition-all hover:brightness-110 active:scale-95 shadow-lg shadow-secondary-container/20;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 px-6 py-3 bg-secondary-container text-white rounded-xl font-bold transition-all hover:brightness-110 active:scale-95 shadow-lg shadow-secondary-container/20;
   }
   
   .btn-outline {
-    @apply flex items-center justify-center gap-2 px-6 py-3 border-2 border-outline-variant text-on-surface-variant rounded-xl font-bold transition-all hover:bg-surface-container-low hover:border-primary-container hover:text-primary-container;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 px-6 py-3 border-2 border-outline-variant text-on-surface-variant rounded-xl font-bold transition-all hover:bg-surface-container-low hover:border-primary-container hover:text-primary-container;
   }
 
   /* Cards */
@@ -158,10 +179,95 @@ body {
 }
 
 /* Typography Overrides */
-.text-headline-lg { @apply text-3xl font-bold tracking-tight text-on-surface; }
-.text-headline-md { @apply text-2xl font-bold tracking-tight text-on-surface; }
+.text-headline-lg { @apply text-3xl sm:text-4xl font-bold tracking-tight text-on-surface leading-tight; }
+.text-headline-md { @apply text-2xl font-bold tracking-tight text-on-surface leading-tight; }
 .text-body-lg { @apply text-lg text-on-surface-variant; }
 .text-body-md { @apply text-base text-on-surface-variant; }
 .text-body-sm { @apply text-sm text-on-surface-variant; }
 .text-body-xs { @apply text-xs text-on-surface-variant; }
-.text-label-md { @apply text-sm font-bold uppercase tracking-wider text-on-surface-variant; }
+.text-label-sm { @apply text-xs font-semibold text-on-surface-variant; }
+.text-label-md { @apply text-sm font-bold uppercase tracking-wide text-on-surface-variant; }
+
+.text-white .text-body-lg,
+.text-white .text-body-md,
+.text-white .text-body-sm,
+.text-white .text-body-xs,
+.text-white .text-label-sm,
+.text-white .text-label-md,
+.text-on-primary .text-body-lg,
+.text-on-primary .text-body-md,
+.text-on-primary .text-body-sm,
+.text-on-primary .text-body-xs,
+.text-on-primary .text-label-sm,
+.text-on-primary .text-label-md {
+  color: inherit;
+}
+
+.text-label-sm.text-white\/40,
+.text-label-md.text-white\/40,
+.text-body-sm.text-white\/40,
+.text-body-md.text-white\/40 {
+  color: rgb(255 255 255 / 0.4);
+}
+
+.text-label-sm.text-white\/60,
+.text-label-md.text-white\/60,
+.text-body-sm.text-white\/60,
+.text-body-md.text-white\/60 {
+  color: rgb(255 255 255 / 0.6);
+}
+
+.text-label-sm.text-white\/70,
+.text-label-md.text-white\/70,
+.text-body-sm.text-white\/70,
+.text-body-md.text-white\/70 {
+  color: rgb(255 255 255 / 0.7);
+}
+
+.text-label-sm.text-white\/80,
+.text-label-md.text-white\/80,
+.text-body-sm.text-white\/80,
+.text-body-md.text-white\/80 {
+  color: rgb(255 255 255 / 0.8);
+}
+
+.text-label-sm.text-white\/90,
+.text-label-md.text-white\/90,
+.text-body-sm.text-white\/90,
+.text-body-md.text-white\/90 {
+  color: rgb(255 255 255 / 0.9);
+}
+
+@media (max-width: 640px) {
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline {
+    width: 100%;
+    min-height: 46px;
+    padding: 0.75rem 1rem;
+    border-radius: 0.875rem;
+  }
+
+  .card,
+  .card-elevated {
+    padding: 1rem;
+    border-radius: 1rem;
+  }
+
+  .text-headline-lg {
+    font-size: 1.75rem;
+  }
+
+  .text-headline-md {
+    font-size: 1.375rem;
+  }
+
+  .text-body-lg {
+    font-size: 1rem;
+    line-height: 1.625;
+  }
+
+  .badge {
+    letter-spacing: 0;
+  }
+}

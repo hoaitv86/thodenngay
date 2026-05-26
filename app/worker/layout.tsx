@@ -45,9 +45,9 @@ export default function WorkerLayout({
   };
 
   return (
-    <div className="flex flex-col w-full min-h-screen max-w-md mx-auto bg-surface border-x border-outline-variant shadow-2xl relative">
+    <div className="flex flex-col w-full min-h-dvh max-w-md mx-auto bg-surface sm:border-x sm:border-outline-variant sm:shadow-2xl relative">
       {/* Premium Header */}
-      <header className="sticky top-0 z-50 glass h-16 flex items-center justify-between px-6">
+      <header className="sticky top-0 z-50 glass h-16 flex items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#003178] flex items-center justify-center shadow-lg shadow-blue-900/20">
             <LogoIcon size={24} />
@@ -77,12 +77,12 @@ export default function WorkerLayout({
       </header>
 
       {/* Page Content */}
-      <main className="flex-1 overflow-y-auto pb-24 bg-surface">
+      <main className="flex-1 overflow-y-auto pb-[calc(5.5rem+env(safe-area-inset-bottom))] bg-surface">
         {children}
       </main>
 
       {/* Premium Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-xl border-t border-outline-variant/30 z-50">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-xl border-t border-outline-variant/30 z-50 pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-cols-4 h-20">
           {[
             { href: "/worker", label: "Việc làm", icon: LayoutDashboardIcon },
@@ -95,13 +95,13 @@ export default function WorkerLayout({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center justify-center gap-1.5 transition-all ${isActive
-                  ? "text-[#003178] scale-110"
+                className={`min-w-0 flex flex-col items-center justify-center gap-1.5 transition-all ${isActive
+                  ? "text-[#003178]"
                   : "text-[#434652] hover:bg-slate-50"
                   }`}
               >
                 <item.icon size={22} className={isActive ? "stroke-[2.5px]" : ""} />
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? "opacity-100" : "opacity-60"}`}>
+                <span className={`max-w-full truncate text-[10px] font-bold uppercase tracking-wide ${isActive ? "opacity-100" : "opacity-60"}`}>
                   {item.label}
                 </span>
               </Link>

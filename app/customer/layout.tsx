@@ -44,7 +44,7 @@ export default function CustomerLayout({
   };
 
   return (
-    <div className="flex flex-col min-h-screen w-full bg-surface relative">
+    <div className="flex flex-col min-h-dvh w-full bg-surface relative">
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant/20 px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -64,27 +64,27 @@ export default function CustomerLayout({
       </header>
 
       {/* Page Content */}
-      <main className="flex-1 overflow-y-auto pb-20">
+      <main className="flex-1 overflow-y-auto pb-[calc(5rem+env(safe-area-inset-bottom))]">
         {children}
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-surface-container-lowest/95 backdrop-blur-xl border-t border-outline-variant/20 z-30">
-        <div className="flex items-center justify-around h-16 px-2">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-surface-container-lowest/95 backdrop-blur-xl border-t border-outline-variant/20 z-30 pb-[env(safe-area-inset-bottom)]">
+        <div className="grid grid-cols-4 h-16 px-1">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-lg transition-colors ${
+                className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 transition-colors ${
                   isActive
                     ? "text-primary"
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
                 <item.icon className={`w-5 h-5 ${isActive ? "stroke-[2.5]" : ""}`} />
-                <span className="text-[11px] font-medium">{item.label}</span>
+                <span className="max-w-full truncate text-[10px] font-semibold sm:text-[11px]">{item.label}</span>
               </Link>
             );
           })}

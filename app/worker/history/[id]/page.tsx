@@ -68,7 +68,7 @@ export default function WorkerJobDetailPage() {
   const scheduledDate = new Date(job.scheduled_at);
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100vh-8rem)] bg-surface animate-fade-in">
+    <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface animate-fade-in">
       {/* Header */}
       <div className="sticky top-16 z-40 bg-white/90 backdrop-blur-md border-b border-outline-variant/20 px-4 h-14 flex items-center gap-4">
         <button onClick={() => router.back()} className="p-2 hover:bg-surface-container rounded-full transition-colors -ml-2">
@@ -79,7 +79,7 @@ export default function WorkerJobDetailPage() {
 
       <div className="flex-1 p-4 space-y-6 pb-10">
         {/* Status Hero */}
-        <div className={`rounded-2xl p-6 flex flex-col items-center text-center space-y-3 border ${
+        <div className={`rounded-2xl p-5 sm:p-6 flex flex-col items-center text-center space-y-3 border ${
           isCompleted 
             ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50' 
             : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200/50'
@@ -95,7 +95,7 @@ export default function WorkerJobDetailPage() {
             <h2 className="text-xl font-bold text-on-surface">
               {isCompleted ? 'Đã hoàn thành' : 'Đã hủy'}
             </h2>
-            <p className="text-label-md text-on-surface-variant font-medium mt-1 font-mono">{job.job_code}</p>
+            <p className="text-label-md text-on-surface-variant font-medium mt-1 font-mono break-all">{job.job_code}</p>
           </div>
           <div className={`text-2xl font-extrabold ${isCompleted ? 'text-success' : 'text-error'}`}>
             {formattedPrice}
@@ -105,7 +105,7 @@ export default function WorkerJobDetailPage() {
         {/* Service Info */}
         <div className="space-y-3">
           <h3 className="text-label-sm font-bold text-on-surface-variant uppercase tracking-widest">Dịch vụ</h3>
-          <div className="card !p-4 flex items-center gap-4">
+          <div className="card !p-4 flex items-center gap-3 sm:gap-4">
             <div className="w-12 h-12 rounded-xl bg-primary-fixed flex items-center justify-center text-primary-container shrink-0">
               <BriefcaseIcon size={24} />
             </div>
@@ -126,7 +126,7 @@ export default function WorkerJobDetailPage() {
               {(customerName || 'K').charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-body-md font-bold text-on-surface">{customerName || 'Khách vãng lai'}</p>
+              <p className="text-body-md font-bold text-on-surface truncate">{customerName || 'Khách vãng lai'}</p>
               {customerPhone && (
                 <p className="text-label-sm text-on-surface-variant">{customerPhone}</p>
               )}
@@ -153,9 +153,9 @@ export default function WorkerJobDetailPage() {
                 <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0 mt-0.5">
                   <MapPinIcon size={18} />
                 </div>
-                <div>
-                  <p className="text-label-xs font-bold uppercase tracking-widest text-on-surface-variant/60">Địa chỉ thi công</p>
-                  <p className="text-body-sm font-medium text-on-surface mt-0.5">{job.address}</p>
+              <div className="min-w-0">
+                <p className="text-label-xs font-bold uppercase tracking-widest text-on-surface-variant/60">Địa chỉ thi công</p>
+                  <p className="text-body-sm font-medium text-on-surface mt-0.5 break-words">{job.address}</p>
                 </div>
               </div>
             )}
@@ -165,9 +165,9 @@ export default function WorkerJobDetailPage() {
               <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0 mt-0.5">
                 <CalendarIcon size={18} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-label-xs font-bold uppercase tracking-widest text-on-surface-variant/60">Lịch hẹn</p>
-                <p className="text-body-sm font-medium text-on-surface mt-0.5">
+                <p className="text-body-sm font-medium text-on-surface mt-0.5 break-words">
                   {scheduledDate.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
                   {' — '}
                   {scheduledDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
@@ -182,11 +182,11 @@ export default function WorkerJobDetailPage() {
               }`}>
                 <ClockIcon size={18} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-label-xs font-bold uppercase tracking-widest text-on-surface-variant/60">
                   {isCompleted ? 'Thời gian hoàn thành' : 'Thời gian hủy'}
                 </p>
-                <p className="text-body-sm font-medium text-on-surface mt-0.5">
+                <p className="text-body-sm font-medium text-on-surface mt-0.5 break-words">
                   {completedDate.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
                   {' — '}
                   {completedDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
@@ -211,8 +211,8 @@ export default function WorkerJobDetailPage() {
         {job.description && (
           <div className="space-y-3">
             <h3 className="text-label-sm font-bold text-on-surface-variant uppercase tracking-widest">Mô tả công việc</h3>
-            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic leading-relaxed">
-              "{job.description}"
+            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic leading-relaxed break-words">
+              &ldquo;{job.description}&rdquo;
             </div>
           </div>
         )}
@@ -265,7 +265,7 @@ export default function WorkerJobDetailPage() {
                 </span>
               </div>
               {job.ratings[0].comment ? (
-                <p className="text-body-sm text-on-surface-variant italic leading-relaxed">"{job.ratings[0].comment}"</p>
+                <p className="text-body-sm text-on-surface-variant italic leading-relaxed break-words">&ldquo;{job.ratings[0].comment}&rdquo;</p>
               ) : (
                 <p className="text-body-sm text-on-surface-variant/50 italic">Khách hàng không để lại bình luận.</p>
               )}
@@ -297,7 +297,7 @@ export default function WorkerJobDetailPage() {
         <div className="pt-4">
           <button 
             onClick={() => router.push('/worker/history')} 
-            className="w-full btn-outline !py-3.5 !rounded-xl text-sm font-bold"
+            className="w-full btn-outline !py-3.5 text-sm font-bold"
           >
             ← Quay lại Lịch sử
           </button>

@@ -55,7 +55,7 @@ export default function ProfileClient({ initialData }: { initialData: any }) {
         </div>
         <div className="text-center">
           <h2 className="text-xl font-bold text-on-surface">{initialData?.full_name}</h2>
-          <p className="text-body-md mt-1">{initialData?.email}</p>
+          <p className="text-body-md mt-1 break-all">{initialData?.email}</p>
         </div>
       </div>
 
