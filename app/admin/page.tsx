@@ -85,13 +85,48 @@ export default function AdminDashboard() {
       
       if (workers) setPendingWorkers(workers);
 
-      // 3. Fetch Stats (Simple counts)
-      const { count: jobsCount } = await supabase.from('jobs').select('*', { count: 'exact', head: true });
-      const { count: workersCount } = await supabase.from('workers').select('*', { count: 'exact', head: true });
+      // 3. Fetch Stats (Dynamic metrics from database)
+      // 3a. Total Jobs
+      const { count: jobsCount } = await supabase
+        .from('jobs')
+        .select('*', { count: 'exact', head: true });
+
+      // 3b. Revenue (Sum of completed/done jobs)
+      const { data: completedJobs } = await supabase
+        .from('jobs')
+        .select('quoted_price')
+        .in('status', ['completed', 'done']);
       
-      const updatedStats = [...statsPlaceholder];
-      updatedStats[0].value = jobsCount?.toString() || "0";
-      updatedStats[2].value = workersCount?.toString() || "0";
+      const totalRevenue = completedJobs
+        ? completedJobs.reduce((sum, j) => sum + Number(j.quoted_price || 0), 0)
+        : 0;
+      
+      const formattedRevenue = totalRevenue >= 1000000 
+        ? `${(totalRevenue / 1000000).toFixed(1)}M` 
+        : `${(totalRevenue / 1000).toFixed(0)}K`;
+
+      // 3c. Active Workers
+      const { count: activeWorkersCount } = await supabase
+        .from('workers')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active');
+
+      // 3d. Average Rating
+      const { data: ratingsData } = await supabase
+        .from('ratings')
+        .select('score');
+      
+      const averageScore = ratingsData && ratingsData.length > 0
+        ? (ratingsData.reduce((sum, r) => sum + Number(r.score || 0), 0) / ratingsData.length).toFixed(1)
+        : "5.0";
+
+      const updatedStats = [
+        { label: "Tổng Jobs", value: jobsCount?.toString() || "0", change: "+12%", icon: BriefcaseIcon, color: "text-blue-600", bg: "bg-blue-50" },
+        { label: "Doanh thu", value: `${formattedRevenue}đ`, change: "+8%", icon: DollarSignIcon, color: "text-green-600", bg: "bg-green-50" },
+        { label: "Thợ hoạt động", value: activeWorkersCount?.toString() || "0", change: "+3", icon: UsersIcon, color: "text-purple-600", bg: "bg-purple-50" },
+        { label: "Đánh giá TB", value: `${averageScore} ★`, change: "+0.2", icon: BarChartIcon, color: "text-amber-600", bg: "bg-amber-50" },
+      ];
+      
       setStats(updatedStats);
 
       setLoading(false);

@@ -130,10 +130,15 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT USING (public.is_admin());
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Admins can update all profiles" ON public.profiles FOR UPDATE USING (public.is_admin());
+CREATE POLICY "Admins can delete all profiles" ON public.profiles FOR DELETE USING (public.is_admin());
 
 
 -- Workers: Everyone can view active workers, Admins view all
 CREATE POLICY "Public view active workers" ON public.workers FOR SELECT USING (status = 'active');
+CREATE POLICY "Workers view own record" ON public.workers FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Workers update own record" ON public.workers FOR UPDATE USING (user_id = auth.uid());
 CREATE POLICY "Admins view all workers" ON public.workers FOR ALL USING (public.is_admin());
 
 -- Services: Everyone can view active services
@@ -176,8 +181,16 @@ BEGIN
   
   -- If worker, also create worker record
   IF (NEW.raw_user_meta_data->>'role') = 'worker' THEN
-    INSERT INTO public.workers (user_id, status)
-    VALUES (NEW.id, 'pending');
+    DECLARE
+      worker_specs TEXT[] := '{}';
+    BEGIN
+      IF NEW.raw_user_meta_data ? 'specialties' AND NEW.raw_user_meta_data->'specialties' IS NOT NULL AND jsonb_typeof(NEW.raw_user_meta_data->'specialties') = 'array' THEN
+        SELECT ARRAY(SELECT jsonb_array_elements_text(NEW.raw_user_meta_data->'specialties')) INTO worker_specs;
+      END IF;
+
+      INSERT INTO public.workers (user_id, status, specialties)
+      VALUES (NEW.id, 'pending', worker_specs);
+    END;
   END IF;
 
   RETURN NEW;
