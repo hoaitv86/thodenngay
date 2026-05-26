@@ -26,6 +26,9 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
+      cookieOptions: {
+        maxAge: 60 * 60 * 24 * 30, // 30 ngày (tính bằng giây)
+      },
     }
   );
 

@@ -23,6 +23,9 @@ export async function createClient() {
           }
         },
       },
+      cookieOptions: {
+        maxAge: 60 * 60 * 24 * 30, // 30 ngày (tính bằng giây)
+      },
     }
   );
 }
