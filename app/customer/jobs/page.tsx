@@ -12,7 +12,8 @@ import {
   AlertCircle,
   Timer,
   Wrench,
-  Star
+  Star,
+  Camera
 } from "lucide-react";
 
 export default function CustomerJobs() {
@@ -138,6 +139,13 @@ export default function CustomerJobs() {
                     </span>
                   </div>
                 </div>
+
+                {job.images && job.images.length > 0 && (
+                  <div className="mt-3 flex items-center gap-2 text-label-sm text-on-surface-variant">
+                    <Camera size={14} />
+                    <span>{job.images.length} ảnh hiện trạng đã gửi</span>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between mt-3">
                   <div className="text-body-sm font-bold text-primary-container">

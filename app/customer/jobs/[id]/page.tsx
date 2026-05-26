@@ -282,15 +282,17 @@ export default function JobDetailPage() {
           </div>
         )}
 
-        {/* Work Completion Images */}
-        {(job.status === 'completed' || job.status === 'done') && job.images && job.images.length > 0 && (
+        {/* Customer Request Images */}
+        {job.images && job.images.length > 0 && (
           <div className="space-y-3 pt-4 border-t border-outline-variant/30">
-            <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Hình ảnh nghiệm thu</h3>
+            <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">
+              Ảnh hiện trạng đã gửi cho thợ
+            </h3>
             <div className="grid grid-cols-2 gap-2">
               {job.images.map((imgUrl: string, idx: number) => (
                 <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30 bg-surface-container-low shadow-sm">
                   <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-                    <img src={imgUrl} alt={`Ảnh nghiệm thu ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
+                    <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
                   </a>
                 </div>
               ))}

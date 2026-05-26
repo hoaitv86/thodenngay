@@ -32,9 +32,19 @@ export default function WorkerDashboard() {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [newJobs, setNewJobs] = useState<any[]>([]);
   const [activeJobs, setActiveJobs] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
   const [completingJobId, setCompletingJobId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' | null }>({ message: '', type: null });
+  const [quickFormOpen, setQuickFormOpen] = useState(false);
+  const [creatingQuickJob, setCreatingQuickJob] = useState(false);
+  const [quickJob, setQuickJob] = useState({
+    customerPhone: "",
+    serviceId: "",
+    address: "",
+    quotedPrice: "",
+    description: "",
+  });
   const supabase = createClient();
 
   // Completion modal states
@@ -65,6 +75,24 @@ export default function WorkerDashboard() {
 
       if (workerData) {
         setWorker(workerData);
+
+        const { data: servicesData } = await supabase
+          .from('services')
+          .select('id, name, base_price, icon')
+          .eq('is_active', true)
+          .order('name');
+        if (servicesData) {
+          setServices(servicesData);
+          setQuickJob(prev => {
+            if (prev.serviceId || servicesData.length === 0) return prev;
+            const firstService = servicesData[0];
+            return {
+              ...prev,
+              serviceId: firstService.id,
+              quotedPrice: firstService.base_price ? String(firstService.base_price) : "",
+            };
+          });
+        }
 
         // 3. Get New Jobs (Pending)
         const { data: pendingJobs } = await supabase
@@ -160,6 +188,69 @@ export default function WorkerDashboard() {
     // Just hide from feed (don't change job status)
     setNewJobs(prev => prev.filter(j => j.id !== jobId));
     showToast('Đã bỏ qua công việc này.', 'info');
+  };
+
+  const handleQuickServiceChange = (serviceId: string) => {
+    const selectedService = services.find(service => service.id === serviceId);
+    setQuickJob(prev => ({
+      ...prev,
+      serviceId,
+      quotedPrice: selectedService?.base_price ? String(selectedService.base_price) : prev.quotedPrice,
+    }));
+  };
+
+  const handleCreateQuickJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!worker || creatingQuickJob) return;
+
+    if (!quickJob.customerPhone.trim() || !quickJob.serviceId || !quickJob.address.trim()) {
+      showToast("Vui lòng nhập SĐT khách, dịch vụ và địa chỉ.", "error");
+      return;
+    }
+
+    const quotedPrice = quickJob.quotedPrice ? Number(quickJob.quotedPrice) : null;
+    if (quotedPrice !== null && (!Number.isFinite(quotedPrice) || quotedPrice < 0)) {
+      showToast("Giá dịch vụ không hợp lệ.", "error");
+      return;
+    }
+
+    setCreatingQuickJob(true);
+    try {
+      const { data, error } = await supabase.rpc('worker_create_quick_job', {
+        p_customer_phone: quickJob.customerPhone,
+        p_service_id: quickJob.serviceId,
+        p_address: quickJob.address,
+        p_description: quickJob.description || null,
+        p_quoted_price: quotedPrice,
+      });
+
+      if (error) throw error;
+
+      const createdJob = data as any;
+      setActiveJobs(prev => [
+        {
+          ...createdJob,
+          serviceName: createdJob.serviceName,
+          customerName: createdJob.customerName || 'Khách hàng',
+          time: new Date(createdJob.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        },
+        ...prev,
+      ]);
+      setQuickJob(prev => ({
+        customerPhone: "",
+        serviceId: prev.serviceId,
+        address: "",
+        quotedPrice: prev.quotedPrice,
+        description: "",
+      }));
+      setQuickFormOpen(false);
+      setTab("active");
+      showToast(`Đã tạo và nhận việc ${createdJob.job_code}.`, "success");
+    } catch (err: any) {
+      showToast(err.message || "Không thể tạo việc nhanh.", "error");
+    } finally {
+      setCreatingQuickJob(false);
+    }
   };
 
   const triggerCompleteJob = (job: any) => {
@@ -315,6 +406,117 @@ export default function WorkerDashboard() {
         </div>
       </div>
 
+      {/* Quick Job Creation */}
+      <div className="px-4 pb-4">
+        <div className="rounded-2xl border border-primary-fixed bg-white p-4 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setQuickFormOpen(open => !open)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary-container shrink-0">
+                <BriefcaseIcon size={20} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-body-sm font-bold text-on-surface">Tạo việc nhanh cho khách quen</h2>
+                <p className="text-xs leading-5 text-on-surface-variant">
+                  Khách chưa đặt đơn, thợ tạo job tại chỗ và nhận luôn.
+                </p>
+              </div>
+            </div>
+            <ChevronRightIcon
+              size={18}
+              className={`shrink-0 text-primary-container transition-transform ${quickFormOpen ? "rotate-90" : ""}`}
+            />
+          </button>
+
+          {quickFormOpen && (
+            <form onSubmit={handleCreateQuickJob} className="mt-4 space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  SĐT khách quen
+                </label>
+                <input
+                  type="tel"
+                  value={quickJob.customerPhone}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerPhone: e.target.value }))}
+                  placeholder="VD: 0912345678"
+                  className="input-field !py-2.5"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    Dịch vụ
+                  </label>
+                  <select
+                    value={quickJob.serviceId}
+                    onChange={(e) => handleQuickServiceChange(e.target.value)}
+                    className="input-field !py-2.5"
+                  >
+                    <option value="">Chọn dịch vụ</option>
+                    {services.map(service => (
+                      <option key={service.id} value={service.id}>
+                        {service.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    Giá thỏa thuận
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={quickJob.quotedPrice}
+                    onChange={(e) => setQuickJob(prev => ({ ...prev, quotedPrice: e.target.value }))}
+                    placeholder="VD: 200000"
+                    className="input-field !py-2.5"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Địa chỉ làm việc
+                </label>
+                <input
+                  value={quickJob.address}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="Nhập địa chỉ thực tế"
+                  className="input-field !py-2.5"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Mô tả việc cần làm
+                </label>
+                <textarea
+                  value={quickJob.description}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Ghi chú nhanh tình trạng, yêu cầu, vật tư..."
+                  className="input-field min-h-20 resize-none !py-2.5"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={creatingQuickJob}
+                className="btn-primary w-full !py-3 text-sm"
+              >
+                {creatingQuickJob ? "Đang tạo..." : "Tạo và nhận việc"}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="px-4 flex gap-8 border-b border-outline-variant overflow-x-auto">
         <button
@@ -365,6 +567,33 @@ export default function WorkerDashboard() {
                   </div>
                 </div>
 
+                {job.images && job.images.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-label-sm font-bold text-on-surface-variant uppercase tracking-wide">
+                      <CameraIcon size={14} />
+                      Ảnh khách gửi trước
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {job.images.slice(0, 3).map((imgUrl: string, idx: number) => (
+                        <a
+                          key={imgUrl}
+                          href={imgUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-low"
+                        >
+                          <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                          {idx === 2 && job.images.length > 3 && (
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">
+                              +{job.images.length - 3}
+                            </span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-2">
                   <button 
                     onClick={() => handleDeclineJob(job.id)}
@@ -407,6 +636,33 @@ export default function WorkerDashboard() {
                   <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
                 </div>
               </div>
+
+              {job.images && job.images.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-label-sm font-bold text-on-surface-variant uppercase tracking-wide">
+                    <CameraIcon size={14} />
+                    Ảnh khách gửi trước
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {job.images.slice(0, 3).map((imgUrl: string, idx: number) => (
+                      <a
+                        key={imgUrl}
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-low"
+                      >
+                        <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                        {idx === 2 && job.images.length > 3 && (
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">
+                            +{job.images.length - 3}
+                          </span>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-4 py-3 border-y border-outline-variant/50">
                 <button

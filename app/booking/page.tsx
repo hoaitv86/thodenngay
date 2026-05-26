@@ -30,6 +30,8 @@ export default function BookingPage() {
     time: "",
     description: "",
   });
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
 
@@ -75,6 +77,54 @@ export default function BookingPage() {
     setStep(step + 1);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const imageFiles = files.filter(file => file.type.startsWith("image/"));
+    const oversized = imageFiles.find(file => file.size > 8 * 1024 * 1024);
+    if (oversized) {
+      alert("Mỗi ảnh tối đa 8MB.");
+      e.target.value = "";
+      return;
+    }
+
+    const nextFiles = [...selectedFiles, ...imageFiles].slice(0, 5);
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    setSelectedFiles(nextFiles);
+    setPreviewUrls(nextFiles.map(file => URL.createObjectURL(file)));
+    e.target.value = "";
+  };
+
+  const removeSelectedFile = (index: number) => {
+    const nextFiles = selectedFiles.filter((_, i) => i !== index);
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    setSelectedFiles(nextFiles);
+    setPreviewUrls(nextFiles.map(file => URL.createObjectURL(file)));
+  };
+
+  const uploadRequestImages = async (userId: string) => {
+    const imageUrls: string[] = [];
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const ext = file.name.split(".").pop() || "jpg";
+      const filePath = `requests/${userId}/${Date.now()}_${i}.${ext}`;
+      const { error } = await supabase.storage
+        .from("job-photos")
+        .upload(filePath, file);
+
+      if (error) {
+        throw new Error("Không thể tải ảnh lên: " + error.message);
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("job-photos")
+        .getPublicUrl(filePath);
+      imageUrls.push(publicUrl);
+    }
+    return imageUrls;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !selectedService) return;
@@ -86,28 +136,33 @@ export default function BookingPage() {
       ? new Date().toISOString() 
       : new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // Simple placeholder for "Hẹn giờ"
 
-    const { error } = await supabase.from('jobs').insert({
-      job_code: jobCode,
-      customer_id: user.id,
-      service_id: selectedService.id,
-      address: bookingData.address,
-      description: bookingData.description,
-      quoted_price: selectedService.base_price,
-      scheduled_at: scheduledAt,
-      status: 'pending',
-      source: 'app',
-      created_by: user.id
-    });
+    try {
+      const imageUrls = await uploadRequestImages(user.id);
+      const { error } = await supabase.from('jobs').insert({
+        job_code: jobCode,
+        customer_id: user.id,
+        service_id: selectedService.id,
+        address: bookingData.address,
+        description: bookingData.description,
+        quoted_price: selectedService.base_price,
+        scheduled_at: scheduledAt,
+        images: imageUrls,
+        status: 'pending',
+        source: 'app',
+        created_by: user.id
+      });
 
-    if (error) {
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setLoading(false);
+      setStep(4); // Success
+    } catch (error) {
       console.error("Booking error:", error);
       alert("Có lỗi xảy ra khi đặt lịch. Vui lòng thử lại.");
       setLoading(false);
-      return;
     }
-
-    setLoading(false);
-    setStep(4); // Success
   };
 
   return (
@@ -231,6 +286,45 @@ export default function BookingPage() {
                   onChange={e => setBookingData({...bookingData, description: e.target.value})}
                 />
               </div>
+
+              <div className="space-y-2">
+                <label className="text-label-md flex items-center gap-2">
+                  <CameraIcon size={16} /> Ảnh hiện trạng / khu vực làm việc
+                </label>
+                <p className="text-xs text-on-surface-variant">
+                  Tải tối đa 5 ảnh để thợ xem trước địa hình và chuẩn bị dụng cụ.
+                </p>
+                <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant/60 bg-surface-container-lowest px-4 py-5 text-center transition-colors hover:bg-surface-container-low">
+                  <CameraIcon size={26} className="mb-2 text-on-surface-variant/70" />
+                  <span className="text-sm font-bold text-primary-container">Thêm ảnh</span>
+                  <span className="mt-1 text-[11px] text-on-surface-variant">PNG, JPG, JPEG • tối đa 8MB/ảnh</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </label>
+
+                {previewUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {previewUrls.map((url, idx) => (
+                      <div key={url} className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
+                        <img src={url} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeSelectedFile(idx)}
+                          className="absolute right-1 top-1 rounded-full bg-black/65 p-1 text-white"
+                          aria-label="Xóa ảnh"
+                        >
+                          <XIcon size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-10">
@@ -297,6 +391,24 @@ export default function BookingPage() {
                     <div>
                       <div className="text-label-sm text-on-surface-variant">Mô tả</div>
                       <div className="text-body-sm text-on-surface-variant italic">{bookingData.description}</div>
+                    </div>
+                  </div>
+                )}
+
+                {previewUrls.length > 0 && (
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant shrink-0">
+                      <CameraIcon size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-label-sm text-on-surface-variant">Ảnh hiện trạng</div>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        {previewUrls.map((url, idx) => (
+                          <div key={url} className="aspect-square overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
+                            <img src={url} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
