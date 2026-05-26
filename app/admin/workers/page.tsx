@@ -26,10 +26,112 @@ export default function AdminWorkers() {
   const supabase = createClient();
 
   // Approval/Rejection states
-  const [confirmDialog, setConfirmDialog] = useState<{ type: 'approve' | 'reject'; worker: any } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: 'approve' | 'reject' | 'block' | 'unblock'; worker: any } | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | null }>({ message: '', type: null });
+
+  // Edit worker states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingWorker, setEditingWorker] = useState<any>(null);
+  const [editWorkerFormData, setEditWorkerFormData] = useState({
+    id: "",
+    user_id: "",
+    name: "",
+    phone: "",
+    address: "",
+    specialties: [] as string[],
+    status: "active" as "active" | "pending" | "blocked"
+  });
+
+  const handleOpenEditModal = (worker: any) => {
+    setEditingWorker(worker);
+    setEditWorkerFormData({
+      id: worker.id,
+      user_id: worker.user_id,
+      name: worker.profiles?.full_name || "",
+      phone: worker.profiles?.phone || "",
+      address: worker.profiles?.address || "",
+      specialties: worker.specialties || [],
+      status: worker.status
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editWorkerFormData.name) {
+      showToast("Họ và tên không được để trống", "error");
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      // 1. Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: editWorkerFormData.name,
+          phone: editWorkerFormData.phone || null,
+          address: editWorkerFormData.address || null,
+          status: editWorkerFormData.status === 'blocked' ? 'blocked' : 'active'
+        })
+        .eq('id', editWorkerFormData.user_id);
+
+      if (profileError) {
+        showToast("Lỗi cập nhật hồ sơ: " + profileError.message, "error");
+        setProcessing(false);
+        return;
+      }
+
+      // 2. Update workers table
+      const approvedAt = editWorkerFormData.status === 'active' && editingWorker.status !== 'active' 
+        ? new Date().toISOString() 
+        : editingWorker.approved_at;
+        
+      const { error: workerError } = await supabase
+        .from('workers')
+        .update({
+          specialties: editWorkerFormData.specialties,
+          status: editWorkerFormData.status,
+          approved_at: approvedAt
+        })
+        .eq('id', editWorkerFormData.id);
+
+      if (workerError) {
+        showToast("Lỗi cập nhật chi tiết thợ: " + workerError.message, "error");
+        setProcessing(false);
+        return;
+      }
+
+      showToast(`Cập nhật thông tin thợ "${editWorkerFormData.name}" thành công!`, 'success');
+      setIsEditModalOpen(false);
+      
+      // Update local state
+      setWorkers(prev => prev.map(w =>
+        w.id === editWorkerFormData.id
+          ? {
+              ...w,
+              specialties: editWorkerFormData.specialties,
+              status: editWorkerFormData.status,
+              approved_at: approvedAt,
+              profiles: {
+                ...w.profiles,
+                full_name: editWorkerFormData.name,
+                phone: editWorkerFormData.phone || null,
+                address: editWorkerFormData.address || null,
+                status: editWorkerFormData.status === 'blocked' ? 'blocked' : 'active'
+              }
+            }
+          : w
+      ));
+    } catch (err: any) {
+      showToast("Lỗi hệ thống: " + err.message, "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // Add new worker states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -215,6 +317,40 @@ export default function AdminWorkers() {
         w.id === worker.id ? { ...w, status: 'blocked', rejection_reason: rejectionReason || null } : w
       ));
     }
+  };
+
+  const handleToggleBlockWorker = async (worker: any, newStatus: 'active' | 'blocked') => {
+    setProcessing(true);
+    
+    // Update workers table
+    const { error: workerError } = await supabase
+      .from('workers')
+      .update({ status: newStatus })
+      .eq('id', worker.id);
+
+    if (workerError) {
+      showToast('Lỗi cập nhật trạng thái thợ: ' + workerError.message, 'error');
+      setProcessing(false);
+      setConfirmDialog(null);
+      return;
+    }
+
+    // Update profiles table
+    if (worker.user_id) {
+      await supabase
+        .from('profiles')
+        .update({ status: newStatus })
+        .eq('id', worker.user_id);
+    }
+
+    setProcessing(false);
+    setConfirmDialog(null);
+    showToast(newStatus === 'blocked' ? `Đã khóa thợ "${worker.profiles?.full_name}"` : `Đã mở khóa thợ "${worker.profiles?.full_name}"`, 'success');
+    
+    // Update local state
+    setWorkers(prev => prev.map(w =>
+      w.id === worker.id ? { ...w, status: newStatus, profiles: { ...w.profiles, status: newStatus } } : w
+    ));
   };
 
   const filteredWorkers = workers.filter(worker => {
@@ -409,9 +545,29 @@ export default function AdminWorkers() {
                           </button>
                         </div>
                       ) : (
-                        <button className="p-2 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-primary-container">
-                          <ChevronRightIcon size={20} />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          {worker.status === 'active' ? (
+                            <button
+                              onClick={() => setConfirmDialog({ type: 'block', worker })}
+                              className="px-2.5 py-1.5 text-label-sm font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            >
+                              Khóa
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDialog({ type: 'unblock', worker })}
+                              className="px-2.5 py-1.5 text-label-sm font-bold text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            >
+                              Mở khóa
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleOpenEditModal(worker)}
+                            className="px-2.5 py-1.5 text-label-sm font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                          >
+                            Sửa
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -440,15 +596,18 @@ export default function AdminWorkers() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fade-in-up">
             <div className="p-6 space-y-4">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${confirmDialog.type === 'approve'
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                  confirmDialog.type === 'approve' || confirmDialog.type === 'unblock'
                     ? 'bg-success-container text-success'
                     : 'bg-error-container text-error'
                   }`}>
-                  {confirmDialog.type === 'approve' ? <CheckCircleIcon size={24} /> : <XIcon size={24} />}
+                  {confirmDialog.type === 'approve' || confirmDialog.type === 'unblock' ? <CheckCircleIcon size={24} /> : <XIcon size={24} />}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-on-surface">
-                    {confirmDialog.type === 'approve' ? 'Duyệt thợ?' : 'Từ chối thợ?'}
+                    {confirmDialog.type === 'approve' ? 'Duyệt thợ?' :
+                     confirmDialog.type === 'reject' ? 'Từ chối thợ?' :
+                     confirmDialog.type === 'block' ? 'Khóa thợ?' : 'Mở khóa thợ?'}
                   </h3>
                   <p className="text-body-sm text-on-surface-variant">
                     {confirmDialog.worker.profiles?.full_name}
@@ -456,14 +615,16 @@ export default function AdminWorkers() {
                 </div>
               </div>
 
-              {confirmDialog.type === 'approve' ? (
+              {confirmDialog.type === 'approve' && (
                 <p className="text-body-sm text-on-surface-variant">
                   Sau khi duyệt, thợ sẽ có thể truy cập hệ thống và nhận việc. Bạn có chắc chắn?
                 </p>
-              ) : (
+              )}
+
+              {confirmDialog.type === 'reject' && (
                 <div className="space-y-2">
                   <p className="text-body-sm text-on-surface-variant">
-                    Thợ sẽ bị khóa và không thể đăng nhập vào hệ thống.
+                    Thợ sẽ bị từ chối duyệt và chuyển vào trạng thái khóa.
                   </p>
                   <label className="text-sm font-bold text-on-surface block">Lý do từ chối (tùy chọn)</label>
                   <textarea
@@ -473,6 +634,18 @@ export default function AdminWorkers() {
                     className="w-full px-4 py-3 bg-surface-container-lowest border border-outline-variant/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary text-body-sm min-h-[80px] resize-none"
                   />
                 </div>
+              )}
+
+              {confirmDialog.type === 'block' && (
+                <p className="text-body-sm text-on-surface-variant">
+                  Tài khoản của thợ này sẽ bị khóa. Họ sẽ không thể đăng nhập hoặc nhận các công việc mới trên hệ thống. Bạn có chắc chắn?
+                </p>
+              )}
+
+              {confirmDialog.type === 'unblock' && (
+                <p className="text-body-sm text-on-surface-variant">
+                  Mở khóa tài khoản cho thợ này. Họ sẽ có thể đăng nhập và nhận việc bình thường. Bạn có chắc chắn?
+                </p>
               )}
             </div>
 
@@ -488,11 +661,16 @@ export default function AdminWorkers() {
                 onClick={() => {
                   if (confirmDialog.type === 'approve') {
                     handleApproveWorker(confirmDialog.worker);
-                  } else {
+                  } else if (confirmDialog.type === 'reject') {
                     handleRejectWorker(confirmDialog.worker);
+                  } else if (confirmDialog.type === 'block') {
+                    handleToggleBlockWorker(confirmDialog.worker, 'blocked');
+                  } else if (confirmDialog.type === 'unblock') {
+                    handleToggleBlockWorker(confirmDialog.worker, 'active');
                   }
                 }}
-                className={`!py-2 !px-5 text-sm min-w-[120px] font-bold rounded-xl border transition-all ${confirmDialog.type === 'approve'
+                className={`!py-2 !px-5 text-sm min-w-[120px] font-bold rounded-xl border transition-all ${
+                  confirmDialog.type === 'approve' || confirmDialog.type === 'unblock'
                     ? 'bg-success text-white border-success hover:brightness-95'
                     : 'bg-error text-white border-error hover:brightness-95'
                   }`}
@@ -503,7 +681,9 @@ export default function AdminWorkers() {
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     Đang xử lý...
                   </span>
-                ) : confirmDialog.type === 'approve' ? 'Xác nhận duyệt' : 'Xác nhận từ chối'}
+                ) : confirmDialog.type === 'approve' ? 'Xác nhận duyệt' : 
+                     confirmDialog.type === 'reject' ? 'Từ chối' : 
+                     confirmDialog.type === 'block' ? 'Khóa thợ' : 'Mở khóa'}
               </button>
             </div>
           </div>
@@ -698,6 +878,196 @@ export default function AdminWorkers() {
                       Đang xử lý...
                     </span>
                   ) : "Xác nhận thêm"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Worker Modal */}
+      {isEditModalOpen && editingWorker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fade-in-up flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
+                  <UserIcon size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-on-surface">Chỉnh sửa thông tin thợ</h3>
+                  <p className="text-xs text-on-surface-variant">Cập nhật thông tin chi tiết và trạng thái thợ</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content - Scrollable */}
+            <form onSubmit={handleUpdateWorker} className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="space-y-4">
+                {/* Name & Email (Disabled) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface flex items-center gap-1">
+                      Họ và tên <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nguyễn Văn A"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={editWorkerFormData.name}
+                      onChange={(e) => setEditWorkerFormData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Email (Không thể thay đổi)
+                    </label>
+                    <input
+                      type="email"
+                      disabled
+                      className="input-field !py-2.5 !rounded-xl text-sm opacity-60 bg-surface-container cursor-not-allowed"
+                      value={editingWorker.profiles?.email || ""}
+                    />
+                  </div>
+                </div>
+
+                {/* Phone & Address */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Số điện thoại
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="09xx xxx xxx"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={editWorkerFormData.phone}
+                      onChange={(e) => setEditWorkerFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-on-surface">
+                      Địa chỉ liên hệ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Q. Bình Thạnh, TP. Hồ Chí Minh"
+                      className="input-field !py-2.5 !rounded-xl text-sm"
+                      value={editWorkerFormData.address}
+                      onChange={(e) => setEditWorkerFormData(prev => ({ ...prev, address: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Specialties */}
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-on-surface block">
+                    Chuyên môn sửa chữa
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-surface-container-low rounded-xl border border-outline-variant/30">
+                    {specialtyOptions.map((sp) => {
+                      const isSelected = editWorkerFormData.specialties.includes(sp);
+                      return (
+                        <button
+                          key={sp}
+                          type="button"
+                          onClick={() => {
+                            setEditWorkerFormData(prev => ({
+                              ...prev,
+                              specialties: isSelected
+                                ? prev.specialties.filter(s => s !== sp)
+                                : [...prev.specialties, sp]
+                            }));
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                            isSelected
+                              ? "bg-primary text-white border-primary shadow-sm"
+                              : "bg-white border-outline-variant/60 text-on-surface-variant hover:border-primary/50"
+                          }`}
+                        >
+                          {isSelected && "✓ "}
+                          {sp}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Status Selection */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-on-surface block">
+                    Trạng thái hoạt động
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditWorkerFormData(prev => ({ ...prev, status: "active" }))}
+                      className={`px-3 py-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                        editWorkerFormData.status === "active"
+                          ? "bg-success-container text-success border-success/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <CheckCircleIcon size={14} />
+                      Hoạt động
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditWorkerFormData(prev => ({ ...prev, status: "pending" }))}
+                      className={`px-3 py-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                        editWorkerFormData.status === "pending"
+                          ? "bg-amber-100 text-amber-800 border-amber-200 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <CalendarIcon size={14} />
+                      Chờ duyệt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditWorkerFormData(prev => ({ ...prev, status: "blocked" }))}
+                      className={`px-3 py-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                        editWorkerFormData.status === "blocked"
+                          ? "bg-error-container text-error border-error/30 shadow-sm"
+                          : "bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant"
+                      }`}
+                    >
+                      <XIcon size={14} />
+                      Bị khóa
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest -mx-6 -mb-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="btn-outline !py-2 !px-4 text-sm"
+                  disabled={processing}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary !py-2 !px-6 text-sm min-w-[120px]"
+                  disabled={processing}
+                >
+                  {processing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang xử lý...
+                    </span>
+                  ) : "Lưu thay đổi"}
                 </button>
               </div>
             </form>
