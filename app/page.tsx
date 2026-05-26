@@ -136,7 +136,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/register"
-                className="btn-primary text-body-sm !py-2.5 !px-5 hidden sm:inline-flex"
+                className="btn-primary text-sm !py-2.5 !px-5 hidden sm:inline-flex"
                 id="nav-register"
               >
                 Đăng ký
