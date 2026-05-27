@@ -17,6 +17,13 @@ import {
   XIcon
 } from "../../components/icons";
 
+type ServiceOption = {
+  id: string;
+  name: string;
+  icon?: string | null;
+  base_price?: number | null;
+};
+
 const serviceVisuals = [
   {
     match: ["điện", "dien", "electric"],
@@ -75,7 +82,7 @@ export default function CustomerBooking() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | null }>({ message: '', type: null });
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
@@ -228,13 +235,14 @@ export default function CustomerBooking() {
       setTimeout(() => {
         router.push("/customer/jobs");
       }, 1500);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setIsSubmitting(false);
-      showToast("Lỗi khi đặt dịch vụ: " + error.message, "error");
+      const message = error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định.";
+      showToast("Lỗi khi đặt dịch vụ: " + message, "error");
     }
   };
 
-  const getServiceVisual = (service: any) => {
+  const getServiceVisual = (service: ServiceOption) => {
     const explicitIcon = String(service.icon || "");
     const name = String(service.name || "").toLowerCase();
     const explicitVisual = serviceVisuals.find(item => item.icon.name === explicitIcon);
