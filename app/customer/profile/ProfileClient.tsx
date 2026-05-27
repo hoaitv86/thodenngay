@@ -49,9 +49,9 @@ export default function ProfileClient({ initialData }: { initialData: any }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-24 h-24 bg-primary-container rounded-full flex items-center justify-center mb-4 border-4 border-surface shadow-sm">
-          <UserCircle className="w-12 h-12 text-on-primary-container" />
+      <div className="mb-6 flex flex-col items-center rounded-2xl border border-outline-variant/20 bg-white p-5 shadow-lg shadow-blue-900/5">
+        <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-primary-container shadow-lg shadow-primary/20">
+          <UserCircle className="h-12 w-12 text-white" />
         </div>
         <div className="text-center">
           <h2 className="text-xl font-bold text-on-surface">{initialData?.full_name}</h2>
@@ -59,9 +59,9 @@ export default function ProfileClient({ initialData }: { initialData: any }) {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="card space-y-5">
+      <form onSubmit={handleSubmit} className="grid gap-5 rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-lg shadow-blue-900/5 sm:p-5 lg:grid-cols-2">
         {/* Email - Readonly */}
-        <div className="space-y-1">
+        <div className="space-y-1 lg:col-span-2">
           <label className="text-label-md">Email</label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -77,7 +77,7 @@ export default function ProfileClient({ initialData }: { initialData: any }) {
         </div>
 
         {/* Full Name */}
-        <div className="space-y-1">
+        <div className="space-y-1 lg:col-span-2">
           <label className="text-label-md">Họ và tên</label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -140,7 +140,7 @@ export default function ProfileClient({ initialData }: { initialData: any }) {
         <button
           type="submit"
           disabled={loading}
-          className="btn-primary w-full mt-2"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-secondary-container px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50 lg:col-span-2"
         >
           {loading ? (
             <Loader2 className="w-5 h-5 animate-spin" />

@@ -8,7 +8,9 @@ import {
   CogIcon, 
   WrenchIcon, 
   ArrowRightIcon, 
-  StarIcon 
+  StarIcon,
+  ShieldCheckIcon,
+  ClockIcon
 } from "@/app/components/icons";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -21,7 +23,7 @@ interface Service {
   color: string;
 }
 
-const iconMap: Record<string, any> = {
+const iconMap: Record<string, typeof WrenchIcon> = {
   ZapIcon: ZapIcon,
   DropletIcon: DropletIcon,
   CameraIcon: CameraIcon,
@@ -45,9 +47,14 @@ const defaultServices: Service[] = [
 ];
 
 const topWorkers = [
-  { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230 },
-  { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185 },
-  { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142 },
+  { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230, color: "bg-amber-100 text-amber-700", status: "Sẵn sàng" },
+  { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185, color: "bg-sky-100 text-sky-700", status: "Gần bạn" },
+  { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142, color: "bg-violet-100 text-violet-700", status: "Phản hồi nhanh" },
+];
+
+const bookingHighlights = [
+  { label: "Có thợ trong", value: "30 phút", icon: ClockIcon, color: "bg-secondary-container text-white" },
+  { label: "Bảo hành", value: "7 ngày", icon: ShieldCheckIcon, color: "bg-success text-white" },
 ];
 
 export default function CustomerHome() {
@@ -83,44 +90,66 @@ export default function CustomerHome() {
   }, [supabase]);
 
   return (
-    <div className="space-y-6 px-4 pt-4 sm:mx-auto sm:max-w-md">
+    <div className="space-y-5 px-4 pt-4 lg:px-8">
       {/* Greeting */}
-      <div className="bg-gradient-to-br from-primary-container to-primary rounded-2xl p-5 text-on-primary shadow-lg shadow-primary/10">
-        <p className="text-sm opacity-80">Xin chào 👋</p>
-        <h1 className="mt-1 text-2xl font-bold leading-tight text-white">Bạn cần sửa gì?</h1>
-        <p className="text-sm opacity-70 mt-1">
-          Chọn dịch vụ bên dưới hoặc mô tả vấn đề
-        </p>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-5 text-on-primary shadow-xl shadow-primary/15">
+        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+        <div className="relative">
+          <p className="text-sm font-semibold text-white/80">Xin chào</p>
+          <h1 className="mt-1 text-2xl font-extrabold leading-tight text-white">Bạn cần sửa gì hôm nay?</h1>
+          <p className="mt-2 max-w-[18rem] text-sm leading-6 text-white/80">
+            Chọn dịch vụ, gửi mô tả và nhận thợ phù hợp quanh khu vực của bạn.
+          </p>
+        </div>
         <Link
           href="/customer/booking"
-          className="inline-flex min-h-11 w-full items-center justify-center gap-2 mt-4 px-5 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-xl text-sm hover:opacity-90 transition-opacity shadow-sm sm:w-auto"
+          className="relative mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-primary shadow-lg shadow-black/15 transition-all hover:bg-secondary-container hover:text-white active:scale-[0.98] sm:w-auto"
         >
           Đặt dịch vụ ngay
           <ArrowRightIcon size={16} />
         </Link>
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        {bookingHighlights.map((item) => (
+          <div key={item.label} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3 shadow-sm">
+            <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg ${item.color}`}>
+              <item.icon size={18} />
+            </div>
+            <p className="text-[11px] font-bold uppercase text-on-surface-variant">{item.label}</p>
+            <p className="text-base font-extrabold text-on-surface">{item.value}</p>
+          </div>
+        ))}
+      </div>
+
       {/* Services Grid */}
       <section>
-        <h2 className="text-body-lg font-semibold text-on-surface mb-3">
-          Dịch vụ
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-body-lg font-bold text-on-surface">Dịch vụ phổ biến</h2>
+          <Link href="/customer/booking" className="text-xs font-bold text-secondary-container">
+            Xem tất cả
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {services.map((svc) => {
             const IconComponent = iconMap[svc.iconName] || WrenchIcon;
             return (
               <Link
                 key={svc.id}
                 href={`/customer/booking?service=${svc.id}`}
-                className="min-h-[132px] bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 hover:border-primary/30 hover:shadow-md transition-all active:scale-[0.98]"
+                className="group min-h-[142px] rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg active:scale-[0.98]"
               >
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 ${svc.color}`}>
+                <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 ${svc.color}`}>
                   <IconComponent size={22} />
                 </div>
-                <p className="text-body-sm font-semibold text-on-surface">{svc.name}</p>
-                <p className="text-label-sm text-on-surface-variant mt-0.5">
+                <p className="text-body-sm font-extrabold text-on-surface">{svc.name}</p>
+                <p className="mt-1 text-label-sm text-on-surface-variant">
                   Từ {svc.price}
                 </p>
+                <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-secondary-container/10 px-2.5 py-1 text-[10px] font-bold text-secondary">
+                  Chọn ngay
+                  <ArrowRightIcon size={12} />
+                </div>
               </Link>
             );
           })}
@@ -129,16 +158,14 @@ export default function CustomerHome() {
 
       {/* Top Workers */}
       <section>
-        <h2 className="text-body-lg font-semibold text-on-surface mb-3">
-          Thợ nổi bật
-        </h2>
+        <h2 className="mb-3 text-body-lg font-bold text-on-surface">Thợ nổi bật</h2>
         <div className="space-y-3">
           {topWorkers.map((w) => (
             <div
               key={w.name}
-              className="flex items-center gap-3 bg-surface-container-lowest rounded-xl p-3.5 border border-outline-variant/20"
+              className="flex items-center gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3.5 shadow-sm"
             >
-              <div className="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center text-label-md font-bold text-primary shrink-0">
+              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-label-md font-extrabold ${w.color}`}>
                 {w.name.split(" ").pop()?.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
@@ -148,8 +175,9 @@ export default function CustomerHome() {
                 <p className="text-label-sm text-on-surface-variant">
                   Chuyên {w.specialty} · {w.jobs} việc
                 </p>
+                <p className="mt-1 text-[11px] font-bold text-success">{w.status}</p>
               </div>
-              <div className="flex items-center gap-1 text-label-sm font-semibold text-warning shrink-0">
+              <div className="flex shrink-0 items-center gap-1 rounded-full bg-warning-container px-2 py-1 text-label-sm font-bold text-warning">
                 <StarIcon size={16} className="text-warning fill-warning" />
                 {w.rating}
               </div>

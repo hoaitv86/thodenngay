@@ -382,7 +382,18 @@ export default function WorkerDashboard() {
 
       {/* Stats Bar */}
       <div className="p-4">
-        <div className="card-elevated !p-4 bg-gradient-to-br from-[#003178] to-[#0d47a1] text-white grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-2xl shadow-xl shadow-blue-900/10 sm:!p-5">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-4 text-white shadow-xl shadow-blue-900/15 sm:p-5">
+          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+          <div className="relative mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Bảng điều khiển thợ</p>
+              <h1 className="mt-1 text-xl font-extrabold leading-tight text-white">Sẵn sàng nhận việc</h1>
+            </div>
+            <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-extrabold text-success shadow-sm">
+              Online
+            </div>
+          </div>
+          <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-xl bg-white/12 p-3 backdrop-blur-sm">
           <div className="min-w-0 text-center">
             <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.jobsDone}</div>
             <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs tháng</div>
@@ -403,19 +414,20 @@ export default function WorkerDashboard() {
             </div>
             <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Thu nhập</div>
           </div>
+          </div>
         </div>
       </div>
 
       {/* Quick Job Creation */}
       <div className="px-4 pb-4">
-        <div className="rounded-2xl border border-primary-fixed bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-secondary-container/20 bg-white p-4 shadow-lg shadow-orange-900/5">
           <button
             type="button"
             onClick={() => setQuickFormOpen(open => !open)}
             className="flex w-full items-center justify-between gap-3 text-left"
           >
             <div className="flex min-w-0 items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary-container shrink-0">
+              <div className="w-11 h-11 rounded-xl bg-secondary-container flex items-center justify-center text-white shrink-0 shadow-md shadow-secondary-container/25">
                 <BriefcaseIcon size={20} />
               </div>
               <div className="min-w-0">
@@ -427,7 +439,7 @@ export default function WorkerDashboard() {
             </div>
             <ChevronRightIcon
               size={18}
-              className={`shrink-0 text-primary-container transition-transform ${quickFormOpen ? "rotate-90" : ""}`}
+              className={`shrink-0 text-secondary-container transition-transform ${quickFormOpen ? "rotate-90" : ""}`}
             />
           </button>
 
@@ -508,7 +520,7 @@ export default function WorkerDashboard() {
               <button
                 type="submit"
                 disabled={creatingQuickJob}
-                className="btn-primary w-full !py-3 text-sm"
+                className="btn-secondary w-full !py-3 text-sm"
               >
                 {creatingQuickJob ? "Đang tạo..." : "Tạo và nhận việc"}
               </button>
@@ -518,21 +530,20 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="px-4 flex gap-8 border-b border-outline-variant overflow-x-auto">
+      <div className="mx-4 flex gap-2 rounded-xl bg-surface-container p-1">
         <button
           onClick={() => setTab("new")}
-          className={`pb-4 text-label-md font-bold transition-all relative ${tab === "new" ? "text-primary-container" : "text-on-surface-variant"}`}
+          className={`relative flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant"}`}
         >
           Việc mới
-          {tab === "new" && <div className="absolute bottom-0 left-0 w-full h-1 bg-primary-container rounded-t-full" />}
           {newJobs.length > 0 && <span className="ml-2 px-1.5 py-0.5 bg-error text-white text-[10px] rounded-full">{newJobs.length}</span>}
         </button>
         <button
           onClick={() => setTab("active")}
-          className={`pb-4 text-label-md font-bold transition-all relative ${tab === "active" ? "text-primary-container" : "text-on-surface-variant"}`}
+          className={`flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant"}`}
         >
           Đang làm
-          {tab === "active" && <div className="absolute bottom-0 left-0 w-full h-1 bg-primary-container rounded-t-full" />}
+          {activeJobs.length > 0 && <span className="ml-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] text-white">{activeJobs.length}</span>}
         </button>
       </div>
 
@@ -541,10 +552,15 @@ export default function WorkerDashboard() {
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => (
-              <div key={job.id} className="card animate-fade-in-up space-y-4">
+              <div key={job.id} className="animate-fade-in-up space-y-4 overflow-hidden rounded-2xl border border-primary-fixed/70 bg-white shadow-lg shadow-blue-900/5">
+                <div className="flex items-center justify-between bg-primary-fixed/60 px-4 py-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Việc mới quanh bạn</span>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">~{job.distance}</span>
+                </div>
+                <div className="space-y-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary-container">
+                    <div className="w-11 h-11 rounded-xl bg-primary-container flex items-center justify-center text-white shadow-md shadow-primary/20">
                       <job.icon size={20} />
                     </div>
                     <div>
@@ -559,7 +575,6 @@ export default function WorkerDashboard() {
                   <div className="flex items-start gap-2 text-on-surface-variant">
                     <MapPinIcon size={14} className="mt-1 shrink-0" />
                     <span className="min-w-0 flex-1 text-body-sm leading-6">{job.address}</span>
-                    <span className="text-label-sm px-1.5 py-0.5 bg-surface-container rounded-md">~{job.distance}</span>
                   </div>
                   <div className="flex items-center gap-2 text-on-surface-variant">
                     <ClockIcon size={14} />
@@ -597,16 +612,17 @@ export default function WorkerDashboard() {
                 <div className="flex gap-3 pt-2">
                   <button 
                     onClick={() => handleDeclineJob(job.id)}
-                    className="flex-1 btn-outline !w-auto !py-2.5 text-error border-error/20 hover:bg-error-container"
+                    className="flex-1 rounded-xl border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
                   >
                     Từ chối
                   </button>
                   <button 
                     onClick={() => handleAcceptJob(job.id)}
-                    className="flex-[2] btn-primary !w-auto !py-2.5"
+                    className="flex-[2] rounded-xl bg-secondary-container px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98]"
                   >
                     Nhận việc
                   </button>
+                </div>
                 </div>
               </div>
             ))
@@ -620,22 +636,29 @@ export default function WorkerDashboard() {
           )
         ) : (
           activeJobs.map(job => (
-            <div key={job.id} className="card-elevated border-l-4 border-primary-container !p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3">
+            <div key={job.id} className="space-y-4 overflow-hidden rounded-2xl border border-success/20 bg-white shadow-lg shadow-green-900/5">
+              <div className="flex items-center justify-between gap-3 bg-success-container px-4 py-3">
                 <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
                   {job.status === 'assigned' ? 'Mới nhận' : 'Đang thực hiện'}
                 </span>
-                <button className="text-primary-container font-bold text-body-sm">Chi tiết</button>
+                <button className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-primary-container shadow-sm">Chi tiết</button>
               </div>
 
-              <div className="min-w-0">
-                <h3 className="text-body-md font-bold text-on-surface truncate">{job.customerName}</h3>
-                <p className="text-body-sm text-on-surface-variant mb-2">{job.serviceName}</p>
-                <div className="flex items-start gap-2 text-label-sm text-on-surface-variant bg-surface-container-lowest p-2 rounded-lg ">
+              <div className="space-y-4 p-5 pt-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-extrabold text-on-surface">{job.customerName}</h3>
+                  <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
+                </div>
+                <div className="rounded-xl bg-primary-fixed px-3 py-2 text-right text-xs font-bold text-primary-container">
+                  {job.time}
+                </div>
+              </div>
+
+                <div className="flex items-start gap-2 rounded-xl bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
                   <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
                   <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
                 </div>
-              </div>
 
               {job.images && job.images.length > 0 && (
                 <div className="space-y-2">
@@ -667,24 +690,25 @@ export default function WorkerDashboard() {
               <div className="flex items-center gap-4 py-3 border-y border-outline-variant/50">
                 <button
                   onClick={() => showToast("Tính năng đang được phát triển, vui lòng chờ...", "info")}
-                  className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors"
+                  className="flex-1 flex flex-col items-center gap-1 rounded-xl bg-success-container p-2 text-success transition-colors hover:bg-success hover:text-white"
                 >
-                  <PhoneIcon size={20} className="text-success" />
-                  <span className="text-[10px] font-bold text-on-surface-variant uppercase">Gọi khách</span>
+                  <PhoneIcon size={20} />
+                  <span className="text-[10px] font-bold uppercase">Gọi khách</span>
                 </button>
                 <div className="w-px h-8 bg-outline-variant/50" />
-                <button className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors">
-                  <MapPinIcon size={20} className="text-primary-container" />
-                  <span className="text-[10px] font-bold text-on-surface-variant uppercase">Chỉ đường</span>
+                <button className="flex-1 flex flex-col items-center gap-1 rounded-xl bg-primary-fixed p-2 text-primary-container transition-colors hover:bg-primary-container hover:text-white">
+                  <MapPinIcon size={20} />
+                  <span className="text-[10px] font-bold uppercase">Chỉ đường</span>
                 </button>
               </div>
 
               <button
                 onClick={() => triggerCompleteJob(job)}
-                className="w-full btn-primary !bg-success !border-success !py-3.5 !rounded-xl"
+                className="w-full rounded-xl bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-green-700/20 transition-all hover:brightness-110 active:scale-[0.98]"
               >
                 Hoàn thành Job
               </button>
+              </div>
             </div>
           ))
         )}
