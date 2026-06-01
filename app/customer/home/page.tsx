@@ -1,16 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  ZapIcon, 
-  DropletIcon, 
-  CameraIcon, 
-  CogIcon, 
-  WrenchIcon, 
-  ArrowRightIcon, 
-  StarIcon,
+import {
+  ZapIcon,
+  DropletIcon,
+  CameraIcon,
+  CogIcon,
+  WrenchIcon,
   ShieldCheckIcon,
-  ClockIcon
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
+  ArrowRightIcon
 } from "@/app/components/icons";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -23,12 +29,21 @@ interface Service {
   color: string;
 }
 
-const iconMap: Record<string, typeof WrenchIcon> = {
-  ZapIcon: ZapIcon,
-  DropletIcon: DropletIcon,
-  CameraIcon: CameraIcon,
-  CogIcon: CogIcon,
-  WrenchIcon: WrenchIcon
+const iconMap: Record<string, any> = {
+  ZapIcon,
+  DropletIcon,
+  CameraIcon,
+  CogIcon,
+  WrenchIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
 };
 
 const serviceStyles: Record<string, string> = {
@@ -37,6 +52,15 @@ const serviceStyles: Record<string, string> = {
   CameraIcon: "bg-violet-50 text-violet-600",
   CogIcon: "bg-emerald-50 text-emerald-600",
   WrenchIcon: "bg-rose-50 text-rose-600",
+  ShieldCheckIcon: "bg-emerald-50 text-emerald-600",
+  StarIcon: "bg-yellow-50 text-yellow-600",
+  ClockIcon: "bg-indigo-50 text-indigo-600",
+  MapPinIcon: "bg-red-50 text-red-600",
+  BriefcaseIcon: "bg-slate-50 text-slate-600",
+  BarChartIcon: "bg-cyan-50 text-cyan-600",
+  CalendarIcon: "bg-rose-50 text-rose-600",
+  PhoneIcon: "bg-teal-50 text-teal-600",
+  UsersIcon: "bg-orange-50 text-orange-600",
 };
 
 const defaultServices: Service[] = [
@@ -46,19 +70,9 @@ const defaultServices: Service[] = [
   { id: "4", iconName: "CogIcon", name: "Cơ khí", price: "250.000đ", color: "bg-emerald-50 text-emerald-600" },
 ];
 
-const topWorkers = [
-  { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230, color: "bg-amber-100 text-amber-700", status: "Sẵn sàng" },
-  { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185, color: "bg-sky-100 text-sky-700", status: "Gần bạn" },
-  { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142, color: "bg-violet-100 text-violet-700", status: "Phản hồi nhanh" },
-];
-
-const bookingHighlights = [
-  { label: "Có thợ trong", value: "30 phút", icon: ClockIcon, color: "bg-secondary-container text-white" },
-  { label: "Bảo hành", value: "7 ngày", icon: ShieldCheckIcon, color: "bg-success text-white" },
-];
-
 export default function CustomerHome() {
   const [services, setServices] = useState<Service[]>(defaultServices);
+  const [topWorkers, setTopWorkers] = useState<any[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
@@ -72,8 +86,8 @@ export default function CustomerHome() {
         const formattedServices = data.map((svc) => {
           const iconName = svc.icon || "WrenchIcon";
           const color = serviceStyles[iconName] || "bg-primary-fixed/10 text-primary";
-          const formattedPrice = svc.base_price 
-            ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ` 
+          const formattedPrice = svc.base_price
+            ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ`
             : "Miễn phí";
           return {
             id: svc.id,
@@ -86,7 +100,41 @@ export default function CustomerHome() {
         setServices(formattedServices);
       }
     }
+
+    async function fetchWorkers() {
+      const { data, error } = await supabase
+        .from("workers")
+        .select("*, profiles(*)")
+        .eq("status", "active")
+        .order("avg_rating", { ascending: false })
+        .order("total_jobs", { ascending: false })
+        .limit(3);
+
+      if (data && !error && data.length > 0) {
+        const formattedWorkers = data.map((w) => {
+          const specialty = w.specialties?.[0] || "Sửa chữa";
+          const rating = w.avg_rating && Number(w.avg_rating) > 0 ? Number(w.avg_rating) : 5.0;
+          const name = w.profiles?.full_name || `Anh Thợ ${specialty}`;
+          return {
+            name,
+            specialty,
+            rating: rating.toFixed(1),
+            jobs: w.total_jobs || 0,
+          };
+        });
+        setTopWorkers(formattedWorkers);
+      } else {
+        // Fallback to beautiful static data
+        setTopWorkers([
+          { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230 },
+          { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185 },
+          { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142 },
+        ]);
+      }
+    }
+
     fetchServices();
+    fetchWorkers();
   }, [supabase]);
 
   return (

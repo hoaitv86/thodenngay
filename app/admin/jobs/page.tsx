@@ -44,6 +44,7 @@ export default function AdminJobs() {
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
   const [isAssigning, setIsAssigning] = useState(false);
+  const [workerSearchQuery, setWorkerSearchQuery] = useState("");
 
   useEffect(() => {
     fetchJobs();
@@ -126,6 +127,7 @@ export default function AdminJobs() {
   const openAssignModal = async (jobId: string) => {
     setSelectedJobId(jobId);
     setSelectedWorkerId("");
+    setWorkerSearchQuery("");
     setAssignWorkerModalOpen(true);
     
     if (workersList.length === 0) {
@@ -175,6 +177,13 @@ export default function AdminJobs() {
       }));
     }
   };
+
+  const filteredWorkers = workersList.filter(worker => {
+    const searchLower = workerSearchQuery.toLowerCase();
+    const fullName = worker.profiles?.full_name?.toLowerCase() || "";
+    const phone = worker.profiles?.phone?.toLowerCase() || "";
+    return fullName.includes(searchLower) || phone.includes(searchLower);
+  });
 
   const filteredJobs = jobs.filter(job => {
     const searchLower = searchQuery.toLowerCase();
@@ -517,11 +526,35 @@ export default function AdminJobs() {
               <p className="text-body-sm text-on-surface-variant mb-4">
                 Vui lòng chọn một thợ đang hoạt động để gán cho Job này:
               </p>
+
+              {/* Worker Search Bar */}
+              <div className="relative mb-4 animate-fade-in">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-on-surface-variant">
+                  <SearchIcon size={18} />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Tìm thợ theo tên, số điện thoại..."
+                  className="input-field !pl-9 !py-2 !rounded-xl w-full text-sm"
+                  value={workerSearchQuery}
+                  onChange={(e) => setWorkerSearchQuery(e.target.value)}
+                />
+                {workerSearchQuery && (
+                  <button
+                    onClick={() => setWorkerSearchQuery("")}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-on-surface-variant hover:text-on-surface transition-colors"
+                  >
+                    <XIcon size={16} />
+                  </button>
+                )}
+              </div>
               
-              <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
                 {workersList.length === 0 ? (
                   <p className="text-center text-on-surface-variant py-4">Đang tải danh sách thợ...</p>
-                ) : workersList.map(worker => (
+                ) : filteredWorkers.length === 0 ? (
+                  <p className="text-center text-on-surface-variant py-4">Không tìm thấy thợ phù hợp.</p>
+                ) : filteredWorkers.map(worker => (
                   <label 
                     key={worker.id}
                     className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${

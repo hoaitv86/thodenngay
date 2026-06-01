@@ -16,7 +16,13 @@ import {
   DropletIcon,
   CameraIcon,
   CogIcon,
+  WrenchIcon,
+  ShieldCheckIcon,
   StarIcon,
+  MapPinIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
   CheckCircleIcon,
   UsersIcon,
   LayoutDashboardIcon,
@@ -27,6 +33,7 @@ export default function CustomerDashboard() {
   const [userName, setUserName] = useState("Khách");
   const [loading, setLoading] = useState(true);
   const [recentJobs, setRecentJobs] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const router = useRouter();
   const supabase = createClient();
 
@@ -52,6 +59,49 @@ export default function CustomerDashboard() {
         
         if (jobs) setRecentJobs(jobs);
       }
+
+      // Fetch active services dynamically
+      try {
+        const { data: svcs } = await supabase
+          .from('services')
+          .select('*')
+          .eq('is_active', true)
+          .order('name');
+        
+        if (svcs && svcs.length > 0) {
+          const iconMap: Record<string, any> = {
+            ZapIcon, DropletIcon, CameraIcon, CogIcon, WrenchIcon,
+            ShieldCheckIcon, StarIcon, ClockIcon, MapPinIcon, BriefcaseIcon,
+            BarChartIcon, CalendarIcon, PhoneIcon, UsersIcon
+          };
+          const styleMap: Record<string, any> = {
+            'ZapIcon': { color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
+            'DropletIcon': { color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
+            'CameraIcon': { color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
+            'CogIcon': { color: "text-green-600", bg: "bg-green-50", border: "border-green-100" },
+            'WrenchIcon': { color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
+            'ShieldCheckIcon': { color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+            'StarIcon': { color: "text-yellow-600", bg: "bg-yellow-50", border: "border-yellow-100" },
+            'ClockIcon': { color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
+            'MapPinIcon': { color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
+            'BriefcaseIcon': { color: "text-slate-600", bg: "bg-slate-50", border: "border-slate-100" },
+            'BarChartIcon': { color: "text-cyan-600", bg: "bg-cyan-50", border: "border-cyan-100" },
+            'CalendarIcon': { color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
+            'PhoneIcon': { color: "text-teal-600", bg: "bg-teal-50", border: "border-teal-100" },
+            'UsersIcon': { color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-100" }
+          };
+
+          const mapped = svcs.map(s => ({
+            ...s,
+            iconComponent: iconMap[s.icon] || BriefcaseIcon,
+            ...(styleMap[s.icon] || { color: "text-primary", bg: "bg-primary-fixed/10", border: "border-primary/10" })
+          }));
+          setServices(mapped);
+        }
+      } catch (err) {
+        console.error("Error fetching services in dashboard:", err);
+      }
+
       setLoading(false);
     };
     fetchData();
@@ -119,24 +169,27 @@ export default function CustomerDashboard() {
         {/* Quick Services */}
         <section className="space-y-6">
           <h2 className="text-sm font-bold text-[#003178] uppercase tracking-[0.2em] px-2">Dịch vụ phổ biến</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
-            {[
-              { name: "Sửa Điện", icon: ZapIcon, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
-              { name: "Sửa Nước", icon: DropletIcon, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-              { name: "Camera", icon: CameraIcon, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-              { name: "Cơ khí", icon: CogIcon, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-            ].map(svc => (
-              <Link 
-                key={svc.name} 
-                href="/booking" 
-                className={`card !p-4 sm:!p-6 min-h-[132px] flex flex-col items-center justify-center gap-3 sm:gap-4 hover:shadow-lg hover:-translate-y-1 transition-all group bg-white border ${svc.border}`}
-              >
-                <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-2xl ${svc.bg} ${svc.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                  <svc.icon size={28} />
-                </div>
-                <span className="text-sm sm:text-base font-bold text-[#1a1c1e] text-center">{svc.name}</span>
-              </Link>
-            ))}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {(services.length > 0 ? services : [
+              { id: "1", name: "Sửa Điện", iconComponent: ZapIcon, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
+              { id: "2", name: "Sửa Nước", iconComponent: DropletIcon, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
+              { id: "3", name: "Camera", iconComponent: CameraIcon, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
+              { id: "4", name: "Cơ khí", iconComponent: CogIcon, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+            ]).map(svc => {
+              const IconComp = svc.iconComponent;
+              return (
+                <Link 
+                  key={svc.id || svc.name} 
+                  href={svc.id && svc.id !== "1" && svc.id !== "2" && svc.id !== "3" && svc.id !== "4" ? `/booking?service=${svc.id}` : "/booking"} 
+                  className={`card !p-6 flex flex-col items-center gap-4 hover:shadow-lg hover:-translate-y-1 transition-all group bg-white border ${svc.border}`}
+                >
+                  <div className={`w-16 h-16 rounded-2xl ${svc.bg} ${svc.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                    <IconComp size={32} />
+                  </div>
+                  <span className="text-base font-bold text-[#1a1c1e]">{svc.name}</span>
+                </Link>
+              );
+            })}
           </div>
         </section>
 
@@ -235,10 +288,10 @@ export default function CustomerDashboard() {
           <StarIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Yêu thích</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
+        <Link href="/customer/profile" className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
           <UserIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Hồ sơ</span>
-        </button>
+        </Link>
       </footer>
     </div>
   );
