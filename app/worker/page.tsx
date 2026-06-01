@@ -73,12 +73,20 @@ export default function WorkerDashboard() {
           .eq('status', 'pending')
           .order('created_at', { ascending: false });
         console.log('pendingJobs', pendingJobs);
+
+        // Filter pending jobs matching worker specialties
+        const workerSpecialties = workerData.specialties || [];
+        const filteredPending = (pendingJobs || []).filter(j => {
+          const serviceName = j.service?.name;
+          return serviceName && workerSpecialties.includes(serviceName);
+        });
+
         // Map icon component
-        const iconMap: Record<string, any> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
-        const mappedNew = (pendingJobs || []).map(j => ({
+        const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+        const mappedNew = filteredPending.map(j => ({
           ...j,
           serviceName: j.service?.name,
-          icon: iconMap[j.service?.icon] || BriefcaseIcon,
+          icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
           price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
           time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           distance: "1.2 km" // Mock distance for now
