@@ -12,7 +12,6 @@ import {
   DropletIcon,
   WrenchIcon,
   CameraIcon,
-  WrenchIcon,
   ShieldCheckIcon,
   StarIcon,
   BarChartIcon,
@@ -80,6 +79,14 @@ const defaultServiceVisual = {
   selectedClass: "border-primary-container bg-primary-fixed/40 shadow-blue-900/10",
   labelClass: "text-primary-container",
   chipClass: "bg-primary-fixed text-primary-container",
+};
+
+const getServiceVisual = (service: ServiceOption) => {
+  const nameLower = (service.name || "").toLowerCase();
+  const matched = serviceVisuals.find(v =>
+    v.match.some(m => nameLower.includes(m))
+  );
+  return matched || defaultServiceVisual;
 };
 
 export default function CustomerBooking() {

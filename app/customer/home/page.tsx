@@ -70,6 +70,11 @@ const defaultServices: Service[] = [
   { id: "4", iconName: "CogIcon", name: "Cơ khí", price: "250.000đ", color: "bg-emerald-50 text-emerald-600" },
 ];
 
+const bookingHighlights = [
+  { label: "Có thợ trong", value: "30 phút", icon: ClockIcon, color: "bg-secondary-container text-white" },
+  { label: "Bảo hành", value: "7 ngày", icon: ShieldCheckIcon, color: "bg-success text-white" },
+];
+
 export default function CustomerHome() {
   const [services, setServices] = useState<Service[]>(defaultServices);
   const [topWorkers, setTopWorkers] = useState<any[]>([]);
@@ -115,20 +120,30 @@ export default function CustomerHome() {
           const specialty = w.specialties?.[0] || "Sửa chữa";
           const rating = w.avg_rating && Number(w.avg_rating) > 0 ? Number(w.avg_rating) : 5.0;
           const name = w.profiles?.full_name || `Anh Thợ ${specialty}`;
+          
+          const specialtyLower = specialty.toLowerCase();
+          let color = "bg-rose-100 text-rose-700";
+          if (specialtyLower.includes("điện") || specialtyLower.includes("dien")) color = "bg-amber-100 text-amber-700";
+          else if (specialtyLower.includes("nước") || specialtyLower.includes("nuoc")) color = "bg-sky-100 text-sky-700";
+          else if (specialtyLower.includes("camera") || specialtyLower.includes("cam")) color = "bg-violet-100 text-violet-700";
+          else if (specialtyLower.includes("cơ khí") || specialtyLower.includes("co khi")) color = "bg-emerald-100 text-emerald-700";
+
           return {
             name,
             specialty,
             rating: rating.toFixed(1),
             jobs: w.total_jobs || 0,
+            color,
+            status: "Hoạt động",
           };
         });
         setTopWorkers(formattedWorkers);
       } else {
         // Fallback to beautiful static data
         setTopWorkers([
-          { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230 },
-          { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185 },
-          { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142 },
+          { name: "Anh Tuấn", specialty: "Điện", rating: "4.9", jobs: 230, color: "bg-amber-100 text-amber-700", status: "Sẵn sàng" },
+          { name: "Anh Phát", specialty: "Nước", rating: "4.8", jobs: 185, color: "bg-sky-100 text-sky-700", status: "Gần bạn" },
+          { name: "Anh Minh", specialty: "Camera", rating: "4.7", jobs: 142, color: "bg-violet-100 text-violet-700", status: "Phản hồi nhanh" },
         ]);
       }
     }
