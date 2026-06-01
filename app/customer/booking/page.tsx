@@ -11,6 +11,13 @@ import {
   ZapIcon,
   DropletIcon,
   CameraIcon,
+  WrenchIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
   ArrowRightIcon,
   CheckCircleIcon,
   XIcon
@@ -117,7 +124,18 @@ export default function CustomerBooking() {
       case 'ZapIcon': return ZapIcon;
       case 'DropletIcon': return DropletIcon;
       case 'CameraIcon': return CameraIcon;
-      default: return CogIcon;
+      case 'CogIcon': return CogIcon;
+      case 'WrenchIcon': return WrenchIcon;
+      case 'ShieldCheckIcon': return ShieldCheckIcon;
+      case 'StarIcon': return StarIcon;
+      case 'ClockIcon': return ClockIcon;
+      case 'MapPinIcon': return MapPinIcon;
+      case 'BriefcaseIcon': return BriefcaseIcon;
+      case 'BarChartIcon': return BarChartIcon;
+      case 'CalendarIcon': return CalendarIcon;
+      case 'PhoneIcon': return PhoneIcon;
+      case 'UsersIcon': return UsersIcon;
+      default: return BriefcaseIcon;
     }
   };
 

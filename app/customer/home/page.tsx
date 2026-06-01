@@ -7,8 +7,16 @@ import {
   CameraIcon, 
   CogIcon, 
   WrenchIcon, 
-  ArrowRightIcon, 
-  StarIcon 
+  ShieldCheckIcon,
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
+  ArrowRightIcon 
 } from "@/app/components/icons";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -22,11 +30,20 @@ interface Service {
 }
 
 const iconMap: Record<string, any> = {
-  ZapIcon: ZapIcon,
-  DropletIcon: DropletIcon,
-  CameraIcon: CameraIcon,
-  CogIcon: CogIcon,
-  WrenchIcon: WrenchIcon
+  ZapIcon,
+  DropletIcon,
+  CameraIcon,
+  CogIcon,
+  WrenchIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
 };
 
 const serviceStyles: Record<string, string> = {
@@ -35,6 +52,15 @@ const serviceStyles: Record<string, string> = {
   CameraIcon: "bg-violet-50 text-violet-600",
   CogIcon: "bg-emerald-50 text-emerald-600",
   WrenchIcon: "bg-rose-50 text-rose-600",
+  ShieldCheckIcon: "bg-emerald-50 text-emerald-600",
+  StarIcon: "bg-yellow-50 text-yellow-600",
+  ClockIcon: "bg-indigo-50 text-indigo-600",
+  MapPinIcon: "bg-red-50 text-red-600",
+  BriefcaseIcon: "bg-slate-50 text-slate-600",
+  BarChartIcon: "bg-cyan-50 text-cyan-600",
+  CalendarIcon: "bg-rose-50 text-rose-600",
+  PhoneIcon: "bg-teal-50 text-teal-600",
+  UsersIcon: "bg-orange-50 text-orange-600",
 };
 
 const defaultServices: Service[] = [

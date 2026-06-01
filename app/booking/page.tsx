@@ -10,10 +10,17 @@ import {
   DropletIcon,
   CameraIcon,
   CogIcon,
-  ChevronRightIcon,
-  MapPinIcon,
+  WrenchIcon,
+  ShieldCheckIcon,
+  StarIcon,
   ClockIcon,
+  MapPinIcon,
   BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
+  ChevronRightIcon,
   ArrowRightIcon,
   CheckCircleIcon,
   XIcon
@@ -49,20 +56,45 @@ export default function BookingPage() {
         .eq('is_active', true);
       
       if (svcs) {
-        // Map icon component and colors (using fallbacks for Phase 1)
-        const iconMap: Record<string, any> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+        // Map icon component and colors (supporting all 14 system icons)
+        const iconMap: Record<string, any> = {
+          ZapIcon,
+          DropletIcon,
+          CameraIcon,
+          CogIcon,
+          WrenchIcon,
+          ShieldCheckIcon,
+          StarIcon,
+          ClockIcon,
+          MapPinIcon,
+          BriefcaseIcon,
+          BarChartIcon,
+          CalendarIcon,
+          PhoneIcon,
+          UsersIcon
+        };
         const colorMap: Record<string, any> = {
-          'Sửa điện': { color: "#f59e0b", bgColor: "#fef3c7" },
-          'Sửa nước': { color: "#3b82f6", bgColor: "#dbeafe" },
-          'Lắp camera': { color: "#8b5cf6", bgColor: "#ede9fe" },
-          'Cơ khí': { color: "#10b981", bgColor: "#d1fae5" },
+          'ZapIcon': { color: "#f59e0b", bgColor: "#fef3c7" },
+          'DropletIcon': { color: "#3b82f6", bgColor: "#dbeafe" },
+          'CameraIcon': { color: "#8b5cf6", bgColor: "#ede9fe" },
+          'CogIcon': { color: "#10b981", bgColor: "#d1fae5" },
+          'WrenchIcon': { color: "#ec4899", bgColor: "#fce7f3" },
+          'ShieldCheckIcon': { color: "#059669", bgColor: "#d1fae5" },
+          'StarIcon': { color: "#eab308", bgColor: "#fef9c3" },
+          'ClockIcon': { color: "#6366f1", bgColor: "#e0e7ff" },
+          'MapPinIcon': { color: "#ef4444", bgColor: "#fee2e2" },
+          'BriefcaseIcon': { color: "#64748b", bgColor: "#f1f5f9" },
+          'BarChartIcon': { color: "#06b6d4", bgColor: "#ecfeff" },
+          'CalendarIcon': { color: "#f43f5e", bgColor: "#ffe4e6" },
+          'PhoneIcon': { color: "#14b8a6", bgColor: "#ccfbf1" },
+          'UsersIcon': { color: "#f97316", bgColor: "#ffedd5" }
         };
 
         const mapped = svcs.map(s => ({
           ...s,
           iconComponent: iconMap[s.icon] || BriefcaseIcon,
           formattedPrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(s.base_price),
-          ...(colorMap[s.name] || { color: "#003178", bgColor: "#f0f4f9" })
+          ...(colorMap[s.icon] || { color: "#003178", bgColor: "#f0f4f9" })
         }));
         setServices(mapped);
       }

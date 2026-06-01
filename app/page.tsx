@@ -5,17 +5,59 @@ import {
   DropletIcon,
   CameraIcon,
   CogIcon,
-  PhoneIcon,
+  WrenchIcon,
   ShieldCheckIcon,
   StarIcon,
   ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
   CheckCircleIcon,
   ArrowRightIcon,
   ChevronRightIcon,
 } from "./components/icons";
+import { createClient } from "@/lib/supabase/server";
+
+const iconMap: Record<string, any> = {
+  ZapIcon,
+  DropletIcon,
+  CameraIcon,
+  CogIcon,
+  WrenchIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  ClockIcon,
+  MapPinIcon,
+  BriefcaseIcon,
+  BarChartIcon,
+  CalendarIcon,
+  PhoneIcon,
+  UsersIcon,
+};
+
+const iconStyleMap: Record<string, { color: string; bgColor: string }> = {
+  ZapIcon: { color: "#f59e0b", bgColor: "#fef3c7" },
+  DropletIcon: { color: "#3b82f6", bgColor: "#dbeafe" },
+  CameraIcon: { color: "#8b5cf6", bgColor: "#ede9fe" },
+  CogIcon: { color: "#10b981", bgColor: "#d1fae5" },
+  WrenchIcon: { color: "#ec4899", bgColor: "#fce7f3" },
+  ShieldCheckIcon: { color: "#059669", bgColor: "#d1fae5" },
+  StarIcon: { color: "#eab308", bgColor: "#fef9c3" },
+  ClockIcon: { color: "#6366f1", bgColor: "#e0e7ff" },
+  MapPinIcon: { color: "#ef4444", bgColor: "#fee2e2" },
+  BriefcaseIcon: { color: "#64748b", bgColor: "#f1f5f9" },
+  BarChartIcon: { color: "#06b6d4", bgColor: "#ecfeff" },
+  CalendarIcon: { color: "#f43f5e", bgColor: "#ffe4e6" },
+  PhoneIcon: { color: "#14b8a6", bgColor: "#ccfbf1" },
+  UsersIcon: { color: "#f97316", bgColor: "#ffedd5" },
+};
 
 
-const services = [
+
+const defaultServices = [
   {
     icon: ZapIcon,
     name: "Sửa điện",
@@ -97,7 +139,34 @@ const testimonials = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  let dbServices = null;
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("services")
+      .select("*")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    dbServices = data;
+  } catch (e) {
+    console.error("Failed to fetch services in page.tsx:", e);
+  }
+
+  const services = dbServices && dbServices.length > 0
+    ? dbServices.map(svc => {
+        const style = iconStyleMap[svc.icon] || { color: "#0d47a1", bgColor: "#e3f2fd" };
+        return {
+          id: svc.id,
+          name: svc.name,
+          desc: svc.description || "Dịch vụ sửa chữa uy tín của Alo Thợ",
+          icon: iconMap[svc.icon] || WrenchIcon,
+          color: style.color,
+          bgColor: style.bgColor,
+        };
+      })
+    : defaultServices;
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* ===== HEADER / NAVBAR ===== */}
