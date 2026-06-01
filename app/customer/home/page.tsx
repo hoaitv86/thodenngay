@@ -142,7 +142,7 @@ export default function CustomerHome() {
       {/* Greeting */}
       <div className="bg-gradient-to-br from-primary-container to-primary rounded-2xl p-5 text-on-primary">
         <p className="text-sm opacity-80">Xin chào 👋</p>
-        <h1 className="text-xl mt-1">Bạn cần sửa gì?</h1>
+        <h1 className="text-lg mt-1">Bạn cần sửa gì?</h1>
         <p className="text-sm opacity-70 mt-1">
           Chọn dịch vụ bên dưới hoặc mô tả vấn đề
         </p>
