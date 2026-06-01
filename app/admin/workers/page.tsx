@@ -44,6 +44,12 @@ export default function AdminWorkers() {
     status: "active" as "active" | "pending" | "blocked"
   });
 
+  // Reset password states
+  const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
+  const [resetPasswordWorker, setResetPasswordWorker] = useState<any>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState("123456");
+  const [resettingPassword, setResettingPassword] = useState(false);
+
   const handleOpenEditModal = (worker: any) => {
     setEditingWorker(worker);
     setEditWorkerFormData({
@@ -130,6 +136,52 @@ export default function AdminWorkers() {
       showToast("Lỗi hệ thống: " + err.message, "error");
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleOpenResetPasswordModal = (worker: any) => {
+    setResetPasswordWorker(worker);
+    setNewPasswordValue("123456");
+    setResetPasswordModalOpen(true);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPasswordValue) {
+      showToast("Mật khẩu không được để trống", "error");
+      return;
+    }
+    if (newPasswordValue.length < 6) {
+      showToast("Mật khẩu phải từ 6 ký tự trở lên", "error");
+      return;
+    }
+
+    setResettingPassword(true);
+
+    try {
+      const res = await fetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: resetPasswordWorker.user_id,
+          newPassword: newPasswordValue,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast(`Đã reset mật khẩu cho thợ "${resetPasswordWorker.profiles?.full_name}" thành công!`, "success");
+        setResetPasswordModalOpen(false);
+      } else {
+        showToast(data.error || "Không thể reset mật khẩu.", "error");
+      }
+    } catch (err: any) {
+      showToast("Lỗi kết nối: " + err.message, "error");
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -569,6 +621,12 @@ export default function AdminWorkers() {
                               Mở khóa
                             </button>
                           )}
+                          <button
+                            onClick={() => handleOpenResetPasswordModal(worker)}
+                            className="px-2.5 py-1.5 text-label-sm font-bold text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          >
+                            Đổi MK
+                          </button>
                           <button
                             onClick={() => handleOpenEditModal(worker)}
                             className="px-2.5 py-1.5 text-label-sm font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors"
@@ -1076,6 +1134,67 @@ export default function AdminWorkers() {
                       Đang xử lý...
                     </span>
                   ) : "Lưu thay đổi"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetPasswordModalOpen && resetPasswordWorker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-fade-in-up">
+            <div className="p-6 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
+              <h3 className="text-lg font-bold text-on-surface">Đặt lại mật khẩu</h3>
+              <button
+                onClick={() => setResetPasswordModalOpen(false)}
+                className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleResetPassword} className="p-6 space-y-4">
+              <p className="text-body-sm text-on-surface-variant leading-relaxed">
+                Thiết lập lại mật khẩu cho thợ <strong className="text-on-surface">{resetPasswordWorker.profiles?.full_name}</strong>.
+              </p>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-on-surface block">
+                  Mật khẩu mới <span className="text-error">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nhập mật khẩu mới"
+                  className="input-field !py-2.5 !rounded-xl text-sm font-mono"
+                  value={newPasswordValue}
+                  onChange={(e) => setNewPasswordValue(e.target.value)}
+                  disabled={resettingPassword}
+                />
+              </div>
+
+              <div className="pt-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest -mx-6 -mb-6 p-4 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => setResetPasswordModalOpen(false)}
+                  className="btn-outline !py-2 !px-4 text-sm"
+                  disabled={resettingPassword}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary !py-2 !px-6 text-sm min-w-[120px]"
+                  disabled={resettingPassword}
+                >
+                  {resettingPassword ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang cập nhật...
+                    </span>
+                  ) : "Xác nhận"}
                 </button>
               </div>
             </form>
