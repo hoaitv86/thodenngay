@@ -173,8 +173,8 @@ export default async function HomePage() {
     <div className="flex flex-col min-h-screen">
       {/* ===== HEADER / NAVBAR ===== */}
       <header className="sticky top-0 z-50 glass">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 lg:h-[72px]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 gap-3 lg:h-[72px]">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 group" id="nav-logo">
               <LogoIcon size={36} />
@@ -197,10 +197,10 @@ export default async function HomePage() {
             </nav>
 
             {/* Auth Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <Link
                 href="/login"
-                className="btn-outline text-body-sm !py-2.5 !px-5"
+                className="btn-outline !min-h-10 !w-auto !px-3 !py-2 text-sm sm:!px-5"
                 id="nav-login"
               >
                 Đăng nhập
@@ -219,28 +219,23 @@ export default async function HomePage() {
 
       {/* ===== HERO SECTION ===== */}
       <section className="relative overflow-hidden bg-linear-to-br from-primary via-primary-container to-[#1565c0] text-on-primary">
-        {/* Background pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-10 left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
-          <div className="absolute bottom-10 right-10 w-96 h-96 bg-secondary-container rounded-full blur-3xl" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-inverse-primary rounded-full blur-3xl opacity-20" />
-        </div>
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12)_0,rgba(255,255,255,0)_38%),linear-gradient(90deg,rgba(253,108,0,0.16)_0,rgba(253,108,0,0)_55%)]" />
 
-        <div className="relative max-w-7xl mx-auto px-6 lg:px-8 py-20 lg:py-32">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20 lg:py-28">
           <div className="max-w-2xl">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/10 rounded-full mb-6 backdrop-blur-sm border border-white/10">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 rounded-full mb-5 backdrop-blur-sm border border-white/10">
               <span className="w-2 h-2 bg-secondary-container rounded-full animate-pulse" />
               <span className="text-label-sm text-white/90">Đang hoạt động 24/7</span>
             </div>
 
-            <h1 className="text-xl leading-tight mb-6">
+            <h1 className="mb-5 text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
               Thợ giỏi,{" "}
               <span className="text-secondary-container">đến ngay</span>{" "}
               khi bạn cần
             </h1>
 
-            <p className="text-lg text-white/80 max-w-xl mb-10">
+            <p className="max-w-xl mb-8 text-base leading-7 text-white/80 sm:text-lg">
               Nền tảng kết nối bạn với thợ sửa chữa chuyên nghiệp, được xác minh.
               Đặt dịch vụ điện, nước, camera, cơ khí chỉ trong vài bước.
             </p>
@@ -248,7 +243,7 @@ export default async function HomePage() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Link
                 href="/register"
-                className="btn-secondary !text-lg !py-4 !px-8 !rounded-xl"
+                className="btn-secondary !py-3.5 !px-6 sm:!w-auto sm:!px-8"
                 id="hero-cta"
               >
                 Đặt dịch vụ ngay
@@ -256,7 +251,7 @@ export default async function HomePage() {
               </Link>
               <a
                 href="tel:1900xxxx"
-                className="btn-outline !border-white/30 !text-white hover:!bg-white/10 hover:!border-white/50 !py-4 !px-8 !rounded-xl"
+                className="btn-outline !border-white/30 !text-white hover:!bg-white/10 hover:!border-white/50 !py-3.5 !px-6 sm:!w-auto sm:!px-8"
                 id="hero-call"
               >
                 <PhoneIcon size={20} />
@@ -265,7 +260,7 @@ export default async function HomePage() {
             </div>
 
             {/* Trust indicators */}
-            <div className="flex items-center gap-6 mt-10 text-white/70">
+            <div className="mt-8 grid grid-cols-1 gap-3 text-white/75 sm:flex sm:flex-wrap sm:items-center sm:gap-6">
               <div className="flex items-center gap-2">
                 <ShieldCheckIcon size={18} />
                 <span className="text-label-sm">Thợ xác minh</span>
@@ -285,8 +280,8 @@ export default async function HomePage() {
 
       {/* ===== STATS BAR ===== */}
       <section className="bg-surface-container-lowest border-b border-outline-variant">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5 sm:gap-8">
             {stats.map((s) => (
               <div key={s.label} className="text-center">
                 <div className="text-headline-md text-primary-container">{s.value}</div>
@@ -298,9 +293,9 @@ export default async function HomePage() {
       </section>
 
       {/* ===== SERVICES SECTION ===== */}
-      <section id="services" className="py-20 lg:py-28">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="text-center mb-14">
+      <section id="services" className="py-14 sm:py-20 lg:py-28">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10 sm:mb-14">
             <span className="text-label-md text-secondary-container uppercase tracking-wider">
               Dịch vụ
             </span>
@@ -343,9 +338,9 @@ export default async function HomePage() {
       </section>
 
       {/* ===== HOW IT WORKS ===== */}
-      <section id="how-it-works" className="py-20 lg:py-28 bg-surface-container-low">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="text-center mb-14">
+      <section id="how-it-works" className="py-14 sm:py-20 lg:py-28 bg-surface-container-low">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10 sm:mb-14">
             <span className="text-label-md text-secondary-container uppercase tracking-wider">
               Quy trình
             </span>
@@ -380,9 +375,9 @@ export default async function HomePage() {
       </section>
 
       {/* ===== WHY US SECTION ===== */}
-      <section className="py-20 lg:py-28">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+      <section className="py-14 sm:py-20 lg:py-28">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div>
               <span className="text-label-md text-secondary-container uppercase tracking-wider">
                 Tại sao chọn Alo Thợ
@@ -424,7 +419,7 @@ export default async function HomePage() {
 
             {/* Visual Card */}
             <div className="relative">
-              <div className="card-elevated !p-8 bg-gradient-to-br from-primary-fixed to-surface-container-lowest">
+              <div className="card-elevated !p-5 sm:!p-8 bg-gradient-to-br from-primary-fixed to-surface-container-lowest">
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center text-on-primary font-bold text-lg">
                     NT
@@ -458,7 +453,7 @@ export default async function HomePage() {
               </div>
 
               {/* Floating notification */}
-              <div className="absolute -top-4 -right-4 card-elevated !p-4 animate-float max-w-[220px]">
+              <div className="hidden sm:block absolute -top-4 -right-4 card-elevated !p-4 animate-float max-w-[220px]">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-success-container flex items-center justify-center text-success">
                     <CheckCircleIcon size={16} />
@@ -475,9 +470,9 @@ export default async function HomePage() {
       </section>
 
       {/* ===== REVIEWS ===== */}
-      <section id="reviews" className="py-20 lg:py-28 bg-surface-container-low">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="text-center mb-14">
+      <section id="reviews" className="py-14 sm:py-20 lg:py-28 bg-surface-container-low">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10 sm:mb-14">
             <span className="text-label-md text-secondary-container uppercase tracking-wider">
               Khách hàng nói gì
             </span>
@@ -516,9 +511,9 @@ export default async function HomePage() {
       </section>
 
       {/* ===== CTA SECTION ===== */}
-      <section className="py-20 lg:py-28 bg-linear-to-r from-primary-container to-primary text-on-primary">
-        <div className="max-w-4xl mx-auto px-6 lg:px-8 text-center">
-          <h2 className="text-lg mb-4">
+      <section className="py-14 sm:py-20 lg:py-28 bg-linear-to-r from-primary-container to-primary text-on-primary">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="mb-4 text-3xl font-bold leading-tight text-white sm:text-4xl">
             Bắt đầu sử dụng Alo Thợ ngay hôm nay
           </h2>
           <p className="text-lg text-white/80 mb-10 max-w-2xl mx-auto">
@@ -527,7 +522,7 @@ export default async function HomePage() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/register"
-              className="btn-secondary text-lg! py-4! px-10! rounded-xl!"
+              className="btn-secondary !py-3.5 !px-8 sm:!w-auto"
               id="cta-register"
             >
               Đăng ký miễn phí
@@ -535,7 +530,7 @@ export default async function HomePage() {
             </Link>
             <Link
               href="/register?role=worker"
-              className="btn-outline !border-white/30 !text-white hover:!bg-white/10 hover:!border-white/50 !py-4 !px-10 !rounded-xl"
+              className="btn-outline !border-white/30 !text-white hover:!bg-white/10 hover:!border-white/50 !py-3.5 !px-8 sm:!w-auto"
               id="cta-worker"
             >
               Đăng ký làm thợ
@@ -545,8 +540,8 @@ export default async function HomePage() {
       </section>
 
       {/* ===== FOOTER ===== */}
-      <footer className="bg-on-surface text-surface py-16">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
+      <footer className="bg-on-surface text-surface py-12 sm:py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
             <div className="md:col-span-2">
               <div className="flex items-center gap-3 mb-4">

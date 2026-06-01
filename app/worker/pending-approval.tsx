@@ -28,18 +28,18 @@ export default function PendingApproval({ worker, workerName }: PendingApprovalP
   const isBlocked = worker?.status === 'blocked';
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] flex items-center justify-center p-6 bg-gradient-to-br from-surface to-surface-container-low">
-      <div className="w-full max-w-md text-center space-y-8 animate-fade-in">
+    <div className="min-h-[calc(100dvh-5rem)] flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-surface to-surface-container-low">
+      <div className="w-full max-w-md text-center space-y-6 sm:space-y-8 animate-fade-in">
         
         {/* Status Icon */}
-        <div className="relative mx-auto w-28 h-28">
+        <div className="relative mx-auto w-24 h-24 sm:w-28 sm:h-28">
           {isBlocked ? (
-            <div className="w-28 h-28 rounded-full bg-error-container flex items-center justify-center shadow-lg shadow-red-200/50">
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-error-container flex items-center justify-center shadow-lg shadow-red-200/50">
               <XIcon size={48} className="text-error" />
             </div>
           ) : (
             <>
-              <div className="w-28 h-28 rounded-full bg-primary-fixed flex items-center justify-center shadow-lg shadow-blue-200/50 animate-pulse">
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-primary-fixed flex items-center justify-center shadow-lg shadow-blue-200/50 animate-pulse">
                 <ClockIcon size={48} className="text-primary-container" />
               </div>
               {/* Spinning ring */}
@@ -71,7 +71,7 @@ export default function PendingApproval({ worker, workerName }: PendingApprovalP
 
         {/* Status steps */}
         {!isBlocked && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-outline-variant/20 text-left space-y-4">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-outline-variant/20 text-left space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-success-container flex items-center justify-center shrink-0">
                 <CheckCircleIcon size={16} className="text-success" />
@@ -113,7 +113,7 @@ export default function PendingApproval({ worker, workerName }: PendingApprovalP
         {/* Logout */}
         <button
           onClick={handleLogout}
-          className="btn-outline !py-3 !px-6 !rounded-xl flex items-center justify-center gap-2 mx-auto text-sm"
+          className="btn-outline !py-3 !px-6 flex items-center justify-center gap-2 mx-auto text-sm sm:!w-auto"
         >
           <LogOutIcon size={18} />
           Đăng xuất

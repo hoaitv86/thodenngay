@@ -179,7 +179,7 @@ export default function JobDetailPage() {
   if (!job) return null;
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col max-w-md mx-auto relative">
+    <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col bg-surface">
       {/* Toast Notification */}
       {toast.type && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-xl shadow-lg border animate-fade-in flex items-start gap-3 ${
@@ -196,34 +196,35 @@ export default function JobDetailPage() {
         <h1 className="text-body-lg font-bold">Chi tiết công việc</h1>
       </header>
 
-      <main className="flex-1 p-4 space-y-6 pb-10">
+      <main className="flex-1 space-y-6 p-4 pb-10 lg:p-8">
         {/* Status Card */}
-        <div className="card-elevated !p-6 flex flex-col items-center text-center space-y-3">
-          <div className="w-16 h-16 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container">
+        <div className="relative flex flex-col items-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-5 text-center text-white shadow-xl shadow-primary/15 sm:p-6">
+          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-white text-primary-container shadow-lg shadow-black/10">
             <ShieldCheck size={32} />
           </div>
-          <div>
-            <h2 className="text-headline-sm text-on-surface">
+          <div className="relative mt-3">
+            <h2 className="text-xl font-extrabold text-white">
               {job.status === 'pending' ? 'Đang tìm thợ...' : 
                job.status === 'in_progress' ? 'Thợ đang đến' : 
                (job.status === 'completed' || job.status === 'done') ? 'Đã hoàn thành' : 'Đã hủy'}
             </h2>
-            <p className="text-label-md text-on-surface-variant font-medium mt-1">Mã đơn: {job.job_code}</p>
+            <p className="mt-1 text-label-md font-medium text-white/75">Mã đơn: {job.job_code}</p>
           </div>
         </div>
 
         {/* Service Info */}
         <div className="space-y-4">
           <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Thông tin dịch vụ</h3>
-          <div className="card !p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center text-primary-container shrink-0">
+          <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-lg shadow-blue-900/5 sm:gap-4 sm:p-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-container text-white shadow-md shadow-primary/20">
               <Briefcase size={24} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-body-md font-bold text-on-surface truncate">{job.service?.name}</p>
               <p className="text-label-sm text-on-surface-variant">{job.service?.description}</p>
             </div>
-            <div className="text-body-md font-bold text-primary-container">
+            <div className="shrink-0 rounded-xl bg-primary-fixed px-3 py-2 text-sm font-extrabold text-primary-container sm:text-body-md">
               {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(job.quoted_price)}
             </div>
           </div>
@@ -253,19 +254,19 @@ export default function JobDetailPage() {
         {job.worker && (
           <div className="space-y-4 pt-4 border-t border-outline-variant/30">
             <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Thợ đảm nhận</h3>
-            <div className="card !p-4 flex items-center gap-4 border-primary-container/20 bg-primary-fixed/5">
-              <div className="w-14 h-14 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container font-bold text-lg">
+            <div className="flex items-center gap-4 rounded-2xl border border-primary-container/20 bg-white p-4 shadow-lg shadow-blue-900/5">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-fixed text-lg font-bold text-primary-container">
                 {job.worker.user?.full_name?.charAt(0)}
               </div>
-              <div className="flex-1">
-                <p className="text-body-md font-bold text-on-surface">{job.worker.user?.full_name}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-body-md font-bold text-on-surface truncate">{job.worker.user?.full_name}</p>
                 <div className="flex items-center gap-1 text-warning">
                   <Star size={14} className="fill-current" />
                   <span className="text-label-sm font-bold">{job.worker.avg_rating}</span>
                   <span className="text-label-xs text-on-surface-variant font-normal">({job.worker.total_jobs} việc)</span>
                 </div>
               </div>
-              <a href={`tel:${job.worker.user?.phone}`} className="w-10 h-10 rounded-full bg-success-container flex items-center justify-center text-success">
+              <a href={`tel:${job.worker.user?.phone}`} className="flex h-10 w-10 items-center justify-center rounded-full bg-success text-white shadow-md shadow-green-700/20">
                 <Phone size={20} />
               </a>
             </div>
@@ -276,21 +277,23 @@ export default function JobDetailPage() {
         {job.description && (
           <div className="space-y-2">
             <p className="text-label-sm font-bold text-on-surface-variant uppercase tracking-wider opacity-60">Mô tả vấn đề</p>
-            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic">
-              "{job.description}"
+            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic break-words">
+              &ldquo;{job.description}&rdquo;
             </div>
           </div>
         )}
 
-        {/* Work Completion Images */}
-        {(job.status === 'completed' || job.status === 'done') && job.images && job.images.length > 0 && (
+        {/* Customer Request Images */}
+        {job.images && job.images.length > 0 && (
           <div className="space-y-3 pt-4 border-t border-outline-variant/30">
-            <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Hình ảnh nghiệm thu</h3>
+            <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">
+              Ảnh hiện trạng đã gửi cho thợ
+            </h3>
             <div className="grid grid-cols-2 gap-2">
               {job.images.map((imgUrl: string, idx: number) => (
                 <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30 bg-surface-container-low shadow-sm">
                   <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-                    <img src={imgUrl} alt={`Ảnh nghiệm thu ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
+                    <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
                   </a>
                 </div>
               ))}
@@ -321,7 +324,7 @@ export default function JobDetailPage() {
                   </span>
                 </div>
                 {job.ratings[0].comment ? (
-                  <p className="text-body-sm text-on-surface-variant italic">"{job.ratings[0].comment}"</p>
+                  <p className="text-body-sm text-on-surface-variant italic break-words">&ldquo;{job.ratings[0].comment}&rdquo;</p>
                 ) : (
                   <p className="text-body-sm text-on-surface-variant/60 italic">Không có bình luận.</p>
                 )}
@@ -341,7 +344,7 @@ export default function JobDetailPage() {
               </div>
             ) : (
               // Not Rated Yet: Show Rating Form
-              <form onSubmit={handleSubmitRating} className="bg-white p-5 rounded-2xl border border-outline-variant/30 space-y-4 shadow-sm">
+              <form onSubmit={handleSubmitRating} className="space-y-4 rounded-2xl border border-outline-variant/20 bg-white p-5 shadow-lg shadow-blue-900/5">
                 <div className="text-center space-y-2">
                   <p className="text-body-sm text-on-surface-variant">Bạn thấy dịch vụ của thợ thế nào? Hãy đánh giá nhé!</p>
                   
@@ -388,10 +391,10 @@ export default function JobDetailPage() {
                   <label className="text-label-sm font-semibold text-on-surface">Ảnh chứng minh (tùy chọn)</label>
                   <p className="text-[11px] text-on-surface-variant">Thêm ảnh để đánh giá khách quan hơn về chất lượng công việc.</p>
                   
-                  <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-outline-variant/50 rounded-xl cursor-pointer hover:bg-surface-container-low/50 transition-colors">
+                  <label className="flex h-20 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-secondary-container/50 bg-secondary-container/5 transition-colors hover:bg-secondary-container/10">
                     <div className="flex items-center gap-2">
-                      <Camera size={20} className="text-on-surface-variant/60" />
-                      <span className="text-xs font-bold text-primary">Thêm ảnh</span>
+                      <Camera size={20} className="text-secondary-container" />
+                      <span className="text-xs font-bold text-secondary">Thêm ảnh</span>
                       <span className="text-[10px] text-on-surface-variant">(PNG, JPG)</span>
                     </div>
                     <input 
@@ -406,7 +409,7 @@ export default function JobDetailPage() {
 
                   {/* Previews */}
                   {ratingPreviews.length > 0 && (
-                    <div className="grid grid-cols-4 gap-1.5 mt-2">
+                    <div className="grid grid-cols-3 gap-1.5 mt-2 sm:grid-cols-4">
                       {ratingPreviews.map((url, idx) => (
                         <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 group">
                           <img src={url} alt="Preview" className="w-full h-full object-cover" />
@@ -427,7 +430,7 @@ export default function JobDetailPage() {
                 <button
                   type="submit"
                   disabled={submittingRating}
-                  className="w-full btn-primary !py-3 rounded-xl! text-sm font-bold flex items-center justify-center gap-2"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-secondary-container px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
                 >
                   {submittingRating ? (
                     <span className="flex items-center gap-2">
@@ -446,12 +449,12 @@ export default function JobDetailPage() {
           {job.status === 'pending' && (
             <button 
               onClick={handleCancel}
-              className="w-full btn-outline !text-error border-error/20 hover:bg-error-container !py-4"
+              className="w-full rounded-xl border border-error/25 bg-error-container px-5 py-4 font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
             >
               Hủy yêu cầu
             </button>
           )}
-          <Link href="/dashboard" className="block w-full btn-outline !py-4 text-center">
+          <Link href="/dashboard" className="block w-full rounded-xl border border-outline-variant/40 bg-white px-5 py-4 text-center font-extrabold text-on-surface-variant shadow-sm transition-all hover:border-primary/30 hover:text-primary">
             Quay lại trang chủ
           </Link>
         </div>

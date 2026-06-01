@@ -134,6 +134,7 @@ CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING
 CREATE POLICY "Admins can update all profiles" ON public.profiles FOR UPDATE USING (public.is_admin());
 CREATE POLICY "Admins can delete all profiles" ON public.profiles FOR DELETE USING (public.is_admin());
 
+
 -- Workers: Everyone can view active workers, Admins view all
 CREATE POLICY "Public view active workers" ON public.workers FOR SELECT USING (status = 'active');
 CREATE POLICY "Workers view own record" ON public.workers FOR SELECT USING (user_id = auth.uid());

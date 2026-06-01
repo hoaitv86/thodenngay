@@ -32,9 +32,19 @@ export default function WorkerDashboard() {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [newJobs, setNewJobs] = useState<any[]>([]);
   const [activeJobs, setActiveJobs] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
   const [completingJobId, setCompletingJobId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' | null }>({ message: '', type: null });
+  const [quickFormOpen, setQuickFormOpen] = useState(false);
+  const [creatingQuickJob, setCreatingQuickJob] = useState(false);
+  const [quickJob, setQuickJob] = useState({
+    customerPhone: "",
+    serviceId: "",
+    address: "",
+    quotedPrice: "",
+    description: "",
+  });
   const supabase = createClient();
 
   // Completion modal states
@@ -211,6 +221,69 @@ export default function WorkerDashboard() {
     showToast('Đã bỏ qua công việc này.', 'info');
   };
 
+  const handleQuickServiceChange = (serviceId: string) => {
+    const selectedService = services.find(service => service.id === serviceId);
+    setQuickJob(prev => ({
+      ...prev,
+      serviceId,
+      quotedPrice: selectedService?.base_price ? String(selectedService.base_price) : prev.quotedPrice,
+    }));
+  };
+
+  const handleCreateQuickJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!worker || creatingQuickJob) return;
+
+    if (!quickJob.customerPhone.trim() || !quickJob.serviceId || !quickJob.address.trim()) {
+      showToast("Vui lòng nhập SĐT khách, dịch vụ và địa chỉ.", "error");
+      return;
+    }
+
+    const quotedPrice = quickJob.quotedPrice ? Number(quickJob.quotedPrice) : null;
+    if (quotedPrice !== null && (!Number.isFinite(quotedPrice) || quotedPrice < 0)) {
+      showToast("Giá dịch vụ không hợp lệ.", "error");
+      return;
+    }
+
+    setCreatingQuickJob(true);
+    try {
+      const { data, error } = await supabase.rpc('worker_create_quick_job', {
+        p_customer_phone: quickJob.customerPhone,
+        p_service_id: quickJob.serviceId,
+        p_address: quickJob.address,
+        p_description: quickJob.description || null,
+        p_quoted_price: quotedPrice,
+      });
+
+      if (error) throw error;
+
+      const createdJob = data as any;
+      setActiveJobs(prev => [
+        {
+          ...createdJob,
+          serviceName: createdJob.serviceName,
+          customerName: createdJob.customerName || 'Khách hàng',
+          time: new Date(createdJob.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        },
+        ...prev,
+      ]);
+      setQuickJob(prev => ({
+        customerPhone: "",
+        serviceId: prev.serviceId,
+        address: "",
+        quotedPrice: prev.quotedPrice,
+        description: "",
+      }));
+      setQuickFormOpen(false);
+      setTab("active");
+      showToast(`Đã tạo và nhận việc ${createdJob.job_code}.`, "success");
+    } catch (err: any) {
+      showToast(err.message || "Không thể tạo việc nhanh.", "error");
+    } finally {
+      setCreatingQuickJob(false);
+    }
+  };
+
   const triggerCompleteJob = (job: any) => {
     setActiveJobToComplete(job);
     setSelectedFiles([]);
@@ -340,46 +413,168 @@ export default function WorkerDashboard() {
 
       {/* Stats Bar */}
       <div className="p-4">
-        <div className="card-elevated !p-5 bg-gradient-to-br from-[#003178] to-[#0d47a1] text-white flex justify-around rounded-2xl shadow-xl shadow-blue-900/10">
-          <div className="text-center">
-            <div className="text-3xl font-extrabold">{workerStats.jobsDone}</div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">Jobs tháng</div>
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-4 text-white shadow-xl shadow-blue-900/15 sm:p-5">
+          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+          <div className="relative mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Bảng điều khiển thợ</p>
+              <h1 className="mt-1 text-xl font-extrabold leading-tight text-white">Sẵn sàng nhận việc</h1>
+            </div>
+            <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-extrabold text-success shadow-sm">
+              Online
+            </div>
+          </div>
+          <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-xl bg-white/12 p-3 backdrop-blur-sm">
+          <div className="min-w-0 text-center">
+            <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.jobsDone}</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs tháng</div>
           </div>
           <div className="h-12 w-px bg-white/20 self-center" />
-          <div className="text-center">
-            <div className="text-3xl font-extrabold">{workerStats.rating}</div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1 flex items-center justify-center gap-1">
+          <div className="min-w-0 text-center">
+            <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.rating}</div>
+            <div className="mt-1 flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">
               Rating <StarIcon size={10} className="fill-current text-amber-400" />
             </div>
           </div>
           <div className="h-12 w-px bg-white/20 self-center" />
-          <div className="text-center">
-            <div className="text-xl font-extrabold text-amber-400 leading-9">
+          <div className="min-w-0 text-center">
+            <div className="text-lg font-extrabold text-amber-400 leading-8 sm:text-xl">
               {workerStats.income >= 1000000
                 ? (workerStats.income / 1000000).toFixed(1) + 'tr'
                 : (workerStats.income / 1000).toFixed(0) + 'k'}
             </div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">Thu nhập</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Thu nhập</div>
+          </div>
           </div>
         </div>
       </div>
 
+      {/* Quick Job Creation */}
+      <div className="px-4 pb-4">
+        <div className="rounded-2xl border border-secondary-container/20 bg-white p-4 shadow-lg shadow-orange-900/5">
+          <button
+            type="button"
+            onClick={() => setQuickFormOpen(open => !open)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="w-11 h-11 rounded-xl bg-secondary-container flex items-center justify-center text-white shrink-0 shadow-md shadow-secondary-container/25">
+                <BriefcaseIcon size={20} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-body-sm font-bold text-on-surface">Tạo việc nhanh cho khách quen</h2>
+                <p className="text-xs leading-5 text-on-surface-variant">
+                  Khách chưa đặt đơn, thợ tạo job tại chỗ và nhận luôn.
+                </p>
+              </div>
+            </div>
+            <ChevronRightIcon
+              size={18}
+              className={`shrink-0 text-secondary-container transition-transform ${quickFormOpen ? "rotate-90" : ""}`}
+            />
+          </button>
+
+          {quickFormOpen && (
+            <form onSubmit={handleCreateQuickJob} className="mt-4 space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  SĐT khách quen
+                </label>
+                <input
+                  type="tel"
+                  value={quickJob.customerPhone}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerPhone: e.target.value }))}
+                  placeholder="VD: 0912345678"
+                  className="input-field !py-2.5"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    Dịch vụ
+                  </label>
+                  <select
+                    value={quickJob.serviceId}
+                    onChange={(e) => handleQuickServiceChange(e.target.value)}
+                    className="input-field !py-2.5"
+                  >
+                    <option value="">Chọn dịch vụ</option>
+                    {services.map(service => (
+                      <option key={service.id} value={service.id}>
+                        {service.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    Giá thỏa thuận
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={quickJob.quotedPrice}
+                    onChange={(e) => setQuickJob(prev => ({ ...prev, quotedPrice: e.target.value }))}
+                    placeholder="VD: 200000"
+                    className="input-field !py-2.5"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Địa chỉ làm việc
+                </label>
+                <input
+                  value={quickJob.address}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="Nhập địa chỉ thực tế"
+                  className="input-field !py-2.5"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Mô tả việc cần làm
+                </label>
+                <textarea
+                  value={quickJob.description}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Ghi chú nhanh tình trạng, yêu cầu, vật tư..."
+                  className="input-field min-h-20 resize-none !py-2.5"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={creatingQuickJob}
+                className="btn-secondary w-full !py-3 text-sm"
+              >
+                {creatingQuickJob ? "Đang tạo..." : "Tạo và nhận việc"}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+
       {/* Tabs */}
-      <div className="px-4 flex gap-8 border-b border-outline-variant">
+      <div className="mx-4 flex gap-2 rounded-xl bg-surface-container p-1">
         <button
           onClick={() => setTab("new")}
-          className={`pb-4 text-label-md font-bold transition-all relative ${tab === "new" ? "text-primary-container" : "text-on-surface-variant"}`}
+          className={`relative flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant"}`}
         >
           Việc mới
-          {tab === "new" && <div className="absolute bottom-0 left-0 w-full h-1 bg-primary-container rounded-t-full" />}
           {newJobs.length > 0 && <span className="ml-2 px-1.5 py-0.5 bg-error text-white text-[10px] rounded-full">{newJobs.length}</span>}
         </button>
         <button
           onClick={() => setTab("active")}
-          className={`pb-4 text-label-md font-bold transition-all relative ${tab === "active" ? "text-primary-container" : "text-on-surface-variant"}`}
+          className={`flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant"}`}
         >
           Đang làm
-          {tab === "active" && <div className="absolute bottom-0 left-0 w-full h-1 bg-primary-container rounded-t-full" />}
+          {activeJobs.length > 0 && <span className="ml-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] text-white">{activeJobs.length}</span>}
         </button>
       </div>
 
@@ -388,10 +583,15 @@ export default function WorkerDashboard() {
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => (
-              <div key={job.id} className="card animate-fade-in-up space-y-4">
-                <div className="flex items-center justify-between">
+              <div key={job.id} className="animate-fade-in-up space-y-4 overflow-hidden rounded-2xl border border-primary-fixed/70 bg-white shadow-lg shadow-blue-900/5">
+                <div className="flex items-center justify-between bg-primary-fixed/60 px-4 py-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Việc mới quanh bạn</span>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">~{job.distance}</span>
+                </div>
+                <div className="space-y-4 p-4">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary-container">
+                    <div className="w-11 h-11 rounded-xl bg-primary-container flex items-center justify-center text-white shadow-md shadow-primary/20">
                       <job.icon size={20} />
                     </div>
                     <div>
@@ -399,14 +599,13 @@ export default function WorkerDashboard() {
                       <div className="text-label-sm text-on-surface-variant">{job.job_code}</div>
                     </div>
                   </div>
-                  <div className="text-headline-md text-primary-container">{job.price}</div>
+                  <div className="shrink-0 text-right text-lg font-bold text-primary-container">{job.price}</div>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-on-surface-variant">
-                    <MapPinIcon size={14} />
-                    <span className="text-body-sm">{job.address}</span>
-                    <span className="text-label-sm px-1.5 py-0.5 bg-surface-container rounded-md">~{job.distance}</span>
+                  <div className="flex items-start gap-2 text-on-surface-variant">
+                    <MapPinIcon size={14} className="mt-1 shrink-0" />
+                    <span className="min-w-0 flex-1 text-body-sm leading-6">{job.address}</span>
                   </div>
                   <div className="flex items-center gap-2 text-on-surface-variant">
                     <ClockIcon size={14} />
@@ -414,19 +613,47 @@ export default function WorkerDashboard() {
                   </div>
                 </div>
 
+                {job.images && job.images.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-label-sm font-bold text-on-surface-variant uppercase tracking-wide">
+                      <CameraIcon size={14} />
+                      Ảnh khách gửi trước
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {job.images.slice(0, 3).map((imgUrl: string, idx: number) => (
+                        <a
+                          key={imgUrl}
+                          href={imgUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-low"
+                        >
+                          <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                          {idx === 2 && job.images.length > 3 && (
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">
+                              +{job.images.length - 3}
+                            </span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-2">
                   <button 
                     onClick={() => handleDeclineJob(job.id)}
-                    className="flex-1 btn-outline py-2.5 rounded-xl! text-error border-error/20 hover:bg-error-container"
+                    className="flex-1 rounded-xl border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
                   >
                     Từ chối
                   </button>
                   <button 
                     onClick={() => handleAcceptJob(job.id)}
-                    className="flex-2 btn-primary py-2.5! rounded-xl!"
+                    className="flex-[2] rounded-xl bg-secondary-container px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98]"
                   >
                     Nhận việc
                   </button>
+                </div>
                 </div>
               </div>
             ))
@@ -440,22 +667,56 @@ export default function WorkerDashboard() {
           )
         ) : (
           activeJobs.map(job => (
-            <div key={job.id} className="card-elevated border-l-4 border-primary-container p-5! space-y-4">
-              <div className="flex items-center justify-between">
-                <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in-progress'} uppercase text-[10px]`}>
+            <div key={job.id} className="space-y-4 overflow-hidden rounded-2xl border border-success/20 bg-white shadow-lg shadow-green-900/5">
+              <div className="flex items-center justify-between gap-3 bg-success-container px-4 py-3">
+                <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
                   {job.status === 'assigned' ? 'Mới nhận' : 'Đang thực hiện'}
                 </span>
-                <button className="text-primary-container font-bold text-body-sm">Chi tiết</button>
+                <button className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-primary-container shadow-sm">Chi tiết</button>
               </div>
 
-              <div>
-                <h3 className="text-body-md font-bold text-on-surface">{job.customerName}</h3>
-                <p className="text-body-sm text-on-surface-variant mb-2">{job.serviceName}</p>
-                <div className="flex items-start gap-2 text-label-sm text-on-surface-variant bg-surface-container-lowest p-2 rounded-lg ">
+              <div className="space-y-4 p-5 pt-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-extrabold text-on-surface">{job.customerName}</h3>
+                  <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
+                </div>
+                <div className="rounded-xl bg-primary-fixed px-3 py-2 text-right text-xs font-bold text-primary-container">
+                  {job.time}
+                </div>
+              </div>
+
+                <div className="flex items-start gap-2 rounded-xl bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
                   <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
                   <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
                 </div>
-              </div>
+
+              {job.images && job.images.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-label-sm font-bold text-on-surface-variant uppercase tracking-wide">
+                    <CameraIcon size={14} />
+                    Ảnh khách gửi trước
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {job.images.slice(0, 3).map((imgUrl: string, idx: number) => (
+                      <a
+                        key={imgUrl}
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-low"
+                      >
+                        <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                        {idx === 2 && job.images.length > 3 && (
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">
+                            +{job.images.length - 3}
+                          </span>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-4 py-3 border-y border-outline-variant/50">
                 <a
@@ -472,18 +733,19 @@ export default function WorkerDashboard() {
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase">Gọi khách</span>
                 </a>
                 <div className="w-px h-8 bg-outline-variant/50" />
-                <button className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors">
-                  <MapPinIcon size={20} className="text-primary-container" />
-                  <span className="text-[10px] font-bold text-on-surface-variant uppercase">Chỉ đường</span>
+                <button className="flex-1 flex flex-col items-center gap-1 rounded-xl bg-primary-fixed p-2 text-primary-container transition-colors hover:bg-primary-container hover:text-white">
+                  <MapPinIcon size={20} />
+                  <span className="text-[10px] font-bold uppercase">Chỉ đường</span>
                 </button>
               </div>
 
               <button
                 onClick={() => triggerCompleteJob(job)}
-                className="w-full btn-primary !bg-success !border-success !py-3.5 !rounded-xl"
+                className="w-full rounded-xl bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-green-700/20 transition-all hover:brightness-110 active:scale-[0.98]"
               >
                 Hoàn thành Job
               </button>
+              </div>
             </div>
           ))
         )}
@@ -569,7 +831,7 @@ export default function WorkerDashboard() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
+            <div className="p-4 sm:p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
               <button 
                 type="button"
                 onClick={() => {
@@ -577,7 +839,7 @@ export default function WorkerDashboard() {
                   setSelectedFiles([]);
                   setPreviewUrls([]);
                 }}
-                className="btn-outline !py-2 !px-4 text-sm"
+                className="btn-outline !w-auto flex-1 !py-2 !px-4 text-sm sm:flex-none"
                 disabled={uploadingImages}
               >
                 Hủy bỏ
@@ -585,7 +847,7 @@ export default function WorkerDashboard() {
               <button 
                 type="button" 
                 onClick={handleConfirmCompleteJob}
-                className="btn-primary !py-2 !px-5 text-sm !bg-success !border-success min-w-[140px]"
+                className="btn-primary !w-auto flex-[1.4] !py-2 !px-5 text-sm !bg-success !border-success sm:min-w-[140px] sm:flex-none"
                 disabled={uploadingImages}
               >
                 {uploadingImages ? (

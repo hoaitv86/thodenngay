@@ -270,9 +270,10 @@ export default function WorkerProfile() {
   const isActive = profile.worker?.status === 'active';
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100vh-8rem)] bg-surface pb-6 animate-fade-in">
+    <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface pb-6 animate-fade-in">
       {/* Header / Avatar */}
-      <div className="bg-[#003178] text-white pt-8 pb-16 px-6 relative">
+      <div className="relative overflow-hidden bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] px-4 pb-16 pt-7 text-white shadow-lg shadow-primary/10 sm:px-6">
+        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
         <div className="flex items-center gap-4">
           <div className="w-20 h-20 rounded-full bg-white text-[#003178] flex items-center justify-center text-3xl font-extrabold shadow-lg shadow-black/10 relative shrink-0 overflow-hidden">
             {uploadingAvatar ? (
@@ -299,10 +300,10 @@ export default function WorkerProfile() {
               />
             </label>
           </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold leading-tight">{profile.full_name || "Thợ chưa có tên"}</h1>
-            <p className="opacity-80 text-sm mt-1">{profile.email}</p>
-            <div className="mt-2 inline-flex items-center gap-1.5 bg-black/20 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words text-white">{profile.full_name || "Thợ chưa có tên"}</h1>
+            <p className="opacity-80 text-sm mt-1 break-all">{profile.email}</p>
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success shadow-sm">
               <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-success animate-pulse' : 'bg-amber-400'}`} />
               {isActive ? 'Đang hoạt động' : 'Chờ duyệt'}
             </div>
@@ -312,7 +313,7 @@ export default function WorkerProfile() {
 
       {/* Stats Cards overlay */}
       <div className="px-4 -mt-8 relative z-10">
-        <div className="bg-white rounded-2xl shadow-sm border border-outline-variant p-4 flex justify-between">
+        <div className="flex justify-between rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-xl shadow-blue-900/5">
           <div className="text-center flex-1">
             <div className="text-xl font-extrabold text-on-surface">{profile.worker?.total_jobs || 0}</div>
             <div className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider mt-1">Jobs</div>
@@ -569,7 +570,7 @@ export default function WorkerProfile() {
         {/* Logout */}
         <button 
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl bg-error-container text-error hover:brightness-95 transition-all mt-4 font-bold"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-error px-5 py-4 font-extrabold text-white shadow-lg shadow-red-700/15 transition-all hover:brightness-110 active:scale-[0.98]"
         >
           <LogOutIcon size={20} />
           <span>Đăng xuất tài khoản</span>
