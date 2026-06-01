@@ -48,98 +48,119 @@ export default function WorkerDashboard() {
     setTimeout(() => setToast({ message: '', type: null }), 3000);
   };
 
+  const newJobsRef = React.useRef<any[]>([]);
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
+    newJobsRef.current = newJobs;
+  }, [newJobs]);
 
-      // 1. Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  const fetchData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
 
-      // 2. Get worker profile
-      const { data: workerData } = await supabase
-        .from('workers')
-        .select('*, user:profiles(*)')
-        .eq('user_id', user.id)
-        .single();
+    // 1. Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-      if (workerData) {
-        setWorker(workerData);
+    // 2. Get worker profile
+    const { data: workerData } = await supabase
+      .from('workers')
+      .select('*, user:profiles(*)')
+      .eq('user_id', user.id)
+      .single();
 
-        // 3. Get New Jobs (Pending)
-        const { data: pendingJobs } = await supabase
-          .from('jobs')
-          .select('*, service:services(*)')
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false });
-        console.log('pendingJobs', pendingJobs);
+    if (workerData) {
+      setWorker(workerData);
 
-        // Filter pending jobs matching worker specialties
-        const workerSpecialties = workerData.specialties || [];
-        const filteredPending = (pendingJobs || []).filter(j => {
-          const serviceName = j.service?.name;
-          return serviceName && workerSpecialties.includes(serviceName);
-        });
+      // 3. Get New Jobs (Pending)
+      const { data: pendingJobs } = await supabase
+        .from('jobs')
+        .select('*, service:services(*)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
 
-        // Map icon component
-        const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
-        const mappedNew = filteredPending.map(j => ({
-          ...j,
-          serviceName: j.service?.name,
-          icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
-          price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
-          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          distance: "1.2 km" // Mock distance for now
-        }));
-        setNewJobs(mappedNew);
+      // Filter pending jobs matching worker specialties
+      const workerSpecialties = workerData.specialties || [];
+      const filteredPending = (pendingJobs || []).filter(j => {
+        const serviceName = j.service?.name;
+        return serviceName && workerSpecialties.includes(serviceName);
+      });
 
-        // 4. Get Active Jobs (Assigned to this worker)
-        const { data: assignedJobs } = await supabase
-          .from('jobs')
-          .select('*, service:services(*), customer:profiles!customer_id(*)')
-          .eq('worker_id', workerData.id)
-          .in('status', ['assigned', 'in_progress']);
-        console.log('assignedJobs', assignedJobs);
-        const mappedActive = (assignedJobs || []).map(j => {
-          const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
-          return {
-            ...j,
-            customerName: custName || 'Khách vãng lai',
-            serviceName: j.service?.name,
-            time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-          };
-        });
-        setActiveJobs(mappedActive);
+      // Map icon component
+      const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+      const mappedNew = filteredPending.map(j => ({
+        ...j,
+        serviceName: j.service?.name,
+        icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
+        price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
+        time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        distance: "1.2 km" // Mock distance for now
+      }));
 
-        // 5. Calculate Real Stats
-        const { data: workerJobs } = await supabase
-          .from('jobs')
-          .select('status, quoted_price')
-          .eq('worker_id', workerData.id);
-        console.log('workerJobs', workerJobs);
-        let income = 0;
-        let jobsDone = 0;
-
-        if (workerJobs) {
-          workerJobs.forEach(j => {
-            if (j.status === 'completed' || j.status === 'done') {
-              jobsDone++;
-              income += (j.quoted_price || 0);
-            }
-          });
+      // Check if there are new jobs that weren't in the list before
+      if (isBackground && mappedNew.length > 0) {
+        const hasNew = mappedNew.some(nj => !newJobsRef.current.some(oj => oj.id === nj.id));
+        if (hasNew) {
+          showToast("Có khách vừa đặt việc mới!", "success");
         }
+      }
 
-        setWorkerStats({
-          jobsDone: jobsDone || workerData.total_jobs || 0,
-          income: income,
-          rating: workerData.avg_rating || 0
+      setNewJobs(mappedNew);
+
+      // 4. Get Active Jobs (Assigned to this worker)
+      const { data: assignedJobs } = await supabase
+        .from('jobs')
+        .select('*, service:services(*), customer:profiles!customer_id(*)')
+        .eq('worker_id', workerData.id)
+        .in('status', ['assigned', 'in_progress']);
+      
+      const mappedActive = (assignedJobs || []).map(j => {
+        const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
+        return {
+          ...j,
+          customerName: custName || 'Khách vãng lai',
+          serviceName: j.service?.name,
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+        };
+      });
+      setActiveJobs(mappedActive);
+
+      // 5. Calculate Real Stats
+      const { data: workerJobs } = await supabase
+        .from('jobs')
+        .select('status, quoted_price')
+        .eq('worker_id', workerData.id);
+
+      let income = 0;
+      let jobsDone = 0;
+
+      if (workerJobs) {
+        workerJobs.forEach(j => {
+          if (j.status === 'completed' || j.status === 'done') {
+            jobsDone++;
+            income += (j.quoted_price || 0);
+          }
         });
       }
 
-      setLoading(false);
-    };
+      setWorkerStats({
+        jobsDone: jobsDone || workerData.total_jobs || 0,
+        income: income,
+        rating: workerData.avg_rating || 0
+      });
+    }
 
+    if (!isBackground) setLoading(false);
+  };
+
+  useEffect(() => {
     fetchData();
+
+    // Auto-refresh every 8 seconds to update new job listings and trigger notifications
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 8000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleAcceptJob = async (jobId: string) => {

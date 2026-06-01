@@ -27,6 +27,7 @@ interface CustomerProfile {
   address: string;
   status: "active" | "blocked";
   created_at: string;
+  avatar_url?: string | null;
   jobs: {
     id: string;
     quoted_price: number;
@@ -480,10 +481,18 @@ export default function AdminCustomers() {
                     >
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-3">
-                          <div className="relative">
-                            <div className="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-sm font-bold text-secondary-container uppercase shadow-sm">
-                              {customer.full_name ? customer.full_name[0] : "C"}
-                            </div>
+                          <div className="relative shrink-0">
+                            {customer.avatar_url ? (
+                              <img
+                                src={customer.avatar_url}
+                                alt={customer.full_name || 'Customer avatar'}
+                                className="w-10 h-10 rounded-full object-cover shadow-sm border border-outline-variant/30"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-sm font-bold text-secondary-container uppercase shadow-sm">
+                                {customer.full_name ? customer.full_name[0] : "C"}
+                              </div>
+                            )}
                             {cStatus === "active" && (
                               <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
                                 <CheckCircleIcon size={12} className="text-success" />
@@ -655,8 +664,18 @@ export default function AdminCustomers() {
             {/* Header */}
             <div className="px-6 py-5 border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-body-lg font-bold text-primary shadow-sm uppercase">
-                  {selectedCustomer.full_name ? selectedCustomer.full_name[0] : "C"}
+                <div className="relative shrink-0">
+                  {selectedCustomer.avatar_url ? (
+                    <img
+                      src={selectedCustomer.avatar_url}
+                      alt={selectedCustomer.full_name || 'Customer avatar'}
+                      className="w-10 h-10 rounded-full object-cover shadow-sm border border-outline-variant/30"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-body-lg font-bold text-primary shadow-sm uppercase">
+                      {selectedCustomer.full_name ? selectedCustomer.full_name[0] : "C"}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <h2 className="text-title-lg font-bold text-on-surface">{selectedCustomer.full_name}</h2>

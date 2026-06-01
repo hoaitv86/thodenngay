@@ -288,10 +288,10 @@ export default function CustomerDashboard() {
           <StarIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Yêu thích</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
+        <Link href="/customer/profile" className="flex flex-col items-center gap-1 text-on-surface-variant hover:text-on-surface">
           <UserIcon size={20} />
           <span className="text-[10px] font-bold uppercase tracking-wider">Hồ sơ</span>
-        </button>
+        </Link>
       </footer>
     </div>
   );

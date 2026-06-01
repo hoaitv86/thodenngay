@@ -11,7 +11,8 @@ import {
   ChevronRightIcon,
   LogOutIcon,
   ShieldCheckIcon,
-  ZapIcon
+  ZapIcon,
+  CameraIcon
 } from "../../components/icons";
 
 interface CustomerProfileData {
@@ -35,6 +36,7 @@ export default function CustomerProfile() {
   const [profile, setProfile] = useState<CustomerProfileData | null>(null);
   const [stats, setStats] = useState({ total: 0, completed: 0, active: 0 });
   const [isEditing, setIsEditing] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Form states
   const [fullName, setFullName] = useState("");
@@ -159,6 +161,66 @@ export default function CustomerProfile() {
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    try {
+      setUploadingAvatar(true);
+      setErrorMsg("");
+      setSuccessMsg("");
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${user.id}/${fileName}`;
+
+      // 1. Upload to Supabase storage bucket 'job-photos'
+      const { error: uploadError } = await supabase.storage
+        .from('job-photos')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        throw new Error("Không thể tải ảnh lên: " + uploadError.message);
+      }
+
+      // 2. Get Public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('job-photos')
+        .getPublicUrl(filePath);
+
+      // 3. Update profiles table avatar_url
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) {
+        throw new Error("Không thể cập nhật ảnh đại diện: " + updateError.message);
+      }
+
+      // 4. Update local profile state
+      setProfile((prev: CustomerProfileData | null) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          avatar_url: publicUrl
+        };
+      });
+
+      setSuccessMsg("Cập nhật ảnh đại diện thành công!");
+      router.refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Đã xảy ra lỗi ngoài ý muốn khi cập nhật ảnh.";
+      setErrorMsg(msg);
+      console.error("Avatar upload exception:", err);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError("");
@@ -238,8 +300,30 @@ export default function CustomerProfile() {
         <div className="absolute w-24 h-24 bg-white/5 rounded-full bottom-2 left-1/3 pointer-events-none" />
         
         <div className="flex items-center gap-4 relative z-10">
-          <div className="w-20 h-20 rounded-full bg-white text-primary flex items-center justify-center text-3xl font-extrabold shadow-xl shadow-black/10 border-2 border-white/30 shrink-0 select-none">
-            {avatarChar}
+          <div className="w-20 h-20 rounded-full bg-white text-primary flex items-center justify-center text-3xl font-extrabold shadow-xl shadow-black/10 border-2 border-white/30 relative shrink-0 overflow-hidden select-none">
+            {uploadingAvatar ? (
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            ) : profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt="Avatar"
+                className="w-full h-full object-cover rounded-full"
+              />
+            ) : (
+              <span>{avatarChar}</span>
+            )}
+            
+            {/* Camera Overlay */}
+            <label className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer select-none">
+              <CameraIcon size={18} className="text-white" />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarChange}
+                disabled={uploadingAvatar}
+              />
+            </label>
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-bold leading-tight truncate">{profile.full_name || "Khách hàng"}</h1>

@@ -470,10 +470,18 @@ export default function AdminWorkers() {
                   <tr key={worker.id} className="hover:bg-surface-container-lowest transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <div className="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center text-lg font-bold text-primary-container uppercase shadow-sm">
-                            {worker.profiles?.full_name ? worker.profiles.full_name[0] : 'W'}
-                          </div>
+                        <div className="relative shrink-0">
+                          {worker.profiles?.avatar_url ? (
+                            <img
+                              src={worker.profiles.avatar_url}
+                              alt={worker.profiles.full_name || 'Worker avatar'}
+                              className="w-12 h-12 rounded-full object-cover shadow-sm border border-outline-variant/30"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center text-lg font-bold text-primary-container uppercase shadow-sm">
+                              {worker.profiles?.full_name ? worker.profiles.full_name[0] : 'W'}
+                            </div>
+                          )}
                           {worker.status === 'active' && (
                             <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
                               <CheckCircleIcon size={14} className="text-success" />
