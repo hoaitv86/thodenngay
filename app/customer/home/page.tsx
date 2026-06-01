@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  ZapIcon, 
-  DropletIcon, 
-  CameraIcon, 
-  CogIcon, 
-  WrenchIcon, 
+import {
+  ZapIcon,
+  DropletIcon,
+  CameraIcon,
+  CogIcon,
+  WrenchIcon,
   ShieldCheckIcon,
   StarIcon,
   ClockIcon,
@@ -16,7 +16,7 @@ import {
   CalendarIcon,
   PhoneIcon,
   UsersIcon,
-  ArrowRightIcon 
+  ArrowRightIcon
 } from "@/app/components/icons";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -70,14 +70,9 @@ const defaultServices: Service[] = [
   { id: "4", iconName: "CogIcon", name: "Cơ khí", price: "250.000đ", color: "bg-emerald-50 text-emerald-600" },
 ];
 
-const topWorkers = [
-  { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230 },
-  { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185 },
-  { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142 },
-];
-
 export default function CustomerHome() {
   const [services, setServices] = useState<Service[]>(defaultServices);
+  const [topWorkers, setTopWorkers] = useState<any[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
@@ -91,8 +86,8 @@ export default function CustomerHome() {
         const formattedServices = data.map((svc) => {
           const iconName = svc.icon || "WrenchIcon";
           const color = serviceStyles[iconName] || "bg-primary-fixed/10 text-primary";
-          const formattedPrice = svc.base_price 
-            ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ` 
+          const formattedPrice = svc.base_price
+            ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ`
             : "Miễn phí";
           return {
             id: svc.id,
@@ -105,21 +100,55 @@ export default function CustomerHome() {
         setServices(formattedServices);
       }
     }
+
+    async function fetchWorkers() {
+      const { data, error } = await supabase
+        .from("workers")
+        .select("*, profiles(*)")
+        .eq("status", "active")
+        .order("avg_rating", { ascending: false })
+        .order("total_jobs", { ascending: false })
+        .limit(3);
+
+      if (data && !error && data.length > 0) {
+        const formattedWorkers = data.map((w) => {
+          const specialty = w.specialties?.[0] || "Sửa chữa";
+          const rating = w.avg_rating && Number(w.avg_rating) > 0 ? Number(w.avg_rating) : 5.0;
+          const name = w.profiles?.full_name || `Anh Thợ ${specialty}`;
+          return {
+            name,
+            specialty,
+            rating: rating.toFixed(1),
+            jobs: w.total_jobs || 0,
+          };
+        });
+        setTopWorkers(formattedWorkers);
+      } else {
+        // Fallback to beautiful static data
+        setTopWorkers([
+          { name: "Anh Tuấn", specialty: "Điện", rating: 4.9, jobs: 230 },
+          { name: "Anh Phát", specialty: "Nước", rating: 4.8, jobs: 185 },
+          { name: "Anh Minh", specialty: "Camera", rating: 4.7, jobs: 142 },
+        ]);
+      }
+    }
+
     fetchServices();
+    fetchWorkers();
   }, [supabase]);
 
   return (
     <div className="space-y-6 px-4 pt-4">
       {/* Greeting */}
       <div className="bg-gradient-to-br from-primary-container to-primary rounded-2xl p-5 text-on-primary">
-        <p className="text-body-sm opacity-80">Xin chào 👋</p>
-        <h1 className="text-headline-md mt-1">Bạn cần sửa gì?</h1>
-        <p className="text-body-sm opacity-70 mt-1">
+        <p className="text-sm opacity-80">Xin chào 👋</p>
+        <h1 className="text-xl mt-1">Bạn cần sửa gì?</h1>
+        <p className="text-sm opacity-70 mt-1">
           Chọn dịch vụ bên dưới hoặc mô tả vấn đề
         </p>
         <Link
           href="/customer/booking"
-          className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-xl text-body-sm hover:opacity-90 transition-opacity shadow-sm"
+          className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-xl text-sm hover:opacity-90 transition-opacity shadow-sm"
         >
           Đặt dịch vụ ngay
           <ArrowRightIcon size={16} />

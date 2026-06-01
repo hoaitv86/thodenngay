@@ -17,6 +17,11 @@ CREATE POLICY "Workers update own record" ON public.workers
   USING (user_id = auth.uid());
 
 -- 3. Ensure profiles table allows users to update their own profile and admin to manage all
+DROP POLICY IF EXISTS "Anyone can view worker profiles" ON public.profiles;
+CREATE POLICY "Anyone can view worker profiles" ON public.profiles 
+  FOR SELECT 
+  USING (role = 'worker');
+
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles 
   FOR UPDATE 

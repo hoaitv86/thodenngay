@@ -21,6 +21,8 @@ import {
 } from "./components/icons";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 const iconMap: Record<string, any> = {
   ZapIcon,
   DropletIcon,
