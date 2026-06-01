@@ -147,10 +147,30 @@ export default function WorkerDashboard() {
     } else {
       const acceptedJob = newJobs.find(j => j.id === jobId);
       showToast('Nhận việc thành công!', 'success');
+      
       // Move from newJobs to activeJobs
       setNewJobs(prev => prev.filter(j => j.id !== jobId));
+      
       if (acceptedJob) {
-        setActiveJobs(prev => [{ ...acceptedJob, status: 'assigned', customerName: 'Khách hàng' }, ...prev]);
+        let customerName = 'Khách hàng';
+        let customerProfileObj = null;
+        if (acceptedJob.customer_id) {
+          const { data: custProfile } = await supabase
+            .from('profiles')
+            .select('full_name, phone')
+            .eq('id', acceptedJob.customer_id)
+            .single();
+          if (custProfile) {
+            customerName = custProfile.full_name;
+            customerProfileObj = custProfile;
+          }
+        }
+        setActiveJobs(prev => [{
+          ...acceptedJob,
+          status: 'assigned',
+          customerName,
+          customer: customerProfileObj
+        }, ...prev]);
       }
       setTab('active');
     }
@@ -409,13 +429,19 @@ export default function WorkerDashboard() {
               </div>
 
               <div className="flex items-center gap-4 py-3 border-y border-outline-variant/50">
-                <button
-                  onClick={() => showToast("Tính năng đang được phát triển, vui lòng chờ...", "info")}
-                  className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors"
+                <a
+                  href={job.customer?.phone ? `tel:${job.customer.phone}` : "#"}
+                  onClick={(e) => {
+                    if (!job.customer?.phone) {
+                      e.preventDefault();
+                      showToast("Khách hàng chưa cập nhật số điện thoại!", "error");
+                    }
+                  }}
+                  className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors text-center text-decoration-none select-none"
                 >
                   <PhoneIcon size={20} className="text-success" />
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase">Gọi khách</span>
-                </button>
+                </a>
                 <div className="w-px h-8 bg-outline-variant/50" />
                 <button className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors">
                   <MapPinIcon size={20} className="text-primary-container" />
