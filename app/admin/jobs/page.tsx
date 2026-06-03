@@ -16,8 +16,63 @@ import {
   XIcon
 } from "../../components/icons";
 
+interface CustomerOption {
+  id: string;
+  full_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+interface ServiceOption {
+  id: string;
+  name?: string | null;
+  icon?: string | null;
+  base_price?: number | string | null;
+}
+
+interface WorkerOption {
+  id: string;
+  profiles?: WorkerProfile | WorkerProfile[] | null;
+}
+
+interface WorkerProfile {
+  full_name?: string | null;
+  phone?: string | null;
+}
+
+interface JobWorkerProfile {
+    full_name?: string | null;
+}
+
+interface JobRow {
+  id: string;
+  job_code?: string | null;
+  created_at?: string | null;
+  address?: string | null;
+  status?: string | null;
+  total_price?: number | null;
+  customer?: CustomerOption | null;
+  service?: ServiceOption | null;
+  worker?: {
+    profiles?: JobWorkerProfile | null;
+  } | null;
+}
+
+interface CreateJobResponse {
+  error?: string;
+  job?: JobRow;
+  createdCustomer?: CustomerOption;
+  loginPhone?: string;
+  defaultPassword?: string;
+}
+
+function getWorkerProfile(worker?: WorkerOption | null) {
+  if (!worker?.profiles) return null;
+  return Array.isArray(worker.profiles) ? worker.profiles[0] || null : worker.profiles;
+}
+
 export default function AdminJobs() {
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<JobRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -25,12 +80,15 @@ export default function AdminJobs() {
 
   // Create Job Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customerMode, setCustomerMode] = useState<"existing" | "new">("existing");
   
   const [newJob, setNewJob] = useState({
     customerId: "",
+    customerName: "",
+    customerPhone: "",
     serviceId: "",
     address: "",
     scheduledAt: "",
@@ -40,27 +98,29 @@ export default function AdminJobs() {
 
   // Assign Worker Modal states
   const [assignWorkerModalOpen, setAssignWorkerModalOpen] = useState(false);
-  const [workersList, setWorkersList] = useState<any[]>([]);
+  const [workersList, setWorkersList] = useState<WorkerOption[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
   const [isAssigning, setIsAssigning] = useState(false);
   const [workerSearchQuery, setWorkerSearchQuery] = useState("");
 
-  useEffect(() => {
-    fetchJobs();
-  }, []); 
-
-  const fetchJobs = async () => {
+  async function fetchJobs() {
     setLoading(true);
-    let query = supabase
+    const query = supabase
       .from('jobs')
       .select('*, customer:profiles!customer_id(*), service:services(*), worker:workers(profiles(full_name))')
       .order('created_at', { ascending: false });
     
     const { data } = await query;
-    if (data) setJobs(data);
+    if (data) setJobs(data as JobRow[]);
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); 
 
   const openModal = async () => {
     setIsModalOpen(true);
@@ -88,39 +148,74 @@ export default function AdminJobs() {
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newJob.customerId || !newJob.serviceId || !newJob.address || !newJob.scheduledAt) {
+    const creatingNewCustomer = customerMode === "new";
+    if (
+      (creatingNewCustomer ? (!newJob.customerName || !newJob.customerPhone) : !newJob.customerId) ||
+      !newJob.serviceId ||
+      !newJob.address ||
+      !newJob.scheduledAt
+    ) {
       alert("Vui lòng điền đầy đủ các trường bắt buộc.");
       return;
     }
 
     setIsSubmitting(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const jobCode = 'JOB' + Math.floor(10000 + Math.random() * 90000);
 
-    const { data: insertedJob, error } = await supabase.from('jobs').insert({
-      job_code: jobCode,
-      customer_id: newJob.customerId,
-      service_id: newJob.serviceId,
-      address: newJob.address,
-      scheduled_at: new Date(newJob.scheduledAt).toISOString(),
-      quoted_price: newJob.quotedPrice ? parseInt(newJob.quotedPrice) : 0,
-      description: newJob.description,
-      status: 'pending',
-      source: 'call',
-      created_by: user?.id
-    }).select('*, customer:profiles!customer_id(*), service:services(*), worker:workers(profiles(full_name))').single();
+    try {
+      const res = await fetch("/api/admin/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerMode,
+          customerId: newJob.customerId,
+          customerName: newJob.customerName,
+          customerPhone: newJob.customerPhone,
+          serviceId: newJob.serviceId,
+          address: newJob.address,
+          scheduledAt: newJob.scheduledAt,
+          quotedPrice: newJob.quotedPrice,
+          description: newJob.description,
+        }),
+      });
 
-    setIsSubmitting(false);
+      const data = (await res.json()) as CreateJobResponse;
 
-    if (error) {
-      alert("Lỗi khi tạo job: " + error.message);
-      console.error(error);
-    } else if (insertedJob) {
+      if (!res.ok) {
+        alert(data.error || "Không thể tạo job.");
+        return;
+      }
+
       setIsModalOpen(false);
-      setNewJob({ customerId: "", serviceId: "", address: "", scheduledAt: "", quotedPrice: "", description: "" });
-      // Prepend to list instantly to avoid any cache issues
-      setJobs(prev => [insertedJob, ...prev]);
+      setCustomerMode("existing");
+      setNewJob({
+        customerId: "",
+        customerName: "",
+        customerPhone: "",
+        serviceId: "",
+        address: "",
+        scheduledAt: "",
+        quotedPrice: "",
+        description: ""
+      });
+
+      const createdCustomer = data.createdCustomer;
+      if (createdCustomer) {
+        setCustomers(prev => [createdCustomer, ...prev]);
+      }
+      const createdJob = data.job;
+      if (createdJob) {
+        setJobs(prev => [createdJob, ...prev]);
+      }
+
+      if (data.defaultPassword) {
+        alert(`Đã tạo job và tài khoản khách hàng.\nTài khoản: ${data.loginPhone}\nMật khẩu mặc định: ${data.defaultPassword}`);
+      }
+    } catch (err: unknown) {
+      alert("Lỗi kết nối: " + (err instanceof Error ? err.message : "Không xác định"));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -135,7 +230,7 @@ export default function AdminJobs() {
         .from('workers')
         .select('id, profiles(full_name, phone)')
         .eq('status', 'active');
-      if (data) setWorkersList(data);
+      if (data) setWorkersList(data as WorkerOption[]);
     }
   };
 
@@ -160,6 +255,7 @@ export default function AdminJobs() {
       setAssignWorkerModalOpen(false);
       
       const assignedWorker = workersList.find(w => w.id === selectedWorkerId);
+      const assignedWorkerProfile = getWorkerProfile(assignedWorker);
       
       setJobs(prevJobs => prevJobs.map(job => {
         if (job.id === selectedJobId) {
@@ -168,7 +264,7 @@ export default function AdminJobs() {
             status: 'assigned',
             worker: {
               profiles: {
-                full_name: assignedWorker?.profiles?.full_name || 'Thợ đã gán'
+                full_name: assignedWorkerProfile?.full_name || 'Thợ đã gán'
               }
             }
           };
@@ -180,8 +276,9 @@ export default function AdminJobs() {
 
   const filteredWorkers = workersList.filter(worker => {
     const searchLower = workerSearchQuery.toLowerCase();
-    const fullName = worker.profiles?.full_name?.toLowerCase() || "";
-    const phone = worker.profiles?.phone?.toLowerCase() || "";
+    const profile = getWorkerProfile(worker);
+    const fullName = profile?.full_name?.toLowerCase() || "";
+    const phone = profile?.phone?.toLowerCase() || "";
     return fullName.includes(searchLower) || phone.includes(searchLower);
   });
 
@@ -294,10 +391,12 @@ export default function AdminJobs() {
                       <div className="font-mono text-sm text-primary-container font-bold">{job.job_code}</div>
                       <div className="flex items-center gap-1.5 text-label-sm text-on-surface-variant mt-1.5">
                         <CalendarIcon size={14} />
-                        {new Date(job.created_at).toLocaleDateString('vi-VN', {
-                          day: '2-digit', month: '2-digit', year: 'numeric',
-                          hour: '2-digit', minute: '2-digit'
-                        })}
+                        {job.created_at
+                          ? new Date(job.created_at).toLocaleDateString('vi-VN', {
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                              hour: '2-digit', minute: '2-digit'
+                            })
+                          : "Chưa có ngày"}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -395,22 +494,109 @@ export default function AdminJobs() {
 
             <div className="p-6 overflow-y-auto flex-1">
               <form id="createJobForm" onSubmit={handleCreateJob} className="space-y-5">
+                <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface-container-low p-1">
+                  <button
+                    type="button"
+                    onClick={() => setCustomerMode("existing")}
+                    className={`rounded-lg px-3 py-2.5 text-sm font-bold transition-colors ${
+                      customerMode === "existing"
+                        ? "bg-white text-primary-container shadow-sm"
+                        : "text-on-surface-variant hover:text-on-surface"
+                    }`}
+                  >
+                    Khách có sẵn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerMode("new")}
+                    className={`rounded-lg px-3 py-2.5 text-sm font-bold transition-colors ${
+                      customerMode === "new"
+                        ? "bg-white text-primary-container shadow-sm"
+                        : "text-on-surface-variant hover:text-on-surface"
+                    }`}
+                  >
+                    Khách mới
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-on-surface">Khách hàng <span className="text-error">*</span></label>
-                    <select 
-                      className="input-field" 
-                      required
-                      value={newJob.customerId}
-                      onChange={e => setNewJob({...newJob, customerId: e.target.value})}
-                    >
-                      <option value="" disabled>-- Chọn khách hàng --</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name} ({c.phone || 'Chưa cập nhật SĐT'})</option>
-                      ))}
-                    </select>
+                    <label className="text-sm font-bold text-on-surface">
+                      {customerMode === "existing" ? "Khách hàng" : "Tên khách hàng"} <span className="text-error">*</span>
+                    </label>
+                    {customerMode === "existing" ? (
+                      <select 
+                        className="input-field" 
+                        required
+                        value={newJob.customerId}
+                        onChange={e => setNewJob({...newJob, customerId: e.target.value})}
+                      >
+                        <option value="" disabled>-- Chọn khách hàng --</option>
+                        {customers.map(c => (
+                          <option key={c.id} value={c.id}>{c.full_name} ({c.phone || 'Chưa cập nhật SĐT'})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="VD: Nguyễn Văn A"
+                        className="input-field"
+                        required
+                        value={newJob.customerName}
+                        onChange={e => setNewJob({...newJob, customerName: e.target.value})}
+                      />
+                    )}
                   </div>
 
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-on-surface">
+                      {customerMode === "existing" ? "Dịch vụ" : "Số điện thoại"} <span className="text-error">*</span>
+                    </label>
+                    {customerMode === "existing" ? (
+                      <select 
+                        className="input-field" 
+                        required
+                        value={newJob.serviceId}
+                        onChange={e => {
+                          const selected = services.find(s => s.id === e.target.value);
+                          setNewJob({
+                            ...newJob, 
+                            serviceId: e.target.value,
+                            quotedPrice: selected?.base_price != null ? String(selected.base_price) : ""
+                          });
+                        }}
+                      >
+                        <option value="" disabled>-- Chọn dịch vụ --</option>
+                        {services.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.base_price?.toLocaleString('vi-VN')}đ)</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="tel"
+                        placeholder="VD: 0912345678"
+                        className="input-field"
+                        required
+                        value={newJob.customerPhone}
+                        onChange={e => setNewJob({...newJob, customerPhone: e.target.value})}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {customerMode === "new" && (
+                  <div className="rounded-xl border border-primary-container/20 bg-primary-fixed/40 p-3 text-sm text-on-surface-variant">
+                    <div className="font-bold text-on-surface">Tài khoản khách mới</div>
+                    <div className="mt-1">
+                      TK là SĐT đã nhập. MK mặc định:{" "}
+                      <span className="font-mono font-bold text-primary-container">
+                        {newJob.customerName.trim() ? `${newJob.customerName.trim().replace(/\s+/g, " ")}@123456` : "ten khach@123456"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {customerMode === "new" && (
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-on-surface">Dịch vụ <span className="text-error">*</span></label>
                     <select 
@@ -422,7 +608,7 @@ export default function AdminJobs() {
                         setNewJob({
                           ...newJob, 
                           serviceId: e.target.value,
-                          quotedPrice: selected ? selected.base_price.toString() : ""
+                          quotedPrice: selected?.base_price != null ? String(selected.base_price) : ""
                         });
                       }}
                     >
@@ -432,7 +618,7 @@ export default function AdminJobs() {
                       ))}
                     </select>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-on-surface">Địa chỉ thi công <span className="text-error">*</span></label>
@@ -554,32 +740,36 @@ export default function AdminJobs() {
                   <p className="text-center text-on-surface-variant py-4">Đang tải danh sách thợ...</p>
                 ) : filteredWorkers.length === 0 ? (
                   <p className="text-center text-on-surface-variant py-4">Không tìm thấy thợ phù hợp.</p>
-                ) : filteredWorkers.map(worker => (
-                  <label 
-                    key={worker.id}
-                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                      selectedWorkerId === worker.id 
-                        ? 'border-primary-container bg-primary-fixed' 
-                        : 'border-outline-variant hover:bg-surface-container-low'
-                    }`}
-                  >
-                    <input 
-                      type="radio" 
-                      name="worker" 
-                      value={worker.id}
-                      checked={selectedWorkerId === worker.id}
-                      onChange={() => setSelectedWorkerId(worker.id)}
-                      className="w-4 h-4 text-primary bg-surface border-outline focus:ring-primary focus:ring-2"
-                    />
-                    <div className="w-10 h-10 rounded-full bg-secondary-container flex flex-shrink-0 items-center justify-center text-on-secondary-container font-bold">
-                      {worker.profiles?.full_name ? worker.profiles.full_name[0] : 'T'}
-                    </div>
-                    <div>
-                      <div className="text-body-sm font-bold text-on-surface">{worker.profiles?.full_name || 'Thợ chưa có tên'}</div>
-                      <div className="text-label-sm text-on-surface-variant">{worker.profiles?.phone || 'Chưa cập nhật SĐT'}</div>
-                    </div>
-                  </label>
-                ))}
+                ) : filteredWorkers.map(worker => {
+                  const profile = getWorkerProfile(worker);
+
+                  return (
+                    <label 
+                      key={worker.id}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        selectedWorkerId === worker.id 
+                          ? 'border-primary-container bg-primary-fixed' 
+                          : 'border-outline-variant hover:bg-surface-container-low'
+                      }`}
+                    >
+                      <input 
+                        type="radio" 
+                        name="worker" 
+                        value={worker.id}
+                        checked={selectedWorkerId === worker.id}
+                        onChange={() => setSelectedWorkerId(worker.id)}
+                        className="w-4 h-4 text-primary bg-surface border-outline focus:ring-primary focus:ring-2"
+                      />
+                      <div className="w-10 h-10 rounded-full bg-secondary-container flex flex-shrink-0 items-center justify-center text-on-secondary-container font-bold">
+                        {profile?.full_name ? profile.full_name[0] : 'T'}
+                      </div>
+                      <div>
+                        <div className="text-body-sm font-bold text-on-surface">{profile?.full_name || 'Thợ chưa có tên'}</div>
+                        <div className="text-label-sm text-on-surface-variant">{profile?.phone || 'Chưa cập nhật SĐT'}</div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

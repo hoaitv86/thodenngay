@@ -4,12 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { LogoIcon, PhoneIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
-
-type Step = "phone" | "otp";
+import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -18,12 +16,32 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      setError("Vui lòng nhập đầy đủ email và mật khẩu");
+    if (!loginId || !password) {
+      setError("Vui lòng nhập đầy đủ tài khoản và mật khẩu");
       return;
     }
     setLoading(true);
     setError("");
+
+    let email = loginId.trim();
+    if (!email.includes("@")) {
+      const res = await fetch("/api/auth/resolve-phone", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ phone: email }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Không tìm thấy tài khoản theo SĐT này.");
+        setLoading(false);
+        return;
+      }
+
+      email = data.email;
+    }
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
@@ -31,10 +49,10 @@ export default function LoginPage() {
     });
 
     if (authError) {
-      if (authError.message === "Email not confirmed" || (authError as any).code === "email_not_confirmed") {
+      if (authError.message === "Email not confirmed" || authError.code === "email_not_confirmed") {
         setError("Tài khoản chưa được xác thực. Vui lòng kiểm tra hòm thư email của bạn.");
       } else if (authError.message === "Invalid login credentials") {
-        setError("Email hoặc mật khẩu không chính xác.");
+        setError("Tài khoản hoặc mật khẩu không chính xác.");
       } else {
         setError(authError.message || "Đã xảy ra lỗi khi đăng nhập.");
       }
@@ -128,14 +146,14 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-[#1a1c1e] mb-2">
-                  Email
+                  Email hoặc SĐT
                 </label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
                   className="w-full px-4 py-4 bg-[#f3f3f6] border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#003178]/10 focus:border-[#003178] focus:bg-white transition-all text-[#1a1c1e]"
-                  placeholder="name@example.com"
+                  placeholder="name@example.com hoặc 0912345678"
                   autoFocus
                 />
               </div>
