@@ -143,7 +143,7 @@ textarea {
     @apply bg-success-container text-success;
   }
   
-  .badge-in_progress {
+  .badge-in_progress, .badge-cancel_requested {
     @apply bg-warning-container text-warning;
   }
   

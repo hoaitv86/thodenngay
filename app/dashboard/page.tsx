@@ -217,7 +217,8 @@ export default function CustomerDashboard() {
                     <span className={`badge badge-${job.status === 'done' ? 'completed' : job.status} w-fit px-3 sm:px-4 py-1.5 uppercase text-[10px] font-bold`}>
                       {job.status === 'pending' ? 'Đang tìm thợ' : 
                        job.status === 'in_progress' ? 'Đang thực hiện' : 
-                       (job.status === 'completed' || job.status === 'done') ? 'Hoàn thành' : job.status}
+                       (job.status === 'completed' || job.status === 'done') ? 'Hoàn thành' :
+                       job.status === 'cancel_requested' ? 'Chờ duyệt huỷ' : job.status}
                     </span>
                   </div>
 

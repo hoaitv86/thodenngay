@@ -51,6 +51,10 @@ const statusConfig: Record<string, { label: string; className: string }> = {
     label: "Hoàn thành",
     className: "bg-success/10 text-success",
   },
+  cancel_requested: {
+    label: "Chờ duyệt huỷ",
+    className: "bg-warning/10 text-warning",
+  },
   cancelled: {
     label: "Đã hủy",
     className: "bg-error-container text-error",
@@ -407,4 +411,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-

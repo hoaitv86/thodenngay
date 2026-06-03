@@ -41,7 +41,7 @@ interface WorkerProfile {
 }
 
 interface JobWorkerProfile {
-    full_name?: string | null;
+  full_name?: string | null;
 }
 
 interface JobRow {
@@ -51,6 +51,9 @@ interface JobRow {
   address?: string | null;
   status?: string | null;
   total_price?: number | null;
+  cancellation_reason?: string | null;
+  cancellation_requested_at?: string | null;
+  cancellation_reviewed_at?: string | null;
   customer?: CustomerOption | null;
   service?: ServiceOption | null;
   worker?: {
@@ -69,6 +72,16 @@ interface CreateJobResponse {
 function getWorkerProfile(worker?: WorkerOption | null) {
   if (!worker?.profiles) return null;
   return Array.isArray(worker.profiles) ? worker.profiles[0] || null : worker.profiles;
+}
+
+function getJobStatusLabel(status?: string | null) {
+  if (status === "pending") return "Chờ xử lý";
+  if (status === "assigned") return "Đã gán";
+  if (status === "in_progress") return "Đang làm";
+  if (status === "completed" || status === "done") return "Hoàn thành";
+  if (status === "cancel_requested") return "Chờ duyệt huỷ";
+  if (status === "cancelled") return "Đã hủy";
+  return status || "Không rõ";
 }
 
 export default function AdminJobs() {
@@ -103,6 +116,7 @@ export default function AdminJobs() {
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>("");
   const [isAssigning, setIsAssigning] = useState(false);
   const [workerSearchQuery, setWorkerSearchQuery] = useState("");
+  const [approvingCancellationJobId, setApprovingCancellationJobId] = useState<string | null>(null);
 
   async function fetchJobs() {
     setLoading(true);
@@ -274,6 +288,46 @@ export default function AdminJobs() {
     }
   };
 
+  const handleApproveCancellation = async (job: JobRow) => {
+    if (!window.confirm(`Duyệt huỷ job ${job.job_code || ""}?`)) return;
+
+    setApprovingCancellationJobId(job.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const reviewedAt = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({
+          status: "cancelled",
+          cancellation_reviewed_by: user?.id || null,
+          cancellation_reviewed_at: reviewedAt,
+          cancellation_review_note: "Admin đã duyệt huỷ",
+        })
+        .eq("id", job.id)
+        .eq("status", "cancel_requested")
+        .select("id");
+
+      if (error) {
+        alert("Lỗi khi duyệt huỷ: " + error.message);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        alert("Job không còn ở trạng thái chờ duyệt huỷ.");
+        return;
+      }
+
+      setJobs(prevJobs => prevJobs.map(item =>
+        item.id === job.id
+          ? { ...item, status: "cancelled", cancellation_reviewed_at: reviewedAt }
+          : item
+      ));
+    } finally {
+      setApprovingCancellationJobId(null);
+    }
+  };
+
   const filteredWorkers = workersList.filter(worker => {
     const searchLower = workerSearchQuery.toLowerCase();
     const profile = getWorkerProfile(worker);
@@ -330,7 +384,7 @@ export default function AdminJobs() {
         </div>
         
         <div className="flex gap-2 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 scrollbar-hide">
-          {['all', 'pending', 'assigned', 'in_progress', 'completed', 'cancelled'].map(status => (
+          {['all', 'pending', 'assigned', 'in_progress', 'completed', 'cancel_requested', 'cancelled'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -340,11 +394,7 @@ export default function AdminJobs() {
                   : 'bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant'
               }`}
             >
-              {status === 'all' ? 'Tất cả' :
-               status === 'pending' ? 'Chờ xử lý' :
-               status === 'assigned' ? 'Đã gán' :
-               status === 'in_progress' ? 'Đang làm' :
-               status === 'completed' ? 'Hoàn thành' : 'Đã hủy'}
+              {status === 'all' ? 'Tất cả' : getJobStatusLabel(status)}
             </button>
           ))}
           <button className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors border bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant flex items-center gap-2 ml-2">
@@ -407,6 +457,11 @@ export default function AdminJobs() {
                           <span className="line-clamp-2 leading-tight">{job.address}</span>
                         </div>
                       )}
+                      {job.status === "cancel_requested" && job.cancellation_reason && (
+                        <div className="mt-2 max-w-[240px] rounded-lg bg-warning-container px-2.5 py-1.5 text-label-sm font-semibold text-warning">
+                          Lý do huỷ: {job.cancellation_reason}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -447,16 +502,23 @@ export default function AdminJobs() {
                     </td>
                     <td className="px-6 py-4">
                       <span className={`badge badge-${job.status === 'done' ? 'completed' : job.status} uppercase text-[10px] font-bold px-2.5 py-1`}>
-                        {job.status === "pending" ? "Chờ xử lý" :
-                          job.status === "assigned" ? "Đã gán" :
-                            job.status === "in_progress" ? "Đang làm" :
-                              (job.status === "completed" || job.status === "done") ? "Hoàn thành" : "Đã hủy"}
+                        {getJobStatusLabel(job.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="p-2 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-primary-container">
-                        <ChevronRightIcon size={20} />
-                      </button>
+                      {job.status === "cancel_requested" ? (
+                        <button
+                          onClick={() => handleApproveCancellation(job)}
+                          disabled={approvingCancellationJobId === job.id}
+                          className="rounded-lg bg-error-container px-3 py-2 text-label-sm font-bold text-error transition-colors hover:bg-error hover:text-white disabled:opacity-60"
+                        >
+                          {approvingCancellationJobId === job.id ? "Đang duyệt..." : "Duyệt huỷ"}
+                        </button>
+                      ) : (
+                        <button className="p-2 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-primary-container">
+                          <ChevronRightIcon size={20} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

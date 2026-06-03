@@ -207,7 +207,8 @@ export default function JobDetailPage() {
             <h2 className="text-xl font-extrabold text-white">
               {job.status === 'pending' ? 'Đang tìm thợ...' : 
                job.status === 'in_progress' ? 'Thợ đang đến' : 
-               (job.status === 'completed' || job.status === 'done') ? 'Đã hoàn thành' : 'Đã hủy'}
+               (job.status === 'completed' || job.status === 'done') ? 'Đã hoàn thành' :
+               job.status === 'cancel_requested' ? 'Chờ admin duyệt huỷ' : 'Đã hủy'}
             </h2>
             <p className="mt-1 text-label-md font-medium text-white/75">Mã đơn: {job.job_code}</p>
           </div>

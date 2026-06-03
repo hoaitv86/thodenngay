@@ -65,9 +65,15 @@ CREATE TABLE public.jobs (
     scheduled_at TIMESTAMPTZ NOT NULL,
     description TEXT,
     quoted_price DECIMAL(12,2) NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('pending', 'assigned', 'in_progress', 'done', 'cancelled')) DEFAULT 'pending',
+    status TEXT NOT NULL CHECK (status IN ('pending', 'assigned', 'in_progress', 'completed', 'done', 'cancel_requested', 'cancelled')) DEFAULT 'pending',
     source TEXT NOT NULL CHECK (source IN ('app', 'call')) DEFAULT 'app',
     created_by UUID REFERENCES public.profiles(id) NOT NULL,
+    cancellation_reason TEXT,
+    cancellation_requested_by UUID REFERENCES public.profiles(id),
+    cancellation_requested_at TIMESTAMPTZ,
+    cancellation_reviewed_by UUID REFERENCES public.profiles(id),
+    cancellation_reviewed_at TIMESTAMPTZ,
+    cancellation_review_note TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );

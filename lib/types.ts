@@ -2,7 +2,7 @@
 
 export type UserRole = 'customer' | 'worker' | 'admin';
 export type WorkerStatus = 'pending' | 'active' | 'blocked';
-export type JobStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'done' | 'cancelled';
+export type JobStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'done' | 'cancel_requested' | 'cancelled';
 export type JobSource = 'app' | 'call';
 export type PaymentMethod = 'cash' | 'transfer';
 export type PaymentStatus = 'pending' | 'paid';

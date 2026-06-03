@@ -56,6 +56,8 @@ export default function CustomerJobs() {
       case 'completed':
       case 'done':
         return { label: 'Hoàn thành', color: 'bg-success-container text-success', icon: CheckCircle };
+      case 'cancel_requested':
+        return { label: 'Chờ admin duyệt huỷ', color: 'bg-warning-container text-warning', icon: AlertCircle };
       case 'cancelled':
         return { label: 'Đã hủy', color: 'bg-error-container text-error', icon: AlertCircle };
       default:

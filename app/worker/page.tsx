@@ -26,13 +26,42 @@ import { createClient } from "@/lib/supabase/client";
 import { User, Worker, Job } from "@/lib/types";
 import PendingApproval from "./pending-approval";
 
+interface ServiceOption {
+  id: string;
+  name: string;
+  base_price?: number | string | null;
+  icon?: string | null;
+}
+
+interface WorkerJob {
+  id: string;
+  job_code?: string;
+  status?: string;
+  customer_id?: string;
+  customerName?: string;
+  serviceName?: string;
+  description?: string | null;
+  scheduled_at?: string;
+  quoted_price: number;
+  address?: string;
+  images: string[];
+  icon?: React.ComponentType<{ size?: number; className?: string }>;
+  price?: string;
+  time?: string;
+  distance?: string;
+  customer?: {
+    phone?: string | null;
+  } | null;
+  [key: string]: unknown;
+}
+
 export default function WorkerDashboard() {
   const [tab, setTab] = useState<"new" | "active">("new");
   const [loading, setLoading] = useState(true);
   const [worker, setWorker] = useState<Worker | null>(null);
-  const [newJobs, setNewJobs] = useState<any[]>([]);
-  const [activeJobs, setActiveJobs] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
+  const [newJobs, setNewJobs] = useState<WorkerJob[]>([]);
+  const [activeJobs, setActiveJobs] = useState<WorkerJob[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
   const [completingJobId, setCompletingJobId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' | null }>({ message: '', type: null });
@@ -48,7 +77,10 @@ export default function WorkerDashboard() {
   const supabase = createClient();
 
   // Completion modal states
-  const [activeJobToComplete, setActiveJobToComplete] = useState<any | null>(null);
+  const [activeJobToComplete, setActiveJobToComplete] = useState<WorkerJob | null>(null);
+  const [jobToCancel, setJobToCancel] = useState<WorkerJob | null>(null);
+  const [cancelReason, setCancelReason] = useState("Khách hàng từ chối lắp đặt/sửa chữa");
+  const [requestingCancel, setRequestingCancel] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
@@ -58,7 +90,7 @@ export default function WorkerDashboard() {
     setTimeout(() => setToast({ message: '', type: null }), 3000);
   };
 
-  const newJobsRef = React.useRef<any[]>([]);
+  const newJobsRef = React.useRef<WorkerJob[]>([]);
 
   useEffect(() => {
     newJobsRef.current = newJobs;
@@ -80,6 +112,27 @@ export default function WorkerDashboard() {
 
     if (workerData) {
       setWorker(workerData);
+      const workerSpecialties = workerData.specialties || [];
+
+      const { data: serviceOptions, error: servicesError } = await supabase
+        .from('services')
+        .select('id, name, base_price, icon')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (servicesError) {
+        if (!isBackground) {
+          showToast("Không thể tải danh sách dịch vụ: " + servicesError.message, "error");
+        }
+      } else {
+        const availableServices = [...(serviceOptions || [])].sort((a, b) => {
+          const aMatches = workerSpecialties.includes(a.name) ? 0 : 1;
+          const bMatches = workerSpecialties.includes(b.name) ? 0 : 1;
+          return aMatches - bMatches;
+        });
+
+        setServices(availableServices);
+      }
 
       // 3. Get New Jobs (Pending)
       const { data: pendingJobs } = await supabase
@@ -89,7 +142,6 @@ export default function WorkerDashboard() {
         .order('created_at', { ascending: false });
 
       // Filter pending jobs matching worker specialties
-      const workerSpecialties = workerData.specialties || [];
       const filteredPending = (pendingJobs || []).filter(j => {
         const serviceName = j.service?.name;
         return serviceName && workerSpecialties.includes(serviceName);
@@ -284,10 +336,63 @@ export default function WorkerDashboard() {
     }
   };
 
-  const triggerCompleteJob = (job: any) => {
+  const triggerCompleteJob = (job: WorkerJob) => {
     setActiveJobToComplete(job);
     setSelectedFiles([]);
     setPreviewUrls([]);
+  };
+
+  const openCancelRequestModal = (job: WorkerJob) => {
+    setJobToCancel(job);
+    setCancelReason("Khách hàng từ chối lắp đặt/sửa chữa");
+  };
+
+  const handleRequestCancelJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jobToCancel || requestingCancel) return;
+
+    const reason = cancelReason.trim();
+    if (!reason) {
+      showToast("Vui lòng nhập lý do huỷ.", "error");
+      return;
+    }
+
+    setRequestingCancel(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Không tìm thấy phiên đăng nhập.");
+      }
+
+      const { data: updatedJobs, error } = await supabase
+        .from("jobs")
+        .update({
+          status: "cancel_requested",
+          cancellation_reason: reason,
+          cancellation_requested_by: user.id,
+          cancellation_requested_at: new Date().toISOString(),
+        })
+        .eq("id", jobToCancel.id)
+        .in("status", ["assigned", "in_progress"])
+        .select("id");
+
+      if (error) {
+        throw new Error("Không thể gửi yêu cầu huỷ: " + error.message);
+      }
+
+      if (!updatedJobs || updatedJobs.length === 0) {
+        throw new Error("Job không còn ở trạng thái có thể yêu cầu huỷ.");
+      }
+
+      setActiveJobs(prev => prev.filter(job => job.id !== jobToCancel.id));
+      setJobToCancel(null);
+      setCancelReason("Khách hàng từ chối lắp đặt/sửa chữa");
+      showToast("Đã gửi yêu cầu huỷ, chờ admin duyệt.", "success");
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Không thể gửi yêu cầu huỷ.", "error");
+    } finally {
+      setRequestingCancel(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -498,8 +603,11 @@ export default function WorkerDashboard() {
                     value={quickJob.serviceId}
                     onChange={(e) => handleQuickServiceChange(e.target.value)}
                     className="input-field !py-2.5"
+                    disabled={services.length === 0}
                   >
-                    <option value="">Chọn dịch vụ</option>
+                    <option value="">
+                      {services.length === 0 ? "Chưa có dịch vụ khả dụng" : "Chọn dịch vụ"}
+                    </option>
                     {services.map(service => (
                       <option key={service.id} value={service.id}>
                         {service.name}
@@ -550,7 +658,7 @@ export default function WorkerDashboard() {
 
               <button
                 type="submit"
-                disabled={creatingQuickJob}
+                disabled={creatingQuickJob || services.length === 0}
                 className="btn-secondary w-full !py-3 text-sm"
               >
                 {creatingQuickJob ? "Đang tạo..." : "Tạo và nhận việc"}
@@ -582,7 +690,10 @@ export default function WorkerDashboard() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {tab === "new" ? (
           newJobs.length > 0 ? (
-            newJobs.map(job => (
+            newJobs.map(job => {
+              const JobIcon = job.icon || BriefcaseIcon;
+
+              return (
               <div key={job.id} className="animate-fade-in-up space-y-4 overflow-hidden rounded-2xl border border-primary-fixed/70 bg-white shadow-lg shadow-blue-900/5">
                 <div className="flex items-center justify-between bg-primary-fixed/60 px-4 py-2">
                   <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Việc mới quanh bạn</span>
@@ -592,7 +703,7 @@ export default function WorkerDashboard() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-11 h-11 rounded-xl bg-primary-container flex items-center justify-center text-white shadow-md shadow-primary/20">
-                      <job.icon size={20} />
+                      <JobIcon size={20} />
                     </div>
                     <div>
                       <div className="text-body-sm font-bold text-on-surface">{job.serviceName}</div>
@@ -656,7 +767,8 @@ export default function WorkerDashboard() {
                 </div>
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-center py-20">
               <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
@@ -739,12 +851,20 @@ export default function WorkerDashboard() {
                 </button>
               </div>
 
-              <button
-                onClick={() => triggerCompleteJob(job)}
-                className="w-full rounded-xl bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-green-700/20 transition-all hover:brightness-110 active:scale-[0.98]"
-              >
-                Hoàn thành Job
-              </button>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  onClick={() => openCancelRequestModal(job)}
+                  className="rounded-xl border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
+                >
+                  Yêu cầu huỷ
+                </button>
+                <button
+                  onClick={() => triggerCompleteJob(job)}
+                  className="rounded-xl bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-green-700/20 transition-all hover:brightness-110 active:scale-[0.98]"
+                >
+                  Hoàn thành Job
+                </button>
+              </div>
               </div>
             </div>
           ))
@@ -858,6 +978,74 @@ export default function WorkerDashboard() {
                 ) : "Hoàn thành Job"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request Cancel Modal */}
+      {jobToCancel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col animate-fade-in-up">
+            <div className="flex items-center justify-between p-5 border-b border-outline-variant/50">
+              <h2 className="text-lg font-bold text-on-surface">Yêu cầu huỷ công việc</h2>
+              <button
+                onClick={() => {
+                  if (!requestingCancel) {
+                    setJobToCancel(null);
+                    setCancelReason("Khách hàng từ chối lắp đặt/sửa chữa");
+                  }
+                }}
+                className="p-1.5 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
+                disabled={requestingCancel}
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRequestCancelJob}>
+              <div className="p-5 space-y-4">
+                <div className="rounded-xl bg-surface-container-low p-4">
+                  <p className="text-body-sm font-bold text-on-surface">{jobToCancel.customerName}</p>
+                  <p className="text-body-sm text-on-surface-variant">{jobToCancel.serviceName}</p>
+                  <p className="text-label-sm text-on-surface-variant mt-1">Mã đơn: {jobToCancel.job_code}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface block">Lý do huỷ</label>
+                  <textarea
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="input-field min-h-28 resize-none"
+                    placeholder="VD: Khách hàng từ chối lắp đặt/sửa chữa"
+                    disabled={requestingCancel}
+                  />
+                  <p className="text-xs text-on-surface-variant">
+                    Yêu cầu này sẽ chuyển tới admin duyệt trước khi job được huỷ chính thức.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJobToCancel(null);
+                    setCancelReason("Khách hàng từ chối lắp đặt/sửa chữa");
+                  }}
+                  className="btn-outline !w-auto flex-1 !py-2 !px-4 text-sm sm:flex-none"
+                  disabled={requestingCancel}
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary !w-auto flex-[1.4] !py-2 !px-5 text-sm !bg-error !border-error sm:min-w-[150px] sm:flex-none"
+                  disabled={requestingCancel}
+                >
+                  {requestingCancel ? "Đang gửi..." : "Gửi yêu cầu huỷ"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
