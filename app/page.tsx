@@ -455,37 +455,47 @@ export default async function HomePage() {
       </section>
 
       {/* ===== HOW IT WORKS ===== */}
-      <section id="how-it-works" className="bg-surface-container-low py-16 sm:py-24 lg:py-32">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section id="how-it-works" className="relative overflow-hidden bg-[#031f42] py-16 sm:py-24 lg:py-32">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(232,102,36,0.22),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(14,116,144,0.26),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-white/25 to-transparent" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mx-auto mb-10 max-w-3xl text-center sm:mb-14">
-            <span className="section-eyebrow">
+            <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold uppercase !text-secondary-fixed backdrop-blur">
               Quy trình
             </span>
-            <h2 className="mt-3 text-4xl font-bold text-on-surface sm:text-5xl">
+            <h2 className="mt-4 text-4xl font-bold !text-white sm:text-5xl">
               Đặt dịch vụ dễ dàng
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-on-surface-variant sm:text-lg">
+            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 !text-white/76 sm:text-lg">
               Chỉ 4 bước đơn giản để có thợ giỏi đến tận nơi
             </p>
           </div>
 
           <div className="relative">
-            <div className="absolute left-[12.5%] right-[12.5%] top-14 hidden h-px bg-outline-variant/70 lg:block" />
-          <div className="relative grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {steps.map((item, idx) => (
-              <div key={item.step} className="relative">
-                <div className="relative rounded-xl border border-outline-variant/25 bg-white p-6 shadow-sm">
-                  <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-primary text-white shadow-sm">
-                    <span className="text-xl font-bold text-white">
-                      {item.step}
-                    </span>
+            <div className="absolute left-[12.5%] right-[12.5%] top-20 hidden h-1 rounded-full bg-linear-to-r from-secondary-container via-white/30 to-tertiary-container lg:block" />
+            <div className="relative grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {steps.map((item, idx) => {
+                const StepIcon = [BriefcaseIcon, CalendarIcon, MapPinIcon, CheckCircleIcon][idx] || CheckCircleIcon;
+                return (
+                  <div key={item.step} className="relative">
+                    <div className="group relative min-h-[260px] overflow-hidden rounded-2xl border border-white/14 bg-white/[0.08] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl transition-all hover:-translate-y-1 hover:bg-white/[0.12]">
+                      <div className="absolute -right-6 -top-8 text-[7rem] font-bold leading-none text-white/[0.05]">
+                        {item.step}
+                      </div>
+                      <div className="relative mb-7 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-primary shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-transform group-hover:scale-105">
+                        <StepIcon size={28} />
+                      </div>
+                      <div className="relative mb-4 inline-flex rounded-full bg-secondary-container/18 px-3 py-1 text-xs font-bold !text-secondary-fixed">
+                        Bước {idx + 1}
+                      </div>
+                      <h3 className="relative mb-3 text-xl font-bold !text-white">{item.title}</h3>
+                      <p className="relative text-sm leading-6 !text-white/72">{item.desc}</p>
+                      <div className="absolute inset-x-5 bottom-5 h-px bg-linear-to-r from-secondary-container/80 via-white/20 to-transparent opacity-70" />
+                    </div>
                   </div>
-                  <h3 className="mb-2 text-lg font-bold text-on-surface">{item.title}</h3>
-                  <p className="text-sm leading-6 text-on-surface-variant">{item.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>
@@ -629,10 +639,10 @@ export default async function HomePage() {
       <section className="relative overflow-hidden bg-[#031f42] py-16 text-on-primary sm:py-24 lg:py-28">
         <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(232,102,36,0.28),rgba(232,102,36,0)_42%),linear-gradient(90deg,rgba(14,116,144,0.24),rgba(14,116,144,0)_58%)]" />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="relative mb-4 text-3xl font-bold leading-tight text-white sm:text-5xl">
+          <h2 className="relative mb-4 text-3xl font-bold leading-tight !text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.35)] sm:text-5xl">
             Bắt đầu sử dụng Alo Thợ ngay hôm nay
           </h2>
-          <p className="relative mx-auto mb-10 max-w-2xl text-lg text-white/80">
+          <p className="relative mx-auto mb-10 max-w-2xl text-lg !text-white/85">
             Đăng ký miễn phí và trải nghiệm dịch vụ sửa chữa tại nhà chuyên nghiệp nhất
           </p>
           <div className="relative flex flex-col justify-center gap-4 sm:flex-row">
