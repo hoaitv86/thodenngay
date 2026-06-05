@@ -252,12 +252,12 @@ export default function AdminDashboard() {
 
         {/* Sidebar Stats / Pending Workers */}
         <div className="space-y-8">
-          <div className="card-elevated p-6! bg-[#003178] text-white">
+          <div className="card-elevated !p-6 hero-gradient text-white">
             <h3 className="text-headline-md text-lg text-white! font-bold mb-4">Dispatcher Tip</h3>
             <p className="text-body-sm text-white! mb-6 leading-relaxed">
               Hãy gán thợ ngay để đảm bảo KPI phục vụ khách hàng tốt nhất.
             </p>
-            <button className="btn-secondary w-full rounded-xl! bg-amber-500! text-white! border-none!">Xem danh sách chờ</button>
+            <button className="btn-secondary w-full border-none! bg-secondary-container! text-white!">Xem danh sách chờ</button>
           </div>
 
           <div className="space-y-4">

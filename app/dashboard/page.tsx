@@ -130,7 +130,7 @@ export default function CustomerDashboard() {
         </Link>
         
         <div className="flex items-center gap-2 sm:gap-4">
-          <button className="p-2 hover:bg-surface-container rounded-lg text-on-surface-variant relative">
+          <button className="p-2 hover:bg-surface-container rounded-lg text-on-surface-variant relative" aria-label="Thông báo">
             <BellIcon size={20} />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full" />
           </button>
@@ -155,10 +155,11 @@ export default function CustomerDashboard() {
 
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6 sm:px-6 sm:py-8 md:py-12 space-y-8 sm:space-y-12">
         {/* Welcome & CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 bg-white p-5 sm:p-8 rounded-2xl sm:rounded-[2rem] shadow-sm border border-slate-100">
+        <div className="card-elevated flex flex-col justify-between gap-5 !p-5 sm:flex-row sm:items-center sm:!p-8">
           <div className="min-w-0">
-            <h1 className="text-2xl sm:text-4xl font-extrabold text-[#003178] mb-2 tracking-tight break-words">Chào {userName.split(' ').pop()}! 👋</h1>
-            <p className="text-base sm:text-lg text-[#434652] font-medium">Bạn cần thợ giúp gì hôm nay không?</p>
+            <p className="section-eyebrow mb-2">Trang khách hàng</p>
+            <h1 className="mb-2 break-words text-2xl font-bold text-primary sm:text-4xl">Chào {userName.split(' ').pop()}</h1>
+            <p className="text-base font-medium text-on-surface-variant sm:text-lg">Bạn cần thợ giúp gì hôm nay không?</p>
           </div>
           <Link href="/booking" className="btn-primary !py-3.5 !px-6 sm:!w-auto sm:!py-4 sm:!px-8 sm:text-lg">
             <PlusIcon size={24} />
@@ -168,7 +169,7 @@ export default function CustomerDashboard() {
 
         {/* Quick Services */}
         <section className="space-y-6">
-          <h2 className="text-sm font-bold text-[#003178] uppercase tracking-[0.2em] px-2">Dịch vụ phổ biến</h2>
+          <h2 className="section-eyebrow px-2">Dịch vụ phổ biến</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {(services.length > 0 ? services : [
               { id: "1", name: "Sửa Điện", iconComponent: ZapIcon, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
@@ -181,12 +182,12 @@ export default function CustomerDashboard() {
                 <Link 
                   key={svc.id || svc.name} 
                   href={svc.id && svc.id !== "1" && svc.id !== "2" && svc.id !== "3" && svc.id !== "4" ? `/booking?service=${svc.id}` : "/booking"} 
-                  className={`card !p-6 flex flex-col items-center gap-4 hover:shadow-lg hover:-translate-y-1 transition-all group bg-white border ${svc.border}`}
+                  className={`card flex flex-col items-center gap-4 border bg-white !p-6 transition-all hover:-translate-y-1 hover:border-primary/25 hover:shadow-md group ${svc.border}`}
                 >
-                  <div className={`w-16 h-16 rounded-2xl ${svc.bg} ${svc.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                  <div className={`flex h-14 w-14 items-center justify-center rounded-lg ${svc.bg} ${svc.color} transition-transform group-hover:scale-105`}>
                     <IconComp size={32} />
                   </div>
-                  <span className="text-base font-bold text-[#1a1c1e]">{svc.name}</span>
+                  <span className="text-base font-semibold text-on-surface">{svc.name}</span>
                 </Link>
               );
             })}
@@ -203,15 +204,15 @@ export default function CustomerDashboard() {
           <div className="grid grid-cols-1 gap-6">
             {recentJobs.length > 0 ? (
               recentJobs.map(job => (
-                <div key={job.id} className="card-elevated !p-0 overflow-hidden hover:shadow-2xl transition-shadow group">
+                <div key={job.id} className="card-elevated group overflow-hidden !p-0 transition-shadow hover:shadow-md">
                   <div className="p-4 sm:p-6 grid gap-3 border-b border-slate-50 bg-slate-50/50 sm:flex sm:items-center sm:justify-between">
                     <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                      <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-[#003178] shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-outline-variant/20 bg-white text-primary shadow-sm transition-transform group-hover:scale-105">
                         <BriefcaseIcon size={20} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-base sm:text-lg font-bold text-[#1a1c1e] truncate">{job.service?.name}</div>
-                        <div className="text-sm font-medium text-[#434652]">{job.job_code}</div>
+                        <div className="truncate text-base font-bold text-on-surface sm:text-lg">{job.service?.name}</div>
+                        <div className="text-sm font-medium text-on-surface-variant">{job.job_code}</div>
                       </div>
                     </div>
                     <span className={`badge badge-${job.status === 'done' ? 'completed' : job.status} w-fit px-3 sm:px-4 py-1.5 uppercase text-[10px] font-bold`}>
@@ -250,7 +251,7 @@ export default function CustomerDashboard() {
                 </div>
               ))
             ) : (
-              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              <div className="rounded-lg border border-dashed border-outline-variant/60 bg-surface-container-low py-10 text-center">
                 <p className="text-on-surface-variant">Bạn chưa có yêu cầu nào.</p>
               </div>
             )}
@@ -258,10 +259,8 @@ export default function CustomerDashboard() {
         </section>
 
         {/* Promo Banner */}
-        <div className="bg-primary-container rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-on-primary flex flex-col md:flex-row items-center gap-6 sm:gap-8 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-secondary-container/10 rounded-full -ml-24 -mb-24 blur-3xl" />
-          
+        <div className="hero-gradient relative flex flex-col items-center gap-6 overflow-hidden rounded-xl p-5 text-on-primary sm:gap-8 sm:p-8 md:flex-row">
+          <div className="absolute inset-y-0 right-0 w-1/2 bg-linear-to-l from-secondary-container/20 to-transparent" />
           <div className="w-full flex-1 space-y-4 text-center md:text-left z-10">
             <h3 className="text-2xl md:text-3xl font-bold text-white">Bạn muốn trở thành đối tác?</h3>
             <p className="text-sm md:text-base text-white/80">Đăng ký làm thợ để nhận hàng ngàn công việc sửa chữa mỗi ngày với thu nhập ổn định.</p>
@@ -269,7 +268,7 @@ export default function CustomerDashboard() {
               Tìm hiểu thêm
             </Link>
           </div>
-          <div className="w-32 h-32 md:w-40 md:h-40 bg-white/10 rounded-3xl flex items-center justify-center backdrop-blur-sm border border-white/10 shrink-0 z-10">
+          <div className="z-10 flex h-32 w-32 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 backdrop-blur-sm md:h-40 md:w-40">
             <UsersIcon size={64} className="text-white/40" />
           </div>
         </div>
