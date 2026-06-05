@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   LogoIcon,
   ZapIcon,
@@ -218,13 +219,22 @@ export default async function HomePage() {
       </header>
 
       {/* ===== HERO SECTION ===== */}
-      <section className="relative overflow-hidden bg-linear-to-br from-primary via-primary-container to-[#1565c0] text-on-primary">
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12)_0,rgba(255,255,255,0)_38%),linear-gradient(90deg,rgba(253,108,0,0.16)_0,rgba(253,108,0,0)_55%)]" />
+      <section className="relative min-h-[620px] overflow-hidden bg-primary text-on-primary sm:min-h-[680px]">
+        <Image
+          src="/hero-technician.png"
+          alt="Kỹ thuật viên Alo Thợ kiểm tra sửa chữa tại nhà"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-[62%_center]"
+        />
+        <div className="absolute inset-0 bg-linear-to-r from-primary via-primary/88 to-primary/18" />
+        <div className="absolute inset-0 bg-linear-to-t from-primary/45 via-transparent to-transparent" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20 lg:py-28">
+        <div className="relative mx-auto flex min-h-[620px] max-w-7xl items-center px-4 py-14 sm:min-h-[680px] sm:px-6 sm:py-20 lg:px-8">
           <div className="max-w-2xl">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 rounded-full mb-5 backdrop-blur-sm border border-white/10">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/12 px-3.5 py-1.5 backdrop-blur-sm">
               <span className="w-2 h-2 bg-secondary-container rounded-full animate-pulse" />
               <span className="text-label-sm text-white/90">Đang hoạt động 24/7</span>
             </div>
@@ -243,7 +253,7 @@ export default async function HomePage() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Link
                 href="/register"
-                className="btn-secondary !py-3.5 !px-6 sm:!w-auto sm:!px-8"
+                className="btn-secondary !px-6 !py-3.5 sm:!w-auto sm:!px-8"
                 id="hero-cta"
               >
                 Đặt dịch vụ ngay
@@ -251,7 +261,7 @@ export default async function HomePage() {
               </Link>
               <a
                 href="tel:1900xxxx"
-                className="btn-outline !border-white/30 !text-white hover:!bg-white/10 hover:!border-white/50 !py-3.5 !px-6 sm:!w-auto sm:!px-8"
+                className="btn-outline !border-white/30 !bg-white/8 !px-6 !py-3.5 !text-white hover:!border-white/50 hover:!bg-white/14 sm:!w-auto sm:!px-8"
                 id="hero-call"
               >
                 <PhoneIcon size={20} />
@@ -307,17 +317,17 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {services.map((svc) => {
               const Icon = svc.icon;
               return (
                 <div
                   key={svc.name}
-                  className="card group cursor-pointer"
+                  className="card group cursor-pointer hover:-translate-y-1 hover:border-primary-container/35 hover:shadow-md"
                   id={`service-${svc.name}`}
                 >
                   <div
-                    className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110"
+                    className="mb-5 flex h-14 w-14 items-center justify-center rounded-lg transition-transform group-hover:scale-105"
                     style={{ backgroundColor: svc.bgColor, color: svc.color }}
                   >
                     <Icon size={28} />
@@ -359,8 +369,8 @@ export default async function HomePage() {
                 {idx < steps.length - 1 && (
                   <div className="hidden lg:block absolute top-8 left-[calc(50%+32px)] w-[calc(100%-64px)] h-[2px] bg-outline-variant" />
                 )}
-                <div className="card-elevated text-center">
-                  <div className="w-16 h-16 rounded-full bg-primary-fixed flex items-center justify-center mx-auto mb-5">
+                  <div className="card-elevated text-center">
+                  <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed">
                     <span className="text-headline-md text-primary-container font-bold">
                       {item.step}
                     </span>
@@ -419,7 +429,7 @@ export default async function HomePage() {
 
             {/* Visual Card */}
             <div className="relative">
-              <div className="card-elevated !p-5 sm:!p-8 bg-gradient-to-br from-primary-fixed to-surface-container-lowest">
+              <div className="card-elevated !p-5 bg-linear-to-br from-primary-fixed to-surface-container-lowest sm:!p-8">
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center text-on-primary font-bold text-lg">
                     NT
@@ -453,7 +463,7 @@ export default async function HomePage() {
               </div>
 
               {/* Floating notification */}
-              <div className="hidden sm:block absolute -top-4 -right-4 card-elevated !p-4 animate-float max-w-[220px]">
+              <div className="card-elevated absolute -right-4 -top-4 hidden max-w-[220px] animate-float !p-4 sm:block">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-success-container flex items-center justify-center text-success">
                     <CheckCircleIcon size={16} />

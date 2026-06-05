@@ -298,8 +298,8 @@ export default function CustomerBooking() {
       )}
 
       {/* Header */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] px-4 pb-12 pt-7 text-white shadow-lg shadow-primary/10 sm:px-6">
-        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+      <div className="hero-gradient relative overflow-hidden px-4 pb-12 pt-7 text-white shadow-sm sm:px-6">
+        <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25" />
         <h1 className="relative text-2xl font-extrabold leading-tight text-white">Đặt dịch vụ mới</h1>
         <p className="relative mt-2 max-w-[19rem] text-sm leading-6 text-white/80">
           Chúng tôi sẽ tìm thợ phù hợp nhất với yêu cầu của bạn.
@@ -308,7 +308,7 @@ export default function CustomerBooking() {
 
       {/* Booking Form */}
       <div className="-mt-6 flex-1 px-4 sm:mx-auto sm:w-full sm:max-w-md lg:max-w-4xl lg:px-8">
-        <div className="rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-xl shadow-blue-900/5 sm:p-6">
+        <div className="rounded-xl border border-outline-variant/20 bg-white p-4 shadow-md shadow-blue-950/5 sm:p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
 
             {/* Service Selection */}
@@ -334,13 +334,13 @@ export default function CustomerBooking() {
                       key={service.id}
                       type="button"
                       onClick={() => setFormData({ ...formData, serviceId: service.id })}
-                      className={`flex min-h-[128px] flex-col items-start justify-between rounded-xl border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] sm:p-4 ${isSelected
-                          ? `${visual.selectedClass} shadow-lg`
+                      className={`flex min-h-[128px] flex-col items-start justify-between rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:p-4 ${isSelected
+                          ? `${visual.selectedClass} shadow-md`
                           : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20'
                         }`}
                     >
                       <div className="flex w-full items-start justify-between gap-2">
-                        <div className={`flex h-11 w-11 items-center justify-center rounded-xl shadow-sm ${isSelected ? 'bg-white text-on-surface' : visual.iconClass}`}>
+                        <div className={`flex h-11 w-11 items-center justify-center rounded-lg shadow-sm ${isSelected ? 'bg-white text-on-surface' : visual.iconClass}`}>
                           <Icon size={21} />
                         </div>
                         {isSelected && (
@@ -418,7 +418,7 @@ export default function CustomerBooking() {
               <p className="text-xs text-on-surface-variant">
                 Tải tối đa 5 ảnh để thợ xem trước địa hình và chuẩn bị dụng cụ phù hợp.
               </p>
-              <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-secondary-container/50 bg-secondary-container/5 px-4 py-5 text-center transition-colors hover:bg-secondary-container/10">
+              <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-secondary-container/50 bg-secondary-container/5 px-4 py-5 text-center transition-colors hover:bg-secondary-container/10">
                 <CameraIcon size={26} className="mb-2 text-secondary-container" />
                 <span className="text-sm font-bold text-secondary">Thêm ảnh</span>
                 <span className="mt-1 text-[11px] text-on-surface-variant">PNG, JPG, JPEG • tối đa 8MB/ảnh</span>
@@ -453,7 +453,7 @@ export default function CustomerBooking() {
             <button
               type="submit"
               disabled={isSubmitting || !formData.serviceId || !formData.address || !formData.scheduledAt}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-secondary-container px-5 py-4 text-base font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:shadow-none"
+              className="btn-secondary mt-4 w-full py-4 text-base"
             >
               {isSubmitting ? (
                 <span className="flex items-center gap-2">

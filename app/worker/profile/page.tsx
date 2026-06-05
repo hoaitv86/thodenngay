@@ -272,12 +272,12 @@ export default function WorkerProfile() {
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface pb-6 animate-fade-in">
       {/* Header / Avatar */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] px-4 pb-16 pt-7 text-white shadow-lg shadow-primary/10 sm:px-6">
-        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+      <div className="hero-gradient relative overflow-hidden px-4 pb-16 pt-7 text-white shadow-sm sm:px-6">
+        <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25" />
         <div className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-full bg-white text-[#003178] flex items-center justify-center text-3xl font-extrabold shadow-lg shadow-black/10 relative shrink-0 overflow-hidden">
+          <div className="w-20 h-20 rounded-full bg-white text-primary flex items-center justify-center text-3xl font-extrabold shadow-sm relative shrink-0 overflow-hidden">
             {uploadingAvatar ? (
-              <div className="w-6 h-6 border-2 border-[#003178] border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             ) : profile.avatar_url ? (
               <img
                 src={profile.avatar_url}
@@ -313,7 +313,7 @@ export default function WorkerProfile() {
 
       {/* Stats Cards overlay */}
       <div className="px-4 -mt-8 relative z-10">
-        <div className="flex justify-between rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-xl shadow-blue-900/5">
+        <div className="flex justify-between rounded-lg border border-outline-variant/20 bg-white p-4 shadow-sm">
           <div className="text-center flex-1">
             <div className="text-xl font-extrabold text-on-surface">{profile.worker?.total_jobs || 0}</div>
             <div className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider mt-1">Jobs</div>

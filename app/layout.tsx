@@ -1,12 +1,5 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro } from "next/font/google";
 import "./app.css";
-
-const beVietnamPro = Be_Vietnam_Pro({
-  subsets: ["latin", "vietnamese"],
-  weight: ["300", "400", "500", "600", "700", "800"],
-  variable: "--font-be-vietnam-pro",
-});
 
 export const metadata: Metadata = {
   title: "Alo Thợ – Dịch vụ sửa chữa tại nhà",
@@ -22,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="h-full antialiased">
-      <body className={`${beVietnamPro.variable} min-h-full flex flex-col font-sans`}>
+      <body className="min-h-full flex flex-col font-sans">
         {children}
       </body>
     </html>

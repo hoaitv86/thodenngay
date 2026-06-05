@@ -190,7 +190,7 @@ export default function JobDetailPage() {
       )}
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-outline-variant/20 px-4 h-14 flex items-center gap-4">
-        <button onClick={() => router.back()} className="p-2 hover:bg-surface-container rounded-full transition-colors">
+        <button onClick={() => router.back()} className="p-2 hover:bg-surface-container rounded-full transition-colors" aria-label="Quay lại">
           <ArrowLeft size={20} />
         </button>
         <h1 className="text-body-lg font-bold">Chi tiết công việc</h1>
@@ -198,8 +198,7 @@ export default function JobDetailPage() {
 
       <main className="flex-1 space-y-6 p-4 pb-10 lg:p-8">
         {/* Status Card */}
-        <div className="relative flex flex-col items-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-5 text-center text-white shadow-xl shadow-primary/15 sm:p-6">
-          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+        <div className="app-hero-panel flex flex-col items-center text-center sm:p-6">
           <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-white text-primary-container shadow-lg shadow-black/10">
             <ShieldCheck size={32} />
           </div>
@@ -217,15 +216,15 @@ export default function JobDetailPage() {
         {/* Service Info */}
         <div className="space-y-4">
           <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Thông tin dịch vụ</h3>
-          <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-lg shadow-blue-900/5 sm:gap-4 sm:p-5">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-container text-white shadow-md shadow-primary/20">
+          <div className="flex items-center gap-3 rounded-lg border border-outline-variant/20 bg-white p-4 shadow-sm sm:gap-4 sm:p-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white shadow-sm">
               <Briefcase size={24} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-body-md font-bold text-on-surface truncate">{job.service?.name}</p>
               <p className="text-label-sm text-on-surface-variant">{job.service?.description}</p>
             </div>
-            <div className="shrink-0 rounded-xl bg-primary-fixed px-3 py-2 text-sm font-extrabold text-primary-container sm:text-body-md">
+            <div className="shrink-0 rounded-lg bg-primary-fixed px-3 py-2 text-sm font-extrabold text-primary-container sm:text-body-md">
               {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(job.quoted_price)}
             </div>
           </div>

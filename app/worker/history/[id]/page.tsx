@@ -79,12 +79,12 @@ export default function WorkerJobDetailPage() {
 
       <div className="flex-1 p-4 space-y-6 pb-10">
         {/* Status Hero */}
-        <div className={`relative flex flex-col items-center overflow-hidden rounded-2xl border p-5 text-center shadow-xl sm:p-6 ${
+        <div className={`relative flex flex-col items-center overflow-hidden rounded-xl border p-5 text-center shadow-sm sm:p-6 ${
           isCompleted
-            ? 'border-success/20 bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#16a34a] text-white shadow-green-900/10'
-            : 'border-error/20 bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#ba1a1a] text-white shadow-red-900/10'
+            ? 'border-success/20 bg-linear-to-br from-primary via-primary-container to-success text-white'
+            : 'border-error/20 bg-linear-to-br from-primary via-primary-container to-error text-white'
         }`}>
-          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25" />
           <div className={`relative flex h-16 w-16 items-center justify-center rounded-full ${
             isCompleted 
               ? 'bg-white text-success' 
@@ -98,7 +98,7 @@ export default function WorkerJobDetailPage() {
             </h2>
             <p className="mt-1 break-all font-mono text-label-md font-medium text-white/75">{job.job_code}</p>
           </div>
-          <div className="relative mt-3 rounded-xl bg-white px-4 py-2 text-2xl font-extrabold text-primary-container shadow-lg shadow-black/10">
+          <div className="relative mt-3 rounded-lg bg-white px-4 py-2 text-2xl font-extrabold text-primary-container shadow-sm">
             {formattedPrice}
           </div>
         </div>
@@ -106,8 +106,8 @@ export default function WorkerJobDetailPage() {
         {/* Service Info */}
         <div className="space-y-3">
           <h3 className="text-label-sm font-bold text-on-surface-variant uppercase tracking-widest">Dịch vụ</h3>
-          <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-lg shadow-blue-900/5 sm:gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-container text-white shadow-md shadow-primary/20">
+          <div className="flex items-center gap-3 rounded-lg border border-outline-variant/20 bg-white p-4 shadow-sm sm:gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white shadow-sm">
               <BriefcaseIcon size={24} />
             </div>
             <div className="flex-1 min-w-0">

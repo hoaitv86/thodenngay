@@ -56,11 +56,11 @@ export default function WorkerLayout({
       {/* Desktop Sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-outline-variant/30 lg:bg-white">
         <div className="flex h-20 items-center gap-3 border-b border-outline-variant/20 px-5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#003178] shadow-lg shadow-blue-900/20">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary shadow-sm">
             <LogoIcon size={26} />
           </div>
           <div className="min-w-0">
-            <span className="block truncate font-extrabold leading-tight text-[#003178]">{userName}</span>
+            <span className="block truncate font-extrabold leading-tight text-primary">{userName}</span>
             <div className="mt-1 flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-success" />
               <span className="text-[10px] font-bold uppercase tracking-wider text-success">Online</span>
@@ -75,7 +75,7 @@ export default function WorkerLayout({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold transition-all ${
+                className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-extrabold transition-all ${
                   isActive
                     ? "bg-primary-fixed text-primary-container shadow-sm"
                     : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
@@ -91,7 +91,7 @@ export default function WorkerLayout({
         <div className="border-t border-outline-variant/20 p-3">
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold text-error transition-colors hover:bg-error-container"
+            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-extrabold text-error transition-colors hover:bg-error-container"
           >
             <LogOutIcon size={20} />
             <span>Đăng xuất</span>
@@ -103,11 +103,11 @@ export default function WorkerLayout({
       {/* Premium Header */}
       <header className="sticky top-0 z-40 glass h-16 flex items-center justify-between px-4 sm:px-6 lg:h-20 lg:px-8">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#003178] flex items-center justify-center shadow-lg shadow-blue-900/20 lg:hidden">
+          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center shadow-sm lg:hidden">
             <LogoIcon size={24} />
           </div>
           <div>
-            <span className="block font-bold text-[#003178] leading-tight truncate max-w-[180px] lg:max-w-none lg:text-lg">Trang thợ</span>
+            <span className="block font-bold text-primary leading-tight truncate max-w-[180px] lg:max-w-none lg:text-lg">Trang thợ</span>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
               <span className="text-[10px] font-bold text-success uppercase tracking-wider">{userName} đang online</span>
@@ -115,12 +115,13 @@ export default function WorkerLayout({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-2.5 hover:bg-surface-container rounded-xl text-on-surface-variant relative transition-colors">
+          <button className="p-2.5 hover:bg-surface-container rounded-lg text-on-surface-variant relative transition-colors" aria-label="Thông báo">
             <BellIcon size={22} />
             <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-error border-2 border-white rounded-full" />
           </button>
           <button
             onClick={handleLogout}
+            aria-label="Đăng xuất"
             className="flex items-center gap-2 px-3 py-2 hover:bg-error-container hover:text-error rounded-lg text-on-surface-variant transition-colors border border-transparent hover:border-error/20"
             title="Đăng xuất"
           >
@@ -147,8 +148,8 @@ export default function WorkerLayout({
                 key={item.href}
                 href={item.href}
                 className={`min-w-0 flex flex-col items-center justify-center gap-1.5 transition-all ${isActive
-                  ? "text-[#003178]"
-                  : "text-[#434652] hover:bg-slate-50"
+                  ? "text-primary"
+                  : "text-on-surface-variant hover:bg-slate-50"
                   }`}
               >
                 <item.icon size={22} className={isActive ? "stroke-[2.5px]" : ""} />

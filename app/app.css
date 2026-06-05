@@ -3,17 +3,17 @@
 /* ===== Alo Thợ Design System (from Stitch) ===== */
 @theme {
   /* — Primary: Trustworthy Blue — */
-  --color-primary: #003178;
-  --color-primary-container: #0d47a1;
+  --color-primary: #07336b;
+  --color-primary-container: #0f4c97;
   --color-primary-fixed: #d9e2ff;
   --color-primary-fixed-dim: #b0c6ff;
   --color-on-primary: #ffffff;
-  --color-on-primary-container: #a1bbff;
+  --color-on-primary-container: #ffffff;
   --color-inverse-primary: #b0c6ff;
 
   /* — Secondary: Energetic Orange — */
-  --color-secondary: #9f4200;
-  --color-secondary-container: #fd6c00;
+  --color-secondary: #9a3f00;
+  --color-secondary-container: #f26a21;
   --color-secondary-fixed: #ffdbcb;
   --color-on-secondary: #ffffff;
   --color-on-secondary-container: #562000;
@@ -24,7 +24,7 @@
   --color-on-tertiary: #ffffff;
 
   /* — Surface / Backgrounds — */
-  --color-surface: #f9f9fc;
+  --color-surface: #f7f8fb;
   --color-surface-dim: #dadadc;
   --color-surface-bright: #f9f9fc;
   --color-surface-container-lowest: #ffffff;
@@ -48,12 +48,14 @@
   /* — Status Colors — */
   --color-success: #16a34a;
   --color-success-container: #dcfce7;
+  --color-on-success-container: #166534;
   --color-warning: #f59e0b;
   --color-warning-container: #fef3c7;
   --color-info: #2b5bb5;
+  --color-on-error-container: #7f1d1d;
 
   /* — Typography (Be Vietnam Pro) — */
-  --font-sans: var(--font-be-vietnam-pro), sans-serif;
+  --font-sans: var(--font-be-vietnam-pro), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   /* — Spacing (8px grid) — */
   --alo-space-xs: 4px;
@@ -65,9 +67,9 @@
   /* — Border Radius — */
   --radius-sm: 0.25rem;
   --radius-DEFAULT: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
   --radius-full: 9999px;
 }
 
@@ -90,6 +92,10 @@ body {
   overflow-x: hidden;
 }
 
+::selection {
+  background: rgb(242 106 33 / 0.22);
+}
+
 button,
 a,
 input,
@@ -103,6 +109,15 @@ a {
   touch-action: manipulation;
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgb(242 106 33 / 0.34);
+  outline-offset: 2px;
+}
+
 input,
 select,
 textarea {
@@ -114,24 +129,24 @@ textarea {
 /* Buttons */
 @layer components {
   .btn-primary {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-xl font-bold transition-all hover:bg-primary-container active:scale-95 disabled:opacity-50 disabled:pointer-events-none shadow-lg shadow-primary/20;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 font-bold text-on-primary shadow-sm transition-all hover:bg-primary-container active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
   
   .btn-secondary {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 px-6 py-3 bg-secondary-container text-white rounded-xl font-bold transition-all hover:brightness-110 active:scale-95 shadow-lg shadow-secondary-container/20;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-secondary-container px-5 py-3 font-bold text-white shadow-sm transition-all hover:brightness-105 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
   
   .btn-outline {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 px-6 py-3 border-2 border-outline-variant text-on-surface-variant rounded-xl font-bold transition-all hover:bg-surface-container-low hover:border-primary-container hover:text-primary-container;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-outline-variant bg-white px-5 py-3 font-bold text-on-surface-variant transition-all hover:border-primary-container hover:bg-primary-fixed/40 hover:text-primary-container disabled:pointer-events-none disabled:opacity-50;
   }
 
   /* Cards */
   .card {
-    @apply bg-white p-6 rounded-2xl border border-outline-variant/30 transition-all;
+    @apply rounded-lg border border-outline-variant/30 bg-white p-5 shadow-sm transition-all;
   }
   
   .card-elevated {
-    @apply bg-white p-6 rounded-2xl shadow-xl shadow-blue-900/5 border border-white transition-all;
+    @apply rounded-lg border border-outline-variant/20 bg-white p-5 shadow-md shadow-blue-950/5 transition-all;
   }
 
   /* Badges */
@@ -169,12 +184,45 @@ textarea {
 
   /* Glassmorphism */
   .glass {
-    @apply bg-white/70 backdrop-blur-md border-b border-white/20;
+    @apply border-b border-outline-variant/20 bg-white/88 backdrop-blur-xl;
   }
 
   /* Input Fields */
   .input-field {
-    @apply w-full px-4 py-3 bg-surface-container-low border border-outline-variant rounded-xl text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-on-surface-variant/50;
+    @apply w-full rounded-lg border border-outline-variant/70 bg-white px-4 py-3 text-on-surface placeholder:text-on-surface-variant/50 transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/15;
+  }
+
+  .page-band {
+    @apply border-b border-outline-variant/20 bg-white;
+  }
+
+  .hero-gradient {
+    @apply bg-linear-to-br from-primary via-primary-container to-[#134f8f];
+  }
+
+  .app-hero-panel {
+    @apply relative overflow-hidden rounded-xl bg-linear-to-br from-primary via-primary-container to-secondary-container p-5 text-white shadow-md shadow-blue-950/10;
+  }
+
+  .app-hero-panel::after {
+    content: "";
+    @apply absolute inset-x-0 bottom-0 h-1 bg-white/25;
+  }
+
+  .auth-shell {
+    @apply min-h-screen w-full bg-surface;
+  }
+
+  .auth-brand-panel {
+    @apply relative hidden overflow-hidden bg-primary text-white lg:flex lg:w-[46%] lg:flex-col lg:justify-between;
+  }
+
+  .auth-card {
+    @apply rounded-xl border border-outline-variant/25 bg-white p-5 shadow-lg shadow-blue-950/5 sm:p-8;
+  }
+
+  .admin-table-card {
+    @apply rounded-lg border border-outline-variant/20 bg-white shadow-sm;
   }
 }
 
@@ -187,6 +235,49 @@ textarea {
 .text-body-xs { @apply text-xs text-on-surface-variant; }
 .text-label-sm { @apply text-xs font-semibold text-on-surface-variant; }
 .text-label-md { @apply text-sm font-bold uppercase tracking-wide text-on-surface-variant; }
+
+.animate-fade-in {
+  animation: alo-fade-in 180ms ease-out both;
+}
+
+.animate-fade-in-up {
+  animation: alo-fade-in 180ms ease-out both;
+}
+
+.animate-float {
+  animation: alo-float 4s ease-in-out infinite;
+}
+
+@keyframes alo-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes alo-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 .text-white .text-body-lg,
 .text-white .text-body-md,

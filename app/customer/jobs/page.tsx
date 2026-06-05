@@ -75,8 +75,7 @@ export default function CustomerJobs() {
 
   return (
     <div className="space-y-5 px-4 py-5 lg:px-8">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-5 text-white shadow-xl shadow-primary/15">
-        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+      <div className="app-hero-panel">
         <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Theo dõi dịch vụ</p>
         <h1 className="mt-1 text-2xl font-extrabold leading-tight text-white">Đơn của tôi</h1>
         <p className="mt-2 max-w-[19rem] text-sm leading-6 text-white/80">
@@ -92,7 +91,7 @@ export default function CustomerJobs() {
             return (
               <div 
                 key={job.id} 
-                className="overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-lowest shadow-lg shadow-blue-900/5 transition-all hover:shadow-xl active:scale-[0.98]"
+                className="overflow-hidden rounded-lg border border-outline-variant/20 bg-surface-container-lowest shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
               >
                 <div className="flex items-center justify-between bg-primary-fixed/50 px-4 py-2">
                   <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Mã đơn: {job.job_code}</span>
@@ -104,7 +103,7 @@ export default function CustomerJobs() {
                 <div className="p-4">
                 <div className="grid gap-3 mb-3 sm:flex sm:items-start sm:justify-between">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-primary-container flex items-center justify-center text-white shadow-md shadow-primary/20">
+                    <div className="w-11 h-11 rounded-lg bg-primary-container flex items-center justify-center text-white shadow-sm">
                       <Briefcase size={20} />
                     </div>
                     <div className="min-w-0">
@@ -122,7 +121,7 @@ export default function CustomerJobs() {
                 {(job.status === 'completed' || job.status === 'done') && (!job.ratings || job.ratings.length === 0) && (
                   <Link 
                     href={`/customer/jobs/${job.id}`}
-                    className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200/50 rounded-xl text-amber-700 hover:bg-amber-100 transition-colors"
+                    className="flex items-center gap-2 rounded-lg border border-amber-200/50 bg-amber-50 px-3 py-2 text-amber-700 transition-colors hover:bg-amber-100"
                   >
                     <Star size={14} className="animate-pulse" />
                     <span className="text-[11px] font-bold">Chưa đánh giá — nhấn để gửi nhận xét</span>
@@ -156,7 +155,7 @@ export default function CustomerJobs() {
                 )}
 
                 <div className="mt-3 flex items-center justify-end">
-                  <Link href={`/customer/jobs/${job.id}`} className="inline-flex items-center gap-1 rounded-xl bg-secondary-container px-3 py-2 text-xs font-extrabold text-white shadow-md shadow-secondary-container/20">
+                  <Link href={`/customer/jobs/${job.id}`} className="inline-flex items-center gap-1 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white shadow-sm">
                     Chi tiết
                     <ChevronRight size={14} />
                   </Link>
@@ -166,7 +165,7 @@ export default function CustomerJobs() {
             );
           })
         ) : (
-          <div className="text-center py-20 bg-surface-container-lowest rounded-3xl border border-dashed border-outline-variant/50">
+          <div className="rounded-lg border border-dashed border-outline-variant/50 bg-surface-container-lowest py-20 text-center">
             <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4 text-on-surface-variant/30">
               <Briefcase size={32} />
             </div>

@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const router = useRouter();
   const supabase = createClient();
+  const showDemoAccounts = process.env.NODE_ENV !== "production";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,14 +87,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row w-full">
+    <div className="auth-shell flex flex-col lg:flex-row">
       {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#1565c0] text-white flex-col justify-between p-12 relative overflow-hidden">
-        {/* Background elements */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-20 left-20 w-64 h-64 bg-white rounded-full blur-3xl" />
-          <div className="absolute bottom-20 right-20 w-80 h-80 bg-[#fd6c00] rounded-full blur-3xl" />
-        </div>
+      <div className="auth-brand-panel p-12">
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0)_42%),linear-gradient(180deg,rgba(242,106,33,0.16),rgba(242,106,33,0)_52%)]" />
 
         <div className="relative z-10">
           <Link href="/" className="flex items-center gap-3">
@@ -105,7 +102,7 @@ export default function LoginPage() {
         <div className="relative z-10">
           <h2 className="text-lg mb-4 text-white font-bold">
             Dịch vụ sửa chữa{" "}
-            <span className="text-[#fd6c00]">chuyên nghiệp</span>
+            <span className="text-secondary-container">chuyên nghiệp</span>
           </h2>
           <p className="text-lg text-white/80 w-full max-w-[400px] leading-relaxed">
             Đăng nhập để đặt dịch vụ, theo dõi công việc và quản lý tài khoản của bạn.
@@ -129,57 +126,59 @@ export default function LoginPage() {
       </div>
 
       {/* Right Panel - Login Form */}
-      <div className="flex-1 w-full flex items-center justify-center bg-[#f9f9fc] p-4 sm:p-6">
+      <div className="flex w-full flex-1 items-center justify-center bg-surface p-4 sm:p-6">
         <div className="w-full max-w-[440px] mx-auto py-6 sm:py-8">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
-            <span className="text-2xl font-bold text-[#003178]">Alo Thợ</span>
+            <span className="text-2xl font-bold text-primary">Alo Thợ</span>
           </div>
 
-          <div className="bg-white p-5 sm:p-10 rounded-2xl shadow-[0_20px_50px_rgba(0,49,120,0.05)] border border-slate-100">
+          <div className="auth-card">
             <div className="mb-7 text-center sm:text-left">
-              <h1 className="text-2xl sm:text-3xl font-bold text-[#1a1c1e] mb-2">Đăng nhập</h1>
-              <p className="text-[#434652]">Chào mừng bạn trở lại với Alo Thợ</p>
+              <h1 className="mb-2 text-2xl font-bold text-on-surface sm:text-3xl">Đăng nhập</h1>
+              <p className="text-on-surface-variant">Chào mừng bạn trở lại với Alo Thợ</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-[#1a1c1e] mb-2">
+                <label htmlFor="login-id" className="block text-sm font-semibold text-on-surface mb-2">
                   Email hoặc SĐT
                 </label>
                 <input
+                  id="login-id"
                   type="text"
                   value={loginId}
                   onChange={(e) => setLoginId(e.target.value)}
-                  className="w-full px-4 py-4 bg-[#f3f3f6] border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#003178]/10 focus:border-[#003178] focus:bg-white transition-all text-[#1a1c1e]"
+                  className="input-field py-4"
                   placeholder="name@example.com hoặc 0912345678"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-[#1a1c1e] mb-2">
+                <label htmlFor="login-password" className="block text-sm font-semibold text-on-surface mb-2">
                   Mật khẩu
                 </label>
                 <input
+                  id="login-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-4 bg-[#f3f3f6] border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#003178]/10 focus:border-[#003178] focus:bg-white transition-all text-[#1a1c1e]"
+                  className="input-field py-4"
                   placeholder="••••••••"
                 />
               </div>
 
               {error && (
-                <div className="text-[#ba1a1a] text-sm flex items-center gap-2 bg-[#ffdad6] p-3 rounded-lg">
-                  <span>⚠</span> {error}
+                <div className="flex gap-2 rounded-lg bg-error-container p-3 text-sm text-error" role="alert">
+                  <span aria-hidden="true">!</span> {error}
                 </div>
               )}
 
               <button
                 type="submit"
-                className="w-full py-4 bg-[#003178] hover:bg-[#00255a] text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98] flex items-center justify-center gap-2 group"
+                className="btn-primary w-full py-4 group"
                 disabled={loading}
               >
                 {loading ? (
@@ -197,35 +196,36 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-8 text-center">
-              <p className="text-sm text-[#434652]">
+              <p className="text-sm text-on-surface-variant">
                 Chưa có tài khoản?{" "}
                 <Link
                   href="/register"
-                  className="text-[#0d47a1] font-bold hover:underline"
+                  className="font-bold text-primary-container hover:underline"
                 >
                   Đăng ký ngay
                 </Link>
               </p>
             </div>
 
-            {/* Demo Accounts Info */}
-            <div className="mt-8 p-4 bg-blue-50 border border-blue-100 rounded-xl text-left">
-              <p className="text-xs font-bold text-[#003178] uppercase tracking-wider mb-2">Tài khoản dùng thử (Pass: 123456)</p>
-              <div className="grid grid-cols-1 gap-2 text-xs text-[#434652]">
-                <div className="grid gap-1 sm:flex sm:justify-between">
-                  <span>Admin:</span>
-                  <span className="font-mono font-bold break-all">admin@alotho.local</span>
-                </div>
-                <div className="grid gap-1 sm:flex sm:justify-between">
-                  <span>Thợ (Worker):</span>
-                  <span className="font-mono font-bold break-all">worker@alotho.local</span>
-                </div>
-                <div className="grid gap-1 sm:flex sm:justify-between">
-                  <span>Khách (Customer):</span>
-                  <span className="font-mono font-bold break-all">customer@alotho.local</span>
+            {showDemoAccounts && (
+              <div className="mt-8 rounded-lg border border-primary-fixed bg-primary-fixed/35 p-4 text-left">
+                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-primary">Tài khoản dùng thử (Pass: 123456)</p>
+                <div className="grid grid-cols-1 gap-2 text-xs text-on-surface-variant">
+                  <div className="grid gap-1 sm:flex sm:justify-between">
+                    <span>Admin:</span>
+                    <span className="break-all font-mono font-bold">admin@alotho.local</span>
+                  </div>
+                  <div className="grid gap-1 sm:flex sm:justify-between">
+                    <span>Thợ:</span>
+                    <span className="break-all font-mono font-bold">worker@alotho.local</span>
+                  </div>
+                  <div className="grid gap-1 sm:flex sm:justify-between">
+                    <span>Khách:</span>
+                    <span className="break-all font-mono font-bold">customer@alotho.local</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

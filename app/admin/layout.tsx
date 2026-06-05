@@ -136,13 +136,14 @@ export default function AdminLayout({
         <header className="h-16 bg-surface-container-lowest border-b border-outline-variant/30 flex items-center justify-between px-6 shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
+            aria-label="Mở menu quản trị"
             className="md:hidden p-2 rounded-lg hover:bg-surface-container transition-colors"
           >
             <Menu className="w-5 h-5 text-on-surface" />
           </button>
           <div className="hidden md:block" />
           <div className="flex items-center gap-3">
-            <button className="relative p-2 rounded-lg hover:bg-surface-container transition-colors">
+            <button className="relative p-2 rounded-lg hover:bg-surface-container transition-colors" aria-label="Thông báo">
               <Bell className="w-5 h-5 text-on-surface-variant" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-secondary-container rounded-full" />
             </button>

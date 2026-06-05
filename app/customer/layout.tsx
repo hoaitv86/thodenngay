@@ -48,7 +48,7 @@ export default function CustomerLayout({
       {/* Desktop Sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-outline-variant/30 lg:bg-white">
         <div className="flex h-20 items-center gap-3 border-b border-outline-variant/20 px-5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-container shadow-lg shadow-blue-900/20">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-container shadow-sm">
             <Wrench className="h-5 w-5 text-on-primary" />
           </div>
           <div className="min-w-0">
@@ -64,7 +64,7 @@ export default function CustomerLayout({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold transition-all ${
+                className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-extrabold transition-all ${
                   isActive
                     ? "bg-primary-fixed text-primary-container shadow-sm"
                     : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
@@ -80,7 +80,7 @@ export default function CustomerLayout({
         <div className="border-t border-outline-variant/20 p-3">
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-extrabold text-error transition-colors hover:bg-error-container"
+            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-extrabold text-error transition-colors hover:bg-error-container"
           >
             <LogOut className="h-5 w-5" />
             <span>Đăng xuất</span>
@@ -100,8 +100,9 @@ export default function CustomerLayout({
             <span className="hidden text-[10px] font-bold uppercase tracking-wider text-on-surface-variant lg:block">{userName}</span>
           </div>
         </div>
-        <button 
+        <button
           onClick={handleLogout}
+          aria-label="Đăng xuất"
           className="flex items-center gap-2 px-3 py-2 hover:bg-error-container hover:text-error rounded-lg text-on-surface-variant transition-colors border border-transparent hover:border-error/20"
           title="Đăng xuất"
         >

@@ -518,8 +518,7 @@ export default function WorkerDashboard() {
 
       {/* Stats Bar */}
       <div className="p-4">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-4 text-white shadow-xl shadow-blue-900/15 sm:p-5">
-          <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+        <div className="app-hero-panel p-4 sm:p-5">
           <div className="relative mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Bảng điều khiển thợ</p>
@@ -529,7 +528,7 @@ export default function WorkerDashboard() {
               Online
             </div>
           </div>
-          <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-xl bg-white/12 p-3 backdrop-blur-sm">
+          <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-lg bg-white/12 p-3 backdrop-blur-sm">
           <div className="min-w-0 text-center">
             <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.jobsDone}</div>
             <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs tháng</div>
@@ -556,14 +555,14 @@ export default function WorkerDashboard() {
 
       {/* Quick Job Creation */}
       <div className="px-4 pb-4">
-        <div className="rounded-2xl border border-secondary-container/20 bg-white p-4 shadow-lg shadow-orange-900/5">
+        <div className="rounded-lg border border-secondary-container/20 bg-white p-4 shadow-sm">
           <button
             type="button"
             onClick={() => setQuickFormOpen(open => !open)}
             className="flex w-full items-center justify-between gap-3 text-left"
           >
             <div className="flex min-w-0 items-start gap-3">
-              <div className="w-11 h-11 rounded-xl bg-secondary-container flex items-center justify-center text-white shrink-0 shadow-md shadow-secondary-container/25">
+              <div className="w-11 h-11 rounded-lg bg-secondary-container flex items-center justify-center text-white shrink-0 shadow-sm">
                 <BriefcaseIcon size={20} />
               </div>
               <div className="min-w-0">
@@ -669,17 +668,17 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="mx-4 flex gap-2 rounded-xl bg-surface-container p-1">
+      <div className="mx-4 flex gap-2 rounded-lg bg-surface-container p-1">
         <button
           onClick={() => setTab("new")}
-          className={`relative flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant"}`}
+          className={`relative flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
         >
           Việc mới
           {newJobs.length > 0 && <span className="ml-2 px-1.5 py-0.5 bg-error text-white text-[10px] rounded-full">{newJobs.length}</span>}
         </button>
         <button
           onClick={() => setTab("active")}
-          className={`flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant"}`}
+          className={`flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
         >
           Đang làm
           {activeJobs.length > 0 && <span className="ml-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] text-white">{activeJobs.length}</span>}
@@ -694,7 +693,7 @@ export default function WorkerDashboard() {
               const JobIcon = job.icon || BriefcaseIcon;
 
               return (
-              <div key={job.id} className="animate-fade-in-up space-y-4 overflow-hidden rounded-2xl border border-primary-fixed/70 bg-white shadow-lg shadow-blue-900/5">
+              <div key={job.id} className="animate-fade-in space-y-4 overflow-hidden rounded-lg border border-primary-fixed/70 bg-white shadow-sm">
                 <div className="flex items-center justify-between bg-primary-fixed/60 px-4 py-2">
                   <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Việc mới quanh bạn</span>
                   <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">~{job.distance}</span>
@@ -702,7 +701,7 @@ export default function WorkerDashboard() {
                 <div className="space-y-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-primary-container flex items-center justify-center text-white shadow-md shadow-primary/20">
+                    <div className="w-11 h-11 rounded-lg bg-primary-container flex items-center justify-center text-white shadow-sm">
                       <JobIcon size={20} />
                     </div>
                     <div>

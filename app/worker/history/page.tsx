@@ -71,8 +71,7 @@ export default function WorkerHistory() {
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in">
-      <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-5 text-white shadow-xl shadow-primary/15">
-        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+      <div className="app-hero-panel mb-5">
         <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Hồ sơ công việc</p>
         <h1 className="mt-1 text-2xl font-extrabold leading-tight text-white">Lịch sử việc làm</h1>
         <p className="mt-2 max-w-[19rem] text-sm leading-6 text-white/80">
@@ -85,7 +84,7 @@ export default function WorkerHistory() {
           <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
         </div>
       ) : historyJobs.length === 0 ? (
-        <div className="text-center py-20 bg-surface-container-lowest rounded-2xl border border-outline-variant">
+        <div className="rounded-lg border border-outline-variant bg-surface-container-lowest py-20 text-center">
           <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
             <BriefcaseIcon size={32} />
           </div>
@@ -98,7 +97,7 @@ export default function WorkerHistory() {
             const isCompleted = job.status === 'completed' || job.status === 'done';
             return (
               <Link href={`/worker/history/${job.id}`} key={job.id} className="block">
-                <div className="flex cursor-pointer gap-3 overflow-hidden rounded-2xl border border-outline-variant/20 bg-white p-4 opacity-95 shadow-lg shadow-blue-900/5 transition-all hover:opacity-100 hover:shadow-xl active:scale-[0.98] sm:gap-4">
+                <div className="flex cursor-pointer gap-3 overflow-hidden rounded-lg border border-outline-variant/20 bg-white p-4 opacity-95 shadow-sm transition-all hover:opacity-100 hover:shadow-md active:scale-[0.98] sm:gap-4">
                   
                   <div className="flex flex-col items-center min-w-[48px] border-r border-outline-variant pr-2 sm:pr-3">
                     <span className="text-label-sm font-bold text-on-surface-variant uppercase">{job.timeStr}</span>

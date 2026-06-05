@@ -155,8 +155,7 @@ export default function CustomerHome() {
   return (
     <div className="space-y-5 px-4 pt-4 lg:px-8">
       {/* Greeting */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#fd6c00] p-5 text-on-primary shadow-xl shadow-primary/15">
-        <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25" />
+      <div className="app-hero-panel">
         <div className="relative">
           <p className="text-sm font-semibold text-white/80">Xin chào</p>
           <h1 className="mt-1 text-2xl font-extrabold leading-tight text-white">Bạn cần sửa gì hôm nay?</h1>
@@ -175,8 +174,8 @@ export default function CustomerHome() {
 
       <div className="grid grid-cols-2 gap-3">
         {bookingHighlights.map((item) => (
-          <div key={item.label} className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3 shadow-sm">
-            <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg ${item.color}`}>
+          <div key={item.label} className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3 shadow-sm">
+            <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-md ${item.color}`}>
               <item.icon size={18} />
             </div>
             <p className="text-[11px] font-bold uppercase text-on-surface-variant">{item.label}</p>
@@ -200,9 +199,9 @@ export default function CustomerHome() {
               <Link
                 key={svc.id}
                 href={`/customer/booking?service=${svc.id}`}
-                className="group min-h-[142px] rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg active:scale-[0.98]"
+                className="group min-h-[142px] rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md active:scale-[0.98]"
               >
-                <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105 ${svc.color}`}>
+                <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-lg shadow-sm transition-transform group-hover:scale-105 ${svc.color}`}>
                   <IconComponent size={22} />
                 </div>
                 <p className="text-body-sm font-extrabold text-on-surface">{svc.name}</p>
@@ -226,7 +225,7 @@ export default function CustomerHome() {
           {topWorkers.map((w) => (
             <div
               key={w.name}
-              className="flex items-center gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3.5 shadow-sm"
+              className="flex items-center gap-3 rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3.5 shadow-sm"
             >
               <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-label-md font-extrabold ${w.color}`}>
                 {w.name.split(" ").pop()?.charAt(0)}
