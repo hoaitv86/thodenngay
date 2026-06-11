@@ -159,7 +159,7 @@ function RegisterContent() {
         <div className="relative z-10">
           <Link href="/" className="flex items-center gap-3">
             <LogoIcon size={40} />
-            <span className="text-2xl font-bold">Alo Thợ</span>
+            <span className="text-2xl font-bold">Thợ đến ngay</span>
           </Link>
         </div>
 
@@ -180,22 +180,22 @@ function RegisterContent() {
           <p className="text-lg text-white/80 w-full max-w-[400px] leading-relaxed">
             {role === "customer"
               ? "Đăng ký tài khoản để đặt dịch vụ sửa chữa tại nhà nhanh chóng và tiện lợi."
-              : "Đăng ký làm thợ trên Alo Thợ để tiếp cận hàng ngàn khách hàng tiềm năng."}
+              : "Đăng ký làm thợ trên Thợ đến ngay để tiếp cận hàng ngàn khách hàng tiềm năng."}
           </p>
         </div>
 
         <div className="relative z-10 text-label-sm text-white/40">
-          © 2026 Alo Thợ. All rights reserved.
+          © 2026 Thợ đến ngay. All rights reserved.
         </div>
       </div>
 
       {/* Right Panel - Register Form */}
-      <div className="flex w-full flex-1 items-center justify-center overflow-y-auto bg-surface p-4 sm:p-6">
+      <div className="flex w-full flex-1 items-center justify-center overflow-y-auto bg-white p-4 sm:p-6">
         <div className="w-full max-w-[500px] mx-auto py-6 sm:py-8">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
-            <span className="text-2xl font-bold text-primary">Alo Thợ</span>
+            <span className="text-2xl font-bold text-primary">Thợ đến ngay</span>
           </div>
 
           <div className="auth-card">

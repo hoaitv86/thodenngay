@@ -90,17 +90,17 @@ export default function LoginPage() {
     <div className="auth-shell flex flex-col lg:flex-row">
       {/* Left Panel - Branding */}
       <div className="auth-brand-panel p-12">
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0)_42%),linear-gradient(180deg,rgba(242,106,33,0.16),rgba(242,106,33,0)_52%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_20%)] opacity-10" />
 
         <div className="relative z-10">
           <Link href="/" className="flex items-center gap-3">
             <LogoIcon size={40} />
-            <span className="text-2xl font-bold">Alo Thợ</span>
+            <span className="text-2xl font-bold">Thợ đến ngay</span>
           </Link>
         </div>
 
         <div className="relative z-10">
-          <h2 className="text-lg mb-4 text-white font-bold">
+          <h2 className="text-3xl mb-4 text-white font-bold">
             Dịch vụ sửa chữa{" "}
             <span className="text-secondary-container">chuyên nghiệp</span>
           </h2>
@@ -121,23 +121,23 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 text-label-sm text-white/40">
-          © 2026 Alo Thợ. All rights reserved.
+          © 2026 Thợ đến ngay. All rights reserved.
         </div>
       </div>
 
       {/* Right Panel - Login Form */}
-      <div className="flex w-full flex-1 items-center justify-center bg-surface p-4 sm:p-6">
+      <div className="flex w-full flex-1 items-center justify-center bg-white p-4 sm:p-6">
         <div className="w-full max-w-[440px] mx-auto py-6 sm:py-8">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
-            <span className="text-2xl font-bold text-primary">Alo Thợ</span>
+            <span className="text-2xl font-bold text-primary">Thợ đến ngay</span>
           </div>
 
           <div className="auth-card">
             <div className="mb-7 text-center sm:text-left">
               <h1 className="mb-2 text-2xl font-bold text-on-surface sm:text-3xl">Đăng nhập</h1>
-              <p className="text-on-surface-variant">Chào mừng bạn trở lại với Alo Thợ</p>
+              <p className="text-on-surface-variant">Chào mừng bạn trở lại với Thợ đến ngay</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">

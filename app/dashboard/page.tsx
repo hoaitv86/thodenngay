@@ -126,7 +126,7 @@ export default function CustomerDashboard() {
       <header className="h-16 glass sticky top-0 z-50 flex items-center justify-between px-4 sm:px-6 lg:px-12">
         <Link href="/" className="flex items-center gap-2">
           <LogoIcon size={32} />
-          <span className="font-bold text-lg text-primary-container hidden sm:inline">Alo Thợ</span>
+          <span className="font-bold text-lg text-primary-container hidden sm:inline">Thợ đến ngay</span>
         </Link>
         
         <div className="flex items-center gap-2 sm:gap-4">

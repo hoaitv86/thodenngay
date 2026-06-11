@@ -1,4 +1,4 @@
-// SVG icon components aligned with Alo Thợ design system
+// SVG icon components aligned with Thợ đến ngay design system
 // Using 2px stroke weight with rounded terminals per brand guidelines
 
 import React from "react";
@@ -11,30 +11,14 @@ interface IconProps {
 
 export function LogoIcon({ size = 32, className = "" }: IconProps) {
   return (
-    <svg
+    <img
+      src="/logo.svg"
+      alt="Thợ đến ngay Logo"
       width={size}
       height={size}
-      viewBox="0 0 40 40"
-      fill="none"
       className={className}
-    >
-      <rect width="40" height="40" rx="10" fill="#0d47a1" />
-      <path
-        d="M12 28V16L20 10L28 16V28"
-        stroke="white"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M17 28V21H23V28"
-        stroke="white"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="20" cy="15" r="2" fill="#fd6c00" />
-    </svg>
+      style={{ objectFit: 'contain' }}
+    />
   );
 }
 

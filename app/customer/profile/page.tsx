@@ -618,7 +618,7 @@ export default function CustomerProfile() {
                 <PhoneIcon size={18} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-body-sm font-bold text-on-surface">Tổng đài hỗ trợ Alo Thợ</div>
+                <div className="text-body-sm font-bold text-on-surface">Tổng đài hỗ trợ Thợ đến ngay</div>
                 <div className="text-label-sm text-on-surface-variant/70 truncate">Liên hệ khi cần trợ giúp, tư vấn sự cố</div>
               </div>
               <div className={`transform transition-transform duration-200 shrink-0 ${showSupport ? "rotate-90" : ""}`}>
@@ -629,7 +629,7 @@ export default function CustomerProfile() {
             {showSupport && (
               <div className="px-6 pb-4 pt-1 bg-surface-container-lowest text-xs text-on-surface-variant/90 border-t border-outline-variant/10 animate-fade-in space-y-3 leading-relaxed">
                 <p>
-                  Alo Thợ luôn sẵn sàng hỗ trợ bạn khắc phục mọi thắc mắc hoặc khó khăn liên quan đến kỹ thuật viên, đơn hàng, hóa đơn dịch vụ.
+                  Thợ đến ngay luôn sẵn sàng hỗ trợ bạn khắc phục mọi thắc mắc hoặc khó khăn liên quan đến kỹ thuật viên, đơn hàng, hóa đơn dịch vụ.
                 </p>
                 <div className="flex flex-col gap-2 bg-surface-container-low p-3 rounded-xl">
                   <div className="flex justify-between items-center">
@@ -664,7 +664,7 @@ export default function CustomerProfile() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-body-sm font-bold text-on-surface">Chính sách & Quy chế hoạt động</div>
-                <div className="text-label-sm text-on-surface-variant/70 truncate">Điều khoản chung và quy chuẩn an toàn Alo Thợ</div>
+                <div className="text-label-sm text-on-surface-variant/70 truncate">Điều khoản chung và quy chuẩn an toàn Thợ đến ngay</div>
               </div>
               <div className={`transform transition-transform duration-200 shrink-0 ${showPolicies ? "rotate-90" : ""}`}>
                 <ChevronRightIcon size={18} className="text-outline/75" />
@@ -675,7 +675,7 @@ export default function CustomerProfile() {
               <div className="px-6 pb-4 pt-1 bg-surface-container-lowest text-xs text-on-surface-variant/90 border-t border-outline-variant/10 animate-fade-in space-y-2.5 leading-relaxed">
                 <div>
                   <h4 className="font-bold text-on-surface mb-1">1. Cam kết chất lượng thi công</h4>
-                  <p>Các đối tác kỹ thuật trên hệ thống Alo Thợ đều đã được xác minh hồ sơ tư cách pháp nhân, tay nghề thực tế và lý lịch tư pháp đầy đủ.</p>
+                  <p>Các đối tác kỹ thuật trên hệ thống Thợ đến ngay đều đã được xác minh hồ sơ tư cách pháp nhân, tay nghề thực tế và lý lịch tư pháp đầy đủ.</p>
                 </div>
                 <div>
                   <h4 className="font-bold text-on-surface mb-1">2. Bảo hành & Hậu mãi</h4>
@@ -683,7 +683,7 @@ export default function CustomerProfile() {
                 </div>
                 <div>
                   <h4 className="font-bold text-on-surface mb-1">3. Quy chuẩn ứng xử an toàn</h4>
-                  <p>Alo Thợ nghiêm cấm hành vi tự ý giao dịch ngoài ứng dụng mà không thông báo hoặc thỏa thuận riêng lệch chuẩn giá đã báo giá.</p>
+                  <p>Thợ đến ngay nghiêm cấm hành vi tự ý giao dịch ngoài ứng dụng mà không thông báo hoặc thỏa thuận riêng lệch chuẩn giá đã báo giá.</p>
                 </div>
               </div>
             )}

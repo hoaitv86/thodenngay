@@ -2,10 +2,20 @@ import type { Metadata } from "next";
 import "./app.css";
 
 export const metadata: Metadata = {
-  title: "Alo Thợ – Dịch vụ sửa chữa tại nhà",
+  title: "Thợ đến ngay – Dịch vụ sửa chữa tại nhà",
   description:
     "Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Đặt dịch vụ điện, nước, camera, cơ khí nhanh chóng, an toàn.",
-  keywords: ["sửa chữa", "thợ điện", "thợ nước", "dịch vụ tại nhà", "Alo Thợ"],
+  keywords: ["sửa chữa", "thợ điện", "thợ nước", "dịch vụ tại nhà", "Thợ đến ngay"],
+  icons: {
+    icon: [
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' }
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }
+    ],
+  },
+  manifest: '/site.webmanifest'
 };
 
 export default function RootLayout({

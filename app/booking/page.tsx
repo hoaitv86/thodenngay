@@ -203,7 +203,7 @@ export default function BookingPage() {
       <header className="h-16 glass sticky top-0 z-50 flex items-center px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2">
           <LogoIcon size={32} />
-          <span className="font-bold text-base sm:text-lg text-primary-container">Alo Thợ</span>
+          <span className="font-bold text-base sm:text-lg text-primary-container">Thợ đến ngay</span>
         </Link>
         <div className="flex-1 flex justify-center px-3">
           <div className="flex items-center gap-3">
@@ -224,7 +224,7 @@ export default function BookingPage() {
         {step === 1 && (
           <div className="animate-fade-in">
             <h1 className="text-headline-lg mb-2">Bạn cần sửa gì?</h1>
-            <p className="text-body-md text-on-surface-variant mb-6 sm:mb-8">Chọn loại dịch vụ bạn đang gặp vấn đề để Alo Thợ hỗ trợ tốt nhất.</p>
+            <p className="text-body-md text-on-surface-variant mb-6 sm:mb-8">Chọn loại dịch vụ bạn đang gặp vấn đề để Thợ đến ngay hỗ trợ tốt nhất.</p>
             
             <div className="grid grid-cols-1 gap-4">
               {services.map((svc) => {
@@ -471,7 +471,7 @@ export default function BookingPage() {
                 )}
               </button>
               <p className="text-center text-label-sm text-on-surface-variant">
-                Bằng cách đặt lịch, bạn đồng ý với các Điều khoản & Chính sách của Alo Thợ.
+                Bằng cách đặt lịch, bạn đồng ý với các Điều khoản & Chính sách của Thợ đến ngay.
               </p>
             </div>
           </div>
@@ -484,7 +484,7 @@ export default function BookingPage() {
             </div>
             <h1 className="text-headline-lg mb-3">Đã nhận yêu cầu!</h1>
             <p className="text-body-lg text-on-surface-variant mb-10 max-w-sm mx-auto">
-              Alo Thợ đang gán thợ phù hợp nhất cho bạn. Bạn sẽ nhận được thông báo trong vài phút tới.
+              Thợ đến ngay đang gán thợ phù hợp nhất cho bạn. Bạn sẽ nhận được thông báo trong vài phút tới.
             </p>
             
             <div className="space-y-4 max-w-xs mx-auto">

@@ -561,7 +561,7 @@ export default function WorkerProfile() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-body-sm font-bold text-on-surface">Trung tâm hỗ trợ</div>
-              <div className="text-label-sm text-on-surface-variant truncate">Liên hệ tổng đài Alo Thợ</div>
+              <div className="text-label-sm text-on-surface-variant truncate">Liên hệ tổng đài Thợ đến ngay</div>
             </div>
             <ChevronRightIcon size={20} className="text-outline shrink-0" />
           </button>

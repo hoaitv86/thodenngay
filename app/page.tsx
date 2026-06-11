@@ -243,7 +243,7 @@ export default async function HomePage() {
         return {
           id: svc.id,
           name: svc.name,
-          desc: svc.description || "Dịch vụ sửa chữa uy tín của Alo Thợ",
+          desc: svc.description || "Dịch vụ sửa chữa uy tín của Thợ đến ngay",
           icon: visual.icon,
           color: visual.color,
           bgColor: visual.bgColor,
@@ -261,7 +261,7 @@ export default async function HomePage() {
             <Link href="/" className="flex items-center gap-3 group" id="nav-logo">
               <LogoIcon size={36} />
               <span className="text-xl font-bold text-primary-container tracking-tight">
-                Alo Thợ
+                Thợ đến ngay
               </span>
             </Link>
 
@@ -303,7 +303,7 @@ export default async function HomePage() {
       <section className="relative min-h-[700px] overflow-hidden bg-primary text-on-primary sm:min-h-[760px]">
         <Image
           src="/hero-technician.png"
-          alt="Kỹ thuật viên Alo Thợ kiểm tra sửa chữa tại nhà"
+          alt="Kỹ thuật viên Thợ đến ngay kiểm tra sửa chữa tại nhà"
           fill
           priority
           sizes="100vw"
@@ -506,7 +506,7 @@ export default async function HomePage() {
           <div className="grid items-center gap-8 lg:grid-cols-[1fr_0.9fr] lg:gap-16">
             <div>
               <span className="section-eyebrow">
-                Tại sao chọn Alo Thợ
+                Tại sao chọn Thợ đến ngay
               </span>
               <h2 className="mb-8 mt-3 text-4xl font-bold text-on-surface sm:text-5xl">
                 Dịch vụ đáng tin cậy cho mọi gia đình
@@ -640,7 +640,7 @@ export default async function HomePage() {
         <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(232,102,36,0.28),rgba(232,102,36,0)_42%),linear-gradient(90deg,rgba(14,116,144,0.24),rgba(14,116,144,0)_58%)]" />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="relative mb-4 text-3xl font-bold leading-tight !text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.35)] sm:text-5xl">
-            Bắt đầu sử dụng Alo Thợ ngay hôm nay
+            Bắt đầu sử dụng Thợ đến ngay ngay hôm nay
           </h2>
           <p className="relative mx-auto mb-10 max-w-2xl text-lg !text-white/85">
             Đăng ký miễn phí và trải nghiệm dịch vụ sửa chữa tại nhà chuyên nghiệp nhất
@@ -672,7 +672,7 @@ export default async function HomePage() {
             <div className="md:col-span-2">
               <div className="flex items-center gap-3 mb-4">
                 <LogoIcon size={32} />
-                <span className="text-xl font-bold">Alo Thợ</span>
+                <span className="text-xl font-bold">Thợ đến ngay</span>
               </div>
               <p className="text-sm text-surface-container-high max-w-sm">
                 Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Dịch vụ uy tín, giá cả minh bạch.
@@ -705,7 +705,7 @@ export default async function HomePage() {
           </div>
 
           <div className="border-t border-white/10 mt-12 pt-8 text-center text-label-sm text-surface-container-high">
-            © 2026 Alo Thợ. Tất cả quyền được bảo lưu.
+            © 2026 Thợ đến ngay. Tất cả quyền được bảo lưu.
           </div>
         </div>
       </footer>
