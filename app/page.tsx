@@ -21,6 +21,7 @@ import {
   ChevronRightIcon,
 } from "./components/icons";
 import { createClient } from "@/lib/supabase/server";
+import { getSystemSettings } from "@/lib/settings-server";
 
 export const dynamic = "force-dynamic";
 
@@ -219,6 +220,7 @@ const testimonials = [
 ];
 
 export default async function HomePage() {
+  const systemSettings = await getSystemSettings();
   let dbServices = null;
   try {
     const supabase = await createClient();
@@ -231,6 +233,7 @@ export default async function HomePage() {
   } catch (e) {
     console.error("Failed to fetch services in page.tsx:", e);
   }
+
 
   const services = dbServices && dbServices.length > 0
     ? dbServices
@@ -342,12 +345,12 @@ export default async function HomePage() {
                 <ArrowRightIcon size={20} />
               </Link>
               <a
-                href="tel:1900xxxx"
+                href={`tel:${systemSettings.hotline.replace(/\s+/g, '')}`}
                 className="btn-outline !border-white/30 !bg-white/8 !px-6 !py-3.5 !text-white hover:!border-white/50 hover:!bg-white/14 sm:!w-auto sm:!px-8"
                 id="hero-call"
               >
                 <PhoneIcon size={20} />
-                Gọi: 1900 xxxx
+                Gọi: {systemSettings.hotline}
               </a>
             </div>
 
@@ -679,7 +682,7 @@ export default async function HomePage() {
               </p>
               <div className="flex items-center gap-2 mt-4 text-surface-container-high">
                 <PhoneIcon size={16} />
-                <span className="text-sm">Hotline: 1900 xxxx</span>
+                <span className="text-sm">Hotline: {systemSettings.hotline}</span>
               </div>
             </div>
 
@@ -697,15 +700,15 @@ export default async function HomePage() {
               <h4 className="font-semibold mb-4">Thông tin</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Về chúng tôi</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Điều khoản</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Chính sách</a></li>
+                <li><a href={systemSettings.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Điều khoản</a></li>
+                <li><a href={systemSettings.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Chính sách</a></li>
                 <li><Link href="/login" className="hover:text-white transition-colors">Đăng nhập</Link></li>
               </ul>
             </div>
           </div>
 
           <div className="border-t border-white/10 mt-12 pt-8 text-center text-label-sm text-surface-container-high">
-            © 2026 Thợ đến ngay. Tất cả quyền được bảo lưu.
+            © 2026 {systemSettings.app_name}. Tất cả quyền được bảo lưu.
           </div>
         </div>
       </footer>

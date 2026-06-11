@@ -3,6 +3,7 @@
 import React from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useSettings } from "@/lib/settings";
 import {
   ClockIcon,
   LogOutIcon,
@@ -17,8 +18,10 @@ interface PendingApprovalProps {
 }
 
 export default function PendingApproval({ worker, workerName }: PendingApprovalProps) {
+  const { settings } = useSettings();
   const supabase = createClient();
   const router = useRouter();
+
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -107,7 +110,7 @@ export default function PendingApproval({ worker, workerName }: PendingApprovalP
         {/* Contact info */}
         <div className="flex items-center justify-center gap-2 text-on-surface-variant">
           <PhoneIcon size={16} />
-          <span className="text-body-sm">Hotline hỗ trợ: <a href="tel:1900xxxx" className="text-primary-container font-bold">1900.xxxx</a></span>
+          <span className="text-body-sm">Hotline hỗ trợ: <a href={`tel:${settings.hotline.replace(/\s+/g, '')}`} className="text-primary-container font-bold">{settings.hotline}</a></span>
         </div>
 
         {/* Logout */}

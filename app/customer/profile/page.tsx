@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useSettings } from "@/lib/settings";
 import {
   UserIcon,
   PhoneIcon,
@@ -31,7 +32,9 @@ interface JobStat {
 }
 
 export default function CustomerProfile() {
+  const { settings } = useSettings();
   const [loading, setLoading] = useState(true);
+
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<CustomerProfileData | null>(null);
   const [stats, setStats] = useState({ total: 0, completed: 0, active: 0 });
@@ -629,13 +632,13 @@ export default function CustomerProfile() {
             {showSupport && (
               <div className="px-6 pb-4 pt-1 bg-surface-container-lowest text-xs text-on-surface-variant/90 border-t border-outline-variant/10 animate-fade-in space-y-3 leading-relaxed">
                 <p>
-                  Thợ đến ngay luôn sẵn sàng hỗ trợ bạn khắc phục mọi thắc mắc hoặc khó khăn liên quan đến kỹ thuật viên, đơn hàng, hóa đơn dịch vụ.
+                  {settings.app_name} luôn sẵn sàng hỗ trợ bạn khắc phục mọi thắc mắc hoặc khó khăn liên quan đến kỹ thuật viên, đơn hàng, hóa đơn dịch vụ.
                 </p>
                 <div className="flex flex-col gap-2 bg-surface-container-low p-3 rounded-xl">
                   <div className="flex justify-between items-center">
                     <span className="font-bold">Hotline 24/7:</span>
-                    <a href="tel:19006789" className="text-primary font-bold hover:underline text-sm">
-                      1900 6789 (1.000đ/phút)
+                    <a href={`tel:${settings.hotline.replace(/\s+/g, '')}`} className="text-primary font-bold hover:underline text-sm">
+                      {settings.hotline}
                     </a>
                   </div>
                   <div className="flex justify-between items-center border-t border-outline-variant/20 pt-2 mt-1">
@@ -644,8 +647,8 @@ export default function CustomerProfile() {
                   </div>
                   <div className="flex justify-between items-center border-t border-outline-variant/20 pt-2 mt-1">
                     <span className="font-bold">Email hỗ trợ:</span>
-                    <a href="mailto:support@alotho.vn" className="text-primary hover:underline font-semibold">
-                      support@alotho.vn
+                    <a href={`mailto:${settings.support_email}`} className="text-primary hover:underline font-semibold">
+                      {settings.support_email}
                     </a>
                   </div>
                 </div>
