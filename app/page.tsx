@@ -246,7 +246,7 @@ export default async function HomePage() {
         return {
           id: svc.id,
           name: svc.name,
-          desc: svc.description || "Dịch vụ sửa chữa uy tín của Thợ đến ngay",
+          desc: svc.description || `Dịch vụ sửa chữa uy tín của ${systemSettings.app_name}`,
           icon: visual.icon,
           color: visual.color,
           bgColor: visual.bgColor,
@@ -264,7 +264,7 @@ export default async function HomePage() {
             <Link href="/" className="flex items-center gap-3 group" id="nav-logo">
               <LogoIcon size={36} />
               <span className="text-xl font-bold text-primary-container tracking-tight">
-                Thợ đến ngay
+                {systemSettings.app_name}
               </span>
             </Link>
 
@@ -675,7 +675,7 @@ export default async function HomePage() {
             <div className="md:col-span-2">
               <div className="flex items-center gap-3 mb-4">
                 <LogoIcon size={32} />
-                <span className="text-xl font-bold">Thợ đến ngay</span>
+                <span className="text-xl font-bold">{systemSettings.app_name}</span>
               </div>
               <p className="text-sm text-surface-container-high max-w-sm">
                 Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Dịch vụ uy tín, giá cả minh bạch.
