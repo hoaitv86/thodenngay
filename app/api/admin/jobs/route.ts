@@ -16,8 +16,8 @@ type CreateJobRequest = {
 };
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
-const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@phone.alotho.local`;
-const makeDefaultPassword = (name: string) => `${name.trim().replace(/\s+/g, " ")}@123456`;
+const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
+const makeDefaultPassword = (name: string) => `123@123456`;
 
 async function getAdminUser() {
   const cookieStore = await cookies();

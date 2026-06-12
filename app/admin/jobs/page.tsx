@@ -224,7 +224,7 @@ export default function AdminJobs() {
       }
 
       if (data.defaultPassword) {
-        alert(`Đã tạo job và tài khoản khách hàng.\nTài khoản: ${data.loginPhone}@phone.alotho.loca\nMật khẩu mặc định: ${data.defaultPassword}`);
+        alert(`Đã tạo job và tài khoản khách hàng.\nTài khoản: ${data.loginPhone}@thodenngay.vn\nMật khẩu mặc định: ${data.defaultPassword}`);
       }
     } catch (err: unknown) {
       alert("Lỗi kết nối: " + (err instanceof Error ? err.message : "Không xác định"));
@@ -390,8 +390,8 @@ export default function AdminJobs() {
                 key={status}
                 onClick={() => setStatusFilter(status)}
                 className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors border ${statusFilter === status
-                    ? 'bg-primary-container text-on-primary-container border-primary-container shadow-sm'
-                    : 'bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant'
+                  ? 'bg-primary-container text-on-primary-container border-primary-container shadow-sm'
+                  : 'bg-surface-container-lowest border-outline-variant hover:bg-surface-container-low text-on-surface-variant'
                   }`}
               >
                 {status === 'all' ? 'Tất cả' : getJobStatusLabel(status)}
@@ -466,9 +466,9 @@ export default function AdminJobs() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`p-2 rounded-xl ${job.service?.icon === 'ZapIcon' ? 'bg-amber-50 text-amber-600' :
-                              job.service?.icon === 'DropletIcon' ? 'bg-blue-50 text-blue-600' :
-                                job.service?.icon === 'CameraIcon' ? 'bg-purple-50 text-purple-600' :
-                                  'bg-green-50 text-green-600'
+                            job.service?.icon === 'DropletIcon' ? 'bg-blue-50 text-blue-600' :
+                              job.service?.icon === 'CameraIcon' ? 'bg-purple-50 text-purple-600' :
+                                'bg-green-50 text-green-600'
                             }`}>
                             {job.service?.icon === "ZapIcon" && <ZapIcon size={18} />}
                             {job.service?.icon === "DropletIcon" && <DropletIcon size={18} />}
@@ -561,8 +561,8 @@ export default function AdminJobs() {
                     type="button"
                     onClick={() => setCustomerMode("existing")}
                     className={`rounded-lg px-3 py-2.5 text-sm font-bold transition-colors ${customerMode === "existing"
-                        ? "bg-white text-primary-container shadow-sm"
-                        : "text-on-surface-variant hover:text-on-surface"
+                      ? "bg-white text-primary-container shadow-sm"
+                      : "text-on-surface-variant hover:text-on-surface"
                       }`}
                   >
                     Khách có sẵn
@@ -571,8 +571,8 @@ export default function AdminJobs() {
                     type="button"
                     onClick={() => setCustomerMode("new")}
                     className={`rounded-lg px-3 py-2.5 text-sm font-bold transition-colors ${customerMode === "new"
-                        ? "bg-white text-primary-container shadow-sm"
-                        : "text-on-surface-variant hover:text-on-surface"
+                      ? "bg-white text-primary-container shadow-sm"
+                      : "text-on-surface-variant hover:text-on-surface"
                       }`}
                   >
                     Khách mới
@@ -650,7 +650,7 @@ export default function AdminJobs() {
                     <div className="mt-1">
                       TK là SĐT đã nhập. MK mặc định:{" "}
                       <span className="font-mono font-bold text-primary-container">
-                        {newJob.customerName.trim() ? `${newJob.customerName.trim().replace(/\s+/g, " ")}@123456` : "ten khach@123456"}
+                        123@123456
                       </span>
                     </div>
                   </div>
@@ -807,8 +807,8 @@ export default function AdminJobs() {
                     <label
                       key={worker.id}
                       className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedWorkerId === worker.id
-                          ? 'border-primary-container bg-primary-fixed'
-                          : 'border-outline-variant hover:bg-surface-container-low'
+                        ? 'border-primary-container bg-primary-fixed'
+                        : 'border-outline-variant hover:bg-surface-container-low'
                         }`}
                     >
                       <input
