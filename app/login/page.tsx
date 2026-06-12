@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useSettings } from "@/lib/settings";
 import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 
 export default function LoginPage() {
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const router = useRouter();
   const supabase = createClient();
+  const { settings } = useSettings();
   const showDemoAccounts = process.env.NODE_ENV !== "production";
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -95,7 +97,7 @@ export default function LoginPage() {
         <div className="relative z-10">
           <Link href="/" className="flex items-center gap-3">
             <LogoIcon size={40} />
-            <span className="text-2xl font-bold">Thợ đến ngay</span>
+            <span className="text-2xl font-bold">{settings.app_name}</span>
           </Link>
         </div>
 
@@ -121,7 +123,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 text-label-sm text-white/40">
-          © 2026 Thợ đến ngay. All rights reserved.
+          © 2026 {settings.app_name}. All rights reserved.
         </div>
       </div>
 
@@ -131,13 +133,13 @@ export default function LoginPage() {
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
-            <span className="text-2xl font-bold text-primary">Thợ đến ngay</span>
+            <span className="text-2xl font-bold text-primary">{settings.app_name}</span>
           </div>
 
           <div className="auth-card">
             <div className="mb-7 text-center sm:text-left">
               <h1 className="mb-2 text-2xl font-bold text-on-surface sm:text-3xl">Đăng nhập</h1>
-              <p className="text-on-surface-variant">Chào mừng bạn trở lại với Thợ đến ngay</p>
+              <p className="text-on-surface-variant">Chào mừng bạn trở lại với {settings.app_name}</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">

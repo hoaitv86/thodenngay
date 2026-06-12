@@ -14,10 +14,12 @@ import {
 type UserRole = "customer" | "worker";
 
 import { createClient } from "@/lib/supabase/client";
+import { useSettings } from "@/lib/settings";
 
 function RegisterContent() {
 
   const searchParams = useSearchParams();
+  const { settings } = useSettings();
   const initialRole = searchParams.get("role") === "worker" ? "worker" : "customer";
 
   const [role, setRole] = useState<UserRole>(initialRole);
@@ -159,7 +161,7 @@ function RegisterContent() {
         <div className="relative z-10">
           <Link href="/" className="flex items-center gap-3">
             <LogoIcon size={40} />
-            <span className="text-2xl font-bold">Thợ đến ngay</span>
+            <span className="text-2xl font-bold">{settings.app_name}</span>
           </Link>
         </div>
 
@@ -180,12 +182,12 @@ function RegisterContent() {
           <p className="text-lg text-white/80 w-full max-w-[400px] leading-relaxed">
             {role === "customer"
               ? "Đăng ký tài khoản để đặt dịch vụ sửa chữa tại nhà nhanh chóng và tiện lợi."
-              : "Đăng ký làm thợ trên Thợ đến ngay để tiếp cận hàng ngàn khách hàng tiềm năng."}
+              : `Đăng ký làm thợ trên ${settings.app_name} để tiếp cận hàng ngàn khách hàng tiềm năng.`}
           </p>
         </div>
 
         <div className="relative z-10 text-label-sm text-white/40">
-          © 2026 Thợ đến ngay. All rights reserved.
+          © 2026 {settings.app_name}. All rights reserved.
         </div>
       </div>
 
@@ -195,7 +197,7 @@ function RegisterContent() {
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-6">
             <LogoIcon size={36} />
-            <span className="text-2xl font-bold text-primary">Thợ đến ngay</span>
+            <span className="text-2xl font-bold text-primary">{settings.app_name}</span>
           </div>
 
           <div className="auth-card">
