@@ -202,6 +202,20 @@ export default function CustomerBooking() {
     return imageUrls;
   };
 
+  const hasActiveWorkerForService = async (serviceName: string) => {
+    const { count, error } = await supabase
+      .from('workers')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'active')
+      .contains('specialties', [serviceName]);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (count || 0) > 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.serviceId || !formData.address || !formData.scheduledAt) {
@@ -222,6 +236,19 @@ export default function CustomerBooking() {
     try {
       // Determine quoted_price based on selected service
       const selectedService = services.find(s => s.id === formData.serviceId);
+      if (!selectedService) {
+        showToast("Vui lòng chọn dịch vụ hợp lệ!", "error");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const hasAvailableWorker = await hasActiveWorkerForService(selectedService.name);
+      if (!hasAvailableWorker) {
+        showToast("Hiện tại chưa có thợ làm cho dịch vụ mà bạn chọn ở khu vực này", "error");
+        setIsSubmitting(false);
+        return;
+      }
+
       const quotedPrice = selectedService?.base_price || 0;
       const imageUrls = await uploadRequestImages(user.id);
       const jobCode = 'APP' + Math.floor(10000 + Math.random() * 90000);
