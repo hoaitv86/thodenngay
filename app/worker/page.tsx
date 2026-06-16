@@ -242,7 +242,7 @@ export default function WorkerDashboard() {
       }
 
       setWorkerStats({
-        jobsDone: jobsDone || workerData.total_jobs || 0,
+        jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
         income: income,
         rating: workerData.avg_rating || 0
       });
@@ -577,7 +577,7 @@ export default function WorkerDashboard() {
           <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-lg bg-white/12 p-3 backdrop-blur-sm">
           <div className="min-w-0 text-center">
             <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.jobsDone}</div>
-            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs tháng</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs</div>
           </div>
           <div className="h-12 w-px bg-white/20 self-center" />
           <div className="min-w-0 text-center">

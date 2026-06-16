@@ -38,6 +38,7 @@ interface WorkerProfileData {
 export default function WorkerProfile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<WorkerProfileData | null>(null);
+  const [profileStats, setProfileStats] = useState({ jobsDone: 0, rating: 0 });
   const [showSecurity, setShowSecurity] = useState(false);
 
   // Edit states
@@ -77,6 +78,22 @@ export default function WorkerProfile() {
           .select('*')
           .eq('user_id', user.id)
           .single();
+
+        let jobsDone = workerData?.total_jobs || 0;
+        if (workerData?.id) {
+          const { count } = await supabase
+            .from('jobs')
+            .select('id', { count: 'exact', head: true })
+            .eq('worker_id', workerData.id)
+            .in('status', ['completed', 'done']);
+
+          jobsDone = count ?? jobsDone;
+        }
+
+        setProfileStats({
+          jobsDone,
+          rating: workerData?.avg_rating || 0,
+        });
           
         setProfile({
           ...userProfile,
@@ -315,13 +332,13 @@ export default function WorkerProfile() {
       <div className="px-4 -mt-8 relative z-10">
         <div className="flex justify-between rounded-lg border border-outline-variant/20 bg-white p-4 shadow-sm">
           <div className="text-center flex-1">
-            <div className="text-xl font-extrabold text-on-surface">{profile.worker?.total_jobs || 0}</div>
+            <div className="text-xl font-extrabold text-on-surface">{profileStats.jobsDone}</div>
             <div className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider mt-1">Jobs</div>
           </div>
           <div className="w-px bg-outline-variant" />
           <div className="text-center flex-1 flex flex-col items-center">
             <div className="text-xl font-extrabold text-on-surface flex items-center gap-1">
-              {profile.worker?.avg_rating || 0}
+              {profileStats.rating}
               <StarIcon size={14} className="text-amber-400 fill-amber-400" />
             </div>
             <div className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider mt-1">Rating</div>
