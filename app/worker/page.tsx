@@ -55,11 +55,26 @@ interface WorkerJob {
   [key: string]: unknown;
 }
 
+interface WorkerCreateJobResponse {
+  error?: string;
+  job?: WorkerJob;
+  loginPhone?: string;
+  defaultPassword?: string | null;
+}
+
+const getDefaultScheduledAt = () => {
+  const nextHour = new Date();
+  nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
+  const tzoffset = nextHour.getTimezoneOffset() * 60000;
+  return new Date(nextHour.getTime() - tzoffset).toISOString().slice(0, 16);
+};
+
 export default function WorkerDashboard() {
-  const [tab, setTab] = useState<"new" | "active">("new");
+  const [tab, setTab] = useState<"new" | "pending" | "active">("new");
   const [loading, setLoading] = useState(true);
   const [worker, setWorker] = useState<Worker | null>(null);
   const [newJobs, setNewJobs] = useState<WorkerJob[]>([]);
+  const [pendingApprovalJobs, setPendingApprovalJobs] = useState<WorkerJob[]>([]);
   const [activeJobs, setActiveJobs] = useState<WorkerJob[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
@@ -68,9 +83,11 @@ export default function WorkerDashboard() {
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [quickJob, setQuickJob] = useState({
+    customerName: "",
     customerPhone: "",
     serviceId: "",
     address: "",
+    scheduledAt: getDefaultScheduledAt(),
     quotedPrice: "",
     description: "",
   });
@@ -139,6 +156,7 @@ export default function WorkerDashboard() {
         .from('jobs')
         .select('*, service:services(*)')
         .eq('status', 'pending')
+        .is('worker_id', null)
         .order('created_at', { ascending: false });
 
       // Filter pending jobs matching worker specialties
@@ -168,7 +186,26 @@ export default function WorkerDashboard() {
 
       setNewJobs(mappedNew);
 
-      // 4. Get Active Jobs (Assigned to this worker)
+      // 4. Get Worker Submitted Jobs (Waiting for Admin Approval)
+      const { data: workerPendingJobs } = await supabase
+        .from('jobs')
+        .select('*, service:services(*), customer:profiles!customer_id(*)')
+        .eq('worker_id', workerData.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      const mappedPendingApproval = (workerPendingJobs || []).map(j => {
+        const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
+        return {
+          ...j,
+          customerName: custName || 'Khách hàng',
+          serviceName: j.service?.name,
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+        };
+      });
+      setPendingApprovalJobs(mappedPendingApproval);
+
+      // 5. Get Active Jobs (Assigned to this worker)
       const { data: assignedJobs } = await supabase
         .from('jobs')
         .select('*, service:services(*), customer:profiles!customer_id(*)')
@@ -186,7 +223,7 @@ export default function WorkerDashboard() {
       });
       setActiveJobs(mappedActive);
 
-      // 5. Calculate Real Stats
+      // 6. Calculate Real Stats
       const { data: workerJobs } = await supabase
         .from('jobs')
         .select('status, quoted_price')
@@ -286,8 +323,8 @@ export default function WorkerDashboard() {
     e.preventDefault();
     if (!worker || creatingQuickJob) return;
 
-    if (!quickJob.customerPhone.trim() || !quickJob.serviceId || !quickJob.address.trim()) {
-      showToast("Vui lòng nhập SĐT khách, dịch vụ và địa chỉ.", "error");
+    if (!quickJob.customerName.trim() || !quickJob.customerPhone.trim() || !quickJob.serviceId || !quickJob.address.trim()) {
+      showToast("Vui lòng nhập tên, SĐT khách, dịch vụ và địa chỉ.", "error");
       return;
     }
 
@@ -299,38 +336,47 @@ export default function WorkerDashboard() {
 
     setCreatingQuickJob(true);
     try {
-      const { data, error } = await supabase.rpc('worker_create_quick_job', {
-        p_customer_phone: quickJob.customerPhone,
-        p_service_id: quickJob.serviceId,
-        p_address: quickJob.address,
-        p_description: quickJob.description || null,
-        p_quoted_price: quotedPrice,
+      const res = await fetch("/api/worker/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerName: quickJob.customerName,
+          customerPhone: quickJob.customerPhone,
+          serviceId: quickJob.serviceId,
+          address: quickJob.address,
+          scheduledAt: quickJob.scheduledAt,
+          quotedPrice: quickJob.quotedPrice,
+          description: quickJob.description,
+        }),
       });
 
-      if (error) throw error;
+      const data = (await res.json()) as WorkerCreateJobResponse;
+      if (!res.ok) {
+        throw new Error(data.error || "Không thể tạo job.");
+      }
 
-      const createdJob = data as any;
-      setActiveJobs(prev => [
-        {
-          ...createdJob,
-          serviceName: createdJob.serviceName,
-          customerName: createdJob.customerName || 'Khách hàng',
-          time: new Date(createdJob.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        },
-        ...prev,
-      ]);
       setQuickJob(prev => ({
+        customerName: "",
         customerPhone: "",
         serviceId: prev.serviceId,
         address: "",
+        scheduledAt: getDefaultScheduledAt(),
         quotedPrice: prev.quotedPrice,
         description: "",
       }));
       setQuickFormOpen(false);
-      setTab("active");
-      showToast(`Đã tạo và nhận việc ${createdJob.job_code}.`, "success");
-    } catch (err: any) {
-      showToast(err.message || "Không thể tạo việc nhanh.", "error");
+      setTab("pending");
+      showToast(
+        data.defaultPassword
+          ? `Đã gửi job chờ admin duyệt. MK khách: ${data.defaultPassword}`
+          : "Đã gửi job chờ admin duyệt.",
+        "success"
+      );
+      fetchData(true);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Không thể gửi job chờ duyệt.", "error");
     } finally {
       setCreatingQuickJob(false);
     }
@@ -568,7 +614,7 @@ export default function WorkerDashboard() {
               <div className="min-w-0">
                 <h2 className="text-body-sm font-bold text-on-surface">Tạo việc nhanh cho khách quen</h2>
                 <p className="text-xs leading-5 text-on-surface-variant">
-                  Khách chưa đặt đơn, thợ tạo job tại chỗ và nhận luôn.
+                  Thợ nhập thông tin, tạo tài khoản khách nếu cần và gửi admin duyệt.
                 </p>
               </div>
             </div>
@@ -580,6 +626,18 @@ export default function WorkerDashboard() {
 
           {quickFormOpen && (
             <form onSubmit={handleCreateQuickJob} className="mt-4 space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Tên khách hàng
+                </label>
+                <input
+                  value={quickJob.customerName}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerName: e.target.value }))}
+                  placeholder="VD: Nguyễn Văn A"
+                  className="input-field !py-2.5"
+                />
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
                   SĐT khách quen
@@ -645,6 +703,18 @@ export default function WorkerDashboard() {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Thời gian hẹn
+                </label>
+                <input
+                  type="datetime-local"
+                  value={quickJob.scheduledAt}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, scheduledAt: e.target.value }))}
+                  className="input-field !py-2.5"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
                   Mô tả việc cần làm
                 </label>
                 <textarea
@@ -660,7 +730,7 @@ export default function WorkerDashboard() {
                 disabled={creatingQuickJob || services.length === 0}
                 className="btn-secondary w-full !py-3 text-sm"
               >
-                {creatingQuickJob ? "Đang tạo..." : "Tạo và nhận việc"}
+                {creatingQuickJob ? "Đang gửi..." : "Gửi admin duyệt"}
               </button>
             </form>
           )}
@@ -668,17 +738,24 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="mx-4 flex gap-2 rounded-lg bg-surface-container p-1">
+      <div className="mx-4 grid grid-cols-3 gap-2 rounded-lg bg-surface-container p-1">
         <button
           onClick={() => setTab("new")}
-          className={`relative flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
+          className={`relative rounded-lg px-2 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
         >
           Việc mới
           {newJobs.length > 0 && <span className="ml-2 px-1.5 py-0.5 bg-error text-white text-[10px] rounded-full">{newJobs.length}</span>}
         </button>
         <button
+          onClick={() => setTab("pending")}
+          className={`rounded-lg px-2 py-2.5 text-label-md font-bold transition-all ${tab === "pending" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
+        >
+          Chờ duyệt
+          {pendingApprovalJobs.length > 0 && <span className="ml-2 rounded-full bg-warning px-1.5 py-0.5 text-[10px] text-white">{pendingApprovalJobs.length}</span>}
+        </button>
+        <button
           onClick={() => setTab("active")}
-          className={`flex-1 rounded-lg px-3 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
+          className={`rounded-lg px-2 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
         >
           Đang làm
           {activeJobs.length > 0 && <span className="ml-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] text-white">{activeJobs.length}</span>}
@@ -774,6 +851,45 @@ export default function WorkerDashboard() {
                 <BriefcaseIcon size={32} />
               </div>
               <p className="text-body-sm text-on-surface-variant">Chưa có việc mới nào quanh đây.</p>
+            </div>
+          )
+        ) : tab === "pending" ? (
+          pendingApprovalJobs.length > 0 ? (
+            pendingApprovalJobs.map(job => (
+              <div key={job.id} className="space-y-4 overflow-hidden rounded-2xl border border-warning/25 bg-white shadow-sm">
+                <div className="flex items-center justify-between gap-3 bg-warning-container px-4 py-3">
+                  <span className="badge badge-pending uppercase text-[10px]">Chờ admin duyệt</span>
+                  <span className="font-mono text-xs font-bold text-warning">{job.job_code}</span>
+                </div>
+
+                <div className="space-y-4 p-5 pt-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-lg font-extrabold text-on-surface">{job.customerName}</h3>
+                      <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
+                    </div>
+                    <div className="rounded-xl bg-surface-container px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
+                      {job.time}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2 rounded-xl bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
+                    <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
+                    <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
+                  </div>
+
+                  <div className="rounded-xl border border-warning/20 bg-warning-container/40 px-3 py-2 text-xs font-semibold text-warning">
+                    Job sẽ chuyển sang “Đang làm” sau khi admin duyệt.
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-20">
+              <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
+                <ClockIcon size={32} />
+              </div>
+              <p className="text-body-sm text-on-surface-variant">Chưa có job nào đang chờ admin duyệt.</p>
             </div>
           )
         ) : (

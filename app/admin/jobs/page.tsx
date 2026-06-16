@@ -117,6 +117,7 @@ export default function AdminJobs() {
   const [isAssigning, setIsAssigning] = useState(false);
   const [workerSearchQuery, setWorkerSearchQuery] = useState("");
   const [approvingCancellationJobId, setApprovingCancellationJobId] = useState<string | null>(null);
+  const [approvingWorkerJobId, setApprovingWorkerJobId] = useState<string | null>(null);
 
   async function fetchJobs() {
     setLoading(true);
@@ -328,6 +329,37 @@ export default function AdminJobs() {
     }
   };
 
+  const handleApproveWorkerJob = async (job: JobRow) => {
+    if (!window.confirm(`Duyệt job ${job.job_code || ""} cho thợ phụ trách?`)) return;
+
+    setApprovingWorkerJobId(job.id);
+    try {
+      const { data, error } = await supabase
+        .from("jobs")
+        .update({ status: "assigned" })
+        .eq("id", job.id)
+        .eq("status", "pending")
+        .not("worker_id", "is", null)
+        .select("id");
+
+      if (error) {
+        alert("Lỗi khi duyệt job: " + error.message);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        alert("Job không còn ở trạng thái chờ duyệt hoặc chưa có thợ phụ trách.");
+        return;
+      }
+
+      setJobs(prevJobs => prevJobs.map(item =>
+        item.id === job.id ? { ...item, status: "assigned" } : item
+      ));
+    } finally {
+      setApprovingWorkerJobId(null);
+    }
+  };
+
   const filteredWorkers = workersList.filter(worker => {
     const searchLower = workerSearchQuery.toLowerCase();
     const profile = getWorkerProfile(worker);
@@ -512,6 +544,14 @@ export default function AdminJobs() {
                             className="rounded-lg bg-error-container px-3 py-2 text-label-sm font-bold text-error transition-colors hover:bg-error hover:text-white disabled:opacity-60"
                           >
                             {approvingCancellationJobId === job.id ? "Đang duyệt..." : "Duyệt huỷ"}
+                          </button>
+                        ) : job.status === "pending" && job.worker?.profiles?.full_name ? (
+                          <button
+                            onClick={() => handleApproveWorkerJob(job)}
+                            disabled={approvingWorkerJobId === job.id}
+                            className="rounded-lg bg-success-container px-3 py-2 text-label-sm font-bold text-success transition-colors hover:bg-success hover:text-white disabled:opacity-60"
+                          >
+                            {approvingWorkerJobId === job.id ? "Đang duyệt..." : "Duyệt job"}
                           </button>
                         ) : (
                           <button className="p-2 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-primary-container">
