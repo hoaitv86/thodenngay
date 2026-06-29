@@ -1,8 +1,16 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  serviceMatchesSpecialties,
+} from "@/lib/service-categories";
+import {
+  applyDefaultServiceParents,
+  getServiceDisplayCategoryId,
+  groupServicesForDisplay,
+} from "@/lib/service-hierarchy";
 import {
   MapPinIcon,
   ClockIcon,
@@ -12,12 +20,6 @@ import {
   DropletIcon,
   WrenchIcon,
   CameraIcon,
-  ShieldCheckIcon,
-  StarIcon,
-  BarChartIcon,
-  CalendarIcon,
-  PhoneIcon,
-  UsersIcon,
   ArrowRightIcon,
   CheckCircleIcon,
   XIcon
@@ -28,6 +30,13 @@ type ServiceOption = {
   name: string;
   icon?: string | null;
   base_price?: number | null;
+  parent_service_id?: string | null;
+};
+
+type GpsLocation = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
 };
 
 const serviceVisuals = [
@@ -90,13 +99,29 @@ const getServiceVisual = (service: ServiceOption) => {
 };
 
 export default function CustomerBooking() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center min-h-[calc(100vh-8rem)]">
+        <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <CustomerBookingContent />
+    </Suspense>
+  );
+}
+
+function CustomerBookingContent() {
   const router = useRouter();
-  const supabase = createClient();
+  const searchParams = useSearchParams();
+  const serviceFromUrl = searchParams.get("service") || "";
+  const categoryFromUrl = searchParams.get("category") || "";
+  const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | null }>({ message: '', type: null });
   const [services, setServices] = useState<ServiceOption[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
@@ -104,7 +129,8 @@ export default function CustomerBooking() {
     serviceId: "",
     address: "",
     scheduledAt: "",
-    description: ""
+    description: "",
+    gpsLocation: null as GpsLocation | null,
   });
 
   useEffect(() => {
@@ -118,19 +144,24 @@ export default function CustomerBooking() {
         .eq('is_active', true)
         .order('name');
 
-      if (servicesData) setServices(servicesData);
+      const loadedServices = applyDefaultServiceParents(servicesData || []);
+      setServices(loadedServices);
 
       // Fetch user profile for address
       let userAddress = "";
+      let userGpsLocation: GpsLocation | null = null;
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('address')
+          .select('address, gps_location')
           .eq('id', user.id)
           .single();
         if (profile?.address) {
           userAddress = profile.address;
+        }
+        if (profile?.gps_location) {
+          userGpsLocation = profile.gps_location as GpsLocation;
         }
       }
 
@@ -141,11 +172,27 @@ export default function CustomerBooking() {
       const tzoffset = (new Date()).getTimezoneOffset() * 60000;
       const localISOTime = new Date(tomorrow.getTime() - tzoffset).toISOString().slice(0, 16);
 
-      setFormData(prev => ({ ...prev, scheduledAt: localISOTime, address: userAddress }));
+      const hasServiceFromUrl = loadedServices.some((service) => service.id === serviceFromUrl);
+      const selectedServiceFromUrl = loadedServices.find((service) => service.id === serviceFromUrl);
+      const firstCategoryId = groupServicesForDisplay(loadedServices)[0]?.category.id || "";
+      const selectedCategoryFromUrl = selectedServiceFromUrl ? getServiceDisplayCategoryId(loadedServices, selectedServiceFromUrl.id) : "";
+
+      setSelectedCategoryId(categoryFromUrl || selectedCategoryFromUrl || firstCategoryId);
+
+      setFormData(prev => ({
+        ...prev,
+        scheduledAt: localISOTime,
+        address: userAddress,
+        gpsLocation: userGpsLocation,
+        serviceId: hasServiceFromUrl ? serviceFromUrl : prev.serviceId,
+      }));
       setLoading(false);
     };
     init();
-  }, []);
+  }, [categoryFromUrl, serviceFromUrl, supabase]);
+
+  const serviceGroups = useMemo(() => groupServicesForDisplay(services), [services]);
+  const selectedGroup = serviceGroups.find((group) => group.category.id === selectedCategoryId) || serviceGroups[0];
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -202,18 +249,17 @@ export default function CustomerBooking() {
     return imageUrls;
   };
 
-  const hasActiveWorkerForService = async (serviceName: string) => {
-    const { count, error } = await supabase
+  const hasActiveWorkerForService = async (service: ServiceOption) => {
+    const { data, error } = await supabase
       .from('workers')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'active')
-      .contains('specialties', [serviceName]);
+      .select('id, specialties')
+      .eq('status', 'active');
 
     if (error) {
       throw new Error(error.message);
     }
 
-    return (count || 0) > 0;
+    return (data || []).some((worker) => serviceMatchesSpecialties(service, worker.specialties || []));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -242,7 +288,7 @@ export default function CustomerBooking() {
         return;
       }
 
-      const hasAvailableWorker = await hasActiveWorkerForService(selectedService.name);
+      const hasAvailableWorker = await hasActiveWorkerForService(selectedService);
       if (!hasAvailableWorker) {
         showToast("Hiện tại chưa có thợ làm cho dịch vụ mà bạn chọn ở khu vực này", "error");
         setIsSubmitting(false);
@@ -258,6 +304,8 @@ export default function CustomerBooking() {
         customer_id: user.id,
         service_id: formData.serviceId,
         address: formData.address,
+        gps_location: formData.gpsLocation,
+        customer_gps_location: formData.gpsLocation,
         scheduled_at: new Date(formData.scheduledAt).toISOString(),
         description: formData.description,
         quoted_price: quotedPrice,
@@ -280,26 +328,6 @@ export default function CustomerBooking() {
       setIsSubmitting(false);
       const message = error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định.";
       showToast("Lỗi khi đặt dịch vụ: " + message, "error");
-    }
-  };
-
-  const getIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'ZapIcon': return ZapIcon;
-      case 'DropletIcon': return DropletIcon;
-      case 'CameraIcon': return CameraIcon;
-      case 'CogIcon': return CogIcon;
-      case 'WrenchIcon': return WrenchIcon;
-      case 'ShieldCheckIcon': return ShieldCheckIcon;
-      case 'StarIcon': return StarIcon;
-      case 'ClockIcon': return ClockIcon;
-      case 'MapPinIcon': return MapPinIcon;
-      case 'BriefcaseIcon': return BriefcaseIcon;
-      case 'BarChartIcon': return BarChartIcon;
-      case 'CalendarIcon': return CalendarIcon;
-      case 'PhoneIcon': return PhoneIcon;
-      case 'UsersIcon': return UsersIcon;
-      default: return BriefcaseIcon;
     }
   };
 
@@ -351,7 +379,41 @@ export default function CustomerBooking() {
               </div>
 
               <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-                {services.map(service => {
+                {serviceGroups.map(({ category, services: categoryServices }) => {
+                  const isSelected = selectedGroup?.category.id === category.id;
+
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCategoryId(category.id);
+                        setFormData(prev => ({ ...prev, serviceId: "" }));
+                      }}
+                      className={`min-h-[104px] rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] ${isSelected
+                          ? "border-primary-container bg-primary-fixed/40 shadow-md shadow-blue-900/10"
+                          : "border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20"
+                        }`}
+                    >
+                      <span className="block text-2xl leading-none">{category.emoji || "•"}</span>
+                      <span className={`mt-3 block text-sm font-extrabold leading-5 ${isSelected ? "text-primary-container" : "text-on-surface"}`}>
+                        {category.name}
+                      </span>
+                      <span className="mt-2 inline-flex rounded-full bg-surface-container px-2.5 py-1 text-[10px] font-extrabold text-on-surface-variant">
+                        {categoryServices.length} dịch vụ
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedGroup && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase text-on-surface-variant">
+                    Dịch vụ trong {selectedGroup.category.name}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                    {selectedGroup.services.map(service => {
                   const visual = getServiceVisual(service);
                   const Icon = visual.icon;
                   const isSelected = formData.serviceId === service.id;
@@ -386,8 +448,10 @@ export default function CustomerBooking() {
                       </div>
                     </button>
                   );
-                })}
-              </div>
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">

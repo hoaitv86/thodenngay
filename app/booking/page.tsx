@@ -3,7 +3,9 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
 import {
   LogoIcon,
   ZapIcon,
@@ -20,18 +22,41 @@ import {
   CalendarIcon,
   PhoneIcon,
   UsersIcon,
-  ChevronRightIcon,
   ArrowRightIcon,
   CheckCircleIcon,
   XIcon
 } from "../components/icons";
 
+type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
+
+type RawService = {
+  id: string;
+  name: string;
+  description?: string | null;
+  base_price?: number | null;
+  icon?: string | null;
+  parent_service_id?: string | null;
+};
+
+type BookingService = RawService & {
+  iconComponent: IconComponent;
+  formattedPrice: string;
+  color: string;
+  bgColor: string;
+};
+
+type ServiceColor = {
+  color: string;
+  bgColor: string;
+};
+
 export default function BookingPage() {
   const router = useRouter();
   const supabase = createClient();
   const [step, setStep] = useState(1);
-  const [services, setServices] = useState<any[]>([]);
-  const [selectedService, setSelectedService] = useState<any>(null);
+  const [services, setServices] = useState<BookingService[]>([]);
+  const [selectedService, setSelectedService] = useState<BookingService | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [bookingData, setBookingData] = useState({
     address: "",
     time: "",
@@ -40,7 +65,7 @@ export default function BookingPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -59,7 +84,7 @@ export default function BookingPage() {
       
       if (svcs) {
         // Map icon component and colors (supporting all 14 system icons)
-        const iconMap: Record<string, any> = {
+        const iconMap: Record<string, IconComponent> = {
           ZapIcon,
           DropletIcon,
           CameraIcon,
@@ -75,7 +100,7 @@ export default function BookingPage() {
           PhoneIcon,
           UsersIcon
         };
-        const colorMap: Record<string, any> = {
+        const colorMap: Record<string, ServiceColor> = {
           'ZapIcon': { color: "#f59e0b", bgColor: "#fef3c7" },
           'DropletIcon': { color: "#3b82f6", bgColor: "#dbeafe" },
           'CameraIcon': { color: "#8b5cf6", bgColor: "#ede9fe" },
@@ -92,13 +117,16 @@ export default function BookingPage() {
           'UsersIcon': { color: "#f97316", bgColor: "#ffedd5" }
         };
 
-        const mapped = svcs.map(s => ({
+        const mapped = applyDefaultServiceParents(svcs as RawService[]).map((s): BookingService => ({
           ...s,
-          iconComponent: iconMap[s.icon] || BriefcaseIcon,
-          formattedPrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(s.base_price),
-          ...(colorMap[s.icon] || { color: "#003178", bgColor: "#f0f4f9" })
+          iconComponent: iconMap[s.icon || ""] || BriefcaseIcon,
+          formattedPrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(s.base_price || 0),
+          ...(colorMap[s.icon || ""] || { color: "#003178", bgColor: "#f0f4f9" })
         }));
         setServices(mapped);
+        if (mapped[0]) {
+          setSelectedCategoryId(groupServicesForDisplay(mapped)[0]?.category.id || "");
+        }
       }
     };
     init();
@@ -108,6 +136,8 @@ export default function BookingPage() {
     if (step === 1 && !selectedService) return;
     setStep(step + 1);
   };
+  const serviceGroups = groupServicesForDisplay(services);
+  const selectedGroup = serviceGroups.find((group) => group.category.id === selectedCategoryId) || serviceGroups[0];
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -226,8 +256,29 @@ export default function BookingPage() {
             <h1 className="text-headline-lg mb-2">Bạn cần sửa gì?</h1>
             <p className="text-body-md text-on-surface-variant mb-6 sm:mb-8">Chọn loại dịch vụ bạn đang gặp vấn đề để Thợ đến ngay hỗ trợ tốt nhất.</p>
             
-            <div className="grid grid-cols-1 gap-4">
-              {services.map((svc) => {
+            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {serviceGroups.map(({ category, services: categoryServices }) => {
+                const isSelected = selectedGroup?.category.id === category.id;
+                return (
+                  <button
+                    key={category.id}
+                    onClick={() => {
+                      setSelectedCategoryId(category.id);
+                      setSelectedService(null);
+                    }}
+                    className={`rounded-xl border-2 p-3 text-left transition-all ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : 'border-outline-variant bg-surface-container-lowest'}`}
+                  >
+                    <span className="block text-2xl leading-none">{category.emoji || "•"}</span>
+                    <span className="mt-2 block text-sm font-bold text-on-surface">{category.name}</span>
+                    <span className="mt-1 block text-xs text-on-surface-variant">{categoryServices.length} dịch vụ</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedGroup && (
+              <div className="grid grid-cols-1 gap-4">
+                {selectedGroup.services.map((svc) => {
                 const isSelected = selectedService?.id === svc.id;
                 return (
                   <button
@@ -251,8 +302,9 @@ export default function BookingPage() {
                     </div>
                   </button>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            )}
 
             <div className="mt-8 sticky bottom-4 sm:bottom-6">
               <button 
@@ -372,7 +424,7 @@ export default function BookingPage() {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 3 && selectedService && (
           <div className="animate-fade-in">
             <button onClick={() => setStep(2)} className="text-primary-container font-semibold mb-6 flex items-center gap-1 hover:underline">
               ← Quay lại

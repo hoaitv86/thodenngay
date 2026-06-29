@@ -22,6 +22,7 @@ CREATE TABLE public.profiles (
     phone TEXT,
     full_name TEXT NOT NULL,
     address TEXT,
+    gps_location JSONB,
     role TEXT NOT NULL CHECK (role IN ('customer', 'worker', 'admin')) DEFAULT 'customer',
     avatar_url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
@@ -44,6 +45,7 @@ CREATE TABLE public.workers (
 -- 3. SERVICES (Service Catalog)
 CREATE TABLE public.services (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parent_service_id UUID REFERENCES public.services(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     icon TEXT,
@@ -62,12 +64,18 @@ CREATE TABLE public.jobs (
     service_id UUID REFERENCES public.services(id) NOT NULL,
     address TEXT NOT NULL,
     gps_location JSONB DEFAULT '{"lat": 10.762622, "lng": 106.660172}',
+    customer_gps_location JSONB,
+    worker_gps_location JSONB,
     scheduled_at TIMESTAMPTZ NOT NULL,
     description TEXT,
     quoted_price DECIMAL(12,2) NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('pending', 'assigned', 'in_progress', 'completed', 'done', 'cancel_requested', 'cancelled')) DEFAULT 'pending',
     source TEXT NOT NULL CHECK (source IN ('app', 'call')) DEFAULT 'app',
     created_by UUID REFERENCES public.profiles(id) NOT NULL,
+    completion_items JSONB DEFAULT '[]'::jsonb,
+    final_amount DECIMAL(12,2),
+    warranty_days INTEGER DEFAULT 0,
+    warranty_note TEXT,
     cancellation_reason TEXT,
     cancellation_requested_by UUID REFERENCES public.profiles(id),
     cancellation_requested_at TIMESTAMPTZ,
@@ -135,6 +143,16 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Profiles: Users can view their own profile, Admins view all
 CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Anyone can view worker profiles" ON public.profiles FOR SELECT USING (role = 'worker');
+CREATE POLICY "Workers view assigned customer profiles" ON public.profiles FOR SELECT USING (
+  role = 'customer'
+  AND EXISTS (
+    SELECT 1
+    FROM public.jobs
+    JOIN public.workers ON public.workers.id = public.jobs.worker_id
+    WHERE public.jobs.customer_id = public.profiles.id
+      AND public.workers.user_id = auth.uid()
+  )
+);
 CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT USING (public.is_admin());
 CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Admins can update all profiles" ON public.profiles FOR UPDATE USING (public.is_admin());
@@ -147,9 +165,12 @@ CREATE POLICY "Workers view own record" ON public.workers FOR SELECT USING (user
 CREATE POLICY "Workers update own record" ON public.workers FOR UPDATE USING (user_id = auth.uid());
 CREATE POLICY "Admins view all workers" ON public.workers FOR ALL USING (public.is_admin());
 
--- Services: Everyone can view active services
+-- Services: Everyone can view active services, admins can manage the catalog
 CREATE POLICY "Public view active services" ON public.services FOR SELECT USING (is_active = TRUE);
-CREATE POLICY "Admins manage services" ON public.services FOR ALL USING (public.is_admin());
+CREATE POLICY "Admins view all services" ON public.services FOR SELECT USING (public.is_admin());
+CREATE POLICY "Admins create services" ON public.services FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY "Admins update services" ON public.services FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Admins delete services" ON public.services FOR DELETE USING (public.is_admin());
 
 -- Jobs: Customers view/create/update own jobs, Workers view assigned jobs, Admins manage all
 CREATE POLICY "Customers view own jobs" ON public.jobs FOR SELECT USING (customer_id = auth.uid());

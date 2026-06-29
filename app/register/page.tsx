@@ -1,17 +1,23 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   LogoIcon,
   UserIcon,
   WrenchIcon,
   ArrowRightIcon,
   CheckCircleIcon,
+  MapPinIcon,
 } from "../components/icons";
 
 type UserRole = "customer" | "worker";
+type GpsLocation = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+};
 
 import { createClient } from "@/lib/supabase/client";
 import { useSettings } from "@/lib/settings";
@@ -29,12 +35,14 @@ function RegisterContent() {
     password: "",
     phone: "",
     address: "",
+    gpsLocation: null as GpsLocation | null,
     specialties: [] as string[],
   });
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const router = useRouter();
   const supabase = createClient();
 
   const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([
@@ -68,6 +76,43 @@ function RegisterContent() {
         ? prev.specialties.filter((s) => s !== sp)
         : [...prev.specialties, sp],
     }));
+  };
+
+  const handleUseCurrentLocation = () => {
+    setError("");
+    setLocationMessage("");
+
+    if (!("geolocation" in navigator)) {
+      setLocationMessage("Trình duyệt không hỗ trợ định vị. Bạn vẫn có thể nhập địa chỉ thủ công.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location = {
+          lat: Number(position.coords.latitude.toFixed(6)),
+          lng: Number(position.coords.longitude.toFixed(6)),
+          accuracy: Math.round(position.coords.accuracy),
+        };
+
+        setFormData((prev) => ({
+          ...prev,
+          gpsLocation: location,
+        }));
+        setLocationMessage(`Đã lấy vị trí hiện tại (${location.lat}, ${location.lng}).`);
+        setLocating(false);
+      },
+      () => {
+        setLocationMessage("Không thể lấy vị trí. Vui lòng cho phép quyền định vị hoặc thử lại.");
+        setLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 60000,
+      }
+    );
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -110,7 +155,8 @@ function RegisterContent() {
         .from('profiles')
         .update({
           phone: formData.phone,
-          address: formData.address
+          address: formData.address,
+          gps_location: formData.gpsLocation
         })
         .eq('id', data.user.id);
 
@@ -304,6 +350,58 @@ function RegisterContent() {
                     placeholder="Q.1, TP.HCM"
                   />
                 </div>
+
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
+                      <MapPinIcon size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-extrabold text-on-surface">
+                            {role === "worker" ? "Định vị thợ" : "Định vị khách hàng"}
+                          </p>
+                          <p className="mt-0.5 text-xs leading-5 text-on-surface-variant">
+                            {role === "worker"
+                              ? "Lưu tọa độ khu vực hoạt động để hệ thống gợi ý đơn phù hợp gần bạn."
+                              : "Lưu tọa độ để thợ tìm đúng vị trí khi bạn đặt dịch vụ."}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleUseCurrentLocation}
+                          disabled={locating}
+                          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+                        >
+                          {locating ? (
+                            <>
+                              <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                              Đang lấy...
+                            </>
+                          ) : (
+                            <>
+                              <MapPinIcon size={15} />
+                              Lấy vị trí hiện tại
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {formData.gpsLocation && (
+                        <div className="mt-3 rounded-lg bg-success-container px-3 py-2 text-xs font-semibold text-success">
+                          Vị trí đã lưu: {formData.gpsLocation.lat}, {formData.gpsLocation.lng}
+                          {formData.gpsLocation.accuracy ? ` · sai số khoảng ${formData.gpsLocation.accuracy}m` : ""}
+                        </div>
+                      )}
+
+                      {locationMessage && !formData.gpsLocation && (
+                        <p className="mt-3 text-xs font-semibold text-on-surface-variant">{locationMessage}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
 
                 {/* Worker Specialties */}
                 {role === "worker" && (

@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   UserIcon,
   PhoneIcon,
+  MapPinIcon,
   StarIcon,
   BriefcaseIcon,
   ShieldCheckIcon,
@@ -20,6 +21,7 @@ interface WorkerProfileData {
   phone?: string | null;
   full_name: string;
   address?: string | null;
+  gps_location?: GpsLocation | null;
   created_at: string;
   avatar_url?: string | null;
   worker: {
@@ -35,11 +37,29 @@ interface WorkerProfileData {
   } | null;
 }
 
+type GpsLocation = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  captured_at?: string;
+};
+
+const DEFAULT_SPECIALTY_OPTIONS = [
+  "Điện",
+  "Nước",
+  "Lắp camera",
+  "Cơ khí",
+  "Điều hòa",
+  "Sơn nhà",
+  "Mộc",
+];
+
 export default function WorkerProfile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<WorkerProfileData | null>(null);
   const [profileStats, setProfileStats] = useState({ jobsDone: 0, rating: 0 });
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showSpecialties, setShowSpecialties] = useState(false);
 
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
@@ -49,6 +69,12 @@ export default function WorkerProfile() {
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationMsg, setLocationMsg] = useState("");
+  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>(DEFAULT_SPECIALTY_OPTIONS);
+  const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
+  const [savingSpecialties, setSavingSpecialties] = useState(false);
+  const [specialtyMsg, setSpecialtyMsg] = useState("");
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -58,7 +84,7 @@ export default function WorkerProfile() {
   const [passwordSuccess, setPasswordSuccess] = useState("");
 
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -100,6 +126,7 @@ export default function WorkerProfile() {
           worker: workerData || null,
           email: user.email
         });
+        setSelectedSpecialties(workerData?.specialties || []);
 
         if (userProfile) {
           setFullName(userProfile.full_name || "");
@@ -110,7 +137,77 @@ export default function WorkerProfile() {
     };
 
     fetchProfile();
-  }, []);
+  }, [supabase]);
+
+  useEffect(() => {
+    const fetchSpecialtyOptions = async () => {
+      const { data, error } = await supabase
+        .from("services")
+        .select("name")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const serviceNames = data
+          .map((service: { name?: string | null }) => service.name?.trim())
+          .filter((name): name is string => Boolean(name));
+        setSpecialtyOptions(Array.from(new Set([...serviceNames, ...DEFAULT_SPECIALTY_OPTIONS])));
+      }
+    };
+
+    fetchSpecialtyOptions();
+  }, [supabase]);
+
+  const toggleSpecialty = (specialty: string) => {
+    setSelectedSpecialties((prev) =>
+      prev.includes(specialty)
+        ? prev.filter((item) => item !== specialty)
+        : [...prev, specialty]
+    );
+  };
+
+  const handleSaveSpecialties = async () => {
+    if (!profile?.worker?.id) {
+      setSpecialtyMsg("Không tìm thấy hồ sơ thợ để cập nhật dịch vụ.");
+      return;
+    }
+
+    setSavingSpecialties(true);
+    setSpecialtyMsg("");
+
+    const cleanedSpecialties = Array.from(
+      new Set(selectedSpecialties.map((item) => item.trim()).filter(Boolean))
+    );
+
+    const { data, error } = await supabase
+      .from("workers")
+      .update({ specialties: cleanedSpecialties })
+      .eq("id", profile.worker.id)
+      .select("id, specialties")
+      .single();
+
+    if (error || !data) {
+      setSpecialtyMsg(error?.message ? `Không thể lưu dịch vụ: ${error.message}` : "Không thể lưu dịch vụ đăng ký.");
+      setSavingSpecialties(false);
+      return;
+    }
+
+    setProfile((prev) => {
+      if (!prev?.worker) return prev;
+      return {
+        ...prev,
+        worker: {
+          ...prev.worker,
+          specialties: data.specialties || [],
+        },
+      };
+    });
+    setSelectedSpecialties(data.specialties || []);
+    setSpecialtyMsg("Đã cập nhật dịch vụ đăng ký.");
+    setShowSpecialties(false);
+    setSavingSpecialties(false);
+    router.refresh();
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,18 +222,22 @@ export default function WorkerProfile() {
       setSuccessMsg("");
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      }
 
-      const { error } = await supabase
+      const { data: updatedProfile, error } = await supabase
         .from("profiles")
         .update({
           full_name: fullName.trim(),
           phone: phone.trim() || null,
         })
-        .eq("id", user.id);
+        .eq("id", user.id)
+        .select("id, full_name, phone, address, gps_location, created_at, avatar_url")
+        .single();
 
-      if (error) {
-        setErrorMsg("Không thể lưu thông tin. Vui lòng thử lại sau.");
+      if (error || !updatedProfile) {
+        setErrorMsg(error?.message ? `Không thể lưu thông tin: ${error.message}` : "Không thể lưu thông tin. Vui lòng thử lại sau.");
         console.error("Supabase update error:", error);
       } else {
         setSuccessMsg("Cập nhật tài khoản thành công!");
@@ -144,10 +245,15 @@ export default function WorkerProfile() {
           if (!prev) return null;
           return {
             ...prev,
-            full_name: fullName.trim(),
-            phone: phone.trim() || null,
+            full_name: updatedProfile.full_name || "",
+            phone: updatedProfile.phone,
+            address: updatedProfile.address,
+            gps_location: updatedProfile.gps_location,
+            avatar_url: updatedProfile.avatar_url,
           };
         });
+        setFullName(updatedProfile.full_name || "");
+        setPhone(updatedProfile.phone || "");
         setIsEditing(false);
         // Refresh Layout states
         router.refresh();
@@ -158,6 +264,53 @@ export default function WorkerProfile() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setErrorMsg("");
+    setSuccessMsg("");
+    setLocationMsg("");
+
+    if (!("geolocation" in navigator)) {
+      setLocationMsg("Trình duyệt không hỗ trợ định vị.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const location: GpsLocation = {
+          lat: Number(position.coords.latitude.toFixed(6)),
+          lng: Number(position.coords.longitude.toFixed(6)),
+          accuracy: Math.round(position.coords.accuracy),
+          captured_at: new Date().toISOString(),
+        };
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setLocating(false);
+          return;
+        }
+
+        const { error } = await supabase
+          .from("profiles")
+          .update({ gps_location: location })
+          .eq("id", user.id);
+
+        if (error) {
+          setLocationMsg("Không thể lưu vị trí: " + error.message);
+        } else {
+          setProfile((prev) => prev ? { ...prev, gps_location: location } : prev);
+          setLocationMsg("Đã cập nhật vị trí hoạt động.");
+        }
+        setLocating(false);
+      },
+      () => {
+        setLocationMsg("Không thể lấy vị trí. Vui lòng cấp quyền định vị và thử lại.");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -318,7 +471,7 @@ export default function WorkerProfile() {
             </label>
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words text-white">{profile.full_name || "Thợ chưa có tên"}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words" style={{ color: "#fcd34d" }}>{profile.full_name || "Thợ chưa có tên"}</h1>
             <p className="opacity-80 text-sm mt-1 break-all">{profile.email}</p>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success shadow-sm">
               <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-success animate-pulse' : 'bg-amber-400'}`} />
@@ -420,6 +573,31 @@ export default function WorkerProfile() {
                   </div>
                   <span className="text-body-sm font-medium text-on-surface">{profile.phone || 'Chưa cập nhật'}</span>
                 </div>
+
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
+                      <MapPinIcon size={16} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-extrabold text-on-surface">Định vị thợ</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        {profile.gps_location
+                          ? `${profile.gps_location.lat}, ${profile.gps_location.lng}${profile.gps_location.accuracy ? ` · sai số khoảng ${profile.gps_location.accuracy}m` : ""}`
+                          : "Chưa lưu vị trí hoạt động."}
+                      </p>
+                      {locationMsg && <p className="mt-2 text-xs font-semibold text-success">{locationMsg}</p>}
+                      <button
+                        type="button"
+                        onClick={handleUseCurrentLocation}
+                        disabled={locating}
+                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white disabled:opacity-60"
+                      >
+                        {locating ? "Đang lấy vị trí..." : "Cập nhật vị trí hiện tại"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleSave} className="space-y-4">
@@ -453,6 +631,24 @@ export default function WorkerProfile() {
                   />
                 </div>
 
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                  <p className="text-sm font-extrabold text-on-surface">Định vị thợ</p>
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {profile.gps_location
+                      ? `${profile.gps_location.lat}, ${profile.gps_location.lng}${profile.gps_location.accuracy ? ` · sai số khoảng ${profile.gps_location.accuracy}m` : ""}`
+                      : "Chưa lưu vị trí hoạt động."}
+                  </p>
+                  {locationMsg && <p className="mt-2 text-xs font-semibold text-success">{locationMsg}</p>}
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    disabled={locating || saving}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white disabled:opacity-60"
+                  >
+                    {locating ? "Đang lấy vị trí..." : "Lấy vị trí hiện tại"}
+                  </button>
+                </div>
+
                 <button
                   type="submit"
                   disabled={saving}
@@ -475,16 +671,103 @@ export default function WorkerProfile() {
         {/* General Settings */}
         <div className="card !p-0 overflow-hidden">
           {/* Link: Register Specialties */}
-          <button className="w-full flex items-center gap-4 p-4 text-left transition-colors hover:bg-surface-container-lowest">
+          <button
+            type="button"
+            onClick={() => {
+              setShowSpecialties(!showSpecialties);
+              setSpecialtyMsg("");
+              setSelectedSpecialties(profile.worker?.specialties || []);
+            }}
+            className="w-full flex items-center gap-4 p-4 text-left transition-colors hover:bg-surface-container-lowest"
+          >
             <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant shrink-0">
               <BriefcaseIcon size={20} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-body-sm font-bold text-on-surface">Dịch vụ đăng ký</div>
-              <div className="text-label-sm text-on-surface-variant truncate">Quản lý các hạng mục thi công</div>
+              <div className="text-label-sm text-on-surface-variant truncate">
+                {profile.worker?.specialties?.length
+                  ? profile.worker.specialties.join(", ")
+                  : "Quản lý các hạng mục thi công"}
+              </div>
             </div>
-            <ChevronRightIcon size={20} className="text-outline shrink-0" />
+            <div className={`transform transition-transform duration-200 shrink-0 ${showSpecialties ? "rotate-90" : ""}`}>
+              <ChevronRightIcon size={20} className="text-outline" />
+            </div>
           </button>
+
+          {showSpecialties && (
+            <div className="border-t border-outline-variant/50 bg-surface-container-lowest px-4 pb-5 pt-4 animate-fade-in space-y-4">
+              {specialtyMsg && (
+                <div className={`rounded-xl border p-3 text-xs font-semibold ${
+                  specialtyMsg.startsWith("Đã")
+                    ? "border-success/20 bg-success-container text-success"
+                    : "border-error/20 bg-error-container text-error"
+                }`}>
+                  {specialtyMsg}
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm font-bold text-on-surface">Chọn dịch vụ có thể thi công</p>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  Các dịch vụ này dùng để lọc việc phù hợp và hiển thị trong hồ sơ thợ.
+                </p>
+              </div>
+
+              <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto rounded-xl border border-outline-variant/30 bg-white p-2">
+                {specialtyOptions.map((specialty) => {
+                  const isSelected = selectedSpecialties.includes(specialty);
+                  return (
+                    <button
+                      key={specialty}
+                      type="button"
+                      onClick={() => toggleSpecialty(specialty)}
+                      disabled={savingSpecialties}
+                      className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:opacity-60 ${
+                        isSelected
+                          ? "border-primary bg-primary text-white shadow-sm"
+                          : "border-outline-variant/60 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary-container"
+                      }`}
+                    >
+                      {isSelected ? "✓ " : ""}
+                      {specialty}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl bg-primary-fixed/70 p-3">
+                <p className="text-[10px] font-bold uppercase text-primary-container/75">Đã chọn</p>
+                <p className="mt-1 text-sm font-bold text-primary-container">
+                  {selectedSpecialties.length > 0 ? selectedSpecialties.join(", ") : "Chưa chọn dịch vụ nào"}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSpecialties(profile.worker?.specialties || []);
+                    setShowSpecialties(false);
+                    setSpecialtyMsg("");
+                  }}
+                  disabled={savingSpecialties}
+                  className="btn-outline !min-h-10 !py-2 text-sm"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSpecialties}
+                  disabled={savingSpecialties}
+                  className="btn-primary !min-h-10 !py-2 text-sm"
+                >
+                  {savingSpecialties ? "Đang lưu..." : "Lưu dịch vụ"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Collapsible item: Change Password */}
           <div className="border-t border-outline-variant/50">

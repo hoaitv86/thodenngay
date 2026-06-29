@@ -22,9 +22,17 @@ interface CustomerProfileData {
   phone?: string | null;
   full_name: string;
   address?: string | null;
+  gps_location?: GpsLocation | null;
   created_at: string;
   avatar_url?: string | null;
 }
+
+type GpsLocation = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  captured_at?: string;
+};
 
 interface JobStat {
   id: string;
@@ -40,6 +48,7 @@ export default function CustomerProfile() {
   const [stats, setStats] = useState({ total: 0, completed: 0, active: 0 });
   const [isEditing, setIsEditing] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   // Form states
   const [fullName, setFullName] = useState("");
@@ -47,6 +56,7 @@ export default function CustomerProfile() {
   const [address, setAddress] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [locationMsg, setLocationMsg] = useState("");
 
   // UI accordion states
   const [showSupport, setShowSupport] = useState(false);
@@ -162,6 +172,53 @@ export default function CustomerProfile() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setErrorMsg("");
+    setSuccessMsg("");
+    setLocationMsg("");
+
+    if (!("geolocation" in navigator)) {
+      setLocationMsg("Trình duyệt không hỗ trợ định vị. Vui lòng nhập địa chỉ thủ công.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const location: GpsLocation = {
+          lat: Number(position.coords.latitude.toFixed(6)),
+          lng: Number(position.coords.longitude.toFixed(6)),
+          accuracy: Math.round(position.coords.accuracy),
+          captured_at: new Date().toISOString(),
+        };
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setLocating(false);
+          return;
+        }
+
+        const { error } = await supabase
+          .from("profiles")
+          .update({ gps_location: location })
+          .eq("id", user.id);
+
+        if (error) {
+          setLocationMsg("Không thể lưu vị trí: " + error.message);
+        } else {
+          setProfile((prev) => prev ? { ...prev, gps_location: location } : prev);
+          setLocationMsg("Đã cập nhật vị trí hiện tại.");
+        }
+        setLocating(false);
+      },
+      () => {
+        setLocationMsg("Không thể lấy vị trí. Vui lòng cấp quyền định vị và thử lại.");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,6 +500,31 @@ export default function CustomerProfile() {
                   </p>
                 </div>
               </div>
+
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
+                    <MapPinIcon size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-extrabold text-on-surface">Định vị khách hàng</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      {profile.gps_location
+                        ? `${profile.gps_location.lat}, ${profile.gps_location.lng}${profile.gps_location.accuracy ? ` · sai số khoảng ${profile.gps_location.accuracy}m` : ""}`
+                        : "Chưa lưu vị trí GPS."}
+                    </p>
+                    {locationMsg && <p className="mt-2 text-xs font-semibold text-success">{locationMsg}</p>}
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      disabled={locating}
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white disabled:opacity-60"
+                    >
+                      {locating ? "Đang lấy vị trí..." : "Cập nhật vị trí hiện tại"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSave} className="space-y-4">
@@ -489,6 +571,24 @@ export default function CustomerProfile() {
                   rows={3}
                   maxLength={300}
                 />
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                <p className="text-sm font-extrabold text-on-surface">Định vị khách hàng</p>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  {profile.gps_location
+                    ? `${profile.gps_location.lat}, ${profile.gps_location.lng}${profile.gps_location.accuracy ? ` · sai số khoảng ${profile.gps_location.accuracy}m` : ""}`
+                    : "Chưa lưu vị trí GPS."}
+                </p>
+                {locationMsg && <p className="mt-2 text-xs font-semibold text-success">{locationMsg}</p>}
+                <button
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={locating || saving}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white disabled:opacity-60"
+                >
+                  {locating ? "Đang lấy vị trí..." : "Lấy vị trí hiện tại"}
+                </button>
               </div>
 
               <button

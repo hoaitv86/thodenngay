@@ -125,3 +125,39 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.worker_create_quick_job(TEXT, UUID, TEXT, TEXT, NUMERIC) TO authenticated;
+
+-- Fallback policy for API routes that insert directly with the worker session.
+-- This keeps quick-job creation limited to active workers and existing customers
+-- who are already connected to that worker through a previous job.
+CREATE OR REPLACE FUNCTION public.worker_has_customer(p_customer_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.jobs existing_jobs
+    JOIN public.workers worker_self ON worker_self.id = existing_jobs.worker_id
+    WHERE worker_self.user_id = auth.uid()
+      AND existing_jobs.customer_id = p_customer_id
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.worker_has_customer(UUID) TO authenticated;
+
+DROP POLICY IF EXISTS "Workers create quick jobs for known customers" ON public.jobs;
+CREATE POLICY "Workers create quick jobs for known customers"
+ON public.jobs
+FOR INSERT
+WITH CHECK (
+  worker_id IN (
+    SELECT id
+    FROM public.workers
+    WHERE user_id = auth.uid()
+      AND status = 'active'
+  )
+  AND created_by = auth.uid()
+  AND status IN ('assigned', 'pending')
+  AND public.worker_has_customer(customer_id)
+);

@@ -2,6 +2,10 @@
 ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_status_check;
 ALTER TABLE public.jobs ADD CONSTRAINT jobs_status_check CHECK (status IN ('pending', 'assigned', 'in_progress', 'completed', 'done', 'cancel_requested', 'cancelled'));
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS images TEXT[] DEFAULT '{}';
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS completion_items JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS final_amount DECIMAL(12,2);
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_days INTEGER DEFAULT 0;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_note TEXT;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS cancellation_requested_by UUID REFERENCES public.profiles(id);
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMPTZ;

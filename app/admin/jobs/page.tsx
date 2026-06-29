@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { applyDefaultServiceParents, getSelectableServices, getServicePathLabel } from "@/lib/service-hierarchy";
 import {
   SearchIcon,
   FilterIcon,
@@ -21,6 +22,7 @@ interface CustomerOption {
   full_name?: string | null;
   phone?: string | null;
   email?: string | null;
+  gps_location?: Record<string, unknown> | null;
 }
 
 interface ServiceOption {
@@ -28,6 +30,7 @@ interface ServiceOption {
   name?: string | null;
   icon?: string | null;
   base_price?: number | string | null;
+  parent_service_id?: string | null;
 }
 
 interface WorkerOption {
@@ -46,6 +49,8 @@ interface JobWorkerProfile {
 
 interface JobRow {
   id: string;
+  customer_id?: string | null;
+  worker_id?: string | null;
   job_code?: string | null;
   created_at?: string | null;
   address?: string | null;
@@ -59,6 +64,8 @@ interface JobRow {
   worker?: {
     profiles?: JobWorkerProfile | null;
   } | null;
+  customer_gps_location?: Record<string, unknown> | null;
+  worker_gps_location?: Record<string, unknown> | null;
 }
 
 interface CreateJobResponse {
@@ -82,6 +89,22 @@ function getJobStatusLabel(status?: string | null) {
   if (status === "cancel_requested") return "Chờ duyệt huỷ";
   if (status === "cancelled") return "Đã hủy";
   return status || "Không rõ";
+}
+
+const JOB_STATUS_FILTERS = ["all", "pending", "assigned", "in_progress", "completed", "cancel_requested", "cancelled"] as const;
+
+function matchesJobStatusFilter(jobStatus: string | null | undefined, statusFilter: string) {
+  if (statusFilter === "all") return true;
+  if (statusFilter === "completed") return jobStatus === "completed" || jobStatus === "done";
+  return jobStatus === statusFilter;
+}
+
+function getJobStatusCardClass(status: string) {
+  if (status === "completed") return "border-success-container bg-success-container/70 text-success";
+  if (status === "pending" || status === "cancel_requested") return "border-warning-container bg-warning-container/70 text-warning";
+  if (status === "cancelled") return "border-error-container bg-error-container/70 text-error";
+  if (status === "all") return "border-primary-container bg-primary-fixed text-primary-container";
+  return "border-outline-variant bg-surface-container-lowest text-on-surface";
 }
 
 export default function AdminJobs() {
@@ -144,8 +167,21 @@ export default function AdminJobs() {
       if (cData) setCustomers(cData);
     }
     if (services.length === 0) {
-      const { data: sData } = await supabase.from('services').select('id, name, base_price').eq('is_active', true);
-      if (sData) setServices(sData);
+      const { data: sData, error: serviceError } = await supabase
+        .from('services')
+        .select('id, name, base_price, parent_service_id')
+        .eq('is_active', true);
+      if (sData) {
+        setServices(applyDefaultServiceParents(sData));
+      } else if (serviceError) {
+        const { data: fallbackServices } = await supabase
+          .from('services')
+          .select('id, name, base_price')
+          .eq('is_active', true);
+        if (fallbackServices) {
+          setServices(applyDefaultServiceParents(fallbackServices.map(service => ({ ...service, parent_service_id: null }))));
+        }
+      }
     }
 
     // Default time to tomorrow 9AM
@@ -160,6 +196,18 @@ export default function AdminJobs() {
       scheduledAt: localISOTime
     }));
   };
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("action") === "create") {
+      const openTimer = window.setTimeout(() => {
+        openModal();
+      }, 0);
+      return () => window.clearTimeout(openTimer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectableServices = useMemo(() => getSelectableServices(services), [services]);
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,9 +304,30 @@ export default function AdminJobs() {
     }
 
     setIsAssigning(true);
+    const selectedJob = jobs.find(job => job.id === selectedJobId);
+    const { data: customerProfile } = selectedJob?.customer?.id
+      ? await supabase
+        .from('profiles')
+        .select('gps_location')
+        .eq('id', selectedJob.customer.id)
+        .single()
+      : { data: null };
+    const { data: selectedWorker } = await supabase
+      .from('workers')
+      .select('profiles(gps_location)')
+      .eq('id', selectedWorkerId)
+      .single();
+    const workerProfiles = selectedWorker?.profiles;
+    const workerProfile = Array.isArray(workerProfiles) ? workerProfiles[0] : workerProfiles;
+
     const { error } = await supabase
       .from('jobs')
-      .update({ worker_id: selectedWorkerId, status: 'assigned' })
+      .update({
+        worker_id: selectedWorkerId,
+        status: 'assigned',
+        customer_gps_location: customerProfile?.gps_location || selectedJob?.customer_gps_location || null,
+        worker_gps_location: workerProfile?.gps_location || null,
+      })
       .eq('id', selectedJobId);
 
     setIsAssigning(false);
@@ -277,6 +346,8 @@ export default function AdminJobs() {
           return {
             ...job,
             status: 'assigned',
+            customer_gps_location: customerProfile?.gps_location || selectedJob?.customer_gps_location || null,
+            worker_gps_location: workerProfile?.gps_location || null,
             worker: {
               profiles: {
                 full_name: assignedWorkerProfile?.full_name || 'Thợ đã gán'
@@ -334,9 +405,32 @@ export default function AdminJobs() {
 
     setApprovingWorkerJobId(job.id);
     try {
+      const { data: customerProfile } = job.customer_id
+        ? await supabase
+          .from("profiles")
+          .select("gps_location")
+          .eq("id", job.customer_id)
+          .single()
+        : { data: null };
+      const { data: assignedWorker } = job.worker_id
+        ? await supabase
+          .from("workers")
+          .select("profiles(gps_location)")
+          .eq("id", job.worker_id)
+          .single()
+        : { data: null };
+      const assignedWorkerProfiles = assignedWorker?.profiles;
+      const assignedWorkerProfileLocation = Array.isArray(assignedWorkerProfiles)
+        ? assignedWorkerProfiles[0]
+        : assignedWorkerProfiles;
+
       const { data, error } = await supabase
         .from("jobs")
-        .update({ status: "assigned" })
+        .update({
+          status: "assigned",
+          customer_gps_location: customerProfile?.gps_location || job.customer_gps_location || null,
+          worker_gps_location: assignedWorkerProfileLocation?.gps_location || job.worker_gps_location || null,
+        })
         .eq("id", job.id)
         .eq("status", "pending")
         .not("worker_id", "is", null)
@@ -353,7 +447,14 @@ export default function AdminJobs() {
       }
 
       setJobs(prevJobs => prevJobs.map(item =>
-        item.id === job.id ? { ...item, status: "assigned" } : item
+        item.id === job.id
+          ? {
+            ...item,
+            status: "assigned",
+            customer_gps_location: customerProfile?.gps_location || job.customer_gps_location || null,
+            worker_gps_location: assignedWorkerProfileLocation?.gps_location || job.worker_gps_location || null,
+          }
+          : item
       ));
     } finally {
       setApprovingWorkerJobId(null);
@@ -376,13 +477,15 @@ export default function AdminJobs() {
 
     const matchesSearch = jobCode.includes(searchLower) || customerName.includes(searchLower) || serviceName.includes(searchLower);
 
-    const matchesStatus = statusFilter === 'all' ||
-      (statusFilter === 'completed'
-        ? (job.status === 'completed' || job.status === 'done')
-        : job.status === statusFilter);
+    const matchesStatus = matchesJobStatusFilter(job.status, statusFilter);
 
     return matchesSearch && matchesStatus;
   });
+
+  const jobStatusCounts = JOB_STATUS_FILTERS.reduce<Record<string, number>>((counts, status) => {
+    counts[status] = jobs.filter(job => matchesJobStatusFilter(job.status, status)).length;
+    return counts;
+  }, {});
 
   return (
     <>
@@ -401,6 +504,25 @@ export default function AdminJobs() {
           </button>
         </div>
 
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+          {JOB_STATUS_FILTERS.map(status => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+                statusFilter === status
+                  ? getJobStatusCardClass(status)
+                  : "border-outline-variant bg-white text-on-surface hover:bg-surface-container-lowest"
+              }`}
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wide opacity-80">
+                {status === "all" ? "Tất cả" : getJobStatusLabel(status)}
+              </div>
+              <div className="mt-2 text-2xl font-extrabold">{jobStatusCounts[status] || 0}</div>
+            </button>
+          ))}
+        </div>
+
         {/* Filters and Search */}
         <div className="card-elevated !p-4 flex flex-col xl:flex-row gap-4 items-center justify-between">
           <div className="relative w-full xl:w-96">
@@ -417,7 +539,7 @@ export default function AdminJobs() {
           </div>
 
           <div className="flex gap-2 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 scrollbar-hide">
-            {['all', 'pending', 'assigned', 'in_progress', 'completed', 'cancel_requested', 'cancelled'].map(status => (
+            {JOB_STATUS_FILTERS.map(status => (
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
@@ -667,8 +789,8 @@ export default function AdminJobs() {
                         }}
                       >
                         <option value="" disabled>-- Chọn dịch vụ --</option>
-                        {services.map(s => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.base_price?.toLocaleString('vi-VN')}đ)</option>
+                        {selectableServices.map(s => (
+                          <option key={s.id} value={s.id}>{getServicePathLabel(s, services)} ({Number(s.base_price || 0).toLocaleString('vi-VN')}đ)</option>
                         ))}
                       </select>
                     ) : (
@@ -713,8 +835,8 @@ export default function AdminJobs() {
                       }}
                     >
                       <option value="" disabled>-- Chọn dịch vụ --</option>
-                      {services.map(s => (
-                        <option key={s.id} value={s.id}>{s.name} ({s.base_price?.toLocaleString('vi-VN')}đ)</option>
+                      {selectableServices.map(s => (
+                        <option key={s.id} value={s.id}>{getServicePathLabel(s, services)} ({Number(s.base_price || 0).toLocaleString('vi-VN')}đ)</option>
                       ))}
                     </select>
                   </div>

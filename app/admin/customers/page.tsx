@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
@@ -915,11 +916,11 @@ export default function AdminCustomers() {
         </div>
       )}
       {/* Add Customer Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-fade-in-up flex flex-col max-h-[90vh]">
+      {isAddModalOpen && typeof document !== "undefined" && createPortal((
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm px-4 py-6 sm:py-8">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[calc(100dvh-48px)] sm:max-h-[calc(100dvh-64px)]">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
+            <div className="sticky top-0 z-10 px-6 py-4 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-lowest rounded-t-2xl">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
                   <PlusIcon size={20} />
@@ -938,8 +939,8 @@ export default function AdminCustomers() {
             </div>
 
             {/* Modal Content */}
-            <form onSubmit={handleCreateCustomer} className="flex-1 overflow-y-auto p-6 space-y-5">
-              <div className="space-y-4">
+            <form onSubmit={handleCreateCustomer} className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
                 {/* Họ tên & Email */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -1048,7 +1049,7 @@ export default function AdminCustomers() {
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-4 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest -mx-6 -mb-6 p-4 rounded-b-2xl">
+              <div className="sticky bottom-0 z-10 shrink-0 border-t border-outline-variant/30 flex justify-end gap-3 bg-surface-container-lowest p-4 rounded-b-2xl">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
@@ -1073,7 +1074,7 @@ export default function AdminCustomers() {
             </form>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Edit Customer Modal */}
       {isEditModalOpen && editingCustomer && (
@@ -1282,4 +1283,3 @@ export default function AdminCustomers() {
     </div>
   );
 }
-

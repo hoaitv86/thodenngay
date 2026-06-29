@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-  CalendarIcon,
   CheckCircleIcon,
   XIcon,
   ZapIcon,
@@ -17,17 +16,45 @@ import {
   ChevronRightIcon
 } from "../../components/icons";
 
+type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
+
+type RawHistoryJob = {
+  id: string;
+  status?: string | null;
+  address?: string | null;
+  quoted_price?: number | null;
+  updated_at?: string | null;
+  scheduled_at?: string | null;
+  service?: {
+    name?: string | null;
+    icon?: string | null;
+  } | null;
+  customer?: { full_name?: string | null } | { full_name?: string | null }[] | null;
+};
+
+type HistoryJob = RawHistoryJob & {
+  customerName: string;
+  serviceName: string;
+  icon: IconComponent;
+  dateStr: string;
+  timeStr: string;
+};
+
 export default function WorkerHistory() {
   const [loading, setLoading] = useState(true);
-  const [historyJobs, setHistoryJobs] = useState<any[]>([]);
-  const supabase = createClient();
+  const [historyJobs, setHistoryJobs] = useState<HistoryJob[]>([]);
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const fetchHistory = async () => {
       setLoading(true);
       
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setHistoryJobs([]);
+        setLoading(false);
+        return;
+      }
 
       const { data: workerData } = await supabase
         .from('workers')
@@ -44,18 +71,19 @@ export default function WorkerHistory() {
           .order('updated_at', { ascending: false });
           
         if (jobs) {
-          const iconMap: Record<string, any> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
-          const mapped = jobs.map(j => {
+          const iconMap: Record<string, IconComponent> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+          const mapped = ((jobs || []) as RawHistoryJob[]).map((j) => {
             const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
+            const fallbackDate = j.updated_at || j.scheduled_at || new Date().toISOString();
             return {
               ...j,
               customerName: custName || 'Khách vãng lai',
               serviceName: j.service?.name || 'Dịch vụ khác',
-              icon: iconMap[j.service?.icon] || BriefcaseIcon,
-              dateStr: new Date(j.updated_at || j.scheduled_at).toLocaleDateString('vi-VN', {
+              icon: j.service?.icon ? iconMap[j.service.icon] || BriefcaseIcon : BriefcaseIcon,
+              dateStr: new Date(fallbackDate).toLocaleDateString('vi-VN', {
                 day: '2-digit', month: '2-digit', year: 'numeric'
               }),
-              timeStr: new Date(j.updated_at || j.scheduled_at).toLocaleTimeString('vi-VN', {
+              timeStr: new Date(fallbackDate).toLocaleTimeString('vi-VN', {
                 hour: '2-digit', minute: '2-digit'
               })
             };
@@ -67,13 +95,13 @@ export default function WorkerHistory() {
     };
 
     fetchHistory();
-  }, []);
+  }, [supabase]);
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in">
       <div className="app-hero-panel mb-5">
         <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Hồ sơ công việc</p>
-        <h1 className="mt-1 text-2xl font-extrabold leading-tight text-white">Lịch sử việc làm</h1>
+        <h1 className="mt-1 text-2xl font-extrabold leading-tight" style={{ color: "#fcd34d" }}>Lịch sử việc làm</h1>
         <p className="mt-2 max-w-[19rem] text-sm leading-6 text-white/80">
           Theo dõi các việc đã hoàn thành, đã hủy và doanh thu từng đơn.
         </p>

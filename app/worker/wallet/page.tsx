@@ -8,7 +8,7 @@ export default function WorkerWallet() {
     <div className="flex w-full min-h-[calc(100vh-8rem)] flex-col bg-surface p-4 animate-fade-in">
       <div className="app-hero-panel">
         <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Thu nhập</p>
-        <h1 className="mt-1 text-2xl font-extrabold leading-tight text-white">Ví thợ</h1>
+        <h1 className="mt-1 text-2xl font-extrabold leading-tight" style={{ color: "#fcd34d" }}>Ví thợ</h1>
         <p className="mt-2 max-w-[19rem] text-sm leading-6 text-white/80">
           Quản lý doanh thu, sao kê và yêu cầu rút tiền.
         </p>

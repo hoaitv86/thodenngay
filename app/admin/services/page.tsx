@@ -1,161 +1,547 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { getCanonicalServiceCategories } from "@/lib/service-categories";
+import { getDefaultServiceParentId } from "@/lib/service-hierarchy";
+import {
+  AirVent,
+  Bath,
+  Briefcase,
+  Cable,
+  Calendar,
+  Camera,
+  Cctv,
+  Clock,
+  Computer,
+  Drill,
+  Edit,
+  Eye,
+  EyeOff,
+  Fan,
+  Hammer,
+  HousePlug,
+  Layers,
+  Lightbulb,
+  MapPin,
+  Monitor,
+  Paintbrush,
+  PaintRoller,
+  Phone,
+  Plug,
+  PlusCircle,
+  Printer,
+  Refrigerator,
+  Router,
+  Settings,
+  ShieldCheck,
+  Snowflake,
+  Sofa,
+  Star,
+  Toilet,
+  Trash2,
+  Truck,
+  Users,
+  WashingMachine,
+  Wifi,
+  Wrench,
+  Droplets,
+} from "lucide-react";
 import {
   SearchIcon,
   PlusIcon,
   FilterIcon,
-  ZapIcon,
-  DropletIcon,
-  CameraIcon,
-  CogIcon,
   WrenchIcon,
-  SettingsIcon,
-  DollarSignIcon,
   XIcon,
-  ShieldCheckIcon,
-  StarIcon,
-  ClockIcon,
-  MapPinIcon,
-  BriefcaseIcon,
-  BarChartIcon,
-  CalendarIcon,
-  PhoneIcon,
-  UsersIcon
 } from "../../components/icons";
 
-const iconMap: Record<string, any> = {
-  ZapIcon,
-  DropletIcon,
-  CameraIcon,
-  CogIcon,
-  WrenchIcon,
-  ShieldCheckIcon,
-  StarIcon,
-  ClockIcon,
-  MapPinIcon,
-  BriefcaseIcon,
-  BarChartIcon,
-  CalendarIcon,
-  PhoneIcon,
-  UsersIcon
+type ServiceItem = {
+  id: string;
+  parent_service_id?: string | null;
+  name: string;
+  description?: string | null;
+  base_price?: number | string | null;
+  icon?: string | null;
+  is_active: boolean;
 };
 
-const iconColorMap: Record<string, string> = {
-  ZapIcon: 'bg-amber-50 text-amber-600',
-  DropletIcon: 'bg-blue-50 text-blue-600',
-  CameraIcon: 'bg-purple-50 text-purple-600',
-  CogIcon: 'bg-green-50 text-green-600',
-  WrenchIcon: 'bg-primary-fixed text-primary-container',
-  ShieldCheckIcon: 'bg-emerald-50 text-emerald-600',
-  StarIcon: 'bg-yellow-50 text-yellow-600',
-  ClockIcon: 'bg-indigo-50 text-indigo-600',
-  MapPinIcon: 'bg-red-50 text-red-600',
-  BriefcaseIcon: 'bg-slate-50 text-slate-600',
-  BarChartIcon: 'bg-cyan-50 text-cyan-600',
-  CalendarIcon: 'bg-rose-50 text-rose-600',
-  PhoneIcon: 'bg-teal-50 text-teal-600',
-  UsersIcon: 'bg-orange-50 text-orange-600',
-  default: 'bg-surface-container text-on-surface-variant'
+type ServiceFormState = {
+  name: string;
+  description: string;
+  base_price: string;
+  icon: string;
+  is_active: boolean;
+  parent_service_id: string | null;
 };
+
+type ServiceMutationError = {
+  code?: string;
+  details?: string;
+  hint?: string;
+  message?: string;
+};
+
+type ServiceParentMap = Record<string, string | null>;
+
+const SERVICE_PARENT_STORAGE_KEY = "alo_tho_service_parent_map";
+
+const getStoredServiceParentMap = (): ServiceParentMap => {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const rawValue = window.localStorage.getItem(SERVICE_PARENT_STORAGE_KEY);
+    return rawValue ? JSON.parse(rawValue) as ServiceParentMap : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveStoredServiceParentMap = (parentMap: ServiceParentMap) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SERVICE_PARENT_STORAGE_KEY, JSON.stringify(parentMap));
+};
+
+const getServiceErrorMessage = (error: ServiceMutationError) => {
+  const rawError = JSON.stringify(error);
+  const text = [
+    error.message,
+    error.details,
+    error.hint,
+    error.code,
+    rawError,
+  ].filter(Boolean).join(" ");
+
+  if (text.includes("parent_service_id") || text.includes("PGRST204")) {
+    return "Database chưa có cột parent_service_id cho cấu trúc 3 cấp. Vui lòng chạy migration supabase/migration_service_children_admin_policies.sql rồi thử lại.";
+  }
+
+  return error.message || error.details || rawError || "Không xác định";
+};
+
+type ServiceIconOption = {
+  name: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  className: string;
+};
+
+const serviceIconOptions: ServiceIconOption[] = [
+  { name: "Lightbulb", label: "Điện", icon: Lightbulb, className: "bg-amber-50 text-amber-600" },
+  { name: "HousePlug", label: "Ổ cắm", icon: HousePlug, className: "bg-yellow-50 text-yellow-700" },
+  { name: "Plug", label: "Thiết bị điện", icon: Plug, className: "bg-orange-50 text-orange-600" },
+  { name: "Droplets", label: "Nước", icon: Droplets, className: "bg-sky-50 text-sky-600" },
+  { name: "Bath", label: "Phòng tắm", icon: Bath, className: "bg-cyan-50 text-cyan-700" },
+  { name: "Toilet", label: "Bồn cầu", icon: Toilet, className: "bg-blue-50 text-blue-700" },
+  { name: "Cctv", label: "Camera", icon: Cctv, className: "bg-violet-50 text-violet-600" },
+  { name: "Camera", label: "Hình ảnh", icon: Camera, className: "bg-purple-50 text-purple-600" },
+  { name: "Hammer", label: "Cơ khí", icon: Hammer, className: "bg-slate-100 text-slate-700" },
+  { name: "Drill", label: "Khoan lắp", icon: Drill, className: "bg-stone-100 text-stone-700" },
+  { name: "Wrench", label: "Sửa chữa", icon: Wrench, className: "bg-primary-fixed text-primary-container" },
+  { name: "AirVent", label: "Điều hòa", icon: AirVent, className: "bg-teal-50 text-teal-700" },
+  { name: "Snowflake", label: "Điện lạnh", icon: Snowflake, className: "bg-cyan-50 text-cyan-600" },
+  { name: "Fan", label: "Quạt gió", icon: Fan, className: "bg-emerald-50 text-emerald-600" },
+  { name: "Refrigerator", label: "Tủ lạnh", icon: Refrigerator, className: "bg-blue-50 text-blue-600" },
+  { name: "WashingMachine", label: "Máy giặt", icon: WashingMachine, className: "bg-indigo-50 text-indigo-600" },
+  { name: "Wifi", label: "Wifi", icon: Wifi, className: "bg-lime-50 text-lime-700" },
+  { name: "Router", label: "Router", icon: Router, className: "bg-green-50 text-green-700" },
+  { name: "Cable", label: "Dây mạng", icon: Cable, className: "bg-emerald-50 text-emerald-700" },
+  { name: "Truck", label: "Vận chuyển", icon: Truck, className: "bg-orange-50 text-orange-700" },
+  { name: "Sofa", label: "Đồ nội thất", icon: Sofa, className: "bg-rose-50 text-rose-700" },
+  { name: "PaintRoller", label: "Sơn nhà", icon: PaintRoller, className: "bg-pink-50 text-pink-700" },
+  { name: "Paintbrush", label: "Trang trí", icon: Paintbrush, className: "bg-fuchsia-50 text-fuchsia-700" },
+  { name: "Computer", label: "Máy tính", icon: Computer, className: "bg-slate-50 text-slate-600" },
+  { name: "Monitor", label: "Màn hình", icon: Monitor, className: "bg-gray-100 text-gray-700" },
+  { name: "Printer", label: "Máy in", icon: Printer, className: "bg-zinc-100 text-zinc-700" },
+  { name: "MapPin", label: "Tại nhà", icon: MapPin, className: "bg-red-50 text-red-600" },
+  { name: "Clock", label: "Hẹn giờ", icon: Clock, className: "bg-indigo-50 text-indigo-700" },
+  { name: "ShieldCheck", label: "Bảo hành", icon: ShieldCheck, className: "bg-emerald-50 text-emerald-700" },
+  { name: "Star", label: "Nổi bật", icon: Star, className: "bg-yellow-50 text-yellow-600" },
+  { name: "Briefcase", label: "Dịch vụ", icon: Briefcase, className: "bg-neutral-100 text-neutral-700" },
+  { name: "Settings", label: "Kỹ thuật", icon: Settings, className: "bg-green-50 text-green-600" },
+  { name: "Calendar", label: "Lịch hẹn", icon: Calendar, className: "bg-rose-50 text-rose-600" },
+  { name: "Phone", label: "Liên hệ", icon: Phone, className: "bg-teal-50 text-teal-600" },
+  { name: "Users", label: "Đội thợ", icon: Users, className: "bg-orange-50 text-orange-600" },
+];
+
+const legacyIconAliases: Record<string, ServiceIconOption> = {
+  ZapIcon: serviceIconOptions[0],
+  DropletIcon: serviceIconOptions[3],
+  CameraIcon: serviceIconOptions[7],
+  CogIcon: serviceIconOptions[31],
+  WrenchIcon: serviceIconOptions[10],
+  ShieldCheckIcon: serviceIconOptions[28],
+  StarIcon: serviceIconOptions[29],
+  ClockIcon: serviceIconOptions[27],
+  MapPinIcon: serviceIconOptions[26],
+  BriefcaseIcon: serviceIconOptions[30],
+  BarChartIcon: serviceIconOptions[30],
+  CalendarIcon: serviceIconOptions[32],
+  PhoneIcon: serviceIconOptions[33],
+  UsersIcon: serviceIconOptions[34],
+};
+
+const iconMap = {
+  ...Object.fromEntries(serviceIconOptions.map(option => [option.name, option.icon])),
+  ...Object.fromEntries(Object.entries(legacyIconAliases).map(([name, option]) => [name, option.icon])),
+} as Record<string, React.ComponentType<{ size?: number; className?: string }>>;
+
+const iconColorMap = {
+  ...Object.fromEntries(serviceIconOptions.map(option => [option.name, option.className])),
+  ...Object.fromEntries(Object.entries(legacyIconAliases).map(([name, option]) => [name, option.className])),
+  default: "bg-surface-container text-on-surface-variant",
+} as Record<string, string>;
 
 export default function AdminServices() {
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const supabase = createClient();
+  const [showUnusedCategories, setShowUnusedCategories] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [newService, setNewService] = useState({
+  const [formError, setFormError] = useState("");
+  const [editingService, setEditingService] = useState<ServiceItem | null>(null);
+  const [supportsServiceHierarchy, setSupportsServiceHierarchy] = useState(true);
+  const [serviceForm, setServiceForm] = useState<ServiceFormState>({
     name: "",
     description: "",
-    base_price: "",
+    base_price: "0",
     icon: "WrenchIcon",
-    is_active: true
+    is_active: true,
+    parent_service_id: null
   });
 
-  useEffect(() => {
-    fetchServices();
-  }, []);
+  const serviceById = useMemo(() => new Map(services.map(service => [service.id, service])), [services]);
 
-  const fetchServices = async () => {
+  const getServiceLevel = useCallback((service: ServiceItem | null | undefined) => {
+    if (!service) return 0;
+
+    let level = 0;
+    let parentId = service.parent_service_id;
+    const visited = new Set<string>();
+
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = serviceById.get(parentId);
+      if (!parent) break;
+      level += 1;
+      parentId = parent.parent_service_id;
+    }
+
+    return level;
+  }, [serviceById]);
+
+  const getLevelLabel = (level: number) => {
+    if (level === 0) return "danh mục cha";
+    if (level === 1) return "danh mục con";
+    return "dịch vụ";
+  };
+
+  const fetchServices = useCallback(async () => {
     setLoading(true);
+    const { error: hierarchyError } = await supabase
+      .from('services')
+      .select('id, parent_service_id')
+      .limit(1);
+    const hasHierarchyColumn = !hierarchyError;
+    setSupportsServiceHierarchy(hasHierarchyColumn);
+
     const { data } = await supabase
       .from('services')
       .select('*')
       .order('name', { ascending: true });
     
-    if (data) setServices(data);
+    if (data) {
+      const storedParentMap = hasHierarchyColumn ? {} : getStoredServiceParentMap();
+      setServices(data.map(service => ({
+        ...service,
+        parent_service_id: service.parent_service_id || storedParentMap[service.id] || getDefaultServiceParentId(service.id) || null,
+      })));
+    }
     setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void fetchServices();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchServices]);
+
+  const resetServiceForm = () => {
+    setEditingService(null);
+    setFormError("");
+    setServiceForm({
+      name: "",
+      description: "",
+      base_price: "0",
+      icon: "WrenchIcon",
+      is_active: true,
+      parent_service_id: null
+    });
   };
 
-  const handleCreateService = async (e: React.FormEvent) => {
+  const openCreateModal = () => {
+    resetServiceForm();
+    setIsModalOpen(true);
+  };
+
+  const openCreateChildModal = (parentService: ServiceItem) => {
+    setEditingService(null);
+    setFormError("");
+    setServiceForm({
+      name: "",
+      description: "",
+      base_price: "0",
+      icon: parentService.icon || "WrenchIcon",
+      is_active: true,
+      parent_service_id: parentService.id
+    });
+    setIsModalOpen(true);
+  };
+
+  const openCreateServiceModal = (childCategory: ServiceItem) => {
+    setEditingService(null);
+    setFormError("");
+    setServiceForm({
+      name: "",
+      description: "",
+      base_price: childCategory.base_price != null && Number(childCategory.base_price) > 0 ? String(childCategory.base_price) : "",
+      icon: childCategory.icon || "WrenchIcon",
+      is_active: true,
+      parent_service_id: childCategory.id
+    });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (service: ServiceItem) => {
+    setEditingService(service);
+    setFormError("");
+    setServiceForm({
+      name: service.name || "",
+      description: service.description || "",
+      base_price: service.base_price != null ? String(service.base_price) : "",
+      icon: service.icon || "WrenchIcon",
+      is_active: service.is_active,
+      parent_service_id: service.parent_service_id || null
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    resetServiceForm();
+  };
+
+  const handleSubmitService = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newService.name || !newService.base_price) {
-      alert("Vui lòng điền tên dịch vụ và giá cơ bản.");
+    setFormError("");
+    const trimmedName = serviceForm.name.trim();
+    const trimmedDescription = serviceForm.description.trim();
+    const basePrice = Number(serviceForm.base_price);
+    const parentServiceId = serviceForm.parent_service_id || null;
+
+    const parentService = parentServiceId ? serviceById.get(parentServiceId) : null;
+    const nextLevel = parentService ? getServiceLevel(parentService) + 1 : 0;
+
+    if (nextLevel > 2) {
+      alert("Cấu trúc chỉ hỗ trợ 3 cấp: danh mục cha, danh mục con và dịch vụ.");
       return;
     }
 
+    if (!trimmedName || (nextLevel === 2 && serviceForm.base_price === "")) {
+      alert(nextLevel === 2 ? "Vui lòng điền tên dịch vụ và giá cơ bản." : "Vui lòng điền tên danh mục.");
+      return;
+    }
+
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      alert("Giá cơ bản không hợp lệ.");
+      return;
+    }
+
+    if (editingService && parentServiceId === editingService.id) {
+      alert("Danh mục không thể chọn chính nó làm danh mục cha.");
+      return;
+    }
+
+    const payload = {
+      name: trimmedName,
+      description: trimmedDescription,
+      base_price: basePrice,
+      icon: serviceForm.icon,
+      is_active: serviceForm.is_active,
+      parent_service_id: parentServiceId
+    };
+
+    const dbPayload = supportsServiceHierarchy
+      ? payload
+      : {
+        name: payload.name,
+        description: payload.description,
+        base_price: payload.base_price,
+        icon: payload.icon,
+        is_active: payload.is_active,
+      };
+
     setIsSubmitting(true);
-    const { data: insertedService, error } = await supabase.from('services').insert({
-      name: newService.name,
-      description: newService.description,
-      base_price: parseInt(newService.base_price),
-      icon: newService.icon,
-      is_active: newService.is_active
-    }).select().single();
+    const { data: savedService, error } = editingService
+      ? await supabase.from('services').update(dbPayload).eq('id', editingService.id).select('*').maybeSingle()
+      : await supabase.from('services').insert(dbPayload).select().single();
 
     setIsSubmitting(false);
 
     if (error) {
-      alert("Lỗi khi tạo dịch vụ: " + error.message);
+      setFormError(`${editingService ? "Lỗi khi cập nhật" : "Lỗi khi tạo"} ${getLevelLabel(nextLevel)}: ${getServiceErrorMessage(error)}`);
       console.error(error);
-    } else if (insertedService) {
-      setIsModalOpen(false);
-      setNewService({
-        name: "",
-        description: "",
-        base_price: "",
-        icon: "WrenchIcon",
-        is_active: true
+    } else {
+      const nextService = savedService || (editingService ? { ...editingService, ...payload } : null);
+      if (!nextService) {
+        alert("Không thể lấy dữ liệu danh mục vừa tạo.");
+        return;
+      }
+
+      if (!supportsServiceHierarchy) {
+        const parentMap = getStoredServiceParentMap();
+        parentMap[nextService.id] = parentServiceId;
+        saveStoredServiceParentMap(parentMap);
+      }
+
+      handleCloseModal();
+      const serviceWithParent = {
+        ...nextService,
+        parent_service_id: parentServiceId,
+      };
+      setServices(prev => {
+        const exists = prev.some(service => service.id === serviceWithParent.id);
+        const nextServices = exists
+          ? prev.map(service => service.id === serviceWithParent.id ? serviceWithParent : service)
+          : [...prev, serviceWithParent];
+        return nextServices.sort((a, b) => a.name.localeCompare(b.name));
       });
-      // Append and sort instantly
-      setServices(prev => [...prev, insertedService].sort((a, b) => a.name.localeCompare(b.name)));
     }
   };
 
-  const filteredServices = services.filter(service => {
+  const handleDeleteService = async (service: ServiceItem) => {
+    const descendantIds = getDescendantIds(service.id);
+    const message = descendantIds.length > 0
+      ? `${service.name} có ${descendantIds.length} mục bên trong. Xóa mục này sẽ xóa toàn bộ danh mục con/dịch vụ liên quan. Bạn có chắc không?`
+      : `Bạn có chắc muốn xóa ${getLevelLabel(getServiceLevel(service))} này không?`;
+
+    if (!window.confirm(message)) return;
+
+    const { error } = await supabase
+      .from('services')
+      .delete()
+      .eq('id', service.id);
+
+    if (error) {
+      alert("Không thể xóa danh mục: " + error.message);
+      console.error(error);
+      return;
+    }
+
+    const idsToRemove = new Set([service.id, ...descendantIds]);
+    if (!supportsServiceHierarchy) {
+      const parentMap = getStoredServiceParentMap();
+      idsToRemove.forEach(id => {
+        delete parentMap[id];
+      });
+      saveStoredServiceParentMap(parentMap);
+    }
+    setServices(prev => prev.filter(item => !idsToRemove.has(item.id)));
+  };
+
+  const servicesByParent = services.reduce<Record<string, ServiceItem[]>>((acc, service) => {
+    if (service.parent_service_id) {
+      acc[service.parent_service_id] = [...(acc[service.parent_service_id] || []), service];
+    }
+    return acc;
+  }, {});
+
+  const getDescendantIds = (serviceId: string): string[] => {
+    const directChildren = servicesByParent[serviceId] || [];
+    return directChildren.flatMap(child => [child.id, ...getDescendantIds(child.id)]);
+  };
+
+  const editingServiceHasChildren = Boolean(
+    editingService && servicesByParent[editingService.id]?.length
+  );
+
+  const isEditingRootService = Boolean(
+    editingService && !editingService.parent_service_id
+  );
+
+  const formParentService = serviceForm.parent_service_id ? serviceById.get(serviceForm.parent_service_id) : null;
+  const formLevel = editingService
+    ? getServiceLevel({ ...editingService, parent_service_id: serviceForm.parent_service_id })
+    : formParentService ? getServiceLevel(formParentService) + 1 : 0;
+  const parentSelectDisabled = isEditingRootService || editingServiceHasChildren;
+  const unavailableParentIds = new Set(editingService ? [editingService.id, ...getDescendantIds(editingService.id)] : []);
+  const parentOptions = services
+    .filter(service => !unavailableParentIds.has(service.id))
+    .filter(service => getServiceLevel(service) < 2)
+    .sort((a, b) => getServiceLevel(a) - getServiceLevel(b) || a.name.localeCompare(b.name));
+
+  const isUnusedService = (service: ServiceItem) =>
+    !service.is_active || getCanonicalServiceCategories(service).length === 0;
+
+  const unusedServiceCount = services.filter(isUnusedService).length;
+
+  const visibleServices = services.filter(service => {
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = service.name?.toLowerCase().includes(searchLower) || 
-                          service.description?.toLowerCase().includes(searchLower);
-     
-    const matchesStatus = statusFilter === 'all' || 
+    if (!showUnusedCategories && isUnusedService(service)) return false;
+
+    const matchesStatus = statusFilter === 'all' ||
                           (statusFilter === 'active' && service.is_active) ||
                           (statusFilter === 'inactive' && !service.is_active);
-    
-    return matchesSearch && matchesStatus;
+    if (!matchesStatus) return false;
+    if (!searchLower) return true;
+
+    return service.name?.toLowerCase().includes(searchLower) ||
+      service.description?.toLowerCase().includes(searchLower);
   });
+
+  const visibleServiceIds = new Set(visibleServices.map(service => service.id));
+  const hasVisibleDescendant = (serviceId: string): boolean => {
+    return (servicesByParent[serviceId] || []).some(child =>
+      visibleServiceIds.has(child.id) || hasVisibleDescendant(child.id)
+    );
+  };
+
+  const rootServices = services
+    .filter(service => !service.parent_service_id)
+    .filter(service => {
+      if (visibleServiceIds.has(service.id)) return true;
+      return hasVisibleDescendant(service.id);
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const getVisibleChildren = (parentId: string) => {
+    return (servicesByParent[parentId] || [])
+      .filter(child => visibleServiceIds.has(child.id) || hasVisibleDescendant(child.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  };
 
   return (
     <div className="space-y-6 animate-fade-in relative">
       {/* Header section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-headline-md text-on-surface font-bold">Dịch vụ & Bảng giá</h1>
+          <h1 className="text-headline-md text-on-surface font-bold">Danh mục & Bảng giá</h1>
           <p className="text-body-sm text-on-surface-variant mt-1">
-            Quản lý danh mục dịch vụ, cài đặt giá cơ bản và cấu hình chi tiết
+            Quản lý danh mục cha, danh mục con và dịch vụ theo cây 3 cấp
           </p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={openCreateModal}
           className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2"
         >
           <PlusIcon size={20} />
-          <span>Thêm dịch vụ</span>
+          <span>Thêm danh mục cha</span>
         </button>
       </div>
 
@@ -167,7 +553,7 @@ export default function AdminServices() {
           </div>
           <input
             type="text"
-            placeholder="Tìm theo tên dịch vụ, mô tả..."
+            placeholder="Tìm theo tên danh mục, mô tả..."
             className="input-field !pl-10 !py-2.5 !rounded-xl w-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -175,10 +561,33 @@ export default function AdminServices() {
         </div>
         
         <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
+          <button
+            type="button"
+            onClick={() => setShowUnusedCategories(prev => !prev)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border flex items-center gap-2 ${
+              showUnusedCategories
+                ? 'bg-secondary-container text-white border-secondary-container shadow-sm'
+                : 'bg-white border-outline-variant hover:bg-surface-container-low text-on-surface-variant'
+            }`}
+            title={showUnusedCategories ? "Ẩn các mục chưa dùng đến" : "Hiện các mục chưa dùng đến"}
+          >
+            {showUnusedCategories ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showUnusedCategories ? 'Ẩn mục chưa dùng' : 'Hiện mục chưa dùng'}
+            {unusedServiceCount > 0 && (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                showUnusedCategories ? 'bg-white/20 text-white' : 'bg-surface-container text-on-surface-variant'
+              }`}>
+                {unusedServiceCount}
+              </span>
+            )}
+          </button>
           {['all', 'active', 'inactive'].map(status => (
             <button
               key={status}
-              onClick={() => setStatusFilter(status)}
+              onClick={() => {
+                if (status === 'inactive') setShowUnusedCategories(true);
+                setStatusFilter(status);
+              }}
               className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors border ${
                 statusFilter === status 
                   ? 'bg-primary-container text-on-primary-container border-primary-container shadow-sm' 
@@ -195,77 +604,223 @@ export default function AdminServices() {
         </div>
       </div>
 
-      {/* Services Grid */}
+      {/* Services Tree */}
       {loading ? (
         <div className="flex justify-center items-center h-64">
            <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : filteredServices.length === 0 ? (
+      ) : rootServices.length === 0 ? (
         <div className="bg-white rounded-2xl border border-outline-variant p-12 text-center shadow-sm">
           <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4 text-outline">
             <WrenchIcon size={32} />
           </div>
-          <p className="text-body-md font-medium text-on-surface-variant">Không tìm thấy dịch vụ nào phù hợp.</p>
+          <p className="text-body-md font-medium text-on-surface-variant">Không tìm thấy danh mục nào phù hợp.</p>
           <button 
-            onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}
+            onClick={() => { setSearchQuery(""); setStatusFilter("all"); setShowUnusedCategories(true); }}
             className="mt-2 text-primary-container font-bold hover:underline"
           >
             Xóa bộ lọc
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredServices.map(service => {
-            const Icon = iconMap[service.icon] || WrenchIcon;
-            const colorClass = iconColorMap[service.icon] || iconColorMap.default;
+        <div className="space-y-4">
+          {rootServices.map(parentService => {
+            const iconName = parentService.icon || "WrenchIcon";
+            const Icon = iconMap[iconName] || WrenchIcon;
+            const colorClass = iconColorMap[iconName] || iconColorMap.default;
+            const childServices = getVisibleChildren(parentService.id);
 
             return (
-              <div key={service.id} className="card-elevated group hover:border-primary-container/50 transition-all flex flex-col h-full relative overflow-hidden">
-                {!service.is_active && (
-                  <div className="absolute inset-0 bg-surface/40 z-10 pointer-events-none" />
-                )}
-                <div className="flex justify-between items-start mb-4 relative z-20">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${colorClass}`}>
-                    <Icon size={24} />
-                  </div>
-                  <span className={`badge ${service.is_active ? 'badge-active' : 'badge-inactive'} text-[10px]`}>
-                    {service.is_active ? 'Hoạt động' : 'Tạm ngưng'}
-                  </span>
-                </div>
-                
-                <div className="flex-1 relative z-20">
-                  <h3 className="text-body-lg font-bold text-on-surface mb-1">{service.name}</h3>
-                  <p className="text-label-sm text-on-surface-variant line-clamp-2 leading-relaxed h-10">
-                    {service.description || "Chưa có mô tả cho dịch vụ này."}
-                  </p>
-                </div>
-
-                <div className="mt-6 pt-4 border-t border-outline-variant/30 flex items-center justify-between relative z-20">
-                  <div>
-                    <span className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Giá cơ bản</span>
-                    <div className="flex items-center gap-1 text-primary-container font-bold">
-                      <DollarSignIcon size={14} className="text-primary" />
-                      {service.base_price ? service.base_price.toLocaleString('vi-VN') + 'đ' : 'Liên hệ'}
+              <section
+                key={parentService.id}
+                className="overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-sm"
+              >
+                <div className="flex flex-col gap-4 border-b border-outline-variant/20 bg-surface-container-lowest p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${colorClass}`}>
+                      <Icon size={22} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-primary-fixed px-2.5 py-1 text-[10px] font-extrabold uppercase text-primary-container">
+                          Cấp 1 · Danh mục cha
+                        </span>
+                        <span className={`badge ${parentService.is_active ? 'badge-active' : 'badge-inactive'} text-[10px]`}>
+                          {parentService.is_active ? 'Hoạt động' : 'Tạm ngưng'}
+                        </span>
+                      </div>
+                      <h3 className="truncate text-lg font-extrabold text-on-surface">{parentService.name}</h3>
+                      <p className="mt-1 text-sm text-on-surface-variant">
+                        {parentService.description || "Chưa có mô tả cho danh mục này."}
+                      </p>
                     </div>
                   </div>
-                  <button className="w-10 h-10 rounded-xl hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors group-hover:text-primary-container group-hover:bg-primary-fixed">
-                    <SettingsIcon size={20} />
-                  </button>
+                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+                    <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right">
+                      <div className="text-[10px] font-bold uppercase text-on-surface-variant">Danh mục con</div>
+                      <div className="text-sm font-extrabold text-primary-container">{childServices.length}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openCreateChildModal(parentService)}
+                      className="h-9 w-9 rounded-lg hover:bg-primary-fixed flex items-center justify-center text-on-surface-variant transition-colors hover:text-primary-container"
+                      title="Thêm danh mục con"
+                    >
+                      <PlusCircle size={17} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(parentService)}
+                      className="h-9 w-9 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors hover:text-primary-container"
+                      title="Sửa danh mục"
+                    >
+                      <Edit size={17} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteService(parentService)}
+                      className="h-9 w-9 rounded-lg hover:bg-error-container flex items-center justify-center text-on-surface-variant transition-colors hover:text-error"
+                      title="Xóa danh mục"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+
+                <div className="divide-y divide-outline-variant/20">
+                  {childServices.length === 0 ? (
+                    <div className="p-4 text-sm italic text-on-surface-variant">
+                      Chưa có danh mục con. Bấm nút + ở danh mục cha để thêm.
+                    </div>
+                  ) : childServices.map(child => {
+                    const serviceItems = getVisibleChildren(child.id);
+
+                    return (
+                      <div key={child.id} className="bg-white">
+                        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-container-low text-primary-container">
+                              <Layers size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="mb-1 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-surface-container px-2.5 py-1 text-[10px] font-extrabold uppercase text-on-surface-variant">
+                                  Cấp 2 · Danh mục con
+                                </span>
+                                <span className={`badge ${child.is_active ? 'badge-active' : 'badge-inactive'} text-[10px]`}>
+                                  {child.is_active ? 'Hoạt động' : 'Tạm ngưng'}
+                                </span>
+                              </div>
+                              <p className="truncate text-base font-extrabold text-on-surface">{child.name}</p>
+                              <p className="mt-0.5 text-sm text-on-surface-variant">
+                                {child.description || "Chưa có mô tả cho danh mục con này."}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-2 pl-11 sm:pl-0">
+                            <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right">
+                              <div className="text-[10px] font-bold uppercase text-on-surface-variant">Dịch vụ</div>
+                              <div className="text-sm font-extrabold text-primary-container">{serviceItems.length}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openCreateServiceModal(child)}
+                              className="h-8 w-8 rounded-lg hover:bg-primary-fixed flex items-center justify-center text-on-surface-variant hover:text-primary-container"
+                              title="Thêm dịch vụ"
+                            >
+                              <PlusCircle size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(child)}
+                              className="h-8 w-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary-container"
+                              title="Sửa danh mục con"
+                            >
+                              <Edit size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteService(child)}
+                              className="h-8 w-8 rounded-lg hover:bg-error-container flex items-center justify-center text-on-surface-variant hover:text-error"
+                              title="Xóa danh mục con"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="border-t border-outline-variant/10 bg-surface-container-lowest px-4 py-3">
+                          {serviceItems.length === 0 ? (
+                            <div className="pl-11 text-sm italic text-on-surface-variant">
+                              Chưa có dịch vụ trong danh mục con này.
+                            </div>
+                          ) : (
+                            <div className="space-y-2 pl-0 sm:pl-11">
+                              {serviceItems.map(serviceItem => (
+                                <div key={serviceItem.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant/20 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                                      <span className="rounded-full bg-secondary-fixed px-2 py-0.5 text-[10px] font-extrabold uppercase text-on-secondary-container">
+                                        Cấp 3 · Dịch vụ
+                                      </span>
+                                      <span className={`badge ${serviceItem.is_active ? 'badge-active' : 'badge-inactive'} text-[10px]`}>
+                                        {serviceItem.is_active ? 'Hoạt động' : 'Tạm ngưng'}
+                                      </span>
+                                    </div>
+                                    <p className="truncate text-sm font-extrabold text-on-surface">{serviceItem.name}</p>
+                                    <p className="text-xs text-on-surface-variant">
+                                      {serviceItem.description || "Chưa có mô tả dịch vụ."}
+                                    </p>
+                                  </div>
+                                  <div className="flex shrink-0 items-center justify-between gap-2">
+                                    <div className="text-sm font-extrabold text-primary-container">
+                                      {serviceItem.base_price ? Number(serviceItem.base_price).toLocaleString('vi-VN') + 'đ' : 'Liên hệ'}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(serviceItem)}
+                                      className="h-7 w-7 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary-container"
+                                      title="Sửa dịch vụ"
+                                    >
+                                      <Edit size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteService(serviceItem)}
+                                      className="h-7 w-7 rounded-lg hover:bg-error-container flex items-center justify-center text-on-surface-variant hover:text-error"
+                                      title="Xóa dịch vụ"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
             );
           })}
         </div>
       )}
 
       {/* Create Service Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col animate-fade-in-up">
+      {isModalOpen && typeof document !== "undefined" && createPortal((
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 backdrop-blur-sm sm:py-10">
+          <div className="flex w-full max-w-xl max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100dvh-5rem)]">
             <div className="flex items-center justify-between p-6 border-b border-outline-variant/50">
-              <h2 className="text-xl font-bold text-on-surface">Thêm dịch vụ mới</h2>
+              <h2 className="text-xl font-bold text-on-surface">
+                {editingService
+                  ? `Sửa ${getLevelLabel(formLevel)}`
+                  : `Thêm ${getLevelLabel(formLevel)}`}
+              </h2>
               <button 
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleCloseModal}
                 className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
               >
                 <XIcon size={24} />
@@ -273,61 +828,113 @@ export default function AdminServices() {
             </div>
 
             <div className="p-6 overflow-y-auto flex-1">
-              <form id="createServiceForm" onSubmit={handleCreateService} className="space-y-5">
+              <form id="serviceForm" onSubmit={handleSubmitService} className="space-y-5">
+                {formError && (
+                  <div className="rounded-lg border border-error/25 bg-error-container p-3 text-sm font-semibold text-error">
+                    {formError}
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-on-surface">Tên dịch vụ <span className="text-error">*</span></label>
+                  <label className="text-sm font-bold text-on-surface">Danh mục cha</label>
+                  <select
+                    className="input-field"
+                    value={serviceForm.parent_service_id || ""}
+                    onChange={e => setServiceForm({...serviceForm, parent_service_id: e.target.value || null})}
+                    disabled={parentSelectDisabled}
+                  >
+                    <option value="">Không có - danh mục chính</option>
+                    {parentOptions
+                      .map(service => (
+                        <option key={service.id} value={service.id}>
+                          {getLevelLabel(getServiceLevel(service))}: {service.name}
+                        </option>
+                      ))}
+                  </select>
+                  {editingServiceHasChildren ? (
+                    <p className="text-xs font-semibold text-on-surface-variant">
+                      Mục này đang có cấp con nên không thể chuyển cấp.
+                    </p>
+                  ) : isEditingRootService ? (
+                    <p className="text-xs font-semibold text-on-surface-variant">
+                      Đây là danh mục cha cấp cao nhất.
+                    </p>
+                  ) : serviceForm.parent_service_id ? (
+                    <p className="text-xs font-semibold text-on-surface-variant">
+                      Đang tạo/sửa {getLevelLabel(formLevel)} trong {getLevelLabel(getServiceLevel(formParentService || null))} “{formParentService?.name}”.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface">Tên {getLevelLabel(formLevel)} <span className="text-error">*</span></label>
                   <input 
                     type="text" 
-                    placeholder="VD: Sửa chữa điện" 
+                    placeholder={formLevel === 2 ? "VD: Thay ổ cắm điện" : "VD: Sửa chữa điện"} 
                     className="input-field" 
                     required
-                    value={newService.name}
-                    onChange={e => setNewService({...newService, name: e.target.value})}
+                    value={serviceForm.name}
+                    onChange={e => setServiceForm({...serviceForm, name: e.target.value})}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-on-surface">Mô tả dịch vụ</label>
+                  <label className="text-sm font-bold text-on-surface">Mô tả {getLevelLabel(formLevel)}</label>
                   <textarea 
                     placeholder="Mô tả chi tiết các hạng mục khách hàng sẽ nhận được..." 
                     className="input-field min-h-[80px] resize-none" 
-                    value={newService.description}
-                    onChange={e => setNewService({...newService, description: e.target.value})}
+                    value={serviceForm.description}
+                    onChange={e => setServiceForm({...serviceForm, description: e.target.value})}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-on-surface">Giá cơ bản (VNĐ) <span className="text-error">*</span></label>
-                  <input 
-                    type="number" 
-                    placeholder="VD: 150000" 
-                    className="input-field" 
-                    required
-                    value={newService.base_price}
-                    onChange={e => setNewService({...newService, base_price: e.target.value})}
+                {formLevel === 2 && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-on-surface">Giá cơ bản (VNĐ) <span className="text-error">*</span></label>
+                    <input 
+                      type="number" 
+                      placeholder="VD: 150000" 
+                      className="input-field" 
+                      required
+                      value={serviceForm.base_price}
+                      onChange={e => setServiceForm({...serviceForm, base_price: e.target.value})}
+                    />
+                  </div>
+                )}
+
+                {formLevel < 2 && (
+                  <input
+                    type="hidden"
+                    value={serviceForm.base_price}
+                    onChange={e => setServiceForm({...serviceForm, base_price: e.target.value})}
                   />
-                </div>
+                )}
 
                 <div className="space-y-3">
                   <label className="text-sm font-bold text-on-surface block">Chọn biểu tượng (Icon) hiển thị</label>
-                  <div className="flex flex-wrap gap-4">
-                    {Object.keys(iconMap).map(iconName => {
-                      const IconComp = iconMap[iconName];
-                      const colorClass = iconColorMap[iconName] || iconColorMap.default;
-                      const isSelected = newService.icon === iconName;
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {serviceIconOptions.map(iconOption => {
+                      const IconComp = iconOption.icon;
+                      const isSelected = serviceForm.icon === iconOption.name || legacyIconAliases[serviceForm.icon]?.name === iconOption.name;
                       
                       return (
                         <button
-                          key={iconName}
+                          key={iconOption.name}
                           type="button"
-                          onClick={() => setNewService({...newService, icon: iconName})}
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+                          onClick={() => setServiceForm({...serviceForm, icon: iconOption.name})}
+                          className={`min-h-20 rounded-lg border p-2 transition-all ${
                             isSelected 
-                              ? `ring-2 ring-primary ring-offset-2 scale-110 ${colorClass}` 
-                              : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant'
+                              ? `border-primary bg-primary-fixed shadow-sm ring-2 ring-primary/20` 
+                              : 'border-outline-variant/50 bg-white hover:border-primary/40 hover:bg-surface-container-low'
                           }`}
+                          title={iconOption.label}
                         >
-                          <IconComp size={24} />
+                          <span className={`mx-auto flex h-9 w-9 items-center justify-center rounded-lg ${iconOption.className}`}>
+                            <IconComp size={20} />
+                          </span>
+                          <span className="mt-1 block truncate text-[11px] font-bold text-on-surface">
+                            {iconOption.label}
+                          </span>
                         </button>
                       )
                     })}
@@ -337,14 +944,14 @@ export default function AdminServices() {
                 <div className="pt-4 flex items-center justify-between border-t border-outline-variant/30">
                   <div>
                     <label className="text-sm font-bold text-on-surface block">Trạng thái hiển thị</label>
-                    <p className="text-xs text-on-surface-variant mt-1">Khách hàng có thể nhìn thấy và đặt dịch vụ này</p>
+                    <p className="text-xs text-on-surface-variant mt-1">Khách hàng có thể nhìn thấy và đặt danh mục này</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
                       type="checkbox" 
                       className="sr-only peer"
-                      checked={newService.is_active}
-                      onChange={e => setNewService({...newService, is_active: e.target.checked})}
+                      checked={serviceForm.is_active}
+                      onChange={e => setServiceForm({...serviceForm, is_active: e.target.checked})}
                     />
                     <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-success"></div>
                   </label>
@@ -355,7 +962,7 @@ export default function AdminServices() {
             <div className="p-6 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
               <button 
                 type="button"
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleCloseModal}
                 className="btn-outline !py-2.5 !px-5"
                 disabled={isSubmitting}
               >
@@ -363,7 +970,7 @@ export default function AdminServices() {
               </button>
               <button 
                 type="submit" 
-                form="createServiceForm"
+                form="serviceForm"
                 className="btn-primary !py-2.5 !px-5 min-w-[140px]"
                 disabled={isSubmitting}
               >
@@ -372,12 +979,12 @@ export default function AdminServices() {
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     Đang lưu...
                   </span>
-                ) : "Lưu dịch vụ"}
+                ) : editingService ? "Cập nhật danh mục" : "Lưu danh mục"}
               </button>
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

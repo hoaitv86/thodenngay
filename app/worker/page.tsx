@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import {
-  LogoIcon,
   BriefcaseIcon,
   ClockIcon,
   MapPinIcon,
@@ -11,40 +9,64 @@ import {
   XIcon,
   ChevronRightIcon,
   PhoneIcon,
-  UserIcon,
   StarIcon,
   ZapIcon,
   DropletIcon,
   CameraIcon,
   CogIcon,
-  BellIcon,
-  LayoutDashboardIcon,
-  DollarSignIcon
+  BellIcon
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
-import { User, Worker, Job } from "@/lib/types";
+import { groupServicesByCanonicalCategory, serviceMatchesSpecialties } from "@/lib/service-categories";
+import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
+import { Worker } from "@/lib/types";
 import PendingApproval from "./pending-approval";
 
 interface ServiceOption {
   id: string;
   name: string;
+  description?: string | null;
   base_price?: number | string | null;
   icon?: string | null;
+  parent_service_id?: string | null;
 }
+
+type QuickServiceGroup = {
+  parent: ServiceOption;
+  category: {
+    id: string;
+    name: string;
+    emoji: string;
+  };
+  services: ServiceOption[];
+  directServices: ServiceOption[];
+  childGroups: Array<{
+    child: ServiceOption;
+    services: ServiceOption[];
+  }>;
+};
 
 interface WorkerJob {
   id: string;
   job_code?: string;
   status?: string;
   customer_id?: string;
+  gps_location?: GpsLocation | null;
+  customer_gps_location?: GpsLocation | null;
+  worker_gps_location?: GpsLocation | null;
   customerName?: string;
   serviceName?: string;
   description?: string | null;
+  created_at?: string;
   scheduled_at?: string;
   quoted_price: number;
   address?: string;
   images: string[];
+  completion_items?: CompletionItem[];
+  final_amount?: number | null;
+  warranty_days?: number | null;
+  warranty_note?: string | null;
   icon?: React.ComponentType<{ size?: number; className?: string }>;
   price?: string;
   time?: string;
@@ -55,18 +77,181 @@ interface WorkerJob {
   [key: string]: unknown;
 }
 
+type GpsLocation = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  captured_at?: string;
+};
+
+interface CompletionItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  warrantyDays: number;
+}
+
 interface WorkerCreateJobResponse {
   error?: string;
   job?: WorkerJob;
   loginPhone?: string;
   defaultPassword?: string | null;
+  mock?: boolean;
 }
+
+type ToastType = "success" | "error" | "info";
+
+type ToastState = {
+  message: string;
+  type: ToastType | null;
+  customerPassword?: string | null;
+};
+
+type WorkerWithProfile = Worker & {
+  user?: {
+    full_name?: string | null;
+  } | null;
+};
 
 const getDefaultScheduledAt = () => {
   const nextHour = new Date();
   nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
   const tzoffset = nextHour.getTimezoneOffset() * 60000;
   return new Date(nextHour.getTime() - tzoffset).toISOString().slice(0, 16);
+};
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
+
+const compareServicesByName = (a: ServiceOption, b: ServiceOption) =>
+  (a.name || "").localeCompare(b.name || "", "vi");
+
+const buildAdminServiceGroups = (services: ServiceOption[]): QuickServiceGroup[] => {
+  const serviceById = new Map(services.map(service => [service.id, service]));
+  const childrenByParent = new Map<string, ServiceOption[]>();
+
+  services.forEach(service => {
+    if (!service.parent_service_id) return;
+
+    const siblings = childrenByParent.get(service.parent_service_id) || [];
+    siblings.push(service);
+    childrenByParent.set(service.parent_service_id, siblings);
+  });
+
+  const hasAdminHierarchy = services.some(service => service.parent_service_id);
+  if (!hasAdminHierarchy) {
+    return groupServicesByCanonicalCategory(services).map(({ category, services: categoryServices }) => ({
+      parent: {
+        id: `canonical-${category.id}`,
+        name: category.name,
+        icon: category.icon,
+      },
+      category: {
+        id: category.id,
+        name: category.name,
+        emoji: category.emoji,
+      },
+      services: [...categoryServices].sort(compareServicesByName),
+      directServices: [...categoryServices].sort(compareServicesByName),
+      childGroups: [],
+    }));
+  }
+
+  const roots = services
+    .filter(service => !service.parent_service_id || !serviceById.has(service.parent_service_id))
+    .sort(compareServicesByName);
+
+  const makeSelectableServices = (items: ServiceOption[]) =>
+    items
+      .filter(service => !childrenByParent.has(service.id))
+      .sort(compareServicesByName);
+
+  return roots.map(parent => {
+    const children = [...(childrenByParent.get(parent.id) || [])].sort(compareServicesByName);
+    const directServices = children.length === 0 ? [parent] : makeSelectableServices(children);
+    const childGroups = children
+      .filter(child => childrenByParent.has(child.id))
+      .map(child => ({
+        child,
+        services: makeSelectableServices(childrenByParent.get(child.id) || []),
+      }))
+      .filter(group => group.services.length > 0);
+
+    return {
+      parent,
+      category: {
+        id: parent.id,
+        name: parent.name,
+        emoji: "",
+      },
+      services: [
+        ...directServices,
+        ...childGroups.flatMap(group => group.services),
+      ],
+      directServices,
+      childGroups,
+    };
+  }).filter(group => group.directServices.length > 0 || group.childGroups.length > 0);
+};
+
+const getJobCreatedDate = (job: Pick<WorkerJob, "created_at" | "scheduled_at">) => {
+  const dateValue = job.created_at || job.scheduled_at;
+  if (!dateValue) return null;
+
+  const createdDate = new Date(dateValue);
+  return Number.isNaN(createdDate.getTime()) ? null : createdDate;
+};
+
+const sortJobsNewestFirst = <T extends Pick<WorkerJob, "created_at" | "scheduled_at">>(jobs: T[]) =>
+  [...jobs].sort((a, b) => {
+    const aTime = getJobCreatedDate(a)?.getTime() || 0;
+    const bTime = getJobCreatedDate(b)?.getTime() || 0;
+    return bTime - aTime;
+  });
+
+const getUnworkedAgeLabel = (job: Pick<WorkerJob, "created_at" | "scheduled_at">) => {
+  const createdDate = getJobCreatedDate(job);
+  if (!createdDate) return "Chưa làm";
+
+  const diffMs = Date.now() - createdDate.getTime();
+  const diffDays = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+
+  if (diffDays === 0) return "Chưa làm hôm nay";
+  if (diffDays === 1) return "Chưa làm 1 ngày";
+  return `Chưa làm ${diffDays} ngày`;
+};
+
+const canUseLocalAcceptFallback = process.env.NODE_ENV !== "production";
+
+const makeCompletionItem = (name = "", unitPrice = 0): CompletionItem => ({
+  id: crypto.randomUUID(),
+  name,
+  quantity: 1,
+  unitPrice,
+  warrantyDays: 30,
+});
+
+const getCurrentBrowserLocation = () => {
+  return new Promise<GpsLocation | null>((resolve) => {
+    if (!("geolocation" in navigator)) {
+      resolve(null);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: Number(position.coords.latitude.toFixed(6)),
+          lng: Number(position.coords.longitude.toFixed(6)),
+          accuracy: Math.round(position.coords.accuracy),
+          captured_at: new Date().toISOString(),
+        });
+      },
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  });
 };
 
 export default function WorkerDashboard() {
@@ -78,8 +263,7 @@ export default function WorkerDashboard() {
   const [activeJobs, setActiveJobs] = useState<WorkerJob[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
-  const [completingJobId, setCompletingJobId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' | null }>({ message: '', type: null });
+  const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerPassword: null });
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [quickJob, setQuickJob] = useState({
@@ -92,6 +276,11 @@ export default function WorkerDashboard() {
     description: "",
   });
   const supabase = createClient();
+  const quickServiceGroups = React.useMemo(() => buildAdminServiceGroups(services), [services]);
+  const selectedQuickService = React.useMemo(
+    () => services.find(service => service.id === quickJob.serviceId) || null,
+    [quickJob.serviceId, services]
+  );
 
   // Completion modal states
   const [activeJobToComplete, setActiveJobToComplete] = useState<WorkerJob | null>(null);
@@ -101,13 +290,41 @@ export default function WorkerDashboard() {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [completionItems, setCompletionItems] = useState<CompletionItem[]>([]);
+  const [warrantyNote, setWarrantyNote] = useState("Bảo hành theo hạng mục đã ghi trên phiếu, không áp dụng cho lỗi phát sinh do sử dụng sai cách.");
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast({ message: '', type: null }), 3000);
+  const toastTimeoutRef = React.useRef<number | null>(null);
+
+  const closeToast = () => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToast({ message: "", type: null, customerPassword: null });
+  };
+
+  const showToast = (
+    message: string,
+    type: ToastType = "info",
+    options: { durationMs?: number | null; customerPassword?: string | null } = {}
+  ) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+
+    setToast({ message, type, customerPassword: options.customerPassword || null });
+
+    if (options.durationMs !== null) {
+      toastTimeoutRef.current = window.setTimeout(() => {
+        setToast({ message: "", type: null, customerPassword: null });
+        toastTimeoutRef.current = null;
+      }, options.durationMs ?? 3000);
+    }
   };
 
   const newJobsRef = React.useRef<WorkerJob[]>([]);
+  const mockActiveJobsRef = React.useRef<WorkerJob[]>([]);
 
   useEffect(() => {
     newJobsRef.current = newJobs;
@@ -131,11 +348,21 @@ export default function WorkerDashboard() {
       setWorker(workerData);
       const workerSpecialties = workerData.specialties || [];
 
-      const { data: serviceOptions, error: servicesError } = await supabase
+      let { data: serviceOptions, error: servicesError } = await supabase
         .from('services')
-        .select('id, name, base_price, icon')
+        .select('id, name, description, base_price, icon, parent_service_id')
         .eq('is_active', true)
         .order('name', { ascending: true });
+
+      if (servicesError) {
+        const fallback = await supabase
+          .from('services')
+          .select('id, name, description, base_price, icon')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
+        serviceOptions = fallback.data?.map(service => ({ ...service, parent_service_id: null })) || null;
+        servicesError = fallback.error;
+      }
 
       if (servicesError) {
         if (!isBackground) {
@@ -143,12 +370,12 @@ export default function WorkerDashboard() {
         }
       } else {
         const availableServices = [...(serviceOptions || [])].sort((a, b) => {
-          const aMatches = workerSpecialties.includes(a.name) ? 0 : 1;
-          const bMatches = workerSpecialties.includes(b.name) ? 0 : 1;
+          const aMatches = serviceMatchesSpecialties(a, workerSpecialties) ? 0 : 1;
+          const bMatches = serviceMatchesSpecialties(b, workerSpecialties) ? 0 : 1;
           return aMatches - bMatches;
         });
 
-        setServices(availableServices);
+        setServices(applyDefaultServiceParents(availableServices));
       }
 
       // 3. Get New Jobs (Pending)
@@ -161,20 +388,19 @@ export default function WorkerDashboard() {
 
       // Filter pending jobs matching worker specialties
       const filteredPending = (pendingJobs || []).filter(j => {
-        const serviceName = j.service?.name;
-        return serviceName && workerSpecialties.includes(serviceName);
+        return j.service && serviceMatchesSpecialties(j.service, workerSpecialties);
       });
 
       // Map icon component
       const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
-      const mappedNew = filteredPending.map(j => ({
+      const mappedNew = sortJobsNewestFirst(filteredPending.map(j => ({
         ...j,
         serviceName: j.service?.name,
         icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
         price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
         time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         distance: "1.2 km" // Mock distance for now
-      }));
+      })));
 
       // Check if there are new jobs that weren't in the list before
       if (isBackground && mappedNew.length > 0) {
@@ -194,7 +420,7 @@ export default function WorkerDashboard() {
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
-      const mappedPendingApproval = (workerPendingJobs || []).map(j => {
+      const mappedPendingApproval = sortJobsNewestFirst((workerPendingJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
         return {
           ...j,
@@ -202,7 +428,7 @@ export default function WorkerDashboard() {
           serviceName: j.service?.name,
           time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
         };
-      });
+      }));
       setPendingApprovalJobs(mappedPendingApproval);
 
       // 5. Get Active Jobs (Assigned to this worker)
@@ -210,9 +436,10 @@ export default function WorkerDashboard() {
         .from('jobs')
         .select('*, service:services(*), customer:profiles!customer_id(*)')
         .eq('worker_id', workerData.id)
-        .in('status', ['assigned', 'in_progress']);
+        .in('status', ['assigned', 'in_progress'])
+        .order('created_at', { ascending: false });
       
-      const mappedActive = (assignedJobs || []).map(j => {
+      const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
         return {
           ...j,
@@ -220,8 +447,12 @@ export default function WorkerDashboard() {
           serviceName: j.service?.name,
           time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
         };
-      });
-      setActiveJobs(mappedActive);
+      }));
+      const mockActiveJobs = mockActiveJobsRef.current;
+      setActiveJobs(sortJobsNewestFirst([
+        ...mockActiveJobs,
+        ...mappedActive.filter(job => !mockActiveJobs.some(mockJob => mockJob.id === job.id)),
+      ]));
 
       // 6. Calculate Real Stats
       const { data: workerJobs } = await supabase
@@ -252,31 +483,105 @@ export default function WorkerDashboard() {
   };
 
   useEffect(() => {
-    fetchData();
+    const initialFetch = window.setTimeout(() => {
+      fetchData();
+    }, 0);
 
     // Auto-refresh every 8 seconds to update new job listings and trigger notifications
     const interval = setInterval(() => {
       fetchData(true);
     }, 8000);
 
-    return () => clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialFetch);
+      clearInterval(interval);
+      if (toastTimeoutRef.current) {
+        window.clearTimeout(toastTimeoutRef.current);
+      }
+    };
   }, []);
 
   const handleAcceptJob = async (jobId: string) => {
     if (!worker) return;
-    const { error } = await supabase
+    const jobToAssign = newJobs.find(j => j.id === jobId);
+    const workerBrowserLocation = await getCurrentBrowserLocation();
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: workerProfile } = user
+      ? await supabase
+        .from('profiles')
+        .select('gps_location')
+        .eq('id', user.id)
+        .single()
+      : { data: null };
+    let customerGpsLocation = jobToAssign?.customer_gps_location || jobToAssign?.gps_location || null;
+
+    if (jobToAssign?.customer_id) {
+      const { data: customerProfile } = await supabase
+        .from('profiles')
+        .select('gps_location')
+        .eq('id', jobToAssign.customer_id)
+        .single();
+      customerGpsLocation = customerProfile?.gps_location || customerGpsLocation;
+    }
+
+    const workerGpsLocation = workerBrowserLocation || workerProfile?.gps_location || null;
+    let { data: acceptedRows, error } = await supabase
       .from('jobs')
-      .update({ worker_id: worker.id, status: 'assigned' })
-      .eq('id', jobId);
+      .update({
+        worker_id: worker.id,
+        status: 'pending',
+        customer_gps_location: customerGpsLocation,
+        worker_gps_location: workerGpsLocation,
+      })
+      .eq('id', jobId)
+      .eq('status', 'pending')
+      .is('worker_id', null)
+      .select('id');
 
     if (error) {
+      const fallbackResult = await supabase
+        .from('jobs')
+        .update({
+          worker_id: worker.id,
+          status: 'pending',
+        })
+        .eq('id', jobId)
+        .eq('status', 'pending')
+        .is('worker_id', null)
+        .select('id');
+
+      acceptedRows = fallbackResult.data;
+      error = fallbackResult.error;
+    }
+
+    if (error && !canUseLocalAcceptFallback) {
       showToast('Lỗi khi nhận việc: ' + error.message, 'error');
       console.error(error);
+    } else if (error && canUseLocalAcceptFallback) {
+      const acceptedJob = newJobs.find(j => j.id === jobId);
+      console.warn("Accept job used local fallback:", error);
+      showToast('ÄÃ£ gá»­i yÃªu cáº§u nháº­n viá»‡c, chá» admin duyá»‡t.', 'success');
+      setNewJobs(prev => prev.filter(j => j.id !== jobId));
+
+      if (acceptedJob) {
+        setPendingApprovalJobs(prev => sortJobsNewestFirst([{
+          ...acceptedJob,
+          status: 'pending',
+          customerName: acceptedJob.customerName || 'KhÃ¡ch hÃ ng',
+          customer_gps_location: customerGpsLocation,
+          worker_gps_location: workerGpsLocation,
+          is_mock: true,
+        }, ...prev]));
+      }
+      setTab('pending');
+    } else if (!acceptedRows || acceptedRows.length === 0) {
+      showToast('Công việc này đã có thợ khác nhận hoặc không còn chờ xử lý.', 'info');
+      setNewJobs(prev => prev.filter(j => j.id !== jobId));
     } else {
       const acceptedJob = newJobs.find(j => j.id === jobId);
-      showToast('Nhận việc thành công!', 'success');
+      showToast('Đã gửi yêu cầu nhận việc, chờ admin duyệt.', 'success');
       
-      // Move from newJobs to activeJobs
+      // Move from new jobs to the worker's pending approval list.
       setNewJobs(prev => prev.filter(j => j.id !== jobId));
       
       if (acceptedJob) {
@@ -293,14 +598,16 @@ export default function WorkerDashboard() {
             customerProfileObj = custProfile;
           }
         }
-        setActiveJobs(prev => [{
+        setPendingApprovalJobs(prev => sortJobsNewestFirst([{
           ...acceptedJob,
-          status: 'assigned',
+          status: 'pending',
           customerName,
-          customer: customerProfileObj
-        }, ...prev]);
+          customer: customerProfileObj,
+          customer_gps_location: customerGpsLocation,
+          worker_gps_location: workerGpsLocation,
+        }, ...prev]));
       }
-      setTab('active');
+      setTab('pending');
     }
   };
 
@@ -335,12 +642,16 @@ export default function WorkerDashboard() {
     }
 
     setCreatingQuickJob(true);
+    const controller = new AbortController();
+    const requestTimeout = window.setTimeout(() => controller.abort(), 15000);
+
     try {
       const res = await fetch("/api/worker/jobs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        signal: controller.signal,
         body: JSON.stringify({
           customerName: quickJob.customerName,
           customerPhone: quickJob.customerPhone,
@@ -367,17 +678,59 @@ export default function WorkerDashboard() {
         description: "",
       }));
       setQuickFormOpen(false);
-      setTab("pending");
+      const createdJob = data.job;
+      const createdAsActive = createdJob?.status === "assigned" || createdJob?.status === "in_progress";
+      if (createdAsActive && createdJob) {
+        const normalizedCreatedJob: WorkerJob = {
+          ...createdJob,
+          customerName: createdJob.customerName || quickJob.customerName,
+          serviceName: createdJob.serviceName || services.find(service => service.id === quickJob.serviceId)?.name || "Dịch vụ",
+          customer: createdJob.customer || { phone: quickJob.customerPhone },
+          time: createdJob.scheduled_at
+            ? new Date(createdJob.scheduled_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+            : new Date(quickJob.scheduledAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+          images: createdJob.images || [],
+        };
+
+        if (data.mock) {
+          mockActiveJobsRef.current = sortJobsNewestFirst([
+            normalizedCreatedJob,
+            ...mockActiveJobsRef.current.filter(job => job.id !== normalizedCreatedJob.id),
+          ]);
+        }
+
+        setActiveJobs(prev => {
+          if (prev.some(job => job.id === normalizedCreatedJob.id)) return prev;
+
+          return sortJobsNewestFirst([normalizedCreatedJob, ...prev]);
+        });
+      }
+      setTab(createdAsActive ? "active" : "pending");
       showToast(
         data.defaultPassword
-          ? `Đã gửi job chờ admin duyệt. MK khách: ${data.defaultPassword}`
-          : "Đã gửi job chờ admin duyệt.",
-        "success"
+          ? "Đã gửi job chờ admin duyệt. Nhớ gửi mật khẩu này cho khách."
+          : createdAsActive
+            ? "Đã tạo việc nhanh cho khách quen."
+            : "Đã gửi job chờ admin duyệt.",
+        "success",
+        data.defaultPassword
+          ? { durationMs: null, customerPassword: data.defaultPassword }
+          : undefined
       );
-      fetchData(true);
+      if (!data.mock) {
+        fetchData(true);
+      }
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "Không thể gửi job chờ duyệt.", "error");
+      showToast(
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Tạo việc nhanh quá lâu chưa phản hồi. Vui lòng thử lại."
+          : err instanceof Error
+            ? err.message
+            : "Không thể gửi job chờ duyệt.",
+        "error"
+      );
     } finally {
+      window.clearTimeout(requestTimeout);
       setCreatingQuickJob(false);
     }
   };
@@ -386,7 +739,29 @@ export default function WorkerDashboard() {
     setActiveJobToComplete(job);
     setSelectedFiles([]);
     setPreviewUrls([]);
+    setCompletionItems([
+      makeCompletionItem(job.serviceName || "Công dịch vụ", Number(job.quoted_price || 0)),
+    ]);
+    setWarrantyNote("Bảo hành theo hạng mục đã ghi trên phiếu, không áp dụng cho lỗi phát sinh do sử dụng sai cách.");
   };
+
+  const updateCompletionItem = (id: string, patch: Partial<CompletionItem>) => {
+    setCompletionItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const addCompletionItem = () => {
+    setCompletionItems(prev => [...prev, makeCompletionItem()]);
+  };
+
+  const removeCompletionItem = (id: string) => {
+    setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
+  };
+
+  const completionTotal = completionItems.reduce((sum, item) => {
+    const quantity = Number(item.quantity) || 0;
+    const unitPrice = Number(item.unitPrice) || 0;
+    return sum + quantity * unitPrice;
+  }, 0);
 
   const openCancelRequestModal = (job: WorkerJob) => {
     setJobToCancel(job);
@@ -465,9 +840,30 @@ export default function WorkerDashboard() {
   const handleConfirmCompleteJob = async () => {
     if (!activeJobToComplete) return;
 
+    const cleanedItems = completionItems
+      .map(item => ({
+        name: item.name.trim(),
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        warrantyDays: Number(item.warrantyDays) || 0,
+      }))
+      .filter(item => item.name && item.quantity > 0);
+
+    if (cleanedItems.length === 0) {
+      showToast("Vui lòng nhập ít nhất một dòng sản phẩm hoặc công dịch vụ.", "error");
+      return;
+    }
+
+    if (cleanedItems.some(item => item.unitPrice < 0 || item.warrantyDays < 0)) {
+      showToast("Đơn giá và số ngày bảo hành không được âm.", "error");
+      return;
+    }
+
     setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
+    const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const maxWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
 
     try {
       // 1. Upload images to Supabase Storage if any are selected
@@ -498,7 +894,11 @@ export default function WorkerDashboard() {
         .from('jobs')
         .update({ 
           status: 'completed',
-          images: imageUrls
+          images: imageUrls,
+          completion_items: cleanedItems,
+          final_amount: finalAmount,
+          warranty_days: maxWarrantyDays,
+          warranty_note: warrantyNote.trim()
         })
         .eq('id', job.id)
         .select();
@@ -513,19 +913,19 @@ export default function WorkerDashboard() {
 
       // 3. Optimistic UI update
       setActiveJobs(prev => prev.filter(j => j.id !== job.id));
-      const finalPrice = job.quoted_price || 0;
       setWorkerStats(prev => ({
         ...prev,
         jobsDone: prev.jobsDone + 1,
-        income: prev.income + finalPrice
+        income: prev.income + finalAmount
       }));
 
       showToast("Đã hoàn thành công việc thành công!", "success");
       setActiveJobToComplete(null);
       setSelectedFiles([]);
       setPreviewUrls([]);
-    } catch (err: any) {
-      showToast(err.message || "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
+      setCompletionItems([]);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
       console.error(err);
     } finally {
       setUploadingImages(false);
@@ -542,77 +942,104 @@ export default function WorkerDashboard() {
 
   // Check worker status — show pending/blocked screen
   if (worker && (worker.status === 'pending' || worker.status === 'blocked')) {
-    return <PendingApproval worker={worker} workerName={(worker as any).user?.full_name || 'Thợ'} />;
+    return <PendingApproval worker={worker} workerName={(worker as WorkerWithProfile).user?.full_name || 'Thợ'} />;
   }
 
   return (
     <div className="flex flex-col w-full relative">
       {/* Toast Notification */}
       {toast.type && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-xl shadow-lg border animate-fade-in flex items-start gap-3 ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' :
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md rounded-xl border px-4 py-3 shadow-lg animate-fade-in ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' :
           toast.type === 'error' ? 'bg-error-container text-on-error-container border-error/30' :
             'bg-surface-container-high text-on-surface border-outline-variant'
           }`}>
-          <div className="mt-0.5 shrink-0">
-            {toast.type === 'success' ? <CheckCircleIcon size={20} /> :
-              toast.type === 'error' ? <XIcon size={20} /> :
-                <BellIcon size={20} />}
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 shrink-0">
+              {toast.type === 'success' ? <CheckCircleIcon size={20} /> :
+                toast.type === 'error' ? <XIcon size={20} /> :
+                  <BellIcon size={20} />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-body-sm font-bold leading-tight">{toast.message}</p>
+              {toast.customerPassword && (
+                <div className="mt-3 rounded-lg border border-success/25 bg-white/80 p-3 text-on-surface shadow-sm">
+                  <div className="text-[10px] font-bold uppercase text-on-surface-variant">Mật khẩu khách</div>
+                  <div className="mt-1 break-all font-mono text-lg font-extrabold text-primary-container">
+                    {toast.customerPassword}
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={closeToast}
+              className="shrink-0 rounded-lg p-1.5 text-current/70 transition-colors hover:bg-white/50 hover:text-current"
+              aria-label="Đóng thông báo"
+              title="Đóng thông báo"
+            >
+              <XIcon size={18} />
+            </button>
           </div>
-          <span className="text-body-sm font-bold leading-tight pt-0.5">{toast.message}</span>
         </div>
       )}
 
       {/* Stats Bar */}
-      <div className="p-4">
-        <div className="app-hero-panel p-4 sm:p-5">
-          <div className="relative mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Bảng điều khiển thợ</p>
-              <h1 className="mt-1 text-xl font-extrabold leading-tight text-white">Sẵn sàng nhận việc</h1>
-            </div>
-            <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-extrabold text-success shadow-sm">
-              Online
-            </div>
-          </div>
-          <div className="relative grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-lg bg-white/12 p-3 backdrop-blur-sm">
-          <div className="min-w-0 text-center">
-            <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.jobsDone}</div>
-            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Jobs</div>
-          </div>
-          <div className="h-12 w-px bg-white/20 self-center" />
-          <div className="min-w-0 text-center">
-            <div className="text-2xl font-extrabold sm:text-3xl">{workerStats.rating}</div>
-            <div className="mt-1 flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">
-              Rating <StarIcon size={10} className="fill-current text-amber-400" />
+      <section className="px-4 pt-4 sm:px-6 lg:px-8">
+        <div className="overflow-hidden rounded-xl border border-primary/10 bg-white shadow-sm">
+          <div className="hero-gradient px-5 py-5 text-white sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase text-white/75">Bảng điều khiển thợ</p>
+                <h1 className="mt-1 text-2xl font-extrabold leading-tight drop-shadow-sm" style={{ color: "#fde68a" }}>Sẵn sàng nhận việc</h1>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">
+                  Theo dõi việc mới, việc đang làm và tạo đơn nhanh cho khách quen.
+                </p>
+              </div>
+              <div className="inline-flex w-fit items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-xs font-extrabold text-success shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-success" />
+                Online
+              </div>
             </div>
           </div>
-          <div className="h-12 w-px bg-white/20 self-center" />
-          <div className="min-w-0 text-center">
-            <div className="text-lg font-extrabold text-amber-400 leading-8 sm:text-xl">
-              {workerStats.income >= 1000000
-                ? (workerStats.income / 1000000).toFixed(1) + 'tr'
-                : (workerStats.income / 1000).toFixed(0) + 'k'}
+
+          <div className="grid grid-cols-3 divide-x divide-outline-variant/30 bg-white">
+            <div className="px-3 py-4 text-center">
+              <div className="text-2xl font-extrabold text-on-surface sm:text-3xl">{workerStats.jobsDone}</div>
+              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Hoàn thành</div>
             </div>
-            <div className="mt-1 text-[9px] font-bold uppercase tracking-wide opacity-70 sm:text-[10px]">Thu nhập</div>
-          </div>
+            <div className="px-3 py-4 text-center">
+              <div className="flex items-center justify-center gap-1 text-2xl font-extrabold text-on-surface sm:text-3xl">
+                {workerStats.rating}
+                <StarIcon size={16} className="fill-current text-warning" />
+              </div>
+              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Đánh giá</div>
+            </div>
+            <div className="px-3 py-4 text-center">
+              <div className="text-xl font-extrabold leading-9 text-primary-container sm:text-2xl">
+                {workerStats.income >= 1000000
+                  ? (workerStats.income / 1000000).toFixed(1) + "tr"
+                  : (workerStats.income / 1000).toFixed(0) + "k"}
+              </div>
+              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Thu nhập</div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Quick Job Creation */}
-      <div className="px-4 pb-4">
-        <div className="rounded-lg border border-secondary-container/20 bg-white p-4 shadow-sm">
+      <section className="px-4 py-4 sm:px-6 lg:px-8">
+        <div className="rounded-xl border border-secondary-container/20 bg-white p-4 shadow-sm">
           <button
             type="button"
             onClick={() => setQuickFormOpen(open => !open)}
             className="flex w-full items-center justify-between gap-3 text-left"
           >
             <div className="flex min-w-0 items-start gap-3">
-              <div className="w-11 h-11 rounded-lg bg-secondary-container flex items-center justify-center text-white shrink-0 shadow-sm">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-secondary-container text-white shadow-sm">
                 <BriefcaseIcon size={20} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-body-sm font-bold text-on-surface">Tạo việc nhanh cho khách quen</h2>
+                <h2 className="text-sm font-bold text-on-surface">Tạo việc nhanh cho khách quen</h2>
                 <p className="text-xs leading-5 text-on-surface-variant">
                   Thợ nhập thông tin, tạo tài khoản khách nếu cần và gửi admin duyệt.
                 </p>
@@ -659,18 +1086,109 @@ export default function WorkerDashboard() {
                   <select
                     value={quickJob.serviceId}
                     onChange={(e) => handleQuickServiceChange(e.target.value)}
-                    className="input-field !py-2.5"
+                    className="hidden"
                     disabled={services.length === 0}
                   >
                     <option value="">
                       {services.length === 0 ? "Chưa có dịch vụ khả dụng" : "Chọn dịch vụ"}
                     </option>
-                    {services.map(service => (
-                      <option key={service.id} value={service.id}>
-                        {service.name}
-                      </option>
+                    {quickServiceGroups.map(group => (
+                      <optgroup key={group.parent.id} label={group.parent.name}>
+                        {group.directServices.map(service => (
+                          <option key={service.id} value={service.id}>
+                            {service.name}
+                          </option>
+                        ))}
+                        {group.childGroups.flatMap(childGroup =>
+                          childGroup.services.map(service => (
+                            <option key={service.id} value={service.id}>
+                              {childGroup.child.name} / {service.name}
+                            </option>
+                          ))
+                        )}
+                      </optgroup>
                     ))}
                   </select>
+                  {services.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-outline-variant/70 bg-surface-container-low px-3 py-4 text-sm font-semibold text-on-surface-variant">
+                      Chưa có dịch vụ khả dụng
+                    </div>
+                  ) : (
+                    <div className="max-h-80 space-y-3 overflow-y-auto rounded-lg border border-outline-variant/40 bg-surface-container-low p-2">
+                      {quickServiceGroups.map(group => (
+                        <div key={group.parent.id} className="rounded-lg border border-outline-variant/30 bg-white p-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-extrabold text-on-surface">{group.parent.name}</p>
+                            <p className="text-[11px] font-semibold text-on-surface-variant">
+                              {group.services.length} dịch vụ
+                            </p>
+                          </div>
+
+                          <div className="mt-3 space-y-3">
+                            {group.directServices.length > 0 && (
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {group.directServices.map(service => {
+                                  const isSelected = quickJob.serviceId === service.id;
+                                  return (
+                                    <button
+                                      key={service.id}
+                                      type="button"
+                                      onClick={() => handleQuickServiceChange(service.id)}
+                                      className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                                        isSelected
+                                          ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                          : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                      }`}
+                                    >
+                                      <span className="block text-sm font-bold leading-5">{service.name}</span>
+                                      <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                        Từ {formatCurrency(Number(service.base_price || 0))}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {group.childGroups.map(childGroup => (
+                              <div key={childGroup.child.id} className="rounded-lg bg-surface-container-low p-2">
+                                <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-primary-container">
+                                  {childGroup.child.name}
+                                </p>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                  {childGroup.services.map(service => {
+                                    const isSelected = quickJob.serviceId === service.id;
+                                    return (
+                                      <button
+                                        key={service.id}
+                                        type="button"
+                                        onClick={() => handleQuickServiceChange(service.id)}
+                                        className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                                          isSelected
+                                            ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                            : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                        }`}
+                                      >
+                                        <span className="block text-sm font-bold leading-5">{service.name}</span>
+                                        <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                          Từ {formatCurrency(Number(service.base_price || 0))}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedQuickService && (
+                    <div className="rounded-lg border border-secondary-container/20 bg-secondary-container/10 px-3 py-2 text-xs font-semibold text-secondary-container">
+                      Đã chọn: {selectedQuickService.name}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -735,67 +1253,70 @@ export default function WorkerDashboard() {
             </form>
           )}
         </div>
-      </div>
+      </section>
 
       {/* Tabs */}
-      <div className="mx-4 grid grid-cols-3 gap-2 rounded-lg bg-surface-container p-1">
+      <div className="sticky top-16 z-30 mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white/95 p-1 shadow-sm backdrop-blur sm:mx-6 lg:top-20 lg:mx-8">
         <button
           onClick={() => setTab("new")}
-          className={`relative rounded-lg px-2 py-2.5 text-label-md font-bold transition-all ${tab === "new" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
+          className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
         >
           Việc mới
-          {newJobs.length > 0 && <span className="ml-2 px-1.5 py-0.5 bg-error text-white text-[10px] rounded-full">{newJobs.length}</span>}
+          {newJobs.length > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "new" ? "bg-white text-primary" : "bg-error text-white"}`}>{newJobs.length}</span>}
         </button>
         <button
           onClick={() => setTab("pending")}
-          className={`rounded-lg px-2 py-2.5 text-label-md font-bold transition-all ${tab === "pending" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
+          className={`rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "pending" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
         >
           Chờ duyệt
-          {pendingApprovalJobs.length > 0 && <span className="ml-2 rounded-full bg-warning px-1.5 py-0.5 text-[10px] text-white">{pendingApprovalJobs.length}</span>}
+          {pendingApprovalJobs.length > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "pending" ? "bg-white text-primary" : "bg-warning text-white"}`}>{pendingApprovalJobs.length}</span>}
         </button>
         <button
           onClick={() => setTab("active")}
-          className={`rounded-lg px-2 py-2.5 text-label-md font-bold transition-all ${tab === "active" ? "bg-white text-primary-container shadow-sm" : "text-on-surface-variant hover:bg-white/70"}`}
+          className={`rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "active" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
         >
           Đang làm
-          {activeJobs.length > 0 && <span className="ml-2 rounded-full bg-success px-1.5 py-0.5 text-[10px] text-white">{activeJobs.length}</span>}
+          {activeJobs.length > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "active" ? "bg-white text-primary" : "bg-success text-white"}`}>{activeJobs.length}</span>}
         </button>
       </div>
 
       {/* Job Feed */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => {
               const JobIcon = job.icon || BriefcaseIcon;
 
               return (
-              <div key={job.id} className="animate-fade-in space-y-4 overflow-hidden rounded-lg border border-primary-fixed/70 bg-white shadow-sm">
-                <div className="flex items-center justify-between bg-primary-fixed/60 px-4 py-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Việc mới quanh bạn</span>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">~{job.distance}</span>
+              <div key={job.id} className="animate-fade-in overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-sm">
+                <div className="flex items-center justify-between gap-3 border-b border-outline-variant/20 bg-primary-fixed/45 px-4 py-3">
+                  <span className="text-[10px] font-extrabold uppercase text-primary-container">Việc mới quanh bạn</span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-error shadow-sm">{getUnworkedAgeLabel(job)}</span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">~{job.distance}</span>
+                  </div>
                 </div>
                 <div className="space-y-4 p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-lg bg-primary-container flex items-center justify-center text-white shadow-sm">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white shadow-sm">
                       <JobIcon size={20} />
                     </div>
-                    <div>
-                      <div className="text-body-sm font-bold text-on-surface">{job.serviceName}</div>
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-bold text-on-surface">{job.serviceName}</div>
                       <div className="text-label-sm text-on-surface-variant">{job.job_code}</div>
                     </div>
                   </div>
-                  <div className="shrink-0 text-right text-lg font-bold text-primary-container">{job.price}</div>
+                  <div className="shrink-0 text-right text-base font-bold text-primary-container sm:text-lg">{job.price}</div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="grid gap-2 rounded-lg bg-surface-container-low p-3">
                   <div className="flex items-start gap-2 text-on-surface-variant">
-                    <MapPinIcon size={14} className="mt-1 shrink-0" />
+                    <MapPinIcon size={15} className="mt-1 shrink-0 text-primary-container" />
                     <span className="min-w-0 flex-1 text-body-sm leading-6">{job.address}</span>
                   </div>
                   <div className="flex items-center gap-2 text-on-surface-variant">
-                    <ClockIcon size={14} />
+                    <ClockIcon size={15} className="text-primary-container" />
                     <span className="text-body-sm">Hẹn lúc: {job.time}</span>
                   </div>
                 </div>
@@ -827,16 +1348,16 @@ export default function WorkerDashboard() {
                   </div>
                 )}
 
-                <div className="flex gap-3 pt-2">
+                <div className="grid grid-cols-[1fr_1.7fr] gap-3 pt-1">
                   <button 
                     onClick={() => handleDeclineJob(job.id)}
-                    className="flex-1 rounded-xl border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
+                    className="rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
                   >
                     Từ chối
                   </button>
                   <button 
                     onClick={() => handleAcceptJob(job.id)}
-                    className="flex-[2] rounded-xl bg-secondary-container px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98]"
+                    className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
                   >
                     Nhận việc
                   </button>
@@ -846,74 +1367,83 @@ export default function WorkerDashboard() {
               );
             })
           ) : (
-            <div className="text-center py-20">
-              <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
+            <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
                 <BriefcaseIcon size={32} />
               </div>
+              <p className="text-base font-bold text-on-surface">Chưa có việc mới</p>
               <p className="text-body-sm text-on-surface-variant">Chưa có việc mới nào quanh đây.</p>
             </div>
           )
         ) : tab === "pending" ? (
           pendingApprovalJobs.length > 0 ? (
             pendingApprovalJobs.map(job => (
-              <div key={job.id} className="space-y-4 overflow-hidden rounded-2xl border border-warning/25 bg-white shadow-sm">
-                <div className="flex items-center justify-between gap-3 bg-warning-container px-4 py-3">
+              <div key={job.id} className="overflow-hidden rounded-xl border border-warning/25 bg-white shadow-sm">
+                <div className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning-container/80 px-4 py-3">
                   <span className="badge badge-pending uppercase text-[10px]">Chờ admin duyệt</span>
-                  <span className="font-mono text-xs font-bold text-warning">{job.job_code}</span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-error shadow-sm">{getUnworkedAgeLabel(job)}</span>
+                    <span className="font-mono text-xs font-bold text-warning">{job.job_code}</span>
+                  </div>
                 </div>
 
-                <div className="space-y-4 p-5 pt-1">
+                <div className="space-y-4 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="truncate text-lg font-extrabold text-on-surface">{job.customerName}</h3>
+                      <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{job.customerName}</h3>
                       <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
                     </div>
-                    <div className="rounded-xl bg-surface-container px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
+                    <div className="rounded-lg bg-surface-container px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
                       {job.time}
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-2 rounded-xl bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
+                  <div className="flex items-start gap-2 rounded-lg bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
                     <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
                     <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
                   </div>
 
-                  <div className="rounded-xl border border-warning/20 bg-warning-container/40 px-3 py-2 text-xs font-semibold text-warning">
+                  <div className="rounded-lg border border-warning/20 bg-warning-container/40 px-3 py-2 text-xs font-semibold text-warning">
                     Job sẽ chuyển sang “Đang làm” sau khi admin duyệt.
                   </div>
                 </div>
               </div>
             ))
           ) : (
-            <div className="text-center py-20">
-              <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
+            <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
                 <ClockIcon size={32} />
               </div>
+              <p className="text-base font-bold text-on-surface">Không có job chờ duyệt</p>
               <p className="text-body-sm text-on-surface-variant">Chưa có job nào đang chờ admin duyệt.</p>
             </div>
           )
         ) : (
+          activeJobs.length > 0 ? (
           activeJobs.map(job => (
-            <div key={job.id} className="space-y-4 overflow-hidden rounded-2xl border border-success/20 bg-white shadow-lg shadow-green-900/5">
-              <div className="flex items-center justify-between gap-3 bg-success-container px-4 py-3">
+            <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
+              <div className="flex items-center justify-between gap-3 border-b border-success/20 bg-success-container px-4 py-3">
                 <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
                   {job.status === 'assigned' ? 'Mới nhận' : 'Đang thực hiện'}
                 </span>
                 <button className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-primary-container shadow-sm">Chi tiết</button>
               </div>
 
-              <div className="space-y-4 p-5 pt-1">
+              <div className="space-y-4 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="truncate text-lg font-extrabold text-on-surface">{job.customerName}</h3>
+                  <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{job.customerName}</h3>
                   <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
                 </div>
-                <div className="rounded-xl bg-primary-fixed px-3 py-2 text-right text-xs font-bold text-primary-container">
+                <div className="rounded-lg bg-primary-fixed px-3 py-2 text-right text-xs font-bold text-primary-container">
                   {job.time}
                 </div>
+                <span className="rounded-lg bg-error-container px-3 py-2 text-right text-xs font-bold text-error">
+                  {getUnworkedAgeLabel(job)}
+                </span>
               </div>
 
-                <div className="flex items-start gap-2 rounded-xl bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
+                <div className="flex items-start gap-2 rounded-lg bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
                   <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
                   <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
                 </div>
@@ -945,7 +1475,7 @@ export default function WorkerDashboard() {
                 </div>
               )}
 
-              <div className="flex items-center gap-4 py-3 border-y border-outline-variant/50">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-y border-outline-variant/50 py-3">
                 <a
                   href={job.customer?.phone ? `tel:${job.customer.phone}` : "#"}
                   onClick={(e) => {
@@ -954,13 +1484,13 @@ export default function WorkerDashboard() {
                       showToast("Khách hàng chưa cập nhật số điện thoại!", "error");
                     }
                   }}
-                  className="flex-1 flex flex-col items-center gap-1 p-2 hover:bg-surface-container rounded-xl transition-colors text-center text-decoration-none select-none"
+                  className="flex flex-col items-center gap-1 rounded-lg p-2 text-center text-decoration-none transition-colors hover:bg-surface-container select-none"
                 >
                   <PhoneIcon size={20} className="text-success" />
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase">Gọi khách</span>
                 </a>
-                <div className="w-px h-8 bg-outline-variant/50" />
-                <button className="flex-1 flex flex-col items-center gap-1 rounded-xl bg-primary-fixed p-2 text-primary-container transition-colors hover:bg-primary-container hover:text-white">
+                <div className="h-8 w-px bg-outline-variant/50" />
+                <button className="flex flex-col items-center gap-1 rounded-lg bg-primary-fixed p-2 text-primary-container transition-colors hover:bg-primary-container hover:text-white">
                   <MapPinIcon size={20} />
                   <span className="text-[10px] font-bold uppercase">Chỉ đường</span>
                 </button>
@@ -969,13 +1499,13 @@ export default function WorkerDashboard() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   onClick={() => openCancelRequestModal(job)}
-                  className="rounded-xl border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
+                  className="rounded-lg border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
                 >
                   Yêu cầu huỷ
                 </button>
                 <button
                   onClick={() => triggerCompleteJob(job)}
-                  className="rounded-xl bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-green-700/20 transition-all hover:brightness-110 active:scale-[0.98]"
+                  className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
                 >
                   Hoàn thành Job
                 </button>
@@ -983,6 +1513,15 @@ export default function WorkerDashboard() {
               </div>
             </div>
           ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
+                <CheckCircleIcon size={32} />
+              </div>
+              <p className="text-base font-bold text-on-surface">Chưa có việc đang làm</p>
+              <p className="text-body-sm text-on-surface-variant">Việc đã nhận sẽ hiển thị tại đây để gọi khách, chỉ đường và hoàn thành.</p>
+            </div>
+          )
         )}
       </div>
 
@@ -1000,6 +1539,7 @@ export default function WorkerDashboard() {
                     setActiveJobToComplete(null);
                     setSelectedFiles([]);
                     setPreviewUrls([]);
+                    setCompletionItems([]);
                   }
                 }}
                 className="p-1.5 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
@@ -1016,8 +1556,109 @@ export default function WorkerDashboard() {
                 <p className="text-body-sm text-on-surface-variant">Dịch vụ: {activeJobToComplete.serviceName}</p>
                 <p className="text-body-sm text-on-surface-variant">Mã đơn: {activeJobToComplete.job_code}</p>
                 <p className="text-body-sm text-primary font-bold">
-                  Thanh toán: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(activeJobToComplete.quoted_price)}
+                  Báo giá ban đầu: {formatCurrency(activeJobToComplete.quoted_price)}
                 </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-sm font-bold text-on-surface block">Sản phẩm, linh kiện và công dịch vụ</label>
+                    <p className="text-xs text-on-surface-variant">Nhập từng dòng để chốt tổng tiền và in hóa đơn cho khách.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addCompletionItem}
+                    className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container"
+                    disabled={uploadingImages}
+                  >
+                    Thêm dòng
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {completionItems.map((item, index) => (
+                    <div key={item.id} className="rounded-xl border border-outline-variant/40 bg-white p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold uppercase text-on-surface-variant">Dòng {index + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeCompletionItem(item.id)}
+                          className="rounded-lg px-2 py-1 text-xs font-bold text-error hover:bg-error-container disabled:opacity-40"
+                          disabled={uploadingImages || completionItems.length === 1}
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                      <input
+                        value={item.name}
+                        onChange={(e) => updateCompletionItem(item.id, { name: e.target.value })}
+                        className="input-field"
+                        placeholder="Tên sản phẩm/linh kiện/công dịch vụ"
+                        disabled={uploadingImages}
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-on-surface-variant">SL</label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={item.quantity}
+                            onChange={(e) => updateCompletionItem(item.id, { quantity: Number(e.target.value) })}
+                            className="input-field mt-1 !px-3"
+                            disabled={uploadingImages}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-on-surface-variant">Đơn giá</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1000"
+                            value={item.unitPrice}
+                            onChange={(e) => updateCompletionItem(item.id, { unitPrice: Number(e.target.value) })}
+                            className="input-field mt-1 !px-3"
+                            disabled={uploadingImages}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-on-surface-variant">BH ngày</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={item.warrantyDays}
+                            onChange={(e) => updateCompletionItem(item.id, { warrantyDays: Number(e.target.value) })}
+                            className="input-field mt-1 !px-3"
+                            disabled={uploadingImages}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2 text-xs">
+                        <span className="font-semibold text-on-surface-variant">Thành tiền</span>
+                        <span className="font-bold text-primary-container">{formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-success/20 bg-success-container p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-on-success-container">Tổng tiền hóa đơn</span>
+                    <span className="text-xl font-extrabold text-success">{formatCurrency(completionTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface block">Ghi chú phiếu bảo hành</label>
+                  <textarea
+                    value={warrantyNote}
+                    onChange={(e) => setWarrantyNote(e.target.value)}
+                    className="input-field min-h-24 resize-none"
+                    disabled={uploadingImages}
+                  />
+                </div>
               </div>
 
               {/* Upload Section */}
@@ -1073,6 +1714,7 @@ export default function WorkerDashboard() {
                   setActiveJobToComplete(null);
                   setSelectedFiles([]);
                   setPreviewUrls([]);
+                  setCompletionItems([]);
                 }}
                 className="btn-outline !w-auto flex-1 !py-2 !px-4 text-sm sm:flex-none"
                 disabled={uploadingImages}
@@ -1165,14 +1807,5 @@ export default function WorkerDashboard() {
         </div>
       )}
     </div>
-  );
-}
-
-function NavAction({ icon: Icon, label, active = false }: { icon: any, label: string, active?: boolean }) {
-  return (
-    <button className={`flex flex-col items-center gap-1 transition-all ${active ? 'text-primary-container' : 'text-on-surface-variant hover:text-on-surface'}`}>
-      <Icon size={22} className={active ? 'scale-110' : ''} />
-      <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
-    </button>
   );
 }

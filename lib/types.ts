@@ -23,6 +23,7 @@ export interface User {
   phone: string;
   name: string;
   address?: string;
+  gps_location?: { lat: number; lng: number };
   role: UserRole;
   created_at: string;
 }
@@ -59,6 +60,8 @@ export interface Job {
   service_id: string;
   address: string;
   gps_location?: { lat: number; lng: number };
+  customer_gps_location?: { lat: number; lng: number };
+  worker_gps_location?: { lat: number; lng: number };
   scheduled_at: string;
   description?: string;
   quoted_price: number;
@@ -66,6 +69,15 @@ export interface Job {
   source: JobSource;
   created_by: string;
   images?: string[];
+  completion_items?: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    warrantyDays: number;
+  }>;
+  final_amount?: number;
+  warranty_days?: number;
+  warranty_note?: string;
   created_at: string;
   updated_at: string;
   // Joined fields

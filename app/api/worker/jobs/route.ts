@@ -16,14 +16,68 @@ type CreateWorkerJobRequest = {
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
-const makeDefaultPassword = () => {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return `KH${code}@123`;
+const canReturnMockQuickJob = () =>
+  process.env.NODE_ENV !== "production" || process.env.ENABLE_MOCK_QUICK_JOB === "true";
+
+const removeVietnameseMarks = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+
+const makeDefaultPassword = (customerName: string) => {
+  const lastNamePart = customerName.trim().split(/\s+/).pop() || "KHACH";
+  const cleanNamePart = removeVietnameseMarks(lastNamePart)
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+  const passwordPrefix = cleanNamePart
+    ? `${cleanNamePart.charAt(0).toUpperCase()}${cleanNamePart.slice(1)}`
+    : "Khach";
+
+  return `${passwordPrefix}@123456`;
 };
+
+const makeMockQuickJob = ({
+  workerId,
+  customerId,
+  customerName,
+  customerPhone,
+  serviceId,
+  serviceName,
+  address,
+  scheduledAt,
+  quotedPrice,
+  description,
+}: {
+  workerId: string;
+  customerId?: string | null;
+  customerName: string;
+  customerPhone: string;
+  serviceId: string;
+  serviceName?: string | null;
+  address: string;
+  scheduledAt: Date;
+  quotedPrice: number;
+  description?: string | null;
+}) => ({
+  id: `mock-${Date.now()}`,
+  job_code: "DEMO" + Math.floor(100000 + Math.random() * 900000),
+  status: "assigned",
+  created_at: new Date().toISOString(),
+  worker_id: workerId,
+  customer_id: customerId || "mock-customer",
+  customerName,
+  customer: { phone: customerPhone },
+  service_id: serviceId,
+  serviceName: serviceName || "Dịch vụ",
+  address,
+  scheduled_at: scheduledAt.toISOString(),
+  description: description || null,
+  quoted_price: quotedPrice,
+  images: [],
+  is_mock: true,
+});
 
 async function getActiveWorker() {
   const cookieStore = await cookies();
@@ -76,7 +130,7 @@ async function getActiveWorker() {
     return { error: NextResponse.json({ error: "Chỉ thợ đang hoạt động mới có thể tạo job." }, { status: 403 }) };
   }
 
-  return { user, worker };
+  return { supabase, user, worker };
 }
 
 async function makeJobCode(supabaseAdmin: SupabaseClient) {
@@ -98,14 +152,6 @@ export async function POST(request: Request) {
   try {
     const workerCheck = await getActiveWorker();
     if (workerCheck.error) return workerCheck.error;
-
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Vui lòng cấu hình SUPABASE_SERVICE_ROLE_KEY trong file .env.local." },
-        { status: 500 }
-      );
-    }
 
     const body = (await request.json()) as CreateWorkerJobRequest;
     const customerName = (body.customerName || "").trim().replace(/\s+/g, " ");
@@ -131,6 +177,158 @@ export async function POST(request: Request) {
 
     if (!Number.isFinite(quotedPrice) || quotedPrice < 0) {
       return NextResponse.json({ error: "Giá dịch vụ không hợp lệ." }, { status: 400 });
+    }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      const { data: quickJob, error: quickJobError } = await workerCheck.supabase.rpc(
+        "worker_create_quick_job",
+        {
+          p_customer_phone: customerPhone,
+          p_service_id: body.serviceId,
+          p_address: address,
+          p_description: body.description?.trim() || null,
+          p_quoted_price: quotedPrice,
+        }
+      );
+
+      const rpcMissing =
+        quickJobError?.message?.includes("Could not find the function") ||
+        quickJobError?.code === "PGRST202";
+
+      if (!quickJobError) {
+        return NextResponse.json({
+          job: quickJob,
+          createdCustomer: null,
+          loginPhone: customerPhone,
+          defaultPassword: null,
+        });
+      }
+
+      if (!rpcMissing) {
+        return NextResponse.json(
+          {
+            error:
+              quickJobError.message ||
+              "Không thể tạo việc nhanh. Vui lòng kiểm tra khách quen đã có tài khoản và SĐT.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const { data: service } = await workerCheck.supabase
+        .from("services")
+        .select("id, name, base_price, is_active")
+        .eq("id", body.serviceId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!service) {
+        return NextResponse.json({ error: "Dịch vụ không hợp lệ hoặc đã bị tắt." }, { status: 400 });
+      }
+
+      const { data: existingCustomer } = await workerCheck.supabase
+        .from("profiles")
+        .select("id, full_name, phone")
+        .eq("role", "customer")
+        .eq("phone", customerPhone)
+        .maybeSingle();
+
+      if (!existingCustomer) {
+        if (canReturnMockQuickJob()) {
+          const mockCustomerId = `mock-customer-${customerPhone}`;
+          const defaultPassword = makeDefaultPassword(customerName);
+
+          return NextResponse.json({
+            job: makeMockQuickJob({
+              workerId: workerCheck.worker.id,
+              customerId: mockCustomerId,
+              customerName,
+              customerPhone,
+              serviceId: service.id,
+              serviceName: service.name,
+              address,
+              scheduledAt,
+              quotedPrice: quotedPrice || Number(service.base_price || 0),
+              description: body.description?.trim() || null,
+            }),
+            createdCustomer: {
+              id: mockCustomerId,
+              full_name: customerName,
+              phone: customerPhone,
+            },
+            loginPhone: customerPhone,
+            defaultPassword,
+            mock: true,
+          });
+        }
+
+        return NextResponse.json(
+          {
+            error:
+              "Không tìm thấy khách quen với SĐT này. Hãy chọn khách đã từng phục vụ hoặc cấu hình SUPABASE_SERVICE_ROLE_KEY để tự tạo tài khoản khách mới.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const jobCode = "FAST" + Math.floor(100000 + Math.random() * 900000);
+      const { data: insertedJob, error: insertError } = await workerCheck.supabase
+        .from("jobs")
+        .insert({
+          job_code: jobCode,
+          customer_id: existingCustomer.id,
+          worker_id: workerCheck.worker.id,
+          service_id: service.id,
+          address,
+          scheduled_at: scheduledAt.toISOString(),
+          quoted_price: quotedPrice || Number(service.base_price || 0),
+          description: body.description?.trim() || null,
+          status: "assigned",
+          source: "app",
+          created_by: workerCheck.user.id,
+        })
+        .select("*, service:services(*), customer:profiles!customer_id(*)")
+        .single();
+
+      if (insertError) {
+        if (canReturnMockQuickJob()) {
+          return NextResponse.json({
+            job: makeMockQuickJob({
+              workerId: workerCheck.worker.id,
+              customerId: existingCustomer.id,
+              customerName: existingCustomer.full_name || customerName,
+              customerPhone: existingCustomer.phone || customerPhone,
+              serviceId: service.id,
+              serviceName: service.name,
+              address,
+              scheduledAt,
+              quotedPrice: quotedPrice || Number(service.base_price || 0),
+              description: body.description?.trim() || null,
+            }),
+            createdCustomer: null,
+            loginPhone: customerPhone,
+            defaultPassword: null,
+            mock: true,
+          });
+        }
+
+        return NextResponse.json(
+          {
+            error:
+              "Chức năng tạo việc nhanh chưa được bật trong database. Vui lòng chạy file supabase/migration_worker_quick_job.sql hoặc cấu hình SUPABASE_SERVICE_ROLE_KEY.",
+            detail: insertError.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        job: insertedJob,
+        createdCustomer: null,
+        loginPhone: customerPhone,
+        defaultPassword: null,
+      });
     }
 
     const supabaseAdmin = createClient(
@@ -170,7 +368,7 @@ export async function POST(request: Request) {
     if (existingCustomer) {
       customerId = existingCustomer.id;
     } else {
-      defaultPassword = makeDefaultPassword();
+      defaultPassword = makeDefaultPassword(customerName);
 
       const { data: authData, error: createUserError } =
         await supabaseAdmin.auth.admin.createUser({

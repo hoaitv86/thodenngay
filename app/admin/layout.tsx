@@ -13,7 +13,7 @@ import {
   CreditCard,
   Bell,
   Menu,
-  X,
+  MessageCircle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -25,9 +25,70 @@ const navItems = [
   { href: "/admin/workers", label: "Quản lý Thợ", icon: UserCheck },
   { href: "/admin/services", label: "Dịch vụ & Giá", icon: WrenchIcon },
   { href: "/admin/customers", label: "Khách hàng", icon: Users },
+  { href: "/admin/chat", label: "Chat", icon: MessageCircle },
   { href: "/admin/payments", label: "Thanh toán", icon: CreditCard },
   { href: "/admin/settings", label: "Cài đặt", icon: Settings },
 ];
+
+function SidebarContent({
+  pathname,
+  userName,
+  onLogout,
+  onNavigate,
+}: {
+  pathname: string;
+  userName: string;
+  onLogout: () => void;
+  onNavigate: () => void;
+}) {
+  return (
+    <>
+      {/* Logo */}
+      <div className="h-16 flex items-center gap-2 px-5 border-b border-on-primary/10">
+        <div className="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center">
+          <WrenchIcon className="w-4.5 h-4.5 text-on-secondary" />
+        </div>
+        <div>
+          <span className="font-bold text-on-primary text-base truncate max-w-[140px] block">{userName}</span>
+          <span className="block text-[10px] font-bold text-on-primary/70 uppercase tracking-widest">Admin Panel</span>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        {navItems.map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                isActive
+                  ? "bg-white/15 text-white! shadow-sm"
+                  : "text-white/70! hover:bg-white/10 hover:text-white!"
+              }`}
+            >
+              <item.icon className="w-5 h-5 shrink-0" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Logout */}
+      <div className="px-3 py-4 border-t border-on-primary/10">
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-white/70! hover:bg-error/20 hover:text-error-container! transition-all"
+        >
+          <LogOut className="w-5 h-5" />
+          Đăng xuất
+        </button>
+      </div>
+    </>
+  );
+}
 
 export default function AdminLayout({
   children,
@@ -57,62 +118,21 @@ export default function AdminLayout({
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push("/login");
+    await fetch("/api/auth/signout", { method: "POST" });
+    router.replace("/login");
+    router.refresh();
   };
-
-  const SidebarContent = () => (
-    <>
-      {/* Logo */}
-      <div className="h-16 flex items-center gap-2 px-5 border-b border-on-primary/10">
-        <div className="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center">
-          <WrenchIcon className="w-4.5 h-4.5 text-on-secondary" />
-        </div>
-        <div>
-          <span className="font-bold text-on-primary text-base truncate max-w-[140px] block">{userName}</span>
-          <span className="block text-[10px] font-bold text-on-primary/70 uppercase tracking-widest">Admin Panel</span>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setSidebarOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                isActive
-                  ? "bg-white/15 text-white! shadow-sm"
-                  : "text-white/70! hover:bg-white/10 hover:text-white!"
-              }`}
-            >
-              <item.icon className="w-5 h-5 shrink-0" />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Logout */}
-      <div className="px-3 py-4 border-t border-on-primary/10">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-white/70! hover:bg-error/20 hover:text-error-container! transition-all"
-        >
-          <LogOut className="w-5 h-5" />
-          Đăng xuất
-        </button>
-      </div>
-    </>
-  );
 
   return (
     <div className="flex h-screen bg-surface">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 flex-col bg-primary shrink-0">
-        <SidebarContent />
+        <SidebarContent
+          pathname={pathname}
+          userName={userName}
+          onLogout={handleLogout}
+          onNavigate={() => setSidebarOpen(false)}
+        />
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -127,7 +147,12 @@ export default function AdminLayout({
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <SidebarContent />
+        <SidebarContent
+          pathname={pathname}
+          userName={userName}
+          onLogout={handleLogout}
+          onNavigate={() => setSidebarOpen(false)}
+        />
       </aside>
 
       {/* Main Content */}

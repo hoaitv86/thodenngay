@@ -35,11 +35,11 @@ export default function RedirectPage() {
       const role = profile.role;
 
       if (role === "admin") {
-        router.replace("/admin");
+        router.replace("/admin/dashboard");
       } else if (role === "worker") {
         router.replace("/worker");
       } else {
-        router.replace("/dashboard");
+        router.replace("/customer/home");
       }
     };
 

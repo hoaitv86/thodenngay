@@ -23,12 +23,15 @@
 # misc
 .DS_Store
 *.pem
+.agent/
+.vs/
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+scratch/*.log
 
 # env files (can opt-in for committing if needed)
 .env*
