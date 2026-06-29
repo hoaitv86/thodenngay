@@ -5,37 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useSettings } from "@/lib/settings";
-import {
-  LogoIcon,
-  ArrowRightIcon,
-  ShieldCheckIcon,
-  UserIcon,
-  WrenchIcon,
-  ClockIcon,
-  MapPinIcon,
-  StarIcon,
-} from "../components/icons";
-
-const serviceTickets = [
-  {
-    icon: WrenchIcon,
-    title: "Sửa điện",
-    meta: "Quận 7 - chờ nhận việc",
-    tone: "bg-secondary-container",
-  },
-  {
-    icon: MapPinIcon,
-    title: "Thay vòi nước",
-    meta: "Bình Thạnh - đã gán thợ",
-    tone: "bg-teal-600",
-  },
-  {
-    icon: StarIcon,
-    title: "Bảo trì máy lạnh",
-    meta: "Thủ Đức - khách đánh giá 5 sao",
-    tone: "bg-amber-500",
-  },
-];
+import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 
 export default function LoginPage() {
   const [loginId, setLoginId] = useState("");
@@ -116,10 +86,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-shell flex min-h-screen flex-col bg-[#13201e] lg:flex-row">
-      <div className="auth-brand-panel p-8 sm:p-10 lg:p-12">
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),transparent_26%),linear-gradient(0deg,rgba(232,102,36,0.18),transparent_42%)]" />
-        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,.9)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.9)_1px,transparent_1px)] [background-size:42px_42px]" />
+    <div className="auth-shell flex flex-col lg:flex-row">
+      {/* Left Panel - Branding */}
+      <div className="auth-brand-panel p-12">
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_20%)] opacity-10" />
 
         <div className="relative z-10">
           <Link href="/" className="flex items-center gap-3">
@@ -128,43 +98,23 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        <div className="relative z-10 max-w-[480px]">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/80">
-            <ClockIcon size={15} />
-            Hỗ trợ đặt thợ và theo dõi tiến độ
-          </div>
-          <h2 className="mb-4 text-3xl font-bold text-white sm:text-4xl">
-            Dịch vụ sửa chữa tại nhà, gọn gàng từ lúc đặt đến lúc hoàn tất.
+        <div className="relative z-10">
+          <h2 className="text-3xl mb-4 text-white font-bold">
+            Dịch vụ sửa chữa{" "}
+            <span className="text-secondary-container">chuyên nghiệp</span>
           </h2>
-          <p className="w-full max-w-[430px] text-base leading-relaxed text-white/80 sm:text-lg">
-            Đăng nhập để đặt dịch vụ, nhận thợ phù hợp, theo dõi vị trí và quản lý lịch sử công việc của bạn.
+          <p className="text-lg text-white/80 w-full max-w-[400px] leading-relaxed">
+            Đăng nhập để đặt dịch vụ, theo dõi công việc và quản lý tài khoản của bạn.
           </p>
 
-          <div className="mt-10 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-secondary-container text-white">
-                <WrenchIcon size={20} />
-              </div>
-              <p className="text-sm font-bold text-white">Nhiều nhóm dịch vụ</p>
-              <p className="mt-1 text-xs leading-5 text-white/70">Điện, nước, máy lạnh, camera và các hạng mục tại nhà.</p>
-            </div>
-            <div className="rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-teal-600 text-white">
-                <MapPinIcon size={20} />
-              </div>
-              <p className="text-sm font-bold text-white">Có định vị làm việc</p>
-              <p className="mt-1 text-xs leading-5 text-white/70">Lưu vị trí khách và thợ khi được gán việc.</p>
-            </div>
-          </div>
-
-          <div className="mt-8 flex flex-wrap items-center gap-5 text-white/70">
+          <div className="flex flex-wrap items-center gap-6 mt-10 text-white/60">
             <div className="flex items-center gap-2">
               <ShieldCheckIcon size={18} />
-              <span className="text-label-sm">Bảo mật tài khoản</span>
+              <span className="text-label-sm">Bảo mật SSL</span>
             </div>
             <div className="flex items-center gap-2">
               <UserIcon size={18} />
-              <span className="text-label-sm">Dành cho khách, thợ và admin</span>
+              <span className="text-label-sm">Đăng nhập tài khoản</span>
             </div>
           </div>
         </div>
@@ -174,139 +124,107 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="relative flex w-full flex-1 items-center justify-center overflow-hidden bg-[#15231f] p-4 sm:p-6">
-        <div className="absolute inset-0 bg-[linear-gradient(150deg,rgba(20,137,111,0.32),transparent_30%),linear-gradient(330deg,rgba(232,102,36,0.28),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.08),transparent_55%)]" />
-        <div className="absolute inset-0 opacity-[0.10] [background-image:radial-gradient(circle_at_1px_1px,rgba(255,255,255,.65)_1px,transparent_0)] [background-size:24px_24px]" />
-
-        <div className="relative z-10 mx-auto grid w-full max-w-[980px] items-center gap-5 py-6 sm:py-8 lg:grid-cols-[minmax(0,1fr)_440px]">
-          <div className="hidden text-white lg:block">
-            <div className="mb-5 flex items-center gap-3">
-              <LogoIcon size={36} />
-              <span className="text-2xl font-bold">{settings.app_name}</span>
-            </div>
-            <div className="rounded-xl border border-white/15 bg-[#20312d]/80 p-5 shadow-2xl backdrop-blur">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase text-white/60">Bảng điều phối hôm nay</p>
-                  <p className="mt-1 text-lg font-bold text-white">3 việc đang sẵn sàng xử lý</p>
-                </div>
-                <div className="rounded-lg bg-secondary-container px-3 py-2 text-sm font-bold text-white">Live</div>
-              </div>
-              <div className="space-y-3">
-                {serviceTickets.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.title} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.07] p-3">
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${item.tone} text-white`}>
-                        <Icon size={19} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-white">{item.title}</p>
-                        <p className="truncate text-xs text-white/60">{item.meta}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+      {/* Right Panel - Login Form */}
+      <div className="flex w-full flex-1 items-center justify-center bg-white p-4 sm:p-6">
+        <div className="w-full max-w-[440px] mx-auto py-6 sm:py-8">
+          {/* Mobile Logo */}
+          <div className="lg:hidden flex items-center gap-3 mb-6">
+            <LogoIcon size={36} />
+            <span className="text-2xl font-bold text-primary">{settings.app_name}</span>
           </div>
 
-          <div className="w-full">
-            <div className="mb-6 flex items-center gap-3 lg:hidden">
-              <LogoIcon size={36} />
-              <span className="text-2xl font-bold text-white">{settings.app_name}</span>
+          <div className="auth-card">
+            <div className="mb-7 text-center sm:text-left">
+              <h1 className="mb-2 text-2xl font-bold text-on-surface sm:text-3xl">Đăng nhập</h1>
+              <p className="text-on-surface-variant">Chào mừng bạn trở lại với {settings.app_name}</p>
             </div>
 
-            <div className="auth-card border-white/30 bg-white/[0.94] shadow-[0_24px_70px_rgba(0,0,0,0.28)] backdrop-blur">
-              <div className="mb-7 text-center sm:text-left">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary-fixed px-3 py-1.5 text-xs font-bold text-primary-container">
-                  <ShieldCheckIcon size={15} />
-                  Đăng nhập an toàn
-                </div>
-                <h1 className="mb-2 text-2xl font-bold text-on-surface sm:text-3xl">Đăng nhập</h1>
-                <p className="text-on-surface-variant">Chào mừng bạn trở lại với {settings.app_name}</p>
+            <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
+              <div>
+                <label htmlFor="login-id" className="block text-sm font-semibold text-on-surface mb-2">
+                  Email hoặc SĐT
+                </label>
+                <input
+                  id="login-id"
+                  type="text"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  className="input-field py-4"
+                  placeholder="name@example.com hoặc 0912345678"
+                  autoFocus
+                />
               </div>
 
-              <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
-                <div>
-                  <label htmlFor="login-id" className="mb-2 block text-sm font-semibold text-on-surface">
-                    Email hoặc SĐT
-                  </label>
-                  <input
-                    id="login-id"
-                    type="text"
-                    value={loginId}
-                    onChange={(e) => setLoginId(e.target.value)}
-                    className="input-field py-4"
-                    placeholder="name@example.com hoặc 0912345678"
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="login-password" className="mb-2 block text-sm font-semibold text-on-surface">
-                    Mật khẩu
-                  </label>
-                  <input
-                    id="login-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input-field py-4"
-                    placeholder="••••••••"
-                  />
-                </div>
-
-                {error && (
-                  <div className="flex gap-2 rounded-lg bg-error-container p-3 text-sm text-error" role="alert">
-                    <span aria-hidden="true">!</span> {error}
-                  </div>
-                )}
-
-                <button type="submit" className="btn-primary w-full py-4 group" disabled={loading}>
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                      Đang đăng nhập...
-                    </span>
-                  ) : (
-                    <>
-                      Đăng nhập
-                      <ArrowRightIcon size={20} className="transition-transform group-hover:translate-x-1" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <div className="mt-8 text-center">
-                <p className="text-sm text-on-surface-variant">
-                  Chưa có tài khoản?{" "}
-                  <Link href="/register" className="font-bold text-primary-container hover:underline">
-                    Đăng ký ngay
-                  </Link>
-                </p>
+              <div>
+                <label htmlFor="login-password" className="block text-sm font-semibold text-on-surface mb-2">
+                  Mật khẩu
+                </label>
+                <input
+                  id="login-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field py-4"
+                  placeholder="••••••••"
+                />
               </div>
 
-              {showDemoAccounts && (
-                <div className="mt-8 rounded-lg border border-primary-fixed bg-primary-fixed/35 p-4 text-left">
-                  <p className="mb-2 text-xs font-bold uppercase text-primary">Tài khoản dùng thử</p>
-                  <div className="grid grid-cols-1 gap-2 text-xs text-on-surface-variant">
-                    <div className="grid gap-1 sm:flex sm:justify-between">
-                      <span>Admin:</span>
-                      <span className="break-all font-mono font-bold">admin@alotho.local / admin</span>
-                    </div>
-                    <div className="grid gap-1 sm:flex sm:justify-between">
-                      <span>Thợ:</span>
-                      <span className="break-all font-mono font-bold">worker@alotho.local / 123456</span>
-                    </div>
-                    <div className="grid gap-1 sm:flex sm:justify-between">
-                      <span>Khách:</span>
-                      <span className="break-all font-mono font-bold">customer@alotho.local / 123456</span>
-                    </div>
-                  </div>
+              {error && (
+                <div className="flex gap-2 rounded-lg bg-error-container p-3 text-sm text-error" role="alert">
+                  <span aria-hidden="true">!</span> {error}
                 </div>
               )}
+
+              <button
+                type="submit"
+                className="btn-primary w-full py-4 group"
+                disabled={loading}
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Đang đăng nhập...
+                  </span>
+                ) : (
+                  <>
+                    Đăng nhập
+                    <ArrowRightIcon size={20} className="group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 text-center">
+              <p className="text-sm text-on-surface-variant">
+                Chưa có tài khoản?{" "}
+                <Link
+                  href="/register"
+                  className="font-bold text-primary-container hover:underline"
+                >
+                  Đăng ký ngay
+                </Link>
+              </p>
             </div>
+
+            {showDemoAccounts && (
+              <div className="mt-8 rounded-lg border border-primary-fixed bg-primary-fixed/35 p-4 text-left">
+                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-primary">Tài khoản dùng thử (Pass: 123456)</p>
+                <div className="grid grid-cols-1 gap-2 text-xs text-on-surface-variant">
+                  <div className="grid gap-1 sm:flex sm:justify-between">
+                    <span>Admin:</span>
+                    <span className="break-all font-mono font-bold">admin@alotho.local</span>
+                  </div>
+                  <div className="grid gap-1 sm:flex sm:justify-between">
+                    <span>Thợ:</span>
+                    <span className="break-all font-mono font-bold">worker@alotho.local</span>
+                  </div>
+                  <div className="grid gap-1 sm:flex sm:justify-between">
+                    <span>Khách:</span>
+                    <span className="break-all font-mono font-bold">customer@alotho.local</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
