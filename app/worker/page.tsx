@@ -59,6 +59,7 @@ interface WorkerJob {
   serviceName?: string;
   description?: string | null;
   created_at?: string;
+  assigned_at?: string;
   scheduled_at?: string;
   quoted_price: number;
   address?: string;
@@ -222,8 +223,6 @@ const getUnworkedAgeLabel = (job: Pick<WorkerJob, "created_at" | "scheduled_at">
   if (diffDays === 1) return "Chưa làm 1 ngày";
   return `Chưa làm ${diffDays} ngày`;
 };
-
-const canUseLocalAcceptFallback = process.env.NODE_ENV !== "production";
 
 const makeCompletionItem = (name = "", unitPrice = 0): CompletionItem => ({
   id: crypto.randomUUID(),
@@ -493,9 +492,21 @@ export default function WorkerDashboard() {
       fetchData(true);
     }, 8000);
 
+    const jobsChannel = supabase
+      .channel("worker-jobs-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "jobs" },
+        () => {
+          fetchData(true);
+        }
+      )
+      .subscribe();
+
     return () => {
       window.clearTimeout(initialFetch);
       clearInterval(interval);
+      supabase.removeChannel(jobsChannel);
       if (toastTimeoutRef.current) {
         window.clearTimeout(toastTimeoutRef.current);
       }
@@ -526,90 +537,61 @@ export default function WorkerDashboard() {
     }
 
     const workerGpsLocation = workerBrowserLocation || workerProfile?.gps_location || null;
-    let { data: acceptedRows, error } = await supabase
-      .from('jobs')
-      .update({
-        worker_id: worker.id,
-        status: 'pending',
-        customer_gps_location: customerGpsLocation,
-        worker_gps_location: workerGpsLocation,
-      })
-      .eq('id', jobId)
-      .eq('status', 'pending')
-      .is('worker_id', null)
-      .select('id');
+    const { data: acceptedJobData, error } = await supabase.rpc("worker_accept_job", {
+      p_job_id: jobId,
+      p_customer_gps_location: customerGpsLocation,
+      p_worker_gps_location: workerGpsLocation,
+    });
 
     if (error) {
-      const fallbackResult = await supabase
-        .from('jobs')
-        .update({
-          worker_id: worker.id,
-          status: 'pending',
-        })
-        .eq('id', jobId)
-        .eq('status', 'pending')
-        .is('worker_id', null)
-        .select('id');
-
-      acceptedRows = fallbackResult.data;
-      error = fallbackResult.error;
-    }
-
-    if (error && !canUseLocalAcceptFallback) {
-      showToast('Lỗi khi nhận việc: ' + error.message, 'error');
       console.error(error);
-    } else if (error && canUseLocalAcceptFallback) {
-      const acceptedJob = newJobs.find(j => j.id === jobId);
-      console.warn("Accept job used local fallback:", error);
-      showToast('ÄÃ£ gá»­i yÃªu cáº§u nháº­n viá»‡c, chá» admin duyá»‡t.', 'success');
-      setNewJobs(prev => prev.filter(j => j.id !== jobId));
+      const jobAlreadyAccepted =
+        error.message?.includes("Công việc đã được thợ khác nhận");
 
-      if (acceptedJob) {
-        setPendingApprovalJobs(prev => sortJobsNewestFirst([{
-          ...acceptedJob,
-          status: 'pending',
-          customerName: acceptedJob.customerName || 'KhÃ¡ch hÃ ng',
-          customer_gps_location: customerGpsLocation,
-          worker_gps_location: workerGpsLocation,
-          is_mock: true,
-        }, ...prev]));
+      showToast(
+        jobAlreadyAccepted
+          ? "Công việc đã được thợ khác nhận."
+          : "Lỗi khi nhận việc: " + error.message,
+        jobAlreadyAccepted ? "info" : "error"
+      );
+
+      if (jobAlreadyAccepted) {
+        setNewJobs(prev => prev.filter(j => j.id !== jobId));
       }
-      setTab('pending');
-    } else if (!acceptedRows || acceptedRows.length === 0) {
-      showToast('Công việc này đã có thợ khác nhận hoặc không còn chờ xử lý.', 'info');
-      setNewJobs(prev => prev.filter(j => j.id !== jobId));
-    } else {
-      const acceptedJob = newJobs.find(j => j.id === jobId);
-      showToast('Đã gửi yêu cầu nhận việc, chờ admin duyệt.', 'success');
-      
-      // Move from new jobs to the worker's pending approval list.
-      setNewJobs(prev => prev.filter(j => j.id !== jobId));
-      
-      if (acceptedJob) {
-        let customerName = 'Khách hàng';
-        let customerProfileObj = null;
-        if (acceptedJob.customer_id) {
-          const { data: custProfile } = await supabase
-            .from('profiles')
-            .select('full_name, phone')
-            .eq('id', acceptedJob.customer_id)
-            .single();
-          if (custProfile) {
-            customerName = custProfile.full_name;
-            customerProfileObj = custProfile;
-          }
-        }
-        setPendingApprovalJobs(prev => sortJobsNewestFirst([{
-          ...acceptedJob,
-          status: 'pending',
-          customerName,
-          customer: customerProfileObj,
-          customer_gps_location: customerGpsLocation,
-          worker_gps_location: workerGpsLocation,
-        }, ...prev]));
-      }
-      setTab('pending');
+
+      fetchData(true);
+      return;
     }
+
+    const acceptedJob = newJobs.find(j => j.id === jobId);
+    const acceptedJobRecord = (acceptedJobData || {}) as Partial<WorkerJob>;
+    const normalizedAcceptedJob: WorkerJob = {
+      ...(acceptedJob || {}),
+      ...acceptedJobRecord,
+      id: jobId,
+      status: "assigned",
+      worker_id: worker.id,
+      customerName: acceptedJobRecord.customerName || acceptedJob?.customerName || "Khách hàng",
+      serviceName: acceptedJobRecord.serviceName || acceptedJob?.serviceName || "Dịch vụ",
+      customer: acceptedJobRecord.customer || acceptedJob?.customer || null,
+      customer_gps_location: customerGpsLocation,
+      worker_gps_location: workerGpsLocation,
+      images: acceptedJobRecord.images || acceptedJob?.images || [],
+      quoted_price: Number(acceptedJobRecord.quoted_price || acceptedJob?.quoted_price || 0),
+      time: acceptedJobRecord.scheduled_at
+        ? new Date(acceptedJobRecord.scheduled_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+        : acceptedJob?.time,
+    };
+
+    showToast("Đã nhận việc thành công.", "success");
+    setNewJobs(prev => prev.filter(j => j.id !== jobId));
+    setPendingApprovalJobs(prev => prev.filter(j => j.id !== jobId));
+    setActiveJobs(prev => {
+      if (prev.some(job => job.id === jobId)) return prev;
+      return sortJobsNewestFirst([normalizedAcceptedJob, ...prev]);
+    });
+    setTab("active");
+    fetchData(true);
   };
 
   const handleDeclineJob = (jobId: string) => {
@@ -1810,3 +1792,4 @@ export default function WorkerDashboard() {
     </div>
   );
 }
+

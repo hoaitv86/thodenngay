@@ -66,6 +66,7 @@ CREATE TABLE public.jobs (
     gps_location JSONB DEFAULT '{"lat": 10.762622, "lng": 106.660172}',
     customer_gps_location JSONB,
     worker_gps_location JSONB,
+    assigned_at TIMESTAMPTZ,
     scheduled_at TIMESTAMPTZ NOT NULL,
     description TEXT,
     quoted_price DECIMAL(12,2) NOT NULL,

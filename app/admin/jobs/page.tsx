@@ -83,7 +83,7 @@ function getWorkerProfile(worker?: WorkerOption | null) {
 
 function getJobStatusLabel(status?: string | null) {
   if (status === "pending") return "Chờ xử lý";
-  if (status === "assigned") return "Đã gán";
+  if (status === "assigned") return "Đã nhận";
   if (status === "in_progress") return "Đang làm";
   if (status === "completed" || status === "done") return "Hoàn thành";
   if (status === "cancel_requested") return "Chờ duyệt huỷ";

@@ -62,6 +62,7 @@ export interface Job {
   gps_location?: { lat: number; lng: number };
   customer_gps_location?: { lat: number; lng: number };
   worker_gps_location?: { lat: number; lng: number };
+  assigned_at?: string;
   scheduled_at: string;
   description?: string;
   quoted_price: number;
