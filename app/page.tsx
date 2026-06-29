@@ -324,7 +324,7 @@ export default async function HomePage() {
             {/* Badge */}
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/14 px-3.5 py-1.5 shadow-sm backdrop-blur-sm">
               <span className="w-2 h-2 bg-secondary-container rounded-full animate-pulse" />
-              <span className="text-xs font-semibold text-white/95">Đang hoạt động 24/7 tại TP.HCM</span>
+              <span className="text-xs font-semibold text-white/95">Đang hoạt động 24/7 tại Nghĩa Lâm Ninh Bình</span>
             </div>
 
             <h1 className="mb-5 max-w-3xl text-5xl font-extrabold leading-[1.02] tracking-tight !text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
