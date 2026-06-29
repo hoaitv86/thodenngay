@@ -217,22 +217,19 @@ export default function LoginPage() {
               <span className="text-2xl font-bold text-white">{settings.app_name}</span>
             </div>
 
-            <div
-              className="rounded-xl border border-white/20 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.34)] backdrop-blur sm:p-8"
-              style={{ backgroundColor: "#20312d" }}
-            >
+            <div className="auth-card border-white/30 bg-white/[0.94] shadow-[0_24px_70px_rgba(0,0,0,0.28)] backdrop-blur">
               <div className="mb-7 text-center sm:text-left">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-secondary-fixed">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary-fixed px-3 py-1.5 text-xs font-bold text-primary-container">
                   <ShieldCheckIcon size={15} />
                   Đăng nhập an toàn
                 </div>
-                <h1 className="mb-2 text-2xl font-bold !text-white sm:text-3xl">Đăng nhập</h1>
-                <p className="!text-white opacity-75">Chào mừng bạn trở lại với {settings.app_name}</p>
+                <h1 className="mb-2 text-2xl font-bold text-on-surface sm:text-3xl">Đăng nhập</h1>
+                <p className="text-on-surface-variant">Chào mừng bạn trở lại với {settings.app_name}</p>
               </div>
 
               <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
                 <div>
-                  <label htmlFor="login-id" className="mb-2 block text-sm font-semibold !text-white opacity-90">
+                  <label htmlFor="login-id" className="mb-2 block text-sm font-semibold text-on-surface">
                     Email hoặc SĐT
                   </label>
                   <input
@@ -240,14 +237,14 @@ export default function LoginPage() {
                     type="text"
                     value={loginId}
                     onChange={(e) => setLoginId(e.target.value)}
-                    className="input-field !border-white/20 !bg-white/10 py-4 !text-white placeholder:!text-white/45 focus:!border-secondary-container"
+                    className="input-field py-4"
                     placeholder="name@example.com hoặc 0912345678"
                     autoFocus
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="login-password" className="mb-2 block text-sm font-semibold !text-white opacity-90">
+                  <label htmlFor="login-password" className="mb-2 block text-sm font-semibold text-on-surface">
                     Mật khẩu
                   </label>
                   <input
@@ -255,7 +252,7 @@ export default function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="input-field !border-white/20 !bg-white/10 py-4 !text-white placeholder:!text-white/45 focus:!border-secondary-container"
+                    className="input-field py-4"
                     placeholder="••••••••"
                   />
                 </div>
@@ -282,29 +279,29 @@ export default function LoginPage() {
               </form>
 
               <div className="mt-8 text-center">
-                <p className="text-sm !text-white opacity-75">
+                <p className="text-sm text-on-surface-variant">
                   Chưa có tài khoản?{" "}
-                  <Link href="/register" className="font-bold text-secondary-fixed hover:underline">
+                  <Link href="/register" className="font-bold text-primary-container hover:underline">
                     Đăng ký ngay
                   </Link>
                 </p>
               </div>
 
               {showDemoAccounts && (
-                <div className="mt-8 rounded-lg border border-white/15 bg-white/10 p-4 text-left">
-                  <p className="mb-2 text-xs font-bold uppercase text-secondary-fixed">Tài khoản dùng thử</p>
-                  <div className="grid grid-cols-1 gap-2 text-xs !text-white opacity-75">
+                <div className="mt-8 rounded-lg border border-primary-fixed bg-primary-fixed/35 p-4 text-left">
+                  <p className="mb-2 text-xs font-bold uppercase text-primary">Tài khoản dùng thử</p>
+                  <div className="grid grid-cols-1 gap-2 text-xs text-on-surface-variant">
                     <div className="grid gap-1 sm:flex sm:justify-between">
                       <span>Admin:</span>
-                      <span className="break-all font-mono font-bold text-white">admin@alotho.local / admin</span>
+                      <span className="break-all font-mono font-bold">admin@alotho.local / admin</span>
                     </div>
                     <div className="grid gap-1 sm:flex sm:justify-between">
                       <span>Thợ:</span>
-                      <span className="break-all font-mono font-bold text-white">worker@alotho.local / 123456</span>
+                      <span className="break-all font-mono font-bold">worker@alotho.local / 123456</span>
                     </div>
                     <div className="grid gap-1 sm:flex sm:justify-between">
                       <span>Khách:</span>
-                      <span className="break-all font-mono font-bold text-white">customer@alotho.local / 123456</span>
+                      <span className="break-all font-mono font-bold">customer@alotho.local / 123456</span>
                     </div>
                   </div>
                 </div>
