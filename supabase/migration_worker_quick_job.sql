@@ -158,6 +158,26 @@ WITH CHECK (
       AND status = 'active'
   )
   AND created_by = auth.uid()
-  AND status IN ('assigned', 'pending')
+  AND status = 'assigned'
   AND public.worker_has_customer(customer_id)
+);
+
+DROP POLICY IF EXISTS "Workers log their quick jobs" ON public.job_logs;
+CREATE POLICY "Workers log their quick jobs"
+ON public.job_logs
+FOR INSERT
+WITH CHECK (
+  actor_id = auth.uid()
+  AND action IN ('created', 'assigned')
+  AND metadata->>'source' = 'worker_quick_job'
+  AND EXISTS (
+    SELECT 1
+    FROM public.jobs quick_job
+    JOIN public.workers worker_self ON worker_self.id = quick_job.worker_id
+    WHERE quick_job.id = job_id
+      AND quick_job.created_by = auth.uid()
+      AND quick_job.status = 'assigned'
+      AND worker_self.user_id = auth.uid()
+      AND worker_self.status = 'active'
+  )
 );

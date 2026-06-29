@@ -84,6 +84,7 @@ export default function CustomerJobs() {
       case 'pending':
         return { label: 'Đang tìm thợ', color: 'bg-amber-100 text-amber-700', icon: Timer };
       case 'confirmed':
+      case 'assigned':
         return { label: 'Đã nhận việc', color: 'bg-blue-100 text-blue-700', icon: CheckCircle };
       case 'in_progress':
         return { label: 'Đang thực hiện', color: 'bg-primary-container text-white', icon: Wrench };

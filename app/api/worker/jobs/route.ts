@@ -148,6 +148,71 @@ async function makeJobCode(supabaseAdmin: SupabaseClient) {
   throw new Error("Không thể tạo mã job duy nhất.");
 }
 
+async function logQuickJobLifecycle(
+  supabaseClient: SupabaseClient,
+  {
+    jobId,
+    actorId,
+    workerId,
+    customerId,
+    serviceId,
+    createdCustomer,
+    mode,
+  }: {
+    jobId: string;
+    actorId: string;
+    workerId: string;
+    customerId: string | null;
+    serviceId: string;
+    createdCustomer: boolean;
+    mode: "rpc" | "service_role" | "worker_session";
+  }
+) {
+  const metadata = {
+    source: "worker_quick_job",
+    mode,
+    worker_id: workerId,
+    customer_id: customerId,
+    service_id: serviceId,
+    created_customer: createdCustomer,
+    assigned_immediately: true,
+    approval_required: false,
+  };
+
+  const { error } = await supabaseClient.from("job_logs").insert([
+    {
+      job_id: jobId,
+      actor_id: actorId,
+      action: "created",
+      metadata,
+    },
+    {
+      job_id: jobId,
+      actor_id: actorId,
+      action: "assigned",
+      metadata,
+    },
+  ]);
+
+  if (error) {
+    console.error("[worker_quick_job] Failed to write job log", {
+      jobId,
+      actorId,
+      error: error.message,
+    });
+    return;
+  }
+
+  console.info("[worker_quick_job] Created and assigned without admin approval", {
+    jobId,
+    actorId,
+    workerId,
+    customerId,
+    serviceId,
+    mode,
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const workerCheck = await getActiveWorker();
@@ -197,11 +262,24 @@ export async function POST(request: Request) {
         quickJobError?.code === "PGRST202";
 
       if (!quickJobError) {
+        if (quickJob?.id) {
+          await logQuickJobLifecycle(workerCheck.supabase as SupabaseClient, {
+            jobId: quickJob.id,
+            actorId: workerCheck.user.id,
+            workerId: workerCheck.worker.id,
+            customerId: quickJob.customer_id || null,
+            serviceId: body.serviceId,
+            createdCustomer: false,
+            mode: "rpc",
+          });
+        }
+
         return NextResponse.json({
           job: quickJob,
           createdCustomer: null,
           loginPhone: customerPhone,
           defaultPassword: null,
+          approvalRequired: false,
         });
       }
 
@@ -260,6 +338,7 @@ export async function POST(request: Request) {
             loginPhone: customerPhone,
             defaultPassword,
             mock: true,
+            approvalRequired: false,
           });
         }
 
@@ -310,6 +389,7 @@ export async function POST(request: Request) {
             loginPhone: customerPhone,
             defaultPassword: null,
             mock: true,
+            approvalRequired: false,
           });
         }
 
@@ -323,11 +403,22 @@ export async function POST(request: Request) {
         );
       }
 
+      await logQuickJobLifecycle(workerCheck.supabase as SupabaseClient, {
+        jobId: insertedJob.id,
+        actorId: workerCheck.user.id,
+        workerId: workerCheck.worker.id,
+        customerId: existingCustomer.id,
+        serviceId: service.id,
+        createdCustomer: false,
+        mode: "worker_session",
+      });
+
       return NextResponse.json({
         job: insertedJob,
         createdCustomer: null,
         loginPhone: customerPhone,
         defaultPassword: null,
+        approvalRequired: false,
       });
     }
 
@@ -426,7 +517,7 @@ export async function POST(request: Request) {
         scheduled_at: scheduledAt.toISOString(),
         quoted_price: quotedPrice,
         description: body.description?.trim() || null,
-        status: "pending",
+        status: "assigned",
         source: "app",
         created_by: workerCheck.user.id,
       })
@@ -444,11 +535,22 @@ export async function POST(request: Request) {
       );
     }
 
+    await logQuickJobLifecycle(supabaseAdmin as SupabaseClient, {
+      jobId: insertedJob.id,
+      actorId: workerCheck.user.id,
+      workerId: workerCheck.worker.id,
+      customerId,
+      serviceId: service.id,
+      createdCustomer: Boolean(createdCustomer),
+      mode: "service_role",
+    });
+
     return NextResponse.json({
       job: insertedJob,
       createdCustomer,
       loginPhone: customerPhone,
       defaultPassword,
+      approvalRequired: false,
     });
   } catch (error: unknown) {
     return NextResponse.json(

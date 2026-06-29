@@ -98,6 +98,7 @@ interface WorkerCreateJobResponse {
   loginPhone?: string;
   defaultPassword?: string | null;
   mock?: boolean;
+  approvalRequired?: boolean;
 }
 
 type ToastType = "success" | "error" | "info";
@@ -708,10 +709,10 @@ export default function WorkerDashboard() {
       setTab(createdAsActive ? "active" : "pending");
       showToast(
         data.defaultPassword
-          ? "Đã gửi job chờ admin duyệt. Nhớ gửi mật khẩu này cho khách."
+          ? "Đã tạo việc nhanh. Nhớ gửi mật khẩu này cho khách."
           : createdAsActive
             ? "Đã tạo việc nhanh cho khách quen."
-            : "Đã gửi job chờ admin duyệt.",
+            : "Đã tạo việc nhanh.",
         "success",
         data.defaultPassword
           ? { durationMs: null, customerPassword: data.defaultPassword }
@@ -726,7 +727,7 @@ export default function WorkerDashboard() {
           ? "Tạo việc nhanh quá lâu chưa phản hồi. Vui lòng thử lại."
           : err instanceof Error
             ? err.message
-            : "Không thể gửi job chờ duyệt.",
+            : "Không thể tạo việc nhanh.",
         "error"
       );
     } finally {
@@ -1041,7 +1042,7 @@ export default function WorkerDashboard() {
               <div className="min-w-0">
                 <h2 className="text-sm font-bold text-on-surface">Tạo việc nhanh cho khách quen</h2>
                 <p className="text-xs leading-5 text-on-surface-variant">
-                  Thợ nhập thông tin, tạo tài khoản khách nếu cần và gửi admin duyệt.
+                  Thợ nhập thông tin, tạo tài khoản khách nếu cần và lưu việc ngay.
                 </p>
               </div>
             </div>
@@ -1248,7 +1249,7 @@ export default function WorkerDashboard() {
                 disabled={creatingQuickJob || services.length === 0}
                 className="btn-secondary w-full !py-3 text-sm"
               >
-                {creatingQuickJob ? "Đang gửi..." : "Gửi admin duyệt"}
+                {creatingQuickJob ? "Đang tạo..." : "Tạo việc ngay"}
               </button>
             </form>
           )}
