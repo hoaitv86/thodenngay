@@ -222,51 +222,6 @@ const testimonials = [
   },
 ];
 
-const dispatchPreviewWorkers = [
-  {
-    name: "Anh Tuấn",
-    specialty: "Điện dân dụng",
-    area: "Quận 3",
-    distance: "1.8 km",
-    eta: "12 phút",
-    rating: "4.9",
-    jobs: "230 việc",
-    status: "Sẵn sàng",
-    note: "Có bộ dụng cụ khẩn cấp",
-    color: "bg-amber-100 text-amber-700",
-  },
-  {
-    name: "Anh Phát",
-    specialty: "Ống nước",
-    area: "Bình Thạnh",
-    distance: "2.4 km",
-    eta: "18 phút",
-    rating: "4.8",
-    jobs: "185 việc",
-    status: "Vừa xong ca",
-    note: "Nhận ca sau 18h",
-    color: "bg-sky-100 text-sky-700",
-  },
-  {
-    name: "Anh Minh",
-    specialty: "Camera",
-    area: "Phú Nhuận",
-    distance: "3.1 km",
-    eta: "22 phút",
-    rating: "4.7",
-    jobs: "142 việc",
-    status: "Gần bạn",
-    note: "Khách đặt lại nhiều",
-    color: "bg-violet-100 text-violet-700",
-  },
-];
-
-function getRandomDispatchWorker() {
-  const randomValues = new Uint32Array(1);
-  crypto.getRandomValues(randomValues);
-  return dispatchPreviewWorkers[randomValues[0] % dispatchPreviewWorkers.length];
-}
-
 export default async function HomePage() {
   const systemSettings = await getSystemSettings();
   let dbServices = null;
@@ -301,7 +256,6 @@ export default async function HomePage() {
         };
       })
     : defaultServices;
-  const featuredDispatchWorker = getRandomDispatchWorker();
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -370,7 +324,7 @@ export default async function HomePage() {
             {/* Badge */}
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/14 px-3.5 py-1.5 shadow-sm backdrop-blur-sm">
               <span className="w-2 h-2 bg-secondary-container rounded-full animate-pulse" />
-              <span className="text-xs font-semibold text-white/95">Đang hoạt động 24/7 tại Nghĩa Lâm Ninh Bình</span>
+              <span className="text-xs font-semibold text-white/95">Đang hoạt động 24/7 tại TP.HCM</span>
             </div>
 
             <h1 className="mb-5 max-w-3xl text-5xl font-extrabold leading-[1.02] tracking-tight !text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
@@ -420,58 +374,25 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="mt-8 w-full max-w-sm overflow-hidden rounded-xl border border-white/18 bg-white/94 shadow-[0_24px_80px_rgba(3,31,66,0.28)] backdrop-blur-xl lg:absolute lg:bottom-24 lg:right-4 lg:mt-0 lg:w-[380px] lg:max-w-none">
-            <div className="border-b border-primary/10 bg-linear-to-r from-primary-fixed/80 via-white to-secondary-fixed/80 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase text-secondary-container">Thợ điều phối gần bạn</p>
-                </div>
-                <div className="shrink-0 rounded-full bg-success-container px-2.5 py-1 text-[10px] font-bold uppercase text-success">
-                  Sẵn sàng
-                </div>
+          <div className="absolute bottom-24 right-4 hidden w-[340px] rounded-xl border border-white/15 bg-white/92 p-5 shadow-[0_24px_80px_rgba(3,31,66,0.28)] backdrop-blur-xl lg:block">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase text-secondary-container">Đang điều phối</p>
+                <p className="mt-1 text-lg font-bold text-on-surface">Thợ điện gần bạn</p>
               </div>
+              <div className="rounded-full bg-success-container px-3 py-1 text-xs font-bold text-success">Sẵn sàng</div>
             </div>
-            <div className="space-y-2.5 p-3">
-              <div className="rounded-lg border border-outline-variant/18 bg-surface-container-low/80 p-3">
-                <div className="flex items-start gap-3">
-                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-base font-extrabold ${featuredDispatchWorker.color}`}>
-                    {featuredDispatchWorker.name.split(" ").pop()?.charAt(0)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-bold text-on-surface">{featuredDispatchWorker.name}</p>
-                        <p className="mt-0.5 truncate text-xs text-on-surface-variant">{featuredDispatchWorker.specialty} · {featuredDispatchWorker.jobs}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-success-container px-2.5 py-1 text-[11px] font-bold text-success">
-                        {featuredDispatchWorker.status}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      <div className="rounded-md bg-white px-2.5 py-2">
-                        <p className="text-[10px] font-bold uppercase text-on-surface-variant">Đến</p>
-                        <p className="mt-0.5 text-xs font-bold text-primary-container">{featuredDispatchWorker.eta}</p>
-                      </div>
-                      <div className="rounded-md bg-white px-2.5 py-2">
-                        <p className="text-[10px] font-bold uppercase text-on-surface-variant">Cách</p>
-                        <p className="mt-0.5 text-xs font-bold text-primary-container">{featuredDispatchWorker.distance}</p>
-                      </div>
-                      <div className="rounded-md bg-white px-2.5 py-2">
-                        <p className="text-[10px] font-bold uppercase text-on-surface-variant">Sao</p>
-                        <p className="mt-0.5 flex items-center gap-1 text-xs font-bold text-secondary-container">
-                          <StarIcon size={12} />
-                          {featuredDispatchWorker.rating}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
-                      <MapPinIcon size={13} />
-                      <span className="truncate">{featuredDispatchWorker.area} · {featuredDispatchWorker.note}</span>
-                    </div>
-                  </div>
-                </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg bg-surface-container-low p-3">
+                <span className="text-sm font-semibold text-on-surface">Thời gian đến</span>
+                <span className="text-sm font-bold text-primary-container">18 phút</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-surface-container-low p-3">
+                <span className="text-sm font-semibold text-on-surface">Đánh giá thợ</span>
+                <span className="flex items-center gap-1 text-sm font-bold text-secondary-container">
+                  <StarIcon size={15} />
+                  4.9
+                </span>
               </div>
             </div>
           </div>
@@ -753,23 +674,23 @@ export default async function HomePage() {
       {/* ===== FOOTER ===== */}
       <footer className="bg-on-surface text-surface py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 gap-x-5 gap-y-10 text-center md:grid-cols-4 md:gap-10 md:text-left">
-            <div className="col-span-2">
-              <div className="mb-4 flex items-center justify-center gap-3 md:justify-start">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
+            <div className="md:col-span-2">
+              <div className="flex items-center gap-3 mb-4">
                 <LogoIcon size={32} />
                 <span className="text-xl font-bold">{systemSettings.app_name}</span>
               </div>
-              <p className="mx-auto max-w-sm text-sm text-surface-container-high md:mx-0">
+              <p className="text-sm text-surface-container-high max-w-sm">
                 Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Dịch vụ uy tín, giá cả minh bạch.
               </p>
-              <div className="mt-4 flex items-center justify-center gap-2 text-surface-container-high md:justify-start">
+              <div className="flex items-center gap-2 mt-4 text-surface-container-high">
                 <PhoneIcon size={16} />
                 <span className="text-sm">Hotline: {systemSettings.hotline}</span>
               </div>
             </div>
 
             <div>
-              <h4 className="mb-3 text-sm font-semibold sm:mb-4 sm:text-base">Dịch vụ</h4>
+              <h4 className="font-semibold mb-4">Dịch vụ</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Sửa điện</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Sửa nước</a></li>
@@ -779,7 +700,7 @@ export default async function HomePage() {
             </div>
 
             <div>
-              <h4 className="mb-3 text-sm font-semibold sm:mb-4 sm:text-base">Thông tin</h4>
+              <h4 className="font-semibold mb-4">Thông tin</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Về chúng tôi</a></li>
                 <li><a href={systemSettings.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Điều khoản</a></li>
