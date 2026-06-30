@@ -18,6 +18,7 @@ import {
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
+import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { groupServicesByCanonicalCategory, normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { Worker } from "@/lib/types";
@@ -97,6 +98,8 @@ interface WorkerJob {
   price?: string;
   time?: string;
   distance?: string;
+  eta?: string;
+  hasGpsEstimate?: boolean;
   customer?: {
     phone?: string | null;
   } | null;
@@ -108,6 +111,14 @@ type GpsLocation = {
   lng: number;
   accuracy?: number;
   captured_at?: string;
+};
+
+const getJobCustomerGps = (job: WorkerJob) => {
+  if (isGpsPoint(job.customer_gps_location)) return job.customer_gps_location;
+  if (isGpsPoint(job.gps_location)) return job.gps_location;
+
+  const customer = job.customer as { gps_location?: unknown } | null | undefined;
+  return isGpsPoint(customer?.gps_location) ? customer.gps_location : null;
 };
 
 interface CompletionItem {
@@ -442,6 +453,7 @@ export default function WorkerDashboard() {
     if (workerData) {
       setWorker(workerData);
       const workerSpecialties = workerData.specialties || [];
+      const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
 
       let { data: serviceOptions, error: servicesError } = await supabase
         .from('services')
@@ -488,14 +500,20 @@ export default function WorkerDashboard() {
 
       // Map icon component
       const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
-      const mappedNew = sortJobsNewestFirst(filteredPending.map(j => ({
-        ...j,
-        serviceName: j.service?.name,
-        icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
-        price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
-        time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        distance: "1.2 km" // Mock distance for now
-      })));
+      const mappedNew = sortJobsNewestFirst(filteredPending.map(j => {
+        const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
+
+        return {
+          ...j,
+          serviceName: j.service?.name,
+          icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
+          price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          distance: route.distance,
+          eta: route.eta,
+          hasGpsEstimate: route.hasGps,
+        };
+      }));
 
       // Check if there are new jobs that weren't in the list before
       if (isBackground && mappedNew.length > 0) {
@@ -517,11 +535,15 @@ export default function WorkerDashboard() {
 
       const mappedPendingApproval = sortJobsNewestFirst((workerPendingJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
+        const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
         return {
           ...j,
           customerName: custName || 'Khách hàng',
           serviceName: j.service?.name,
-          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          distance: route.distance,
+          eta: route.eta,
+          hasGpsEstimate: route.hasGps,
         };
       }));
       setPendingApprovalJobs(mappedPendingApproval);
@@ -536,11 +558,18 @@ export default function WorkerDashboard() {
       
       const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
+        const route = getRouteEstimate(
+          isGpsPoint(j.worker_gps_location) ? j.worker_gps_location : workerProfileGps,
+          getJobCustomerGps(j)
+        );
         return {
           ...j,
           customerName: custName || 'Khách vãng lai',
           serviceName: j.service?.name,
-          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          distance: route.distance,
+          eta: route.eta,
+          hasGpsEstimate: route.hasGps,
         };
       }));
       const mockActiveJobs = mockActiveJobsRef.current;
@@ -669,6 +698,7 @@ export default function WorkerDashboard() {
 
     const acceptedJob = newJobs.find(j => j.id === jobId);
     const acceptedJobRecord = (acceptedJobData || {}) as Partial<WorkerJob>;
+    const acceptedRoute = getRouteEstimate(workerGpsLocation, customerGpsLocation);
     const normalizedAcceptedJob: WorkerJob = {
       ...(acceptedJob || {}),
       ...acceptedJobRecord,
@@ -680,6 +710,9 @@ export default function WorkerDashboard() {
       customer: acceptedJobRecord.customer || acceptedJob?.customer || null,
       customer_gps_location: customerGpsLocation,
       worker_gps_location: workerGpsLocation,
+      distance: acceptedRoute.distance,
+      eta: acceptedRoute.eta,
+      hasGpsEstimate: acceptedRoute.hasGps,
       images: acceptedJobRecord.images || acceptedJob?.images || [],
       quoted_price: Number(acceptedJobRecord.quoted_price || acceptedJob?.quoted_price || 0),
       time: acceptedJobRecord.scheduled_at
@@ -1393,7 +1426,7 @@ export default function WorkerDashboard() {
                   <span className="text-[10px] font-extrabold uppercase text-primary-container">Việc mới quanh bạn</span>
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-error shadow-sm">{getUnworkedAgeLabel(job)}</span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">~{job.distance}</span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">{job.hasGpsEstimate ? `~${job.distance}` : job.distance}</span>
                   </div>
                 </div>
                 <div className="space-y-4 p-4">
@@ -1483,6 +1516,7 @@ export default function WorkerDashboard() {
                   <span className="badge badge-pending uppercase text-[10px]">Chờ admin duyệt</span>
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-error shadow-sm">{getUnworkedAgeLabel(job)}</span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-secondary shadow-sm">{job.hasGpsEstimate ? `~${job.distance}` : job.distance}</span>
                     <span className="font-mono text-xs font-bold text-warning">{job.job_code}</span>
                   </div>
                 </div>
@@ -1526,7 +1560,10 @@ export default function WorkerDashboard() {
                 <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
                   {job.status === 'assigned' ? 'Mới nhận' : 'Đang thực hiện'}
                 </span>
-                <button className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-primary-container shadow-sm">Chi tiết</button>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <span className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-secondary-container shadow-sm">{job.hasGpsEstimate ? `~${job.distance}` : job.distance}</span>
+                  <button className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-primary-container shadow-sm">Chi tiết</button>
+                </div>
               </div>
 
               <div className="space-y-4 p-4">

@@ -14,6 +14,7 @@ import {
   StarIcon,
 } from "@/app/components/icons";
 import { createClient } from "@/lib/supabase/client";
+import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 
 interface Service {
   id: string;
@@ -26,6 +27,7 @@ interface Service {
 }
 
 interface WorkerSummary {
+  id: string;
   name: string;
   specialty: string;
   rating: string;
@@ -37,6 +39,7 @@ interface WorkerSummary {
   area: string;
   highlight: string;
   signal: string;
+  hasGpsEstimate: boolean;
 }
 
 const serviceStyles: Record<string, Pick<Service, "color" | "accent">> = {
@@ -121,6 +124,16 @@ export default function CustomerHome() {
     }
 
     async function fetchWorkers() {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: customerProfile } = user
+        ? await supabase
+          .from("profiles")
+          .select("gps_location")
+          .eq("id", user.id)
+          .single()
+        : { data: null };
+      const customerGps = isGpsPoint(customerProfile?.gps_location) ? customerProfile.gps_location : null;
+
       const { data, error } = await supabase
         .from("workers")
         .select("*, profiles(*)")
@@ -136,6 +149,7 @@ export default function CustomerHome() {
           const name = worker.profiles?.full_name || `Anh thợ ${specialty}`;
           const specialtyLower = specialty.toLowerCase();
           const dispatchMeta = mockDispatchMeta[index % mockDispatchMeta.length];
+          const route = getRouteEstimate(customerGps, worker.profiles?.gps_location);
           let color = "bg-rose-100 text-rose-700";
 
           if (specialtyLower.includes("điện") || specialtyLower.includes("dien")) color = "bg-amber-100 text-amber-700";
@@ -144,6 +158,7 @@ export default function CustomerHome() {
           else if (specialtyLower.includes("cơ khí") || specialtyLower.includes("co khi")) color = "bg-emerald-100 text-emerald-700";
 
           return {
+            id: worker.id,
             name,
             specialty,
             rating: rating.toFixed(1),
@@ -151,12 +166,19 @@ export default function CustomerHome() {
             color,
             status: "Sẵn sàng",
             ...dispatchMeta,
+            distance: route.hasGps ? route.distance : "Chưa có GPS",
+            eta: route.hasGps ? route.eta : "Chưa rõ",
+            area: route.hasGps ? "Theo GPS đã lưu" : "Chưa cập nhật tọa độ",
+            highlight: route.hasGps ? "Tính theo vị trí khách và thợ" : "Cập nhật GPS để tính khoảng cách",
+            signal: route.hasGps ? "Dữ liệu GPS thật" : "Cần lưu vị trí",
+            hasGpsEstimate: route.hasGps,
           };
         });
         setTopWorkers(formattedWorkers);
       } else {
         setTopWorkers([
           {
+            id: "fallback-electric",
             name: "Anh Tuấn",
             specialty: "Điện",
             rating: "4.9",
@@ -164,8 +186,15 @@ export default function CustomerHome() {
             color: "bg-amber-100 text-amber-700",
             status: "Phản hồi nhanh",
             ...mockDispatchMeta[0],
+            distance: "Chưa có GPS",
+            eta: "Chưa rõ",
+            area: "Chưa cập nhật tọa độ",
+            highlight: "Cập nhật GPS để tính khoảng cách",
+            signal: "Cần lưu vị trí",
+            hasGpsEstimate: false,
           },
           {
+            id: "fallback-water",
             name: "Anh Phát",
             specialty: "Nước",
             rating: "4.8",
@@ -173,8 +202,15 @@ export default function CustomerHome() {
             color: "bg-sky-100 text-sky-700",
             status: "Gần bạn",
             ...mockDispatchMeta[1],
+            distance: "Chưa có GPS",
+            eta: "Chưa rõ",
+            area: "Chưa cập nhật tọa độ",
+            highlight: "Cập nhật GPS để tính khoảng cách",
+            signal: "Cần lưu vị trí",
+            hasGpsEstimate: false,
           },
           {
+            id: "fallback-camera",
             name: "Anh Minh",
             specialty: "Camera",
             rating: "4.7",
@@ -182,6 +218,12 @@ export default function CustomerHome() {
             color: "bg-violet-100 text-violet-700",
             status: "Được yêu thích",
             ...mockDispatchMeta[2],
+            distance: "Chưa có GPS",
+            eta: "Chưa rõ",
+            area: "Chưa cập nhật tọa độ",
+            highlight: "Cập nhật GPS để tính khoảng cách",
+            signal: "Cần lưu vị trí",
+            hasGpsEstimate: false,
           },
         ]);
       }
@@ -345,17 +387,17 @@ export default function CustomerHome() {
                     <h2 className="mt-1 text-lg font-bold leading-tight text-on-surface">Đội sẵn sàng quanh khu vực</h2>
                   </div>
                   <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase text-primary-container ring-1 ring-primary/10">
-                    Data giả
+                    {topWorkers.some(worker => worker.hasGpsEstimate) ? "GPS thật" : "Thiếu GPS"}
                   </span>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-                  Tạm hiển thị mô phỏng khoảng cách và thời gian đến. Giai đoạn sau sẽ thay bằng định vị thợ thật.
+                  Khoảng cách được tính khi hồ sơ khách và thợ đã lưu vị trí GPS.
                 </p>
               </div>
 
               <div className="space-y-3 p-3">
                 {topWorkers.map((worker) => (
-                  <div key={worker.name} className="rounded-lg border border-white/70 bg-surface-container-low/80 p-3 shadow-sm">
+                  <div key={worker.id} className="rounded-lg border border-white/70 bg-surface-container-low/80 p-3 shadow-sm">
                     <div className="flex items-start gap-3">
                       <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-base font-extrabold ${worker.color}`}>
                         {worker.name.split(" ").pop()?.charAt(0)}
