@@ -547,10 +547,15 @@ export default function WorkerDashboard() {
       console.error(error);
       const jobAlreadyAccepted =
         error.message?.includes("Công việc đã được thợ khác nhận");
+      const acceptJobRpcMissing =
+        error.code === "PGRST202" ||
+        error.message?.includes("worker_accept_job");
 
       showToast(
         jobAlreadyAccepted
           ? "Công việc đã được thợ khác nhận."
+          : acceptJobRpcMissing
+            ? "Chức năng nhận việc chưa được bật trong database. Vui lòng chạy migration worker_accept_job trước."
           : "Lỗi khi nhận việc: " + error.message,
         jobAlreadyAccepted ? "info" : "error"
       );
