@@ -31,6 +31,7 @@ interface ServiceOption {
   base_price?: number | string | null;
   icon?: string | null;
   parent_service_id?: string | null;
+  parentName?: string | null;
 }
 
 type QuickServiceGroup = {
@@ -403,6 +404,8 @@ export default function WorkerDashboard() {
         servicesError = fallback.error;
       }
 
+      let servicesForMatching: ServiceOption[] = [];
+
       if (servicesError) {
         if (!isBackground) {
           showToast("Không thể tải danh sách dịch vụ: " + servicesError.message, "error");
@@ -414,7 +417,14 @@ export default function WorkerDashboard() {
           return aMatches - bMatches;
         });
 
-        setServices(applyDefaultServiceParents(availableServices));
+        const servicesWithParents = applyDefaultServiceParents(availableServices);
+        const serviceById = new Map(servicesWithParents.map(service => [service.id, service]));
+        servicesForMatching = servicesWithParents.map(service => ({
+          ...service,
+          parentName: service.parent_service_id ? serviceById.get(service.parent_service_id)?.name || null : null,
+        }));
+
+        setServices(servicesForMatching);
       }
 
       // 3. Get New Jobs (Pending)
@@ -427,7 +437,11 @@ export default function WorkerDashboard() {
 
       // Filter pending jobs matching worker specialties
       const filteredPending = (pendingJobs || []).filter(j => {
-        return j.service && serviceMatchesSpecialties(j.service, workerSpecialties);
+        const matchedService = servicesForMatching.find(service => service.id === j.service_id);
+        return j.service && serviceMatchesSpecialties({
+          ...j.service,
+          parentName: matchedService?.parentName || null,
+        }, workerSpecialties);
       });
 
       // Map icon component

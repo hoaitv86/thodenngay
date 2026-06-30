@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -21,6 +21,11 @@ type GpsLocation = {
 
 import { createClient } from "@/lib/supabase/client";
 import { useSettings } from "@/lib/settings";
+import {
+  buildWorkerSpecialtyGroups,
+  expandWorkerSpecialties,
+  type WorkerSpecialtyGroup,
+} from "@/lib/worker-specialty-catalog";
 
 function RegisterContent() {
 
@@ -36,7 +41,6 @@ function RegisterContent() {
     phone: "",
     address: "",
     gpsLocation: null as GpsLocation | null,
-    specialties: [] as string[],
   });
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -44,38 +48,47 @@ function RegisterContent() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const supabase = createClient();
-
-  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([
-    "Sửa điện",
-    "Sửa nước",
-    "Lắp camera",
-    "Cơ khí",
-    "Điều hòa",
-    "Sơn nhà",
-    "Mộc",
-  ]);
+  const [specialtyGroups, setSpecialtyGroups] = useState<WorkerSpecialtyGroup[]>(() => buildWorkerSpecialtyGroups());
+  const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  const [selectedChildValues, setSelectedChildValues] = useState<string[]>([]);
 
   useEffect(() => {
     async function fetchServices() {
       const { data, error } = await supabase
         .from("services")
-        .select("name")
+        .select("id, name, parent_service_id")
         .eq("is_active", true);
 
       if (data && !error) {
-        setSpecialtyOptions(data.map((svc: { name: string }) => svc.name));
+        setSpecialtyGroups(buildWorkerSpecialtyGroups(data));
       }
     }
     fetchServices();
   }, [supabase]);
 
-  const toggleSpecialty = (sp: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      specialties: prev.specialties.includes(sp)
-        ? prev.specialties.filter((s) => s !== sp)
-        : [...prev.specialties, sp],
-    }));
+  const selectedSpecialties = useMemo(
+    () => expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups),
+    [selectedParentIds, selectedChildValues, specialtyGroups]
+  );
+
+  const toggleParentSpecialty = (group: WorkerSpecialtyGroup) => {
+    setSelectedParentIds(prev => {
+      const isSelected = prev.includes(group.id);
+      if (isSelected) {
+        setSelectedChildValues(childValues => childValues.filter(value => !group.children.some(child => child.value === value)));
+        return prev.filter(id => id !== group.id);
+      }
+      return [...prev, group.id];
+    });
+  };
+
+  const toggleChildSpecialty = (group: WorkerSpecialtyGroup, value: string) => {
+    setSelectedParentIds(prev => prev.includes(group.id) ? prev : [...prev, group.id]);
+    setSelectedChildValues(prev =>
+      prev.includes(value)
+        ? prev.filter(item => item !== value)
+        : [...prev, value]
+    );
   };
 
   const handleUseCurrentLocation = () => {
@@ -130,6 +143,10 @@ function RegisterContent() {
     setError("");
 
     // Supabase Auth Sign Up
+    const workerSpecialties = role === "worker"
+      ? expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups)
+      : [];
+
     const { data, error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
@@ -137,7 +154,7 @@ function RegisterContent() {
         data: {
           full_name: formData.name,
           role: role,
-          specialties: role === 'worker' ? formData.specialties : [],
+          specialties: workerSpecialties,
         }
       }
     });
@@ -160,11 +177,11 @@ function RegisterContent() {
         })
         .eq('id', data.user.id);
 
-      if (role === 'worker' && formData.specialties.length > 0) {
+      if (role === 'worker' && workerSpecialties.length > 0) {
         await supabase
           .from('workers')
           .update({
-            specialties: formData.specialties
+            specialties: workerSpecialties
           })
           .eq('user_id', data.user.id);
       }
@@ -410,21 +427,65 @@ function RegisterContent() {
                       Chuyên môn <span className="text-error">*</span>
                     </label>
                     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                      {specialtyOptions.map((sp) => (
+                      {specialtyGroups.map((group) => {
+                        const isParentSelected = selectedParentIds.includes(group.id);
+                        const selectedChildrenCount = group.children.filter(child => selectedChildValues.includes(child.value)).length;
+
+                        return (
                         <button
-                          key={sp}
+                          key={group.id}
                           type="button"
-                          onClick={() => toggleSpecialty(sp)}
-                          className={`px-3 py-2.5 rounded-xl text-sm transition-all border ${formData.specialties.includes(sp)
+                          onClick={() => toggleParentSpecialty(group)}
+                          className={`min-h-14 rounded-xl border px-3 py-2.5 text-left text-sm transition-all ${isParentSelected
                               ? "bg-primary border-primary text-white shadow-sm font-semibold"
                               : "bg-surface-container-low border-transparent text-on-surface-variant hover:border-primary/30"
                             }`}
                         >
-                          {formData.specialties.includes(sp) && "✓ "}
-                          {sp}
+                          <span className="block font-extrabold">{isParentSelected ? "✓ " : ""}{group.label}</span>
+                          <span className={`mt-0.5 block text-[11px] ${isParentSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                            {selectedChildrenCount > 0 ? `${selectedChildrenCount} kỹ năng` : `${group.children.length} kỹ năng`}
+                          </span>
                         </button>
-                      ))}
+                      );
+                      })}
                     </div>
+
+                    {selectedParentIds.length > 0 && (
+                      <div className="mt-3 space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                        {specialtyGroups
+                          .filter(group => selectedParentIds.includes(group.id))
+                          .map(group => (
+                            <div key={`children-${group.id}`} className="space-y-2">
+                              <p className="text-xs font-extrabold uppercase text-on-surface-variant">{group.label}</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {group.children.map(child => {
+                                  const isSelected = selectedChildValues.includes(child.value);
+                                  return (
+                                    <button
+                                      key={child.id}
+                                      type="button"
+                                      onClick={() => toggleChildSpecialty(group, child.value)}
+                                      className={`min-h-10 rounded-lg border px-3 py-2 text-left text-xs font-bold transition-all ${
+                                        isSelected
+                                          ? "border-secondary-container bg-secondary-container text-white"
+                                          : "border-outline-variant/50 bg-white text-on-surface-variant hover:border-secondary-container/50"
+                                      }`}
+                                    >
+                                      {isSelected ? "✓ " : ""}{child.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {selectedSpecialties.length > 0 && (
+                      <div className="mt-3 rounded-xl bg-primary-fixed/70 p-3 text-xs font-semibold text-primary-container">
+                        Đã chọn: {selectedSpecialties.join(", ")}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

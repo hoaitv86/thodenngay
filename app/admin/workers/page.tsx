@@ -4,36 +4,69 @@ import React, { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
+  buildWorkerSpecialtyGroups,
+  expandWorkerSpecialties,
+  inferWorkerSpecialtyChildValues,
+  inferWorkerSpecialtyParentIds,
+  type WorkerSpecialtyGroup,
+} from "@/lib/worker-specialty-catalog";
+import {
   SearchIcon,
   FilterIcon,
   PlusIcon,
-  ChevronRightIcon,
   UserIcon,
   PhoneIcon,
   StarIcon,
   BriefcaseIcon,
   CheckCircleIcon,
-  ShieldCheckIcon,
   CalendarIcon,
   XIcon
 } from "../../components/icons";
 
+type WorkerProfile = {
+  full_name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  status?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+};
+
+type WorkerRecord = {
+  id: string;
+  user_id: string;
+  specialties?: string[] | null;
+  status: "active" | "pending" | "blocked" | string;
+  approved_at?: string | null;
+  created_at?: string | null;
+  avg_rating?: number | null;
+  total_jobs?: number | null;
+  rejection_reason?: string | null;
+  profiles?: WorkerProfile | null;
+};
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "Lỗi không xác định";
+
+const normalizeWorkerStatus = (status?: string | null): "active" | "pending" | "blocked" =>
+  status === "pending" || status === "blocked" ? status : "active";
+
 export default function AdminWorkers() {
-  const [workers, setWorkers] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<WorkerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const supabase = createClient();
 
   // Approval/Rejection states
-  const [confirmDialog, setConfirmDialog] = useState<{ type: 'approve' | 'reject' | 'block' | 'unblock'; worker: any } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: 'approve' | 'reject' | 'block' | 'unblock'; worker: WorkerRecord } | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | null }>({ message: '', type: null });
 
   // Edit worker states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingWorker, setEditingWorker] = useState<any>(null);
+  const [editingWorker, setEditingWorker] = useState<WorkerRecord | null>(null);
   const [editWorkerFormData, setEditWorkerFormData] = useState({
     id: "",
     user_id: "",
@@ -46,11 +79,11 @@ export default function AdminWorkers() {
 
   // Reset password states
   const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
-  const [resetPasswordWorker, setResetPasswordWorker] = useState<any>(null);
+  const [resetPasswordWorker, setResetPasswordWorker] = useState<WorkerRecord | null>(null);
   const [newPasswordValue, setNewPasswordValue] = useState("123456");
   const [resettingPassword, setResettingPassword] = useState(false);
 
-  const handleOpenEditModal = (worker: any) => {
+  const handleOpenEditModal = (worker: WorkerRecord) => {
     setEditingWorker(worker);
     setEditWorkerFormData({
       id: worker.id,
@@ -59,7 +92,7 @@ export default function AdminWorkers() {
       phone: worker.profiles?.phone || "",
       address: worker.profiles?.address || "",
       specialties: worker.specialties || [],
-      status: worker.status
+      status: normalizeWorkerStatus(worker.status)
     });
     setIsEditModalOpen(true);
   };
@@ -68,6 +101,10 @@ export default function AdminWorkers() {
     e.preventDefault();
     if (!editWorkerFormData.name) {
       showToast("Họ và tên không được để trống", "error");
+      return;
+    }
+    if (!editingWorker) {
+      showToast("Không tìm thấy thợ cần cập nhật", "error");
       return;
     }
 
@@ -132,14 +169,14 @@ export default function AdminWorkers() {
             }
           : w
       ));
-    } catch (err: any) {
-      showToast("Lỗi hệ thống: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi hệ thống: " + getErrorMessage(err), "error");
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleOpenResetPasswordModal = (worker: any) => {
+  const handleOpenResetPasswordModal = (worker: WorkerRecord) => {
     setResetPasswordWorker(worker);
     setNewPasswordValue("123456");
     setResetPasswordModalOpen(true);
@@ -153,6 +190,10 @@ export default function AdminWorkers() {
     }
     if (newPasswordValue.length < 6) {
       showToast("Mật khẩu phải từ 6 ký tự trở lên", "error");
+      return;
+    }
+    if (!resetPasswordWorker) {
+      showToast("Không tìm thấy thợ cần reset mật khẩu", "error");
       return;
     }
 
@@ -178,8 +219,8 @@ export default function AdminWorkers() {
       } else {
         showToast(data.error || "Không thể reset mật khẩu.", "error");
       }
-    } catch (err: any) {
-      showToast("Lỗi kết nối: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi kết nối: " + getErrorMessage(err), "error");
     } finally {
       setResettingPassword(false);
     }
@@ -196,35 +237,134 @@ export default function AdminWorkers() {
     specialties: [] as string[],
     status: "active" as "active" | "pending"
   });
-  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>([
-    "Sửa điện",
-    "Sửa nước",
-    "Lắp camera",
-    "Cơ khí",
-    "Điều hòa",
-    "Sơn nhà",
-    "Mộc"
-  ]);
+  const [specialtyGroups, setSpecialtyGroups] = useState<WorkerSpecialtyGroup[]>(() => buildWorkerSpecialtyGroups());
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast({ message: '', type: null }), 3500);
   };
 
-  useEffect(() => {
-    fetchWorkers();
-    fetchServices();
-  }, []);
+  const fetchWorkers = async () => {
+    setLoading(true);
+    const query = supabase
+      .from('workers')
+      .select('*, profiles(*)')
+      .order('created_at', { ascending: false });
+
+    const { data } = await query;
+    if (data) setWorkers(data as WorkerRecord[]);
+    setLoading(false);
+  };
 
   const fetchServices = async () => {
     const { data, error } = await supabase
       .from("services")
-      .select("name")
+      .select("id, name, parent_service_id")
       .eq("is_active", true);
 
     if (data && !error) {
-      setSpecialtyOptions(data.map((svc: { name: string }) => svc.name));
+      setSpecialtyGroups(buildWorkerSpecialtyGroups(data));
     }
+  };
+
+  /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
+  useEffect(() => {
+    fetchWorkers();
+    fetchServices();
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
+
+  const renderSpecialtySelector = (
+    selectedSpecialties: string[],
+    onChange: (nextSpecialties: string[]) => void,
+  ) => {
+    const selectedParentIds = inferWorkerSpecialtyParentIds(selectedSpecialties, specialtyGroups);
+    const selectedChildValues = inferWorkerSpecialtyChildValues(selectedSpecialties, specialtyGroups);
+
+    const updateSelection = (nextParentIds: string[], nextChildValues: string[]) => {
+      onChange(expandWorkerSpecialties(nextParentIds, nextChildValues, specialtyGroups, selectedSpecialties));
+    };
+
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          {specialtyGroups.map(group => {
+            const isSelected = selectedParentIds.includes(group.id);
+            const selectedChildrenCount = group.children.filter(child => selectedChildValues.includes(child.value)).length;
+
+            return (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => {
+                  const nextParentIds = isSelected
+                    ? selectedParentIds.filter(id => id !== group.id)
+                    : [...selectedParentIds, group.id];
+                  const nextChildValues = isSelected
+                    ? selectedChildValues.filter(value => !group.children.some(child => child.value === value))
+                    : selectedChildValues;
+                  updateSelection(nextParentIds, nextChildValues);
+                }}
+                className={`min-h-14 rounded-lg border px-3 py-2 text-left text-xs font-bold transition-all ${
+                  isSelected
+                    ? "border-primary bg-primary text-white shadow-sm"
+                    : "border-outline-variant/60 bg-white text-on-surface-variant hover:border-primary/50"
+                }`}
+              >
+                <span className="block">{isSelected ? "✓ " : ""}{group.label}</span>
+                <span className={`mt-1 block text-[10px] ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                  {selectedChildrenCount > 0 ? `${selectedChildrenCount} kỹ năng` : `${group.children.length} kỹ năng`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedParentIds.length > 0 && (
+          <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-white p-3">
+            {specialtyGroups
+              .filter(group => selectedParentIds.includes(group.id))
+              .map(group => (
+                <div key={`admin-worker-${group.id}`} className="space-y-2">
+                  <p className="text-xs font-extrabold uppercase text-on-surface-variant">{group.label}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {group.children.map(child => {
+                      const isSelected = selectedChildValues.includes(child.value);
+                      return (
+                        <button
+                          key={child.id}
+                          type="button"
+                          onClick={() => {
+                            const nextParentIds = selectedParentIds.includes(group.id) ? selectedParentIds : [...selectedParentIds, group.id];
+                            const nextChildValues = isSelected
+                              ? selectedChildValues.filter(value => value !== child.value)
+                              : [...selectedChildValues, child.value];
+                            updateSelection(nextParentIds, nextChildValues);
+                          }}
+                          className={`min-h-10 rounded-lg border px-3 py-2 text-left text-xs font-bold transition-all ${
+                            isSelected
+                              ? "border-secondary-container bg-secondary-container text-white"
+                              : "border-outline-variant/50 bg-white text-on-surface-variant hover:border-secondary-container/50"
+                          }`}
+                        >
+                          {isSelected ? "✓ " : ""}{child.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+
+        <div className="rounded-xl bg-primary-fixed/70 p-3">
+          <p className="text-[10px] font-bold uppercase text-primary-container/75">Đã chọn</p>
+          <p className="mt-1 text-xs font-bold text-primary-container">
+            {selectedSpecialties.length > 0 ? selectedSpecialties.join(", ") : "Chưa chọn chuyên môn"}
+          </p>
+        </div>
+      </div>
+    );
   };
 
   const handleCreateWorker = async (e: React.FormEvent) => {
@@ -307,27 +447,15 @@ export default function AdminWorkers() {
         });
         fetchWorkers();
       }
-    } catch (err: any) {
-      showToast("Lỗi hệ thống: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi hệ thống: " + getErrorMessage(err), "error");
       console.error(err);
     } finally {
       setProcessing(false);
     }
   };
 
-  const fetchWorkers = async () => {
-    setLoading(true);
-    let query = supabase
-      .from('workers')
-      .select('*, profiles(*)')
-      .order('created_at', { ascending: false });
-
-    const { data } = await query;
-    if (data) setWorkers(data);
-    setLoading(false);
-  };
-
-  const handleApproveWorker = async (worker: any) => {
+  const handleApproveWorker = async (worker: WorkerRecord) => {
     setProcessing(true);
     const { error } = await supabase
       .from('workers')
@@ -349,7 +477,7 @@ export default function AdminWorkers() {
     }
   };
 
-  const handleRejectWorker = async (worker: any) => {
+  const handleRejectWorker = async (worker: WorkerRecord) => {
     setProcessing(true);
     const { error } = await supabase
       .from('workers')
@@ -371,7 +499,7 @@ export default function AdminWorkers() {
     }
   };
 
-  const handleToggleBlockWorker = async (worker: any, newStatus: 'active' | 'blocked') => {
+  const handleToggleBlockWorker = async (worker: WorkerRecord, newStatus: 'active' | 'blocked') => {
     setProcessing(true);
     
     // Update workers table
@@ -577,9 +705,11 @@ export default function AdminWorkers() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5 text-label-sm text-on-surface-variant">
                         <CalendarIcon size={14} />
-                        {new Date(worker.created_at).toLocaleDateString('vi-VN', {
-                          day: '2-digit', month: '2-digit', year: 'numeric'
-                        })}
+                        {worker.created_at
+                          ? new Date(worker.created_at).toLocaleDateString('vi-VN', {
+                              day: '2-digit', month: '2-digit', year: 'numeric'
+                            })
+                          : "Chưa có"}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -860,33 +990,9 @@ export default function AdminWorkers() {
                   <label className="text-sm font-semibold text-on-surface block">
                     Chuyên môn sửa chữa
                   </label>
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-surface-container-low rounded-xl border border-outline-variant/30">
-                    {specialtyOptions.map((sp) => {
-                      const isSelected = newWorkerFormData.specialties.includes(sp);
-                      return (
-                        <button
-                          key={sp}
-                          type="button"
-                          onClick={() => {
-                            setNewWorkerFormData(prev => ({
-                              ...prev,
-                              specialties: isSelected
-                                ? prev.specialties.filter(s => s !== sp)
-                                : [...prev.specialties, sp]
-                            }));
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                            isSelected
-                              ? "bg-primary text-white border-primary shadow-sm"
-                              : "bg-white border-outline-variant/60 text-on-surface-variant hover:border-primary/50"
-                          }`}
-                        >
-                          {isSelected && "✓ "}
-                          {sp}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {renderSpecialtySelector(newWorkerFormData.specialties, specialties =>
+                    setNewWorkerFormData(prev => ({ ...prev, specialties }))
+                  )}
                 </div>
 
                 {/* Initial Status */}
@@ -1038,33 +1144,9 @@ export default function AdminWorkers() {
                   <label className="text-sm font-semibold text-on-surface block">
                     Chuyên môn sửa chữa
                   </label>
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-surface-container-low rounded-xl border border-outline-variant/30">
-                    {specialtyOptions.map((sp) => {
-                      const isSelected = editWorkerFormData.specialties.includes(sp);
-                      return (
-                        <button
-                          key={sp}
-                          type="button"
-                          onClick={() => {
-                            setEditWorkerFormData(prev => ({
-                              ...prev,
-                              specialties: isSelected
-                                ? prev.specialties.filter(s => s !== sp)
-                                : [...prev.specialties, sp]
-                            }));
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                            isSelected
-                              ? "bg-primary text-white border-primary shadow-sm"
-                              : "bg-white border-outline-variant/60 text-on-surface-variant hover:border-primary/50"
-                          }`}
-                        >
-                          {isSelected && "✓ "}
-                          {sp}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {renderSpecialtySelector(editWorkerFormData.specialties, specialties =>
+                    setEditWorkerFormData(prev => ({ ...prev, specialties }))
+                  )}
                 </div>
 
                 {/* Status Selection */}

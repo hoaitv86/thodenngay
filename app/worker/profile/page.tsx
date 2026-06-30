@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getGpsLocationErrorMessage } from "@/lib/location";
 import {
+  buildWorkerSpecialtyGroups,
+  expandWorkerSpecialties,
+  inferWorkerSpecialtyChildValues,
+  inferWorkerSpecialtyParentIds,
+  type WorkerSpecialtyGroup,
+} from "@/lib/worker-specialty-catalog";
+import {
   UserIcon,
   PhoneIcon,
   MapPinIcon,
@@ -45,16 +52,6 @@ type GpsLocation = {
   captured_at?: string;
 };
 
-const DEFAULT_SPECIALTY_OPTIONS = [
-  "Điện",
-  "Nước",
-  "Lắp camera",
-  "Cơ khí",
-  "Điều hòa",
-  "Sơn nhà",
-  "Mộc",
-];
-
 export default function WorkerProfile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<WorkerProfileData | null>(null);
@@ -72,8 +69,10 @@ export default function WorkerProfile() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locationMsg, setLocationMsg] = useState("");
-  const [specialtyOptions, setSpecialtyOptions] = useState<string[]>(DEFAULT_SPECIALTY_OPTIONS);
+  const [specialtyGroups, setSpecialtyGroups] = useState<WorkerSpecialtyGroup[]>(() => buildWorkerSpecialtyGroups());
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
+  const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  const [selectedChildValues, setSelectedChildValues] = useState<string[]>([]);
   const [savingSpecialties, setSavingSpecialties] = useState(false);
   const [specialtyMsg, setSpecialtyMsg] = useState("");
 
@@ -128,6 +127,8 @@ export default function WorkerProfile() {
           email: user.email
         });
         setSelectedSpecialties(workerData?.specialties || []);
+        setSelectedParentIds(inferWorkerSpecialtyParentIds(workerData?.specialties || []));
+        setSelectedChildValues(inferWorkerSpecialtyChildValues(workerData?.specialties || []));
 
         if (userProfile) {
           setFullName(userProfile.full_name || "");
@@ -144,26 +145,38 @@ export default function WorkerProfile() {
     const fetchSpecialtyOptions = async () => {
       const { data, error } = await supabase
         .from("services")
-        .select("name")
+        .select("id, name, parent_service_id")
         .eq("is_active", true)
         .order("name", { ascending: true });
 
       if (!error && data && data.length > 0) {
-        const serviceNames = data
-          .map((service: { name?: string | null }) => service.name?.trim())
-          .filter((name): name is string => Boolean(name));
-        setSpecialtyOptions(Array.from(new Set([...serviceNames, ...DEFAULT_SPECIALTY_OPTIONS])));
+        const groups = buildWorkerSpecialtyGroups(data);
+        setSpecialtyGroups(groups);
+        setSelectedParentIds(prev => prev.length > 0 ? prev : inferWorkerSpecialtyParentIds(selectedSpecialties, groups));
+        setSelectedChildValues(prev => prev.length > 0 ? prev : inferWorkerSpecialtyChildValues(selectedSpecialties, groups));
       }
     };
 
     fetchSpecialtyOptions();
-  }, [supabase]);
+  }, [selectedSpecialties, supabase]);
 
-  const toggleSpecialty = (specialty: string) => {
-    setSelectedSpecialties((prev) =>
-      prev.includes(specialty)
-        ? prev.filter((item) => item !== specialty)
-        : [...prev, specialty]
+  const toggleParentSpecialty = (group: WorkerSpecialtyGroup) => {
+    setSelectedParentIds(prev => {
+      const isSelected = prev.includes(group.id);
+      if (isSelected) {
+        setSelectedChildValues(childValues => childValues.filter(value => !group.children.some(child => child.value === value)));
+        return prev.filter(id => id !== group.id);
+      }
+      return [...prev, group.id];
+    });
+  };
+
+  const toggleChildSpecialty = (group: WorkerSpecialtyGroup, value: string) => {
+    setSelectedParentIds(prev => prev.includes(group.id) ? prev : [...prev, group.id]);
+    setSelectedChildValues(prev =>
+      prev.includes(value)
+        ? prev.filter(item => item !== value)
+        : [...prev, value]
     );
   };
 
@@ -176,8 +189,11 @@ export default function WorkerProfile() {
     setSavingSpecialties(true);
     setSpecialtyMsg("");
 
-    const cleanedSpecialties = Array.from(
-      new Set(selectedSpecialties.map((item) => item.trim()).filter(Boolean))
+    const cleanedSpecialties = expandWorkerSpecialties(
+      selectedParentIds,
+      selectedChildValues,
+      specialtyGroups,
+      profile.worker.specialties || []
     );
 
     const { data, error } = await supabase
@@ -204,6 +220,8 @@ export default function WorkerProfile() {
       };
     });
     setSelectedSpecialties(data.specialties || []);
+    setSelectedParentIds(inferWorkerSpecialtyParentIds(data.specialties || [], specialtyGroups));
+    setSelectedChildValues(inferWorkerSpecialtyChildValues(data.specialties || [], specialtyGroups));
     setSpecialtyMsg("Đã cập nhật dịch vụ đăng ký.");
     setShowSpecialties(false);
     setSavingSpecialties(false);
@@ -678,6 +696,8 @@ export default function WorkerProfile() {
               setShowSpecialties(!showSpecialties);
               setSpecialtyMsg("");
               setSelectedSpecialties(profile.worker?.specialties || []);
+              setSelectedParentIds(inferWorkerSpecialtyParentIds(profile.worker?.specialties || [], specialtyGroups));
+              setSelectedChildValues(inferWorkerSpecialtyChildValues(profile.worker?.specialties || [], specialtyGroups));
             }}
             className="w-full flex items-center gap-4 p-4 text-left transition-colors hover:bg-surface-container-lowest"
           >
@@ -716,32 +736,69 @@ export default function WorkerProfile() {
                 </p>
               </div>
 
-              <div className="flex max-h-52 flex-wrap gap-2 overflow-y-auto rounded-xl border border-outline-variant/30 bg-white p-2">
-                {specialtyOptions.map((specialty) => {
-                  const isSelected = selectedSpecialties.includes(specialty);
+              <div className="grid grid-cols-2 gap-2">
+                {specialtyGroups.map((group) => {
+                  const isSelected = selectedParentIds.includes(group.id);
+                  const selectedChildrenCount = group.children.filter(child => selectedChildValues.includes(child.value)).length;
                   return (
                     <button
-                      key={specialty}
+                      key={group.id}
                       type="button"
-                      onClick={() => toggleSpecialty(specialty)}
+                      onClick={() => toggleParentSpecialty(group)}
                       disabled={savingSpecialties}
-                      className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:opacity-60 ${
+                      className={`min-h-14 rounded-lg border px-3 py-2 text-left text-xs font-bold transition-all disabled:opacity-60 ${
                         isSelected
                           ? "border-primary bg-primary text-white shadow-sm"
                           : "border-outline-variant/60 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary-container"
                       }`}
                     >
-                      {isSelected ? "✓ " : ""}
-                      {specialty}
+                      <span className="block">{isSelected ? "✓ " : ""}{group.label}</span>
+                      <span className={`mt-1 block text-[10px] ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                        {selectedChildrenCount > 0 ? `${selectedChildrenCount} kỹ năng` : `${group.children.length} kỹ năng`}
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
+              {selectedParentIds.length > 0 && (
+                <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-white p-3">
+                  {specialtyGroups
+                    .filter(group => selectedParentIds.includes(group.id))
+                    .map(group => (
+                      <div key={`profile-children-${group.id}`} className="space-y-2">
+                        <p className="text-xs font-extrabold uppercase text-on-surface-variant">{group.label}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {group.children.map(child => {
+                            const isSelected = selectedChildValues.includes(child.value);
+                            return (
+                              <button
+                                key={child.id}
+                                type="button"
+                                onClick={() => toggleChildSpecialty(group, child.value)}
+                                disabled={savingSpecialties}
+                                className={`min-h-10 rounded-lg border px-3 py-2 text-left text-xs font-bold transition-all disabled:opacity-60 ${
+                                  isSelected
+                                    ? "border-secondary-container bg-secondary-container text-white"
+                                    : "border-outline-variant/50 bg-white text-on-surface-variant hover:border-secondary-container/50"
+                                }`}
+                              >
+                                {isSelected ? "✓ " : ""}{child.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+
               <div className="rounded-xl bg-primary-fixed/70 p-3">
                 <p className="text-[10px] font-bold uppercase text-primary-container/75">Đã chọn</p>
                 <p className="mt-1 text-sm font-bold text-primary-container">
-                  {selectedSpecialties.length > 0 ? selectedSpecialties.join(", ") : "Chưa chọn dịch vụ nào"}
+                  {expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups, profile.worker?.specialties || []).length > 0
+                    ? expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups, profile.worker?.specialties || []).join(", ")
+                    : "Chưa chọn dịch vụ nào"}
                 </p>
               </div>
 
@@ -750,6 +807,8 @@ export default function WorkerProfile() {
                   type="button"
                   onClick={() => {
                     setSelectedSpecialties(profile.worker?.specialties || []);
+                    setSelectedParentIds(inferWorkerSpecialtyParentIds(profile.worker?.specialties || [], specialtyGroups));
+                    setSelectedChildValues(inferWorkerSpecialtyChildValues(profile.worker?.specialties || [], specialtyGroups));
                     setShowSpecialties(false);
                     setSpecialtyMsg("");
                   }}

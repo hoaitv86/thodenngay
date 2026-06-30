@@ -36,6 +36,7 @@ type ServiceOption = {
   icon?: string | null;
   base_price?: number | null;
   parent_service_id?: string | null;
+  parentName?: string | null;
 };
 
 type GpsLocation = {
@@ -265,7 +266,15 @@ function CustomerBookingContent() {
       throw new Error(error.message);
     }
 
-    return (data || []).some((worker) => serviceMatchesSpecialties(service, worker.specialties || []));
+    const parentService = service.parent_service_id
+      ? services.find(item => item.id === service.parent_service_id)
+      : null;
+    const serviceWithParent = {
+      ...service,
+      parentName: parentService?.name || service.parentName || null,
+    };
+
+    return (data || []).some((worker) => serviceMatchesSpecialties(serviceWithParent, worker.specialties || []));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
