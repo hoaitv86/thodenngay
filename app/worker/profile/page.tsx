@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getGpsLocationErrorMessage } from "@/lib/location";
 import {
   UserIcon,
   PhoneIcon,
@@ -298,7 +299,7 @@ export default function WorkerProfile() {
           .eq("id", user.id);
 
         if (error) {
-          setLocationMsg("Không thể lưu vị trí: " + error.message);
+          setLocationMsg(getGpsLocationErrorMessage(error));
         } else {
           setProfile((prev) => prev ? { ...prev, gps_location: location } : prev);
           setLocationMsg("Đã cập nhật vị trí hoạt động.");

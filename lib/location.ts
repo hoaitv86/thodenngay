@@ -5,6 +5,10 @@ export type GpsPoint = {
   captured_at?: string;
 };
 
+export const GPS_SCHEMA_FIX_SQL = "supabase/migration_gps_location_fix.sql";
+export const GPS_SCHEMA_MISSING_MESSAGE =
+  `Database chưa có cột GPS. Vui lòng chạy ${GPS_SCHEMA_FIX_SQL} trong Supabase SQL Editor rồi tải lại trang.`;
+
 const EARTH_RADIUS_KM = 6371;
 const DEFAULT_CITY_SPEED_KMH = 18;
 
@@ -19,6 +23,24 @@ export const isGpsPoint = (value: unknown): value is GpsPoint => {
     Number.isFinite(point.lng)
   );
 };
+
+export const isMissingGpsLocationColumnError = (error: unknown) => {
+  const message = typeof error === "object" && error && "message" in error
+    ? String((error as { message?: unknown }).message || "")
+    : String(error || "");
+
+  return (
+    message.includes("gps_location") &&
+    (message.includes("schema cache") || message.includes("Could not find") || message.includes("column"))
+  );
+};
+
+export const getGpsLocationErrorMessage = (error: unknown) =>
+  isMissingGpsLocationColumnError(error)
+    ? GPS_SCHEMA_MISSING_MESSAGE
+    : `Không thể lưu vị trí: ${typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message || "Lỗi không xác định")
+      : String(error || "Lỗi không xác định")}`;
 
 export const getDistanceKm = (from: GpsPoint, to: GpsPoint) => {
   const toRadians = (degree: number) => (degree * Math.PI) / 180;
