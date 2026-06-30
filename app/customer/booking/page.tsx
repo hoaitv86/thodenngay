@@ -412,8 +412,10 @@ function CustomerBookingContent() {
                   <p className="text-xs font-bold uppercase text-on-surface-variant">
                     Dịch vụ trong {selectedGroup.category.name}
                   </p>
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                    {selectedGroup.services.map(service => {
+                  <div className="space-y-4">
+                    {selectedGroup.directServices.length > 0 && (
+                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                        {selectedGroup.directServices.map(service => {
                   const visual = getServiceVisual(service);
                   const Icon = visual.icon;
                   const isSelected = formData.serviceId === service.id;
@@ -448,7 +450,58 @@ function CustomerBookingContent() {
                       </div>
                     </button>
                   );
-                    })}
+                        })}
+                      </div>
+                    )}
+
+                    {selectedGroup.childGroups.map(({ child, services: childServices }) => (
+                      <section key={child.id} className="space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-sm font-extrabold text-on-surface">{child.name}</h3>
+                          <span className="rounded-full bg-surface-container px-2.5 py-1 text-[10px] font-extrabold text-on-surface-variant">
+                            {childServices.length} dịch vụ
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                          {childServices.map(service => {
+                            const visual = getServiceVisual(service);
+                            const Icon = visual.icon;
+                            const isSelected = formData.serviceId === service.id;
+
+                            return (
+                              <button
+                                key={service.id}
+                                type="button"
+                                onClick={() => setFormData({ ...formData, serviceId: service.id })}
+                                className={`flex min-h-[128px] flex-col items-start justify-between rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:p-4 ${isSelected
+                                    ? `${visual.selectedClass} shadow-md`
+                                    : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20'
+                                  }`}
+                              >
+                                <div className="flex w-full items-start justify-between gap-2">
+                                  <div className={`flex h-11 w-11 items-center justify-center rounded-lg shadow-sm ${isSelected ? 'bg-white text-on-surface' : visual.iconClass}`}>
+                                    <Icon size={21} />
+                                  </div>
+                                  {isSelected && (
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-white">
+                                      <CheckCircleIcon size={14} />
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-3 min-w-0">
+                                  <span className={`block text-sm font-extrabold leading-5 ${isSelected ? visual.labelClass : 'text-on-surface'}`}>
+                                    {service.name}
+                                  </span>
+                                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold ${isSelected ? visual.chipClass : 'bg-surface-container text-on-surface-variant'}`}>
+                                    Từ {service.base_price ? service.base_price.toLocaleString('vi-VN') : 0}đ
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 </div>
               )}

@@ -19,8 +19,8 @@ import {
 
 import { createClient } from "@/lib/supabase/client";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
-import { groupServicesByCanonicalCategory, normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
-import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
+import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
+import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
 import { Worker } from "@/lib/types";
 import PendingApproval from "./pending-approval";
 
@@ -47,29 +47,6 @@ type QuickServiceGroup = {
     services: ServiceOption[];
   }>;
 };
-
-const QUICK_SERVICE_GROUPS = [
-  {
-    id: "internet",
-    name: "Mạng Internet",
-    keywords: ["mang internet", "internet", "wifi", "wi-fi", "mat mang", "sua mang", "router", "modem", "lan"],
-  },
-  {
-    id: "camera",
-    name: "Camera",
-    keywords: ["camera", "cctv", "lap camera", "sua camera"],
-  },
-  {
-    id: "computer",
-    name: "Máy tính",
-    keywords: ["may tinh", "computer", "pc", "laptop", "windows", "cai windows", "phan mem"],
-  },
-  {
-    id: "printer",
-    name: "Máy in",
-    keywords: ["may in", "printer", "sua may in", "do muc", "muc in"],
-  },
-];
 
 const QUICK_FREQUENT_SERVICE_NAMES = ["Sửa mất mạng", "Lắp camera", "Cài Windows", "Sửa máy in"];
 
@@ -166,82 +143,23 @@ const compareServicesByName = (a: ServiceOption, b: ServiceOption) =>
   (a.name || "").localeCompare(b.name || "", "vi");
 
 const buildAdminServiceGroups = (services: ServiceOption[]): QuickServiceGroup[] => {
-  const serviceById = new Map(services.map(service => [service.id, service]));
-  const childrenByParent = new Map<string, ServiceOption[]>();
-
-  services.forEach(service => {
-    if (!service.parent_service_id) return;
-
-    const siblings = childrenByParent.get(service.parent_service_id) || [];
-    siblings.push(service);
-    childrenByParent.set(service.parent_service_id, siblings);
-  });
-
-  const getServicePathNames = (service: ServiceOption) => {
-    const names = [service.name || ""];
-    const visited = new Set<string>([service.id]);
-    let parentId = service.parent_service_id || null;
-
-    while (parentId && !visited.has(parentId)) {
-      visited.add(parentId);
-      const parent = serviceById.get(parentId);
-      if (!parent) break;
-      names.unshift(parent.name || "");
-      parentId = parent.parent_service_id || null;
-    }
-
-    return names.filter(Boolean);
-  };
-
-  const leafServices = services
-    .filter(service => !childrenByParent.has(service.id))
-    .sort(compareServicesByName);
-
-  const servicesByQuickGroup = new Map<string, ServiceOption[]>(
-    QUICK_SERVICE_GROUPS.map(group => [group.id, []])
-  );
-
-  const fallbackGroups = groupServicesByCanonicalCategory(leafServices).map(group => ({
-    id: group.category.id,
-    services: group.services,
+  return groupServicesForDisplay(services).map(group => ({
+    parent: {
+      id: group.category.id,
+      name: group.category.name,
+    },
+    category: {
+      id: group.category.id,
+      name: group.category.name,
+      emoji: group.category.emoji,
+    },
+    services: [...group.services].sort(compareServicesByName),
+    directServices: [...group.directServices].sort(compareServicesByName),
+    childGroups: group.childGroups.map(childGroup => ({
+      child: childGroup.child,
+      services: [...childGroup.services].sort(compareServicesByName),
+    })),
   }));
-
-  leafServices.forEach(service => {
-    const searchable = normalizeServiceText([
-      ...getServicePathNames(service),
-      service.description,
-      service.icon,
-    ].filter(Boolean).join(" "));
-    const quickGroup = QUICK_SERVICE_GROUPS.find(group =>
-      group.keywords.some(keyword => searchable.includes(normalizeServiceText(keyword)))
-    );
-    const fallbackGroup = fallbackGroups.find(group => group.services.some(item => item.id === service.id));
-    const groupId = quickGroup?.id || fallbackGroup?.id;
-
-    if (!groupId || !servicesByQuickGroup.has(groupId)) return;
-    servicesByQuickGroup.get(groupId)?.push(service);
-  });
-
-  return QUICK_SERVICE_GROUPS.map(group => {
-    const groupedServices = [...(servicesByQuickGroup.get(group.id) || [])]
-      .filter((service, index, items) => items.findIndex(item => item.id === service.id) === index)
-      .sort(compareServicesByName);
-
-    return {
-      parent: {
-        id: `quick-${group.id}`,
-        name: group.name,
-      },
-      category: {
-        id: group.id,
-        name: group.name,
-        emoji: "",
-      },
-      services: groupedServices,
-      directServices: groupedServices,
-      childGroups: [],
-    };
-  }).filter(group => group.services.length > 0);
 };
 
 const getQuickServicePathLabel = (service: ServiceOption | null, services: ServiceOption[]) => {
@@ -1288,8 +1206,10 @@ export default function WorkerDashboard() {
                               </button>
 
                               {isOpen && (
-                                <div className="grid grid-cols-1 gap-2 border-t border-outline-variant/30 p-2 sm:grid-cols-2">
-                                  {group.services.map(service => {
+                                <div className="space-y-3 border-t border-outline-variant/30 p-2">
+                                  {group.directServices.length > 0 && (
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                      {group.directServices.map(service => {
                                     const isSelected = quickJob.serviceId === service.id;
                                     return (
                                       <button
@@ -1308,7 +1228,42 @@ export default function WorkerDashboard() {
                                         </span>
                                       </button>
                                     );
-                                  })}
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {group.childGroups.map(({ child, services: childServices }) => (
+                                    <section key={child.id} className="space-y-2">
+                                      <div className="flex items-center justify-between gap-2 px-1">
+                                        <h4 className="text-sm font-extrabold text-on-surface">{child.name}</h4>
+                                        <span className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-extrabold text-on-surface-variant">
+                                          {childServices.length} dịch vụ
+                                        </span>
+                                      </div>
+                                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        {childServices.map(service => {
+                                          const isSelected = quickJob.serviceId === service.id;
+                                          return (
+                                            <button
+                                              key={service.id}
+                                              type="button"
+                                              onClick={() => handleQuickServiceChange(service.id)}
+                                              className={`min-h-[64px] rounded-lg border px-4 py-3 text-left transition-all active:scale-[0.98] ${
+                                                isSelected
+                                                  ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                                  : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                              }`}
+                                            >
+                                              <span className="block text-base font-extrabold leading-5">{service.name}</span>
+                                              <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                                Từ {formatCurrency(Number(service.base_price || 0))}
+                                              </span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </section>
+                                  ))}
                                 </div>
                               )}
                             </div>

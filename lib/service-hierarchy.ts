@@ -54,8 +54,37 @@ const DEFAULT_SERVICE_PARENT_BY_ID: Record<string, string> = {
   "fafe89b7-c90f-423c-9241-a49fa5037e33": "a1584915-6839-47f9-a291-04eca378658d",
 };
 
+const ROOT_SERVICE_ORDER: Record<string, number> = {
+  "Mạng Internet": 1,
+  Camera: 2,
+  "Máy tính": 3,
+  "Máy in": 4,
+};
+
+const CHILD_SERVICE_ORDER: Record<string, number> = {
+  "Lắp đặt": 1,
+  "Cài đặt": 2,
+  "Sửa chữa": 3,
+  "Bảo trì": 4,
+  "Nâng cấp": 5,
+  "Di dời": 6,
+  "Tài khoản": 7,
+  "Mực in": 8,
+  "Linh kiện": 9,
+  "Dữ liệu": 10,
+};
+
+const getSortOrder = (name?: string | null, orderMap: Record<string, number> = {}) =>
+  name ? orderMap[name] || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+
 const compareByName = <T extends ServiceHierarchyLike>(a: T, b: T) =>
   (a.name || "").localeCompare(b.name || "", "vi");
+
+const compareRoots = <T extends ServiceHierarchyLike>(a: T, b: T) =>
+  getSortOrder(a.name, ROOT_SERVICE_ORDER) - getSortOrder(b.name, ROOT_SERVICE_ORDER) || compareByName(a, b);
+
+const compareChildren = <T extends ServiceHierarchyLike>(a: T, b: T) =>
+  getSortOrder(a.name, CHILD_SERVICE_ORDER) - getSortOrder(b.name, CHILD_SERVICE_ORDER) || compareByName(a, b);
 
 export const getDefaultServiceParentId = (serviceId: string) =>
   DEFAULT_SERVICE_PARENT_BY_ID[serviceId] || null;
@@ -109,11 +138,11 @@ export const groupServicesByDatabaseHierarchy = <T extends ServiceHierarchyLike>
   const { serviceById, childrenByParent } = getHierarchyMaps(services);
   const roots = services
     .filter(service => !service.parent_service_id || !serviceById.has(service.parent_service_id))
-    .sort(compareByName);
+    .sort(compareRoots);
 
   return roots
     .map(root => {
-      const children = [...(childrenByParent.get(root.id) || [])].sort(compareByName);
+      const children = [...(childrenByParent.get(root.id) || [])].sort(compareChildren);
       const directServices = children.length === 0
         ? [root]
         : children

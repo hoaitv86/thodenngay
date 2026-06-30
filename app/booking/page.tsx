@@ -277,8 +277,10 @@ export default function BookingPage() {
             </div>
 
             {selectedGroup && (
-              <div className="grid grid-cols-1 gap-4">
-                {selectedGroup.services.map((svc) => {
+              <div className="space-y-5">
+                {selectedGroup.directServices.length > 0 && (
+                  <div className="grid grid-cols-1 gap-4">
+                    {selectedGroup.directServices.map((svc) => {
                 const isSelected = selectedService?.id === svc.id;
                 return (
                   <button
@@ -302,7 +304,47 @@ export default function BookingPage() {
                     </div>
                   </button>
                 );
-                })}
+                    })}
+                  </div>
+                )}
+
+                {selectedGroup.childGroups.map(({ child, services: childServices }) => (
+                  <section key={child.id} className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-base font-extrabold text-on-surface">{child.name}</h2>
+                      <span className="rounded-full bg-surface-container px-2.5 py-1 text-[10px] font-extrabold text-on-surface-variant">
+                        {childServices.length} dịch vụ
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      {childServices.map((svc) => {
+                        const isSelected = selectedService?.id === svc.id;
+                        return (
+                          <button
+                            key={svc.id}
+                            onClick={() => setSelectedService(svc)}
+                            className={`card flex items-center gap-3 p-4 text-left transition-all sm:gap-5 sm:p-5 ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : ''}`}
+                          >
+                            <div 
+                              className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 sm:w-14 sm:h-14"
+                              style={{ backgroundColor: svc.bgColor, color: svc.color }}
+                            >
+                              <svc.iconComponent size={28} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-on-surface">{svc.name}</h3>
+                              <p className="text-body-sm text-on-surface-variant line-clamp-2">{svc.description}</p>
+                              <div className="text-label-sm text-primary-container mt-1 font-semibold">Từ {svc.formattedPrice}</div>
+                            </div>
+                            <div className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-outline-variant'}`}>
+                              {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             )}
 
