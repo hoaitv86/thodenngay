@@ -546,7 +546,8 @@ export default function WorkerDashboard() {
     if (error) {
       console.error(error);
       const jobAlreadyAccepted =
-        error.message?.includes("Công việc đã được thợ khác nhận");
+        error.message?.includes("Công việc đã được thợ khác nhận") ||
+        error.message?.includes("JOB_ALREADY_ACCEPTED");
       const acceptJobRpcMissing =
         error.code === "PGRST202" ||
         error.message?.includes("worker_accept_job");

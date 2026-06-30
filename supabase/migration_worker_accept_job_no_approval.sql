@@ -45,7 +45,7 @@ BEGIN
   LIMIT 1;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Không tìm thấy thợ đang hoạt động.' USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'WORKER_NOT_ACTIVE' USING ERRCODE = 'P0001';
   END IF;
 
   UPDATE public.jobs
@@ -63,7 +63,7 @@ BEGIN
   INTO v_job;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Công việc đã được thợ khác nhận.' USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'JOB_ALREADY_ACCEPTED' USING ERRCODE = 'P0001';
   END IF;
 
   INSERT INTO public.job_logs (job_id, actor_id, action, metadata)
@@ -102,3 +102,5 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.worker_accept_job(UUID, JSONB, JSONB) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
