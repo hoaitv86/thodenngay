@@ -486,8 +486,11 @@ export default function AdminServices() {
     .filter(service => getServiceLevel(service) < 2)
     .sort((a, b) => getServiceLevel(a) - getServiceLevel(b) || a.name.localeCompare(b.name));
 
+  const isInServiceTree = (service: ServiceItem) =>
+    Boolean(service.parent_service_id || servicesByParent[service.id]?.length);
+
   const isUnusedService = (service: ServiceItem) =>
-    !service.is_active || getCanonicalServiceCategories(service).length === 0;
+    !service.is_active || (!isInServiceTree(service) && getCanonicalServiceCategories(service).length === 0);
 
   const unusedServiceCount = services.filter(isUnusedService).length;
 
