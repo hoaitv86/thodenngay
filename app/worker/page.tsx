@@ -18,7 +18,7 @@ import {
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
-import { groupServicesByCanonicalCategory, serviceMatchesSpecialties } from "@/lib/service-categories";
+import { groupServicesByCanonicalCategory, normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { Worker } from "@/lib/types";
 import PendingApproval from "./pending-approval";
@@ -46,6 +46,31 @@ type QuickServiceGroup = {
     services: ServiceOption[];
   }>;
 };
+
+const QUICK_SERVICE_GROUPS = [
+  {
+    id: "internet",
+    name: "Mạng Internet",
+    keywords: ["mang internet", "internet", "wifi", "wi-fi", "mat mang", "sua mang", "router", "modem", "lan"],
+  },
+  {
+    id: "camera",
+    name: "Camera",
+    keywords: ["camera", "cctv", "lap camera", "sua camera"],
+  },
+  {
+    id: "computer",
+    name: "Máy tính",
+    keywords: ["may tinh", "computer", "pc", "laptop", "windows", "cai windows", "phan mem"],
+  },
+  {
+    id: "printer",
+    name: "Máy in",
+    keywords: ["may in", "printer", "sua may in", "do muc", "muc in"],
+  },
+];
+
+const QUICK_FREQUENT_SERVICE_NAMES = ["Sửa mất mạng", "Lắp camera", "Cài Windows", "Sửa máy in"];
 
 interface WorkerJob {
   id: string;
@@ -141,60 +166,89 @@ const buildAdminServiceGroups = (services: ServiceOption[]): QuickServiceGroup[]
     childrenByParent.set(service.parent_service_id, siblings);
   });
 
-  const hasAdminHierarchy = services.some(service => service.parent_service_id);
-  if (!hasAdminHierarchy) {
-    return groupServicesByCanonicalCategory(services).map(({ category, services: categoryServices }) => ({
-      parent: {
-        id: `canonical-${category.id}`,
-        name: category.name,
-        icon: category.icon,
-      },
-      category: {
-        id: category.id,
-        name: category.name,
-        emoji: category.emoji,
-      },
-      services: [...categoryServices].sort(compareServicesByName),
-      directServices: [...categoryServices].sort(compareServicesByName),
-      childGroups: [],
-    }));
-  }
+  const getServicePathNames = (service: ServiceOption) => {
+    const names = [service.name || ""];
+    const visited = new Set<string>([service.id]);
+    let parentId = service.parent_service_id || null;
 
-  const roots = services
-    .filter(service => !service.parent_service_id || !serviceById.has(service.parent_service_id))
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = serviceById.get(parentId);
+      if (!parent) break;
+      names.unshift(parent.name || "");
+      parentId = parent.parent_service_id || null;
+    }
+
+    return names.filter(Boolean);
+  };
+
+  const leafServices = services
+    .filter(service => !childrenByParent.has(service.id))
     .sort(compareServicesByName);
 
-  const makeSelectableServices = (items: ServiceOption[]) =>
-    items
-      .filter(service => !childrenByParent.has(service.id))
+  const servicesByQuickGroup = new Map<string, ServiceOption[]>(
+    QUICK_SERVICE_GROUPS.map(group => [group.id, []])
+  );
+
+  const fallbackGroups = groupServicesByCanonicalCategory(leafServices).map(group => ({
+    id: group.category.id,
+    services: group.services,
+  }));
+
+  leafServices.forEach(service => {
+    const searchable = normalizeServiceText([
+      ...getServicePathNames(service),
+      service.description,
+      service.icon,
+    ].filter(Boolean).join(" "));
+    const quickGroup = QUICK_SERVICE_GROUPS.find(group =>
+      group.keywords.some(keyword => searchable.includes(normalizeServiceText(keyword)))
+    );
+    const fallbackGroup = fallbackGroups.find(group => group.services.some(item => item.id === service.id));
+    const groupId = quickGroup?.id || fallbackGroup?.id;
+
+    if (!groupId || !servicesByQuickGroup.has(groupId)) return;
+    servicesByQuickGroup.get(groupId)?.push(service);
+  });
+
+  return QUICK_SERVICE_GROUPS.map(group => {
+    const groupedServices = [...(servicesByQuickGroup.get(group.id) || [])]
+      .filter((service, index, items) => items.findIndex(item => item.id === service.id) === index)
       .sort(compareServicesByName);
 
-  return roots.map(parent => {
-    const children = [...(childrenByParent.get(parent.id) || [])].sort(compareServicesByName);
-    const directServices = children.length === 0 ? [parent] : makeSelectableServices(children);
-    const childGroups = children
-      .filter(child => childrenByParent.has(child.id))
-      .map(child => ({
-        child,
-        services: makeSelectableServices(childrenByParent.get(child.id) || []),
-      }))
-      .filter(group => group.services.length > 0);
-
     return {
-      parent,
+      parent: {
+        id: `quick-${group.id}`,
+        name: group.name,
+      },
       category: {
-        id: parent.id,
-        name: parent.name,
+        id: group.id,
+        name: group.name,
         emoji: "",
       },
-      services: [
-        ...directServices,
-        ...childGroups.flatMap(group => group.services),
-      ],
-      directServices,
-      childGroups,
+      services: groupedServices,
+      directServices: groupedServices,
+      childGroups: [],
     };
-  }).filter(group => group.directServices.length > 0 || group.childGroups.length > 0);
+  }).filter(group => group.services.length > 0);
+};
+
+const getQuickServicePathLabel = (service: ServiceOption | null, services: ServiceOption[]) => {
+  if (!service) return "";
+  const serviceById = new Map(services.map(item => [item.id, item]));
+  const names = [service.name || "Dịch vụ"];
+  const visited = new Set<string>([service.id]);
+  let parentId = service.parent_service_id || null;
+
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = serviceById.get(parentId);
+    if (!parent) break;
+    names.unshift(parent.name || "Danh mục");
+    parentId = parent.parent_service_id || null;
+  }
+
+  return names.join(" / ");
 };
 
 const getJobCreatedDate = (job: Pick<WorkerJob, "created_at" | "scheduled_at">) => {
@@ -266,6 +320,7 @@ export default function WorkerDashboard() {
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerPassword: null });
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
+  const [expandedQuickServiceGroup, setExpandedQuickServiceGroup] = useState("internet");
   const [quickJob, setQuickJob] = useState({
     customerName: "",
     customerPhone: "",
@@ -281,6 +336,46 @@ export default function WorkerDashboard() {
     () => services.find(service => service.id === quickJob.serviceId) || null,
     [quickJob.serviceId, services]
   );
+  const selectedQuickServicePath = React.useMemo(
+    () => getQuickServicePathLabel(selectedQuickService, services),
+    [selectedQuickService, services]
+  );
+  const quickSuggestedServices = React.useMemo(() => {
+    const leafServiceIds = new Set(quickServiceGroups.flatMap(group => group.services.map(service => service.id)));
+    const serviceById = new Map(services.map(service => [service.id, service]));
+    const recentIds = [...pendingApprovalJobs, ...activeJobs]
+      .map(job => typeof job.service_id === "string" ? job.service_id : "")
+      .filter(Boolean);
+    const suggestions: ServiceOption[] = [];
+
+    [...recentIds, quickJob.serviceId].forEach(serviceId => {
+      const service = serviceById.get(serviceId);
+      if (service && leafServiceIds.has(service.id) && !suggestions.some(item => item.id === service.id)) {
+        suggestions.push(service);
+      }
+    });
+
+    if (suggestions.length < 4) {
+      QUICK_FREQUENT_SERVICE_NAMES.forEach(serviceName => {
+        const normalizedName = normalizeServiceText(serviceName);
+        const service = services.find(item =>
+          leafServiceIds.has(item.id) &&
+          normalizeServiceText(item.name).includes(normalizedName) &&
+          !suggestions.some(selected => selected.id === item.id)
+        );
+        if (service) suggestions.push(service);
+      });
+    }
+
+    if (suggestions.length < 4) {
+      quickServiceGroups.flatMap(group => group.services).forEach(service => {
+        if (suggestions.length >= 4) return;
+        if (!suggestions.some(item => item.id === service.id)) suggestions.push(service);
+      });
+    }
+
+    return suggestions.slice(0, 6);
+  }, [activeJobs, pendingApprovalJobs, quickJob.serviceId, quickServiceGroups, services]);
 
   // Completion modal states
   const [activeJobToComplete, setActiveJobToComplete] = useState<WorkerJob | null>(null);
@@ -1086,18 +1181,11 @@ export default function WorkerDashboard() {
                     </option>
                     {quickServiceGroups.map(group => (
                       <optgroup key={group.parent.id} label={group.parent.name}>
-                        {group.directServices.map(service => (
+                        {group.services.map(service => (
                           <option key={service.id} value={service.id}>
                             {service.name}
                           </option>
                         ))}
-                        {group.childGroups.flatMap(childGroup =>
-                          childGroup.services.map(service => (
-                            <option key={service.id} value={service.id}>
-                              {childGroup.child.name} / {service.name}
-                            </option>
-                          ))
-                        )}
                       </optgroup>
                     ))}
                   </select>
@@ -1106,62 +1194,82 @@ export default function WorkerDashboard() {
                       Chưa có dịch vụ khả dụng
                     </div>
                   ) : (
-                    <div className="max-h-80 space-y-3 overflow-y-auto rounded-lg border border-outline-variant/40 bg-surface-container-low p-2">
-                      {quickServiceGroups.map(group => (
-                        <div key={group.parent.id} className="rounded-lg border border-outline-variant/30 bg-white p-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-extrabold text-on-surface">{group.parent.name}</p>
-                            <p className="text-[11px] font-semibold text-on-surface-variant">
-                              {group.services.length} dịch vụ
-                            </p>
+                    <div className="max-h-[28rem] space-y-3 overflow-y-auto rounded-lg border border-outline-variant/40 bg-surface-container-low p-2">
+                      {quickSuggestedServices.length > 0 && (
+                        <div className="rounded-lg border border-secondary-container/20 bg-white p-3">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-sm font-extrabold text-on-surface">Việc dùng gần đây</p>
+                            <span className="rounded-full bg-secondary-container/10 px-2.5 py-1 text-[10px] font-extrabold text-secondary-container">
+                              Chọn nhanh
+                            </span>
                           </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {quickSuggestedServices.map(service => {
+                              const isSelected = quickJob.serviceId === service.id;
+                              return (
+                                <button
+                                  key={`suggested-${service.id}`}
+                                  type="button"
+                                  onClick={() => handleQuickServiceChange(service.id)}
+                                  className={`min-h-[64px] rounded-lg border px-4 py-3 text-left transition-all active:scale-[0.98] ${
+                                    isSelected
+                                      ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                      : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                  }`}
+                                >
+                                  <span className="block text-base font-extrabold leading-5">{service.name}</span>
+                                  <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                    Từ {formatCurrency(Number(service.base_price || 0))}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
-                          <div className="mt-3 space-y-3">
-                            {group.directServices.length > 0 && (
-                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                {group.directServices.map(service => {
-                                  const isSelected = quickJob.serviceId === service.id;
-                                  return (
-                                    <button
-                                      key={service.id}
-                                      type="button"
-                                      onClick={() => handleQuickServiceChange(service.id)}
-                                      className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
-                                        isSelected
-                                          ? "border-secondary-container bg-secondary-container text-white shadow-sm"
-                                          : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
-                                      }`}
-                                    >
-                                      <span className="block text-sm font-bold leading-5">{service.name}</span>
-                                      <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                        Từ {formatCurrency(Number(service.base_price || 0))}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                      <div className="space-y-2">
+                        {quickServiceGroups.map(group => {
+                          const isOpen = expandedQuickServiceGroup === group.category.id;
+                          const hasSelectedService = group.services.some(service => service.id === quickJob.serviceId);
 
-                            {group.childGroups.map(childGroup => (
-                              <div key={childGroup.child.id} className="rounded-lg bg-surface-container-low p-2">
-                                <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-primary-container">
-                                  {childGroup.child.name}
-                                </p>
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  {childGroup.services.map(service => {
+                          return (
+                            <div key={group.parent.id} className="rounded-lg border border-outline-variant/30 bg-white">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedQuickServiceGroup(isOpen ? "" : group.category.id)}
+                                className={`flex min-h-[56px] w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
+                                  hasSelectedService ? "bg-secondary-container/10 text-secondary-container" : "text-on-surface hover:bg-surface-container-low"
+                                }`}
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate text-base font-extrabold">{group.parent.name}</span>
+                                  <span className="mt-0.5 block text-xs font-semibold text-on-surface-variant">
+                                    {group.services.length} mục công việc
+                                  </span>
+                                </span>
+                                <ChevronRightIcon
+                                  size={18}
+                                  className={`shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                                />
+                              </button>
+
+                              {isOpen && (
+                                <div className="grid grid-cols-1 gap-2 border-t border-outline-variant/30 p-2 sm:grid-cols-2">
+                                  {group.services.map(service => {
                                     const isSelected = quickJob.serviceId === service.id;
                                     return (
                                       <button
                                         key={service.id}
                                         type="button"
                                         onClick={() => handleQuickServiceChange(service.id)}
-                                        className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                                        className={`min-h-[64px] rounded-lg border px-4 py-3 text-left transition-all active:scale-[0.98] ${
                                           isSelected
                                             ? "border-secondary-container bg-secondary-container text-white shadow-sm"
                                             : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
                                         }`}
                                       >
-                                        <span className="block text-sm font-bold leading-5">{service.name}</span>
+                                        <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                         <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
                                           Từ {formatCurrency(Number(service.base_price || 0))}
                                         </span>
@@ -1169,16 +1277,16 @@ export default function WorkerDashboard() {
                                     );
                                   })}
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                   {selectedQuickService && (
                     <div className="rounded-lg border border-secondary-container/20 bg-secondary-container/10 px-3 py-2 text-xs font-semibold text-secondary-container">
-                      Đã chọn: {selectedQuickService.name}
+                      Đã chọn: {selectedQuickServicePath || selectedQuickService.name}
                     </div>
                   )}
                 </div>
