@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
+import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { Worker } from "@/lib/types";
 import PendingApproval from "./pending-approval";
 
@@ -417,7 +418,7 @@ export default function WorkerDashboard() {
           return aMatches - bMatches;
         });
 
-        const servicesWithParents = applyDefaultServiceParents(availableServices);
+        const servicesWithParents = filterStandardServiceCatalog(applyDefaultServiceParents(availableServices));
         const serviceById = new Map(servicesWithParents.map(service => [service.id, service]));
         servicesForMatching = servicesWithParents.map(service => ({
           ...service,

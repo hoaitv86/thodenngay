@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
+import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
   ArrowRightIcon,
   BarChartIcon,
@@ -99,7 +100,7 @@ export default function CustomerHome() {
         .eq("is_active", true);
 
       if (data && !error) {
-        const formattedServices = applyDefaultServiceParents(data).map((svc) => {
+        const formattedServices = filterStandardServiceCatalog(applyDefaultServiceParents(data)).map((svc) => {
           const iconName = svc.icon || "WrenchIcon";
           const visual = serviceStyles[iconName] || {
             color: "bg-primary-fixed text-primary-container",

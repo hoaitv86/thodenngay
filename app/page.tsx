@@ -23,6 +23,8 @@ import {
 } from "./components/icons";
 import { createClient } from "@/lib/supabase/server";
 import { getSystemSettings } from "@/lib/settings-server";
+import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
+import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -238,8 +240,12 @@ export default async function HomePage() {
   }
 
 
-  const services = dbServices && dbServices.length > 0
-    ? dbServices
+  const standardDbServices = dbServices && dbServices.length > 0
+    ? filterStandardServiceCatalog(applyDefaultServiceParents(dbServices))
+    : [];
+
+  const services = standardDbServices.length > 0
+    ? standardDbServices
       .filter((svc, index, all) =>
         all.findIndex((item) => item.name?.trim().toLowerCase() === svc.name?.trim().toLowerCase()) === index
       )

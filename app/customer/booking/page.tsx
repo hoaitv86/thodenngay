@@ -16,6 +16,7 @@ import {
   applyDefaultServiceParents,
   getServiceDisplayCategoryId,
 } from "@/lib/service-hierarchy";
+import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
   MapPinIcon,
   ClockIcon,
@@ -150,7 +151,7 @@ function CustomerBookingContent() {
         .eq('is_active', true)
         .order('name');
 
-      const loadedServices = applyDefaultServiceParents(servicesData || []);
+      const loadedServices = filterStandardServiceCatalog(applyDefaultServiceParents(servicesData || []));
       setServices(loadedServices);
 
       // Fetch user profile for address

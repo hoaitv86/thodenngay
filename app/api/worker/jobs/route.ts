@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { isLegacyServiceId } from "@/lib/standard-service-catalog";
 
 type CreateWorkerJobRequest = {
   customerName?: string;
@@ -226,6 +227,13 @@ export async function POST(request: Request) {
     if (!customerName || customerPhone.length < 8 || !body.serviceId || !address) {
       return NextResponse.json(
         { error: "Vui lòng nhập tên khách, SĐT, dịch vụ và địa chỉ hợp lệ." },
+        { status: 400 }
+      );
+    }
+
+    if (isLegacyServiceId(body.serviceId)) {
+      return NextResponse.json(
+        { error: "Dich vu cu da duoc an, vui long chon danh muc chuan moi." },
         { status: 400 }
       );
     }

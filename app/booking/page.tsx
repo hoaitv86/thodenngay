@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
+import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
   getCustomerServiceBasePrice,
   getCustomerServiceDisplayName,
@@ -123,7 +124,7 @@ export default function BookingPage() {
           'UsersIcon': { color: "#f97316", bgColor: "#ffedd5" }
         };
 
-        const mapped = applyDefaultServiceParents(svcs as RawService[]).map((s): BookingService => ({
+        const mapped = filterStandardServiceCatalog(applyDefaultServiceParents(svcs as RawService[])).map((s): BookingService => ({
           ...s,
           iconComponent: iconMap[s.icon || ""] || BriefcaseIcon,
           formattedPrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(s.base_price || 0),

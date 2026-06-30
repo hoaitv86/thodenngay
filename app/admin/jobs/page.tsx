@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { applyDefaultServiceParents, getSelectableServices, getServicePathLabel } from "@/lib/service-hierarchy";
+import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
   SearchIcon,
   FilterIcon,
@@ -170,14 +171,16 @@ export default function AdminJobs() {
       .select('id, name, base_price, parent_service_id')
       .eq('is_active', true);
     if (sData) {
-      setServices(applyDefaultServiceParents(sData));
+      const servicesWithParents = applyDefaultServiceParents(sData);
+      setServices(filterStandardServiceCatalog(servicesWithParents));
     } else if (serviceError) {
       const { data: fallbackServices } = await supabase
         .from('services')
         .select('id, name, base_price')
         .eq('is_active', true);
       if (fallbackServices) {
-        setServices(applyDefaultServiceParents(fallbackServices.map(service => ({ ...service, parent_service_id: null }))));
+        const servicesWithParents = applyDefaultServiceParents(fallbackServices.map(service => ({ ...service, parent_service_id: null })));
+        setServices(filterStandardServiceCatalog(servicesWithParents));
       }
     }
   }
