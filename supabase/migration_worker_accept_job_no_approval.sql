@@ -2,7 +2,9 @@
 -- In the current schema, "pending" is the unassigned/new job state.
 
 ALTER TABLE public.jobs
-ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS customer_gps_location JSONB,
+ADD COLUMN IF NOT EXISTS worker_gps_location JSONB;
 
 DROP POLICY IF EXISTS "Workers request pending jobs" ON public.jobs;
 

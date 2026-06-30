@@ -551,11 +551,14 @@ export default function WorkerDashboard() {
       const acceptJobRpcMissing =
         error.code === "PGRST202" ||
         error.message?.includes("worker_accept_job");
+      const acceptJobSchemaMissing =
+        error.code === "42703" &&
+        (error.message?.includes("customer_gps_location") || error.message?.includes("worker_gps_location"));
 
       showToast(
         jobAlreadyAccepted
           ? "Công việc đã được thợ khác nhận."
-          : acceptJobRpcMissing
+          : acceptJobRpcMissing || acceptJobSchemaMissing
             ? "Chức năng nhận việc chưa được bật trong database. Vui lòng chạy migration worker_accept_job trước."
           : "Lỗi khi nhận việc: " + error.message,
         jobAlreadyAccepted ? "info" : "error"
