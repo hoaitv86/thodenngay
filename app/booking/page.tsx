@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
+import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
+import {
+  getCustomerServiceBasePrice,
+  getCustomerServiceDisplayName,
+  getCustomerServiceGroups,
+  getCustomerServicePathLabel,
+} from "@/lib/customer-service-catalog";
 import {
   LogoIcon,
   ZapIcon,
@@ -125,7 +131,7 @@ export default function BookingPage() {
         }));
         setServices(mapped);
         if (mapped[0]) {
-          setSelectedCategoryId(groupServicesForDisplay(mapped)[0]?.category.id || "");
+          setSelectedCategoryId(getCustomerServiceGroups(mapped)[0]?.category.id || "");
         }
       }
     };
@@ -136,7 +142,7 @@ export default function BookingPage() {
     if (step === 1 && !selectedService) return;
     setStep(step + 1);
   };
-  const serviceGroups = groupServicesForDisplay(services);
+  const serviceGroups = getCustomerServiceGroups(services);
   const selectedGroup = serviceGroups.find((group) => group.category.id === selectedCategoryId) || serviceGroups[0];
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -206,7 +212,7 @@ export default function BookingPage() {
         service_id: selectedService.id,
         address: bookingData.address,
         description: bookingData.description,
-        quoted_price: selectedService.base_price,
+        quoted_price: getCustomerServiceBasePrice(selectedService, services),
         scheduled_at: scheduledAt,
         images: imageUrls,
         status: 'pending',
@@ -278,10 +284,17 @@ export default function BookingPage() {
 
             {selectedGroup && (
               <div className="space-y-5">
-                {selectedGroup.directServices.length > 0 && (
-                  <div className="grid grid-cols-1 gap-4">
-                    {selectedGroup.directServices.map((svc) => {
+                {selectedService && (
+                  <div className="rounded-xl border border-success/20 bg-success-container/60 px-4 py-3 text-sm font-extrabold text-success">
+                    Bạn đã chọn: {getCustomerServicePathLabel(selectedService, services).replace(" / ", " → ")}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4">
+                    {selectedGroup.services.map((svc) => {
                 const isSelected = selectedService?.id === svc.id;
+                const displayName = getCustomerServiceDisplayName(svc);
+                const displayPrice = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getCustomerServiceBasePrice(svc, services));
                 return (
                   <button
                     key={svc.id}
@@ -295,9 +308,9 @@ export default function BookingPage() {
                       <svc.iconComponent size={28} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-on-surface">{svc.name}</h3>
+                      <h3 className="font-bold text-on-surface">{displayName}</h3>
                       <p className="text-body-sm text-on-surface-variant line-clamp-2">{svc.description}</p>
-                      <div className="text-label-sm text-primary-container mt-1 font-semibold">Từ {svc.formattedPrice}</div>
+                      <div className="text-label-sm text-primary-container mt-1 font-semibold">Từ {displayPrice}</div>
                     </div>
                     <div className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-outline-variant'}`}>
                       {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
@@ -306,45 +319,6 @@ export default function BookingPage() {
                 );
                     })}
                   </div>
-                )}
-
-                {selectedGroup.childGroups.map(({ child, services: childServices }) => (
-                  <section key={child.id} className="space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="text-base font-extrabold text-on-surface">{child.name}</h2>
-                      <span className="rounded-full bg-surface-container px-2.5 py-1 text-[10px] font-extrabold text-on-surface-variant">
-                        {childServices.length} dịch vụ
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4">
-                      {childServices.map((svc) => {
-                        const isSelected = selectedService?.id === svc.id;
-                        return (
-                          <button
-                            key={svc.id}
-                            onClick={() => setSelectedService(svc)}
-                            className={`card flex items-center gap-3 p-4 text-left transition-all sm:gap-5 sm:p-5 ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : ''}`}
-                          >
-                            <div 
-                              className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 sm:w-14 sm:h-14"
-                              style={{ backgroundColor: svc.bgColor, color: svc.color }}
-                            >
-                              <svc.iconComponent size={28} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-bold text-on-surface">{svc.name}</h3>
-                              <p className="text-body-sm text-on-surface-variant line-clamp-2">{svc.description}</p>
-                              <div className="text-label-sm text-primary-container mt-1 font-semibold">Từ {svc.formattedPrice}</div>
-                            </div>
-                            <div className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-primary-container border-primary-container' : 'border-outline-variant'}`}>
-                              {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
               </div>
             )}
 

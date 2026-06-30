@@ -52,6 +52,8 @@ const QUICK_FREQUENT_SERVICE_NAMES = ["Sửa mất mạng", "Lắp camera", "Cà
 
 interface WorkerJob {
   id: string;
+  service_id?: string | null;
+  service_detail_id?: string | null;
   job_code?: string;
   status?: string;
   customer_id?: string;
@@ -268,6 +270,18 @@ export default function WorkerDashboard() {
   const selectedQuickServicePath = React.useMemo(
     () => getQuickServicePathLabel(selectedQuickService, services),
     [selectedQuickService, services]
+  );
+
+  const getTechnicalDetailOptions = React.useCallback((serviceId?: string | null) =>
+    services
+      .filter(service => service.parent_service_id === serviceId)
+      .sort(compareServicesByName),
+    [services]
+  );
+
+  const getServiceName = React.useCallback((serviceId?: string | null) =>
+    services.find(service => service.id === serviceId)?.name || "",
+    [services]
   );
   const quickSuggestedServices = React.useMemo(() => {
     const leafServiceIds = new Set(quickServiceGroups.flatMap(group => group.services.map(service => service.id)));
@@ -662,6 +676,27 @@ export default function WorkerDashboard() {
       serviceId,
       quotedPrice: selectedService?.base_price ? String(selectedService.base_price) : prev.quotedPrice,
     }));
+  };
+
+  const handleUpdateServiceDetail = async (job: WorkerJob, serviceDetailId: string) => {
+    const nextDetailId = serviceDetailId || null;
+    const { error } = await supabase
+      .from("jobs")
+      .update({ service_detail_id: nextDetailId })
+      .eq("id", job.id);
+
+    if (error) {
+      showToast("Không thể cập nhật chi tiết kỹ thuật: " + error.message, "error");
+      return;
+    }
+
+    setActiveJobs(prev => prev.map(item =>
+      item.id === job.id ? { ...item, service_detail_id: nextDetailId } : item
+    ));
+    setPendingApprovalJobs(prev => prev.map(item =>
+      item.id === job.id ? { ...item, service_detail_id: nextDetailId } : item
+    ));
+    showToast("Đã cập nhật chi tiết kỹ thuật.", "success");
   };
 
   const handleCreateQuickJob = async (e: React.FormEvent) => {
@@ -1509,7 +1544,11 @@ export default function WorkerDashboard() {
           )
         ) : (
           activeJobs.length > 0 ? (
-          activeJobs.map(job => (
+          activeJobs.map(job => {
+            const detailOptions = getTechnicalDetailOptions(job.service_id);
+            const selectedDetailName = getServiceName(job.service_detail_id);
+
+            return (
             <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
               <div className="flex items-center justify-between gap-3 border-b border-success/20 bg-success-container px-4 py-3">
                 <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
@@ -1526,6 +1565,9 @@ export default function WorkerDashboard() {
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{job.customerName}</h3>
                   <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
+                  {selectedDetailName && (
+                    <p className="mt-0.5 text-xs font-bold text-secondary-container">Chi tiết: {selectedDetailName}</p>
+                  )}
                 </div>
                 <div className="rounded-lg bg-primary-fixed px-3 py-2 text-right text-xs font-bold text-primary-container">
                   {job.time}
@@ -1539,6 +1581,24 @@ export default function WorkerDashboard() {
                   <MapPinIcon size={14} className="shrink-0 mt-0.5 text-primary-container" />
                   <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
                 </div>
+
+                {detailOptions.length > 0 && (
+                  <div className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
+                    <label className="mb-1 block text-[10px] font-bold uppercase text-on-surface-variant">
+                      Chi tiết kỹ thuật nội bộ
+                    </label>
+                    <select
+                      className="input-field !py-2 text-sm"
+                      value={job.service_detail_id || ""}
+                      onChange={e => void handleUpdateServiceDetail(job, e.target.value)}
+                    >
+                      <option value="">Chưa chọn chi tiết</option>
+                      {detailOptions.map(detail => (
+                        <option key={detail.id} value={detail.id}>{detail.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
               {job.images && job.images.length > 0 && (
                 <div className="space-y-2">
@@ -1604,7 +1664,8 @@ export default function WorkerDashboard() {
               </div>
               </div>
             </div>
-          ))
+          );
+          })
           ) : (
             <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-16 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
@@ -1646,6 +1707,11 @@ export default function WorkerDashboard() {
               <div className="bg-surface-container-low p-4 rounded-xl space-y-2">
                 <p className="text-body-sm font-bold text-on-surface">Khách hàng: {activeJobToComplete.customerName}</p>
                 <p className="text-body-sm text-on-surface-variant">Dịch vụ: {activeJobToComplete.serviceName}</p>
+                {getServiceName(activeJobToComplete.service_detail_id) && (
+                  <p className="text-body-sm text-on-surface-variant">
+                    Chi tiết kỹ thuật: {getServiceName(activeJobToComplete.service_detail_id)}
+                  </p>
+                )}
                 <p className="text-body-sm text-on-surface-variant">Mã đơn: {activeJobToComplete.job_code}</p>
                 <p className="text-body-sm text-primary font-bold">
                   Báo giá ban đầu: {formatCurrency(activeJobToComplete.quoted_price)}

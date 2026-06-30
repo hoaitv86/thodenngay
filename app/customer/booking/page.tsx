@@ -7,9 +7,14 @@ import {
   serviceMatchesSpecialties,
 } from "@/lib/service-categories";
 import {
+  getCustomerServiceBasePrice,
+  getCustomerServiceDisplayName,
+  getCustomerServiceGroups,
+  getCustomerServicePathLabel,
+} from "@/lib/customer-service-catalog";
+import {
   applyDefaultServiceParents,
   getServiceDisplayCategoryId,
-  groupServicesForDisplay,
 } from "@/lib/service-hierarchy";
 import {
   MapPinIcon,
@@ -174,7 +179,7 @@ function CustomerBookingContent() {
 
       const hasServiceFromUrl = loadedServices.some((service) => service.id === serviceFromUrl);
       const selectedServiceFromUrl = loadedServices.find((service) => service.id === serviceFromUrl);
-      const firstCategoryId = groupServicesForDisplay(loadedServices)[0]?.category.id || "";
+      const firstCategoryId = getCustomerServiceGroups(loadedServices)[0]?.category.id || "";
       const selectedCategoryFromUrl = selectedServiceFromUrl ? getServiceDisplayCategoryId(loadedServices, selectedServiceFromUrl.id) : "";
 
       setSelectedCategoryId(categoryFromUrl || selectedCategoryFromUrl || firstCategoryId);
@@ -191,8 +196,9 @@ function CustomerBookingContent() {
     init();
   }, [categoryFromUrl, serviceFromUrl, supabase]);
 
-  const serviceGroups = useMemo(() => groupServicesForDisplay(services), [services]);
+  const serviceGroups = useMemo(() => getCustomerServiceGroups(services), [services]);
   const selectedGroup = serviceGroups.find((group) => group.category.id === selectedCategoryId) || serviceGroups[0];
+  const selectedService = services.find(service => service.id === formData.serviceId) || null;
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -295,7 +301,7 @@ function CustomerBookingContent() {
         return;
       }
 
-      const quotedPrice = selectedService?.base_price || 0;
+      const quotedPrice = getCustomerServiceBasePrice(selectedService, services);
       const imageUrls = await uploadRequestImages(user.id);
       const jobCode = 'APP' + Math.floor(10000 + Math.random() * 90000);
 
@@ -407,18 +413,24 @@ function CustomerBookingContent() {
                 })}
               </div>
 
+              {selectedService && (
+                <div className="rounded-lg border border-success/20 bg-success-container/60 px-3 py-2 text-sm font-extrabold text-success">
+                  Bạn đã chọn: {getCustomerServicePathLabel(selectedService, services).replace(" / ", " → ")}
+                </div>
+              )}
+
               {selectedGroup && (
                 <div className="space-y-2">
                   <p className="text-xs font-bold uppercase text-on-surface-variant">
                     Dịch vụ trong {selectedGroup.category.name}
                   </p>
-                  <div className="space-y-4">
-                    {selectedGroup.directServices.length > 0 && (
-                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                        {selectedGroup.directServices.map(service => {
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                    {selectedGroup.services.map(service => {
                   const visual = getServiceVisual(service);
                   const Icon = visual.icon;
                   const isSelected = formData.serviceId === service.id;
+                  const displayName = getCustomerServiceDisplayName(service);
+                  const displayPrice = getCustomerServiceBasePrice(service, services);
 
                   return (
                     <button
@@ -442,66 +454,15 @@ function CustomerBookingContent() {
                       </div>
                       <div className="mt-3 min-w-0">
                         <span className={`block text-sm font-extrabold leading-5 ${isSelected ? visual.labelClass : 'text-on-surface'}`}>
-                          {service.name}
+                          {displayName}
                         </span>
                         <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold ${isSelected ? visual.chipClass : 'bg-surface-container text-on-surface-variant'}`}>
-                          Từ {service.base_price ? service.base_price.toLocaleString('vi-VN') : 0}đ
+                          Từ {displayPrice.toLocaleString('vi-VN')}đ
                         </span>
                       </div>
                     </button>
                   );
-                        })}
-                      </div>
-                    )}
-
-                    {selectedGroup.childGroups.map(({ child, services: childServices }) => (
-                      <section key={child.id} className="space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-sm font-extrabold text-on-surface">{child.name}</h3>
-                          <span className="rounded-full bg-surface-container px-2.5 py-1 text-[10px] font-extrabold text-on-surface-variant">
-                            {childServices.length} dịch vụ
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                          {childServices.map(service => {
-                            const visual = getServiceVisual(service);
-                            const Icon = visual.icon;
-                            const isSelected = formData.serviceId === service.id;
-
-                            return (
-                              <button
-                                key={service.id}
-                                type="button"
-                                onClick={() => setFormData({ ...formData, serviceId: service.id })}
-                                className={`flex min-h-[128px] flex-col items-start justify-between rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:p-4 ${isSelected
-                                    ? `${visual.selectedClass} shadow-md`
-                                    : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20'
-                                  }`}
-                              >
-                                <div className="flex w-full items-start justify-between gap-2">
-                                  <div className={`flex h-11 w-11 items-center justify-center rounded-lg shadow-sm ${isSelected ? 'bg-white text-on-surface' : visual.iconClass}`}>
-                                    <Icon size={21} />
-                                  </div>
-                                  {isSelected && (
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-white">
-                                      <CheckCircleIcon size={14} />
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-3 min-w-0">
-                                  <span className={`block text-sm font-extrabold leading-5 ${isSelected ? visual.labelClass : 'text-on-surface'}`}>
-                                    {service.name}
-                                  </span>
-                                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold ${isSelected ? visual.chipClass : 'bg-surface-container text-on-surface-variant'}`}>
-                                    Từ {service.base_price ? service.base_price.toLocaleString('vi-VN') : 0}đ
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    ))}
+                    })}
                   </div>
                 </div>
               )}

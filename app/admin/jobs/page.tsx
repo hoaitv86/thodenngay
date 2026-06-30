@@ -51,6 +51,8 @@ interface JobRow {
   id: string;
   customer_id?: string | null;
   worker_id?: string | null;
+  service_id?: string | null;
+  service_detail_id?: string | null;
   job_code?: string | null;
   created_at?: string | null;
   address?: string | null;
@@ -141,6 +143,7 @@ export default function AdminJobs() {
   const [workerSearchQuery, setWorkerSearchQuery] = useState("");
   const [approvingCancellationJobId, setApprovingCancellationJobId] = useState<string | null>(null);
   const [approvingWorkerJobId, setApprovingWorkerJobId] = useState<string | null>(null);
+  const [updatingDetailJobId, setUpdatingDetailJobId] = useState<string | null>(null);
 
   async function fetchJobs() {
     setLoading(true);
@@ -157,8 +160,27 @@ export default function AdminJobs() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchJobs();
+    void fetchServices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function fetchServices() {
+    const { data: sData, error: serviceError } = await supabase
+      .from('services')
+      .select('id, name, base_price, parent_service_id')
+      .eq('is_active', true);
+    if (sData) {
+      setServices(applyDefaultServiceParents(sData));
+    } else if (serviceError) {
+      const { data: fallbackServices } = await supabase
+        .from('services')
+        .select('id, name, base_price')
+        .eq('is_active', true);
+      if (fallbackServices) {
+        setServices(applyDefaultServiceParents(fallbackServices.map(service => ({ ...service, parent_service_id: null }))));
+      }
+    }
+  }
 
   const openModal = async () => {
     setIsModalOpen(true);
@@ -167,21 +189,7 @@ export default function AdminJobs() {
       if (cData) setCustomers(cData);
     }
     if (services.length === 0) {
-      const { data: sData, error: serviceError } = await supabase
-        .from('services')
-        .select('id, name, base_price, parent_service_id')
-        .eq('is_active', true);
-      if (sData) {
-        setServices(applyDefaultServiceParents(sData));
-      } else if (serviceError) {
-        const { data: fallbackServices } = await supabase
-          .from('services')
-          .select('id, name, base_price')
-          .eq('is_active', true);
-        if (fallbackServices) {
-          setServices(applyDefaultServiceParents(fallbackServices.map(service => ({ ...service, parent_service_id: null }))));
-        }
-      }
+      await fetchServices();
     }
 
     // Default time to tomorrow 9AM
@@ -487,6 +495,33 @@ export default function AdminJobs() {
     return counts;
   }, {});
 
+  const getTechnicalDetailOptions = (serviceId?: string | null) =>
+    services
+      .filter(service => service.parent_service_id === serviceId)
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", "vi"));
+
+  const getServiceName = (serviceId?: string | null) =>
+    services.find(service => service.id === serviceId)?.name || "";
+
+  const handleUpdateServiceDetail = async (job: JobRow, serviceDetailId: string) => {
+    setUpdatingDetailJobId(job.id);
+    const nextDetailId = serviceDetailId || null;
+    const { error } = await supabase
+      .from("jobs")
+      .update({ service_detail_id: nextDetailId })
+      .eq("id", job.id);
+    setUpdatingDetailJobId(null);
+
+    if (error) {
+      alert("Không thể cập nhật chi tiết kỹ thuật: " + error.message);
+      return;
+    }
+
+    setJobs(prev => prev.map(item =>
+      item.id === job.id ? { ...item, service_detail_id: nextDetailId } : item
+    ));
+  };
+
   return (
     <>
       <div className="space-y-6 animate-fade-in relative">
@@ -589,7 +624,11 @@ export default function AdminJobs() {
                         </button>
                       </td>
                     </tr>
-                  ) : filteredJobs.map((job) => (
+                  ) : filteredJobs.map((job) => {
+                    const detailOptions = getTechnicalDetailOptions(job.service_id);
+                    const selectedDetailName = getServiceName(job.service_detail_id);
+
+                    return (
                     <tr key={job.id} className="hover:bg-surface-container-lowest transition-colors group">
                       <td className="px-6 py-4">
                         <div className="font-mono text-sm text-primary-container font-bold">{job.job_code}</div>
@@ -632,7 +671,25 @@ export default function AdminJobs() {
                           </div>
                           <div>
                             <span className="text-body-sm text-on-surface font-bold block">{job.service?.name}</span>
+                            {selectedDetailName && (
+                              <span className="mt-0.5 block text-label-sm font-semibold text-secondary-container">
+                                Chi tiết: {selectedDetailName}
+                              </span>
+                            )}
                             <span className="text-label-sm text-success font-medium mt-0.5 block">{job.total_price ? `${job.total_price.toLocaleString('vi-VN')}đ` : 'Chưa báo giá'}</span>
+                            {detailOptions.length > 0 && (
+                              <select
+                                className="mt-2 w-full rounded-lg border border-outline-variant/50 bg-white px-2 py-1.5 text-xs font-semibold text-on-surface"
+                                value={job.service_detail_id || ""}
+                                disabled={updatingDetailJobId === job.id}
+                                onChange={e => void handleUpdateServiceDetail(job, e.target.value)}
+                              >
+                                <option value="">Chưa chọn chi tiết</option>
+                                {detailOptions.map(detail => (
+                                  <option key={detail.id} value={detail.id}>{detail.name}</option>
+                                ))}
+                              </select>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -682,7 +739,8 @@ export default function AdminJobs() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>

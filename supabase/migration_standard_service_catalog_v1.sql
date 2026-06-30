@@ -7,6 +7,14 @@
 ALTER TABLE public.services
 ADD COLUMN IF NOT EXISTS parent_service_id UUID REFERENCES public.services(id) ON DELETE CASCADE;
 
+ALTER TABLE public.services
+ADD COLUMN IF NOT EXISTS visible_to_customer BOOLEAN NOT NULL DEFAULT TRUE,
+ADD COLUMN IF NOT EXISTS visible_to_admin BOOLEAN NOT NULL DEFAULT TRUE,
+ADD COLUMN IF NOT EXISTS visible_to_worker BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE public.jobs
+ADD COLUMN IF NOT EXISTS service_detail_id UUID REFERENCES public.services(id) ON DELETE SET NULL;
+
 WITH roots(id, name, description, icon, sort_order) AS (
   VALUES
     ('77a036fc-646c-43e5-87cb-40e02c0d1e9e'::uuid, 'Mạng Internet', 'Dịch vụ Internet, Wifi, LAN và hệ thống mạng.', 'Router', 1),
@@ -50,16 +58,22 @@ WITH groups(key, root_id, name, description, icon, sort_order) AS (
     ('printer_install', '1267f766-5082-4287-a5e9-a2c475753275'::uuid, 'Lắp đặt', 'Lắp máy in, driver và cấu hình kết nối.', 'Printer', 401),
     ('printer_repair', '1267f766-5082-4287-a5e9-a2c475753275'::uuid, 'Sửa chữa', 'Xử lý lỗi in, scan, fax, giấy và cartridge.', 'Wrench', 402),
     ('printer_maintenance', '1267f766-5082-4287-a5e9-a2c475753275'::uuid, 'Bảo trì', 'Vệ sinh, bảo dưỡng và kiểm tra cụm máy in.', 'ShieldCheck', 403),
-    ('printer_ink', '1267f766-5082-4287-a5e9-a2c475753275'::uuid, 'Mực in', 'Đổ mực, thay mực và vật tư hộp mực.', 'Droplets', 404),
+    ('printer_ink', '1267f766-5082-4287-a5e9-a2c475753275'::uuid, 'Đổ mực', 'Đổ mực, thay mực và vật tư hộp mực.', 'Droplets', 404),
     ('printer_parts', '1267f766-5082-4287-a5e9-a2c475753275'::uuid, 'Linh kiện', 'Thay linh kiện và cụm cơ khí máy in.', 'Settings', 405)
 )
-INSERT INTO public.services (id, parent_service_id, name, description, icon, base_price, is_active)
+INSERT INTO public.services (id, parent_service_id, name, description, icon, base_price, is_active, visible_to_customer, visible_to_admin, visible_to_worker)
 SELECT uuid_generate_v5(uuid_ns_url(), 'alotho-service-group:' || key),
        root_id,
        name,
        description,
        icon,
        0,
+       TRUE,
+       CASE
+         WHEN name IN ('Lắp đặt', 'Sửa chữa', 'Bảo trì', 'Di dời', 'Cài đặt', 'Nâng cấp', 'Đổ mực') THEN TRUE
+         ELSE FALSE
+       END,
+       TRUE,
        TRUE
 FROM groups
 ON CONFLICT (id) DO UPDATE
@@ -68,6 +82,9 @@ SET parent_service_id = EXCLUDED.parent_service_id,
     description = EXCLUDED.description,
     icon = EXCLUDED.icon,
     is_active = TRUE,
+    visible_to_customer = EXCLUDED.visible_to_customer,
+    visible_to_admin = TRUE,
+    visible_to_worker = TRUE,
     updated_at = NOW();
 
 WITH catalog(group_key, service_name, icon, base_price, sort_order) AS (
@@ -282,13 +299,16 @@ reattached AS (
     AND service.id <> group_ids.id
   RETURNING service.id
 )
-INSERT INTO public.services (id, parent_service_id, name, description, icon, base_price, is_active)
+INSERT INTO public.services (id, parent_service_id, name, description, icon, base_price, is_active, visible_to_customer, visible_to_admin, visible_to_worker)
 SELECT uuid_generate_v5(uuid_ns_url(), 'alotho-service-leaf:' || catalog.group_key || ':' || catalog.service_name),
        group_ids.id,
        catalog.service_name,
        NULL,
        catalog.icon,
        catalog.base_price,
+       TRUE,
+       FALSE,
+       TRUE,
        TRUE
 FROM catalog
 JOIN group_ids ON group_ids.key = catalog.group_key
@@ -304,4 +324,7 @@ SET parent_service_id = EXCLUDED.parent_service_id,
     icon = EXCLUDED.icon,
     base_price = EXCLUDED.base_price,
     is_active = TRUE,
+    visible_to_customer = FALSE,
+    visible_to_admin = TRUE,
+    visible_to_worker = TRUE,
     updated_at = NOW();
