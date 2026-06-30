@@ -22,6 +22,7 @@ import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
+import { formatBillGoCurrency, getBillGoSummary } from "@/lib/billgo";
 import { Worker } from "@/lib/types";
 import PendingApproval from "./pending-approval";
 
@@ -75,6 +76,14 @@ interface WorkerJob {
   final_amount?: number | null;
   warranty_days?: number | null;
   warranty_note?: string | null;
+  payments?: Array<{
+    id: string;
+    amount: number | string;
+    method: string;
+    status: string;
+    paid_at?: string | null;
+    note?: string | null;
+  }> | null;
   icon?: React.ComponentType<{ size?: number; className?: string }>;
   price?: string;
   time?: string;
@@ -332,6 +341,10 @@ export default function WorkerDashboard() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [completionItems, setCompletionItems] = useState<CompletionItem[]>([]);
   const [warrantyNote, setWarrantyNote] = useState("Bảo hành theo hạng mục đã ghi trên phiếu, không áp dụng cho lỗi phát sinh do sử dụng sai cách.");
+  const [collectingPaymentJobId, setCollectingPaymentJobId] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentNote, setPaymentNote] = useState("");
 
   const toastTimeoutRef = React.useRef<number | null>(null);
 
@@ -498,7 +511,7 @@ export default function WorkerDashboard() {
       // 5. Get Active Jobs (Assigned to this worker)
       const { data: assignedJobs } = await supabase
         .from('jobs')
-        .select('*, service:services(*), customer:profiles!customer_id(*)')
+        .select('*, service:services(*), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
         .eq('worker_id', workerData.id)
         .in('status', ['assigned', 'in_progress'])
         .order('created_at', { ascending: false });
@@ -712,6 +725,46 @@ export default function WorkerDashboard() {
       item.id === job.id ? { ...item, service_detail_id: nextDetailId } : item
     ));
     showToast("Đã cập nhật chi tiết kỹ thuật.", "success");
+  };
+
+  const handleCollectPayment = async (job: WorkerJob) => {
+    if (collectingPaymentJobId) return;
+    const parsedAmount = Number(paymentAmount);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      showToast("So tien thu phai lon hon 0.", "error");
+      return;
+    }
+
+    setCollectingPaymentJobId(job.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from("payments")
+      .insert({
+        job_id: job.id,
+        amount: parsedAmount,
+        method: paymentMethod,
+        status: "paid",
+        paid_at: new Date().toISOString(),
+        collected_by: user?.id || null,
+        note: paymentNote.trim() || null,
+      })
+      .select("id, amount, method, status, paid_at, note")
+      .single();
+
+    if (error) {
+      showToast("Khong the ghi nhan thanh toan: " + error.message, "error");
+      setCollectingPaymentJobId(null);
+      return;
+    }
+
+    setActiveJobs(prev => prev.map(item =>
+      item.id === job.id ? { ...item, payments: [...(item.payments || []), data] } : item
+    ));
+    setPaymentAmount("");
+    setPaymentNote("");
+    showToast("Da ghi nhan thanh toan BillGo.", "success");
+    setCollectingPaymentJobId(null);
   };
 
   const handleCreateQuickJob = async (e: React.FormEvent) => {
@@ -1562,6 +1615,7 @@ export default function WorkerDashboard() {
           activeJobs.map(job => {
             const detailOptions = getTechnicalDetailOptions(job.service_id);
             const selectedDetailName = getServiceName(job.service_detail_id);
+            const billGoSummary = getBillGoSummary(job);
 
             return (
             <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
@@ -1661,6 +1715,62 @@ export default function WorkerDashboard() {
                   <MapPinIcon size={20} />
                   <span className="text-[10px] font-bold uppercase">Chỉ đường</span>
                 </button>
+              </div>
+
+              <div className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-primary-container">BillGo</p>
+                    <p className="mt-1 text-sm font-extrabold text-on-surface">{billGoSummary.statusLabel}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${billGoSummary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
+                    Còn nợ: {formatBillGoCurrency(billGoSummary.debt)}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-on-surface-variant">
+                  <span>Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(billGoSummary.receivable)}</strong></span>
+                  <span>Đã thu<br /><strong className="text-success">{formatBillGoCurrency(billGoSummary.paid)}</strong></span>
+                  <span>Lần thu<br /><strong className="text-on-surface">{job.payments?.filter(payment => payment.status === "paid").length || 0}</strong></span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_150px]">
+                  <input
+                    className="input-field !py-2 text-sm"
+                    type="number"
+                    min="0"
+                    value={paymentAmount}
+                    onChange={event => setPaymentAmount(event.target.value)}
+                    placeholder="Số tiền thu"
+                    disabled={collectingPaymentJobId === job.id}
+                  />
+                  <select
+                    className="input-field !py-2 text-sm"
+                    value={paymentMethod}
+                    onChange={event => setPaymentMethod(event.target.value)}
+                    disabled={collectingPaymentJobId === job.id}
+                  >
+                    <option value="cash">Tiền mặt</option>
+                    <option value="transfer">Chuyển khoản</option>
+                    <option value="card">Thẻ</option>
+                    <option value="momo">MoMo</option>
+                    <option value="zalopay">ZaloPay</option>
+                    <option value="other">Khác</option>
+                  </select>
+                  <input
+                    className="input-field !py-2 text-sm sm:col-span-2"
+                    value={paymentNote}
+                    onChange={event => setPaymentNote(event.target.value)}
+                    placeholder="Ghi chú thanh toán"
+                    disabled={collectingPaymentJobId === job.id}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleCollectPayment(job)}
+                    disabled={collectingPaymentJobId === job.id}
+                    className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white sm:col-span-2 disabled:opacity-60"
+                  >
+                    {collectingPaymentJobId === job.id ? "Đang lưu..." : "Ghi nhận thu tiền"}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

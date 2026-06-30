@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { formatBillGoCurrency, getBillGoSummary } from "@/lib/billgo";
 import {
   SearchIcon,
   FilterIcon,
@@ -36,6 +37,28 @@ interface CustomerProfile {
   }[];
 }
 
+type CustomerJobRow = {
+  id: string;
+  job_code?: string | null;
+  address?: string | null;
+  scheduled_at?: string | null;
+  quoted_price?: number | string | null;
+  final_amount?: number | string | null;
+  status?: string | null;
+  service?: { name?: string | null; icon?: string | null } | null;
+  payments?: Array<{
+    id: string;
+    amount: number | string;
+    method: string;
+    status: string;
+    paid_at?: string | null;
+    note?: string | null;
+  }> | null;
+};
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "Lỗi không xác định";
+
 export default function AdminCustomers() {
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +68,7 @@ export default function AdminCustomers() {
   // Selected customer & drawer details
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [customerJobs, setCustomerJobs] = useState<any[]>([]);
+  const [customerJobs, setCustomerJobs] = useState<CustomerJobRow[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
 
   // Modals & Confirm states
@@ -150,10 +173,11 @@ export default function AdminCustomers() {
           address: "",
           status: "active"
         });
+        // eslint-disable-next-line react-hooks/immutability
         fetchCustomers();
       }
-    } catch (err: any) {
-      showToast("Lỗi hệ thống: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi hệ thống: " + getErrorMessage(err), "error");
       console.error(err);
     } finally {
       setProcessing(false);
@@ -223,8 +247,8 @@ export default function AdminCustomers() {
           status: editCustomerFormData.status
         } : null);
       }
-    } catch (err: any) {
-      showToast("Lỗi hệ thống: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi hệ thống: " + getErrorMessage(err), "error");
     } finally {
       setProcessing(false);
     }
@@ -269,8 +293,8 @@ export default function AdminCustomers() {
       } else {
         showToast(data.error || "Không thể reset mật khẩu.", "error");
       }
-    } catch (err: any) {
-      showToast("Lỗi kết nối: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi kết nối: " + getErrorMessage(err), "error");
     } finally {
       setResettingPassword(false);
     }
@@ -302,8 +326,8 @@ export default function AdminCustomers() {
           handleCloseDrawer();
         }
       }
-    } catch (err: any) {
-      showToast("Lỗi hệ thống: " + err.message, "error");
+    } catch (err: unknown) {
+      showToast("Lỗi hệ thống: " + getErrorMessage(err), "error");
       setProcessing(false);
       setConfirmDialog(null);
     }
@@ -320,7 +344,7 @@ export default function AdminCustomers() {
     fetchCustomers();
   }, []);
 
-  const fetchCustomers = async () => {
+  async function fetchCustomers() {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
@@ -331,10 +355,10 @@ export default function AdminCustomers() {
     if (error) {
       showToast("Lỗi tải danh sách khách hàng: " + error.message, "error");
     } else if (data) {
-      setCustomers(data as any);
+      setCustomers(data as CustomerProfile[]);
     }
     setLoading(false);
-  };
+  }
 
   const fetchCustomerJobs = async (customerId: string) => {
     setLoadingJobs(true);
@@ -346,8 +370,10 @@ export default function AdminCustomers() {
         address,
         scheduled_at,
         quoted_price,
+        final_amount,
         status,
-        service:services(name, icon)
+        service:services(name, icon),
+        payments(id, amount, method, status, paid_at, note)
       `)
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false });
@@ -355,7 +381,10 @@ export default function AdminCustomers() {
     if (error) {
       showToast("Lỗi tải lịch sử công việc: " + error.message, "error");
     } else if (data) {
-      setCustomerJobs(data);
+      setCustomerJobs(data.map(job => ({
+        ...job,
+        service: Array.isArray(job.service) ? job.service[0] || null : job.service,
+      })) as CustomerJobRow[]);
     }
     setLoadingJobs(false);
   };
@@ -829,6 +858,67 @@ export default function AdminCustomers() {
                 </div>
               </div>
 
+              {/* BillGo Payment & Debt */}
+              <div className="bg-white rounded-2xl border border-outline-variant/30 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-outline-variant bg-surface-container-lowest">
+                  <h3 className="text-body-lg font-bold text-on-surface">Thanh toán & Công nợ</h3>
+                </div>
+                {(() => {
+                  const billGoTotals = customerJobs.reduce(
+                    (acc, job) => {
+                      const summary = getBillGoSummary(job);
+                      acc.receivable += summary.receivable;
+                      acc.paid += summary.paid;
+                      acc.debt += summary.debt;
+                      return acc;
+                    },
+                    { receivable: 0, paid: 0, debt: 0 }
+                  );
+
+                  return (
+                    <div className="space-y-4 p-5">
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-xl bg-surface-container-low p-3">
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Phải thu</p>
+                          <p className="mt-1 text-sm font-extrabold text-on-surface">{formatBillGoCurrency(billGoTotals.receivable)}</p>
+                        </div>
+                        <div className="rounded-xl bg-success-container p-3">
+                          <p className="text-[10px] font-bold uppercase text-success">Đã thu</p>
+                          <p className="mt-1 text-sm font-extrabold text-on-surface">{formatBillGoCurrency(billGoTotals.paid)}</p>
+                        </div>
+                        <div className="rounded-xl bg-error-container p-3">
+                          <p className="text-[10px] font-bold uppercase text-error">Còn nợ</p>
+                          <p className="mt-1 text-sm font-extrabold text-on-surface">{formatBillGoCurrency(billGoTotals.debt)}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {customerJobs.length === 0 ? (
+                          <p className="text-sm text-on-surface-variant">Chưa có khoản thu nào.</p>
+                        ) : customerJobs.map(job => {
+                          const summary = getBillGoSummary(job);
+                          return (
+                            <div key={`billgo-${job.id}`} className="rounded-xl border border-outline-variant/30 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-extrabold text-on-surface">{job.job_code}</p>
+                                  <p className="text-xs text-on-surface-variant">{job.service?.name || "Dịch vụ"}</p>
+                                </div>
+                                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${summary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
+                                  {summary.statusLabel}
+                                </span>
+                              </div>
+                              <p className="mt-2 text-xs text-on-surface-variant">
+                                Phải thu {formatBillGoCurrency(summary.receivable)} · đã thu {formatBillGoCurrency(summary.paid)} · còn nợ {formatBillGoCurrency(summary.debt)}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Job History List */}
               <div className="bg-white rounded-2xl border border-outline-variant/30 shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-outline-variant bg-surface-container-lowest">
@@ -864,7 +954,7 @@ export default function AdminCustomers() {
                               <div>
                                 <span className="font-semibold block">{job.service?.name || "Dịch vụ"}</span>
                                 <span className="text-label-sm text-on-surface-variant block mt-0.5">
-                                  {new Date(job.scheduled_at).toLocaleDateString("vi-VN")}
+                                  {job.scheduled_at ? new Date(job.scheduled_at).toLocaleDateString("vi-VN") : "Chua hen"}
                                 </span>
                               </div>
                             </td>

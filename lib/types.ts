@@ -4,8 +4,8 @@ export type UserRole = 'customer' | 'worker' | 'admin';
 export type WorkerStatus = 'pending' | 'active' | 'blocked';
 export type JobStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'done' | 'cancel_requested' | 'cancelled';
 export type JobSource = 'app' | 'call';
-export type PaymentMethod = 'cash' | 'transfer';
-export type PaymentStatus = 'pending' | 'paid';
+export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'momo' | 'zalopay' | 'other';
+export type PaymentStatus = 'paid' | 'void';
 export type JobLogAction =
   | 'created'
   | 'assigned'
@@ -106,6 +106,10 @@ export interface Payment {
   method: PaymentMethod;
   status: PaymentStatus;
   paid_at?: string;
+  collected_by?: string;
+  note?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface JobLog {

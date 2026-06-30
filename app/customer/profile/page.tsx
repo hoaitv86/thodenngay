@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getGpsLocationErrorMessage } from "@/lib/location";
 import { useSettings } from "@/lib/settings";
+import { formatBillGoCurrency, getBillGoSummary } from "@/lib/billgo";
 import {
   UserIcon,
   PhoneIcon,
@@ -40,6 +41,26 @@ interface JobStat {
   status: string;
 }
 
+type CustomerPayment = {
+  id: string;
+  amount: number | string;
+  method: string;
+  status: string;
+  paid_at?: string | null;
+  note?: string | null;
+};
+
+type CustomerBillGoJob = {
+  id: string;
+  job_code?: string | null;
+  status?: string | null;
+  quoted_price?: number | string | null;
+  final_amount?: number | string | null;
+  created_at?: string | null;
+  service?: { name?: string | null } | null;
+  payments?: CustomerPayment[] | null;
+};
+
 export default function CustomerProfile() {
   const { settings } = useSettings();
   const [loading, setLoading] = useState(true);
@@ -63,6 +84,8 @@ export default function CustomerProfile() {
   const [showSupport, setShowSupport] = useState(false);
   const [showPolicies, setShowPolicies] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showPayments, setShowPayments] = useState(false);
+  const [billGoJobs, setBillGoJobs] = useState<CustomerBillGoJob[]>([]);
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -114,6 +137,16 @@ export default function CustomerProfile() {
             ["pending", "assigned", "in_progress"].includes(j.status)
           ).length;
           setStats({ total, completed, active });
+        }
+
+        const { data: billGoData } = await supabase
+          .from("jobs")
+          .select("id, job_code, status, quoted_price, final_amount, created_at, service:services(name), payments(id, amount, method, status, paid_at, note)")
+          .eq("customer_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (billGoData) {
+          setBillGoJobs(billGoData as CustomerBillGoJob[]);
         }
       } catch (error) {
         console.error("Error reading profile details:", error);
@@ -350,6 +383,16 @@ export default function CustomerProfile() {
 
   const joinedYear = new Date(profile.created_at).getFullYear();
   const avatarChar = profile.full_name ? profile.full_name.trim().charAt(0).toUpperCase() : "C";
+  const billGoTotals = billGoJobs.reduce(
+    (acc, job) => {
+      const summary = getBillGoSummary(job);
+      acc.receivable += summary.receivable;
+      acc.paid += summary.paid;
+      acc.debt += summary.debt;
+      return acc;
+    },
+    { receivable: 0, paid: 0, debt: 0 }
+  );
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100vh-8rem)] bg-surface pb-8 animate-fade-in">
@@ -626,6 +669,79 @@ export default function CustomerProfile() {
             </div>
             <ChevronRightIcon size={18} className="text-outline/75 shrink-0" />
           </button>
+
+          <div className="border-t border-outline-variant/30">
+            <button
+              onClick={() => setShowPayments(!showPayments)}
+              className="w-full flex items-center gap-4 p-4 text-left hover:bg-surface-container-low transition-colors active:bg-surface-container/60"
+            >
+              <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary shrink-0">
+                <ClockIcon size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-body-sm font-bold text-on-surface">Thanh toán & Công nợ</div>
+                <div className="text-label-sm text-on-surface-variant/70 truncate">
+                  Còn nợ {formatBillGoCurrency(billGoTotals.debt)} · đã thu {formatBillGoCurrency(billGoTotals.paid)}
+                </div>
+              </div>
+              <div className={`transform transition-transform duration-200 shrink-0 ${showPayments ? "rotate-90" : ""}`}>
+                <ChevronRightIcon size={18} className="text-outline/75" />
+              </div>
+            </button>
+
+            {showPayments && (
+              <div className="space-y-3 border-t border-outline-variant/10 bg-surface-container-lowest px-4 py-4 animate-fade-in">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-white p-3">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Phải thu</p>
+                    <p className="mt-1 text-sm font-extrabold text-on-surface">{formatBillGoCurrency(billGoTotals.receivable)}</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-3">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Đã thu</p>
+                    <p className="mt-1 text-sm font-extrabold text-success">{formatBillGoCurrency(billGoTotals.paid)}</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-3">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Còn nợ</p>
+                    <p className="mt-1 text-sm font-extrabold text-error">{formatBillGoCurrency(billGoTotals.debt)}</p>
+                  </div>
+                </div>
+
+                {billGoJobs.length === 0 ? (
+                  <p className="rounded-lg bg-white p-4 text-sm text-on-surface-variant">Chưa có khoản thanh toán.</p>
+                ) : billGoJobs.map(job => {
+                  const summary = getBillGoSummary(job);
+                  const paidPayments = (job.payments || []).filter(payment => payment.status === "paid");
+                  return (
+                    <div key={job.id} className="rounded-lg bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-extrabold text-on-surface">{job.job_code || job.id.slice(0, 8)}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">{job.service?.name || "Dịch vụ"}</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${summary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
+                          {summary.statusLabel}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-on-surface-variant">
+                        <span>Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(summary.receivable)}</strong></span>
+                        <span>Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></span>
+                        <span>Còn nợ<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong></span>
+                      </div>
+                      {paidPayments.length > 0 && (
+                        <div className="mt-3 space-y-1 border-t border-outline-variant/20 pt-2">
+                          {paidPayments.map(payment => (
+                            <p key={payment.id} className="text-xs text-on-surface-variant">
+                              {formatBillGoCurrency(payment.amount)} · {payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString("vi-VN") : "Chưa có ngày"}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {/* Collapsible item: Change Password */}
           <div className="border-t border-outline-variant/30">
