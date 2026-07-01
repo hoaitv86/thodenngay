@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   BriefcaseIcon,
   ClockIcon,
@@ -14,7 +14,8 @@ import {
   DropletIcon,
   CameraIcon,
   CogIcon,
-  BellIcon
+  BellIcon,
+  DollarSignIcon
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
@@ -251,7 +252,7 @@ const getCurrentBrowserLocation = () => {
 };
 
 export default function WorkerDashboard() {
-  const [tab, setTab] = useState<"new" | "pending" | "active">("new");
+  const [tab, setTab] = useState<"new" | "pending" | "active" | "billgo">("new");
   const [loading, setLoading] = useState(true);
   const [worker, setWorker] = useState<Worker | null>(null);
   const [newJobs, setNewJobs] = useState<WorkerJob[]>([]);
@@ -345,6 +346,27 @@ export default function WorkerDashboard() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentNote, setPaymentNote] = useState("");
+  const billGoJobs = useMemo(
+    () => activeJobs.filter(job => {
+      const summary = getBillGoSummary(job);
+      return summary.receivable > 0 || summary.paid > 0;
+    }),
+    [activeJobs]
+  );
+  const billGoTotals = useMemo(
+    () => billGoJobs.reduce(
+      (acc, job) => {
+        const summary = getBillGoSummary(job);
+        acc.receivable += summary.receivable;
+        acc.paid += summary.paid;
+        acc.debt += summary.debt;
+        if (summary.debt > 0) acc.debtJobs += 1;
+        return acc;
+      },
+      { receivable: 0, paid: 0, debt: 0, debtJobs: 0 }
+    ),
+    [billGoJobs]
+  );
 
   const toastTimeoutRef = React.useRef<number | null>(null);
 
@@ -1447,7 +1469,7 @@ export default function WorkerDashboard() {
       </section>
 
       {/* Tabs */}
-      <div className="sticky top-16 z-30 mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white/95 p-1 shadow-sm backdrop-blur sm:mx-6 lg:top-20 lg:mx-8">
+      <div className="sticky top-16 z-30 mx-4 grid grid-cols-2 gap-2 rounded-xl border border-outline-variant/30 bg-white/95 p-1 shadow-sm backdrop-blur sm:mx-6 sm:grid-cols-4 lg:top-20 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
@@ -1468,6 +1490,13 @@ export default function WorkerDashboard() {
         >
           Đang làm
           {activeJobs.length > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "active" ? "bg-white text-primary" : "bg-success text-white"}`}>{activeJobs.length}</span>}
+        </button>
+        <button
+          onClick={() => setTab("billgo")}
+          className={`rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "billgo" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
+        >
+          Thu cước BillGo
+          {billGoTotals.debtJobs > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "billgo" ? "bg-white text-primary" : "bg-error text-white"}`}>{billGoTotals.debtJobs}</span>}
         </button>
       </div>
 
@@ -1610,6 +1639,139 @@ export default function WorkerDashboard() {
               <p className="text-body-sm text-on-surface-variant">Chưa có job nào đang chờ admin duyệt.</p>
             </div>
           )
+        ) : tab === "billgo" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-outline-variant/25 bg-white p-4 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Phải thu</p>
+                <p className="mt-1 text-xl font-extrabold text-on-surface">{formatBillGoCurrency(billGoTotals.receivable)}</p>
+              </div>
+              <div className="rounded-xl border border-success/20 bg-success-container p-4 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-on-success-container/75">Đã thu</p>
+                <p className="mt-1 text-xl font-extrabold text-success">{formatBillGoCurrency(billGoTotals.paid)}</p>
+              </div>
+              <div className="rounded-xl border border-error/20 bg-error-container p-4 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-error/75">Còn nợ</p>
+                <p className="mt-1 text-xl font-extrabold text-error">{formatBillGoCurrency(billGoTotals.debt)}</p>
+              </div>
+            </div>
+
+            {billGoJobs.length > 0 ? (
+              billGoJobs.map(job => {
+                const billGoSummary = getBillGoSummary(job);
+                const paidCount = job.payments?.filter(payment => payment.status === "paid").length || 0;
+
+                return (
+                  <div key={job.id} className="overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-primary-fixed/45 px-4 py-3">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase text-primary-container">Thu cước BillGo</p>
+                        <p className="mt-1 text-sm font-bold text-on-surface">{job.job_code || job.id.slice(0, 8)}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${billGoSummary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
+                        {billGoSummary.statusLabel}
+                      </span>
+                    </div>
+
+                    <div className="space-y-4 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{job.customerName || "Khách hàng"}</h3>
+                          <p className="text-body-sm text-on-surface-variant">{job.serviceName || "Dịch vụ"}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">{job.address || "Chưa cung cấp địa chỉ"}</p>
+                        </div>
+                        <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
+                          {job.time}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-xs text-on-surface-variant">
+                        <span className="rounded-lg bg-surface-container-low p-3">Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(billGoSummary.receivable)}</strong></span>
+                        <span className="rounded-lg bg-success-container p-3">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(billGoSummary.paid)}</strong></span>
+                        <span className="rounded-lg bg-error-container p-3">Còn nợ<br /><strong className="text-error">{formatBillGoCurrency(billGoSummary.debt)}</strong></span>
+                      </div>
+
+                      <div className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-bold uppercase text-on-surface-variant">Ghi nhận thu tiền</p>
+                          <span className="text-xs font-bold text-primary-container">{paidCount} lần thu</span>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
+                          <input
+                            className="input-field !py-2 text-sm"
+                            type="number"
+                            min="0"
+                            value={paymentAmount}
+                            onChange={event => setPaymentAmount(event.target.value)}
+                            placeholder="Số tiền thu"
+                            disabled={collectingPaymentJobId === job.id}
+                          />
+                          <select
+                            className="input-field !py-2 text-sm"
+                            value={paymentMethod}
+                            onChange={event => setPaymentMethod(event.target.value)}
+                            disabled={collectingPaymentJobId === job.id}
+                          >
+                            <option value="cash">Tiền mặt</option>
+                            <option value="transfer">Chuyển khoản</option>
+                            <option value="card">Thẻ</option>
+                            <option value="momo">MoMo</option>
+                            <option value="zalopay">ZaloPay</option>
+                            <option value="other">Khác</option>
+                          </select>
+                          <input
+                            className="input-field !py-2 text-sm sm:col-span-2"
+                            value={paymentNote}
+                            onChange={event => setPaymentNote(event.target.value)}
+                            placeholder="Ghi chú thanh toán"
+                            disabled={collectingPaymentJobId === job.id}
+                          />
+                          <div className="grid gap-2 sm:col-span-2 sm:grid-cols-[auto_1fr]">
+                            {billGoSummary.debt > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setPaymentAmount(String(billGoSummary.debt))}
+                                className="rounded-lg border border-primary-container/25 px-4 py-3 text-sm font-extrabold text-primary-container"
+                                disabled={collectingPaymentJobId === job.id}
+                              >
+                                Thu đủ còn nợ
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleCollectPayment(job)}
+                              disabled={collectingPaymentJobId === job.id}
+                              className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
+                            >
+                              {collectingPaymentJobId === job.id ? "Đang lưu..." : "Ghi nhận thu cước"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {job.customer?.phone && (
+                        <a
+                          href={`tel:${job.customer.phone}`}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-success px-4 py-3 text-sm font-extrabold text-white"
+                        >
+                          <PhoneIcon size={18} />
+                          Gọi khách
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-16 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
+                  <DollarSignIcon size={32} />
+                </div>
+                <p className="text-base font-bold text-on-surface">Chưa có khoản BillGo</p>
+                <p className="text-body-sm text-on-surface-variant">Các việc đã nhận có báo giá hoặc thanh toán sẽ hiển thị tại đây.</p>
+              </div>
+            )}
+          </>
         ) : (
           activeJobs.length > 0 ? (
           activeJobs.map(job => {
