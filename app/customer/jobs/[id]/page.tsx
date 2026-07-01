@@ -18,11 +18,36 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+type CustomerJobDetail = {
+  id: string;
+  job_code?: string | null;
+  customer_id?: string | null;
+  worker_id?: string | null;
+  status?: string | null;
+  quoted_price?: number | string | null;
+  address?: string | null;
+  scheduled_at?: string | null;
+  description?: string | null;
+  images?: string[] | null;
+  service?: { name?: string | null; description?: string | null } | null;
+  worker?: {
+    avg_rating?: number | string | null;
+    total_jobs?: number | string | null;
+    user?: { full_name?: string | null; phone?: string | null } | null;
+  } | null;
+  ratings?: Array<{
+    score: number;
+    comment?: string | null;
+    images?: string[] | null;
+    created_at?: string | null;
+  }> | null;
+};
+
 export default function JobDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const supabase = createClient();
-  const [job, setJob] = useState<any>(null);
+  const [job, setJob] = useState<CustomerJobDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Rating and review states
@@ -46,7 +71,7 @@ export default function JobDetailPage() {
         .from('jobs')
         .select(`
           *,
-          service:services(*),
+          service:services!jobs_service_id_fkey(*),
           worker:workers(
             *,
             user:profiles(*)
@@ -81,7 +106,7 @@ export default function JobDetailPage() {
     } else {
       router.refresh();
       // Refetch job locally
-      const { data } = await supabase.from('jobs').select('*, service:services(*)').eq('id', id).single();
+      const { data } = await supabase.from('jobs').select('*, service:services!jobs_service_id_fkey(*)').eq('id', id).single();
       setJob(data);
     }
   };
@@ -152,18 +177,18 @@ export default function JobDetailPage() {
         console.error(error);
       } else {
         showToast('Cảm ơn bạn đã đánh giá dịch vụ!', 'success');
-        setJob((prev: any) => ({
+        setJob((prev) => prev ? ({
           ...prev,
           ratings: [ratingData]
-        }));
+        }) : prev);
         // Clean up previews
         ratingPreviews.forEach(url => URL.revokeObjectURL(url));
         setRatingFiles([]);
         setRatingPreviews([]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setSubmittingRating(false);
-      showToast(err.message || 'Đã xảy ra lỗi.', 'error');
+      showToast(err instanceof Error ? err.message : 'Đã xảy ra lỗi.', 'error');
       console.error(err);
     }
   };
@@ -177,6 +202,7 @@ export default function JobDetailPage() {
   }
 
   if (!job) return null;
+  const existingRating = job.ratings?.[0] || null;
 
   return (
     <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col bg-surface">
@@ -225,7 +251,7 @@ export default function JobDetailPage() {
               <p className="text-label-sm text-on-surface-variant">{job.service?.description}</p>
             </div>
             <div className="shrink-0 rounded-lg bg-primary-fixed px-3 py-2 text-sm font-extrabold text-primary-container sm:text-body-md">
-              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(job.quoted_price)}
+              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(job.quoted_price || 0))}
             </div>
           </div>
         </div>
@@ -244,7 +270,7 @@ export default function JobDetailPage() {
             <div>
               <p className="text-label-sm font-bold uppercase tracking-wider opacity-60">Thời gian</p>
               <p className="text-body-md font-medium text-on-surface">
-                {new Date(job.scheduled_at).toLocaleString('vi-VN')}
+                {job.scheduled_at ? new Date(job.scheduled_at).toLocaleString('vi-VN') : "Chưa hẹn"}
               </p>
             </div>
           </div>
@@ -306,7 +332,7 @@ export default function JobDetailPage() {
           <div className="pt-6 border-t border-outline-variant/30 space-y-4">
             <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Đánh giá dịch vụ</h3>
             
-            {job.ratings && job.ratings.length > 0 ? (
+            {existingRating ? (
               // Already Rated
               <div className="bg-surface-container-low p-5 rounded-2xl border border-outline-variant/20 space-y-3">
                 <div className="flex items-center justify-between">
@@ -315,25 +341,25 @@ export default function JobDetailPage() {
                       <Star 
                         key={star} 
                         size={18} 
-                        className={star <= job.ratings[0].score ? "fill-warning text-warning" : "text-outline-variant"} 
+                        className={star <= existingRating.score ? "fill-warning text-warning" : "text-outline-variant"}
                       />
                     ))}
                   </div>
                   <span className="text-label-sm text-on-surface-variant">
-                    {new Date(job.ratings[0].created_at).toLocaleDateString('vi-VN')}
+                    {existingRating.created_at ? new Date(existingRating.created_at).toLocaleDateString('vi-VN') : "Chưa có ngày"}
                   </span>
                 </div>
-                {job.ratings[0].comment ? (
-                  <p className="text-body-sm text-on-surface-variant italic break-words">&ldquo;{job.ratings[0].comment}&rdquo;</p>
+                {existingRating.comment ? (
+                  <p className="text-body-sm text-on-surface-variant italic break-words">&ldquo;{existingRating.comment}&rdquo;</p>
                 ) : (
                   <p className="text-body-sm text-on-surface-variant/60 italic">Không có bình luận.</p>
                 )}
                 {/* Rating images */}
-                {job.ratings[0].images && job.ratings[0].images.length > 0 && (
+                {existingRating.images && existingRating.images.length > 0 && (
                   <div className="pt-2 border-t border-outline-variant/20">
                     <p className="text-label-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Ảnh đánh giá</p>
                     <div className="grid grid-cols-3 gap-1.5">
-                      {job.ratings[0].images.map((imgUrl: string, idx: number) => (
+                      {existingRating.images.map((imgUrl: string, idx: number) => (
                         <a key={idx} href={imgUrl} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low">
                           <img src={imgUrl} alt={`Ảnh đánh giá ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
                         </a>

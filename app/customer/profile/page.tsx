@@ -141,7 +141,7 @@ export default function CustomerProfile() {
 
         const { data: billGoData } = await supabase
           .from("jobs")
-          .select("id, job_code, status, quoted_price, final_amount, created_at, service:services(name), payments(id, amount, method, status, paid_at, note)")
+          .select("id, job_code, status, quoted_price, created_at, service:services!jobs_service_id_fkey(name), payments(id, amount, method, status, paid_at, note)")
           .eq("customer_id", user.id)
           .order("created_at", { ascending: false });
 

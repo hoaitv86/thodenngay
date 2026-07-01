@@ -18,7 +18,7 @@ interface StatItem {
   label: string;
   value: string;
   change: string;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   color: string;
 }
 
@@ -29,6 +29,20 @@ interface RecentJob {
   status: string;
   time: string;
 }
+
+type PendingWorker = {
+  id: string;
+  specialties?: string[] | null;
+  profiles?: { full_name?: string | null } | null;
+};
+
+type DashboardJobRow = {
+  job_code?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  customer?: { full_name?: string | null } | null;
+  service?: { name?: string | null } | null;
+};
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   pending: {
@@ -64,7 +78,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<StatItem[]>([]);
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
-  const [pendingWorkers, setPendingWorkers] = useState<any[]>([]);
+  const [pendingWorkers, setPendingWorkers] = useState<PendingWorker[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | null }>({ message: "", type: null });
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -138,14 +152,15 @@ export default function AdminDashboard() {
           status,
           created_at,
           customer:profiles!customer_id(full_name),
-          service:services(name)
+          service:services!jobs_service_id_fkey(name)
         `)
         .order("created_at", { ascending: false })
         .limit(5);
 
       if (jobsData) {
-        const formattedJobs = jobsData.map((job: any) => {
-          const diffMin = Math.round((new Date().getTime() - new Date(job.created_at).getTime()) / 60000);
+        const formattedJobs = (jobsData as DashboardJobRow[]).map((job) => {
+          const createdAt = job.created_at ? new Date(job.created_at).getTime() : Date.now();
+          const diffMin = Math.round((new Date().getTime() - createdAt) / 60000);
           let timeStr = "Vừa xong";
           if (diffMin > 0 && diffMin < 60) {
             timeStr = `${diffMin} phút trước`;
@@ -156,10 +171,10 @@ export default function AdminDashboard() {
           }
 
           return {
-            id: job.job_code,
+            id: job.job_code || "JOB",
             customer: job.customer?.full_name || "Khách vãng lai",
             service: job.service?.name || "Dịch vụ",
-            status: job.status,
+            status: job.status || "pending",
             time: timeStr,
           };
         });
@@ -176,19 +191,23 @@ export default function AdminDashboard() {
       if (workersData) {
         setPendingWorkers(workersData);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      showToast("Lỗi nạp dữ liệu: " + err.message, "error");
+      showToast("Lỗi nạp dữ liệu: " + (err instanceof Error ? err.message : "Không xác định"), "error");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboardData();
+    const timeoutId = window.setTimeout(() => {
+      void fetchDashboardData();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleApproveWorker = async (worker: any) => {
+  const handleApproveWorker = async (worker: PendingWorker) => {
     setProcessingId(worker.id);
     const { error } = await supabase
       .from("workers")
@@ -208,7 +227,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleRejectWorker = async (worker: any) => {
+  const handleRejectWorker = async (worker: PendingWorker) => {
     setProcessingId(worker.id);
     const { error } = await supabase
       .from("workers")

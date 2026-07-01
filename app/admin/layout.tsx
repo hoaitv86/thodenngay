@@ -26,7 +26,7 @@ const navItems = [
   { href: "/admin/services", label: "Dịch vụ & Giá", icon: WrenchIcon },
   { href: "/admin/customers", label: "Khách hàng", icon: Users },
   { href: "/admin/chat", label: "Chat", icon: MessageCircle },
-  { href: "/admin/payments", label: "Thanh toán", icon: CreditCard },
+  { href: "/admin/payments", label: "BillGo", icon: CreditCard },
   { href: "/admin/settings", label: "Cài đặt", icon: Settings },
 ];
 

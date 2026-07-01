@@ -86,7 +86,7 @@ export default function WorkerJobDetailPage() {
         .from('jobs')
         .select(`
           *,
-          service:services(*),
+          service:services!jobs_service_id_fkey(*),
           customer:profiles!customer_id(*),
           ratings(*)
         `)

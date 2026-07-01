@@ -466,7 +466,7 @@ export default function WorkerDashboard() {
       // 3. Get New Jobs (Pending)
       const { data: pendingJobs } = await supabase
         .from('jobs')
-        .select('*, service:services(*)')
+        .select('*, service:services!jobs_service_id_fkey(*)')
         .eq('status', 'pending')
         .is('worker_id', null)
         .order('created_at', { ascending: false });
@@ -510,7 +510,7 @@ export default function WorkerDashboard() {
       // 4. Get Worker Submitted Jobs (Waiting for Admin Approval)
       const { data: workerPendingJobs } = await supabase
         .from('jobs')
-        .select('*, service:services(*), customer:profiles!customer_id(*)')
+        .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)')
         .eq('worker_id', workerData.id)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
@@ -533,7 +533,7 @@ export default function WorkerDashboard() {
       // 5. Get Active Jobs (Assigned to this worker)
       const { data: assignedJobs } = await supabase
         .from('jobs')
-        .select('*, service:services(*), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
+        .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
         .eq('worker_id', workerData.id)
         .in('status', ['assigned', 'in_progress'])
         .order('created_at', { ascending: false });

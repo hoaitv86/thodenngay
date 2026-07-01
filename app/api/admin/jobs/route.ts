@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         source: "call",
         created_by: adminCheck.user.id,
       })
-      .select("*, customer:profiles!customer_id(*), service:services(*), worker:workers(profiles(full_name))")
+      .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
       .single();
 
     if (insertError) {

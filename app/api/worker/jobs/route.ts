@@ -375,7 +375,7 @@ export async function POST(request: Request) {
           source: "app",
           created_by: workerCheck.user.id,
         })
-        .select("*, service:services(*), customer:profiles!customer_id(*)")
+        .select("*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)")
         .single();
 
       if (insertError) {
@@ -529,7 +529,7 @@ export async function POST(request: Request) {
         source: "app",
         created_by: workerCheck.user.id,
       })
-      .select("*, customer:profiles!customer_id(*), service:services(*), worker:workers(profiles(full_name))")
+      .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
       .single();
 
     if (insertError) {

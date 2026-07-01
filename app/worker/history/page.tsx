@@ -65,7 +65,7 @@ export default function WorkerHistory() {
       if (workerData) {
         const { data: jobs } = await supabase
           .from('jobs')
-          .select('*, service:services(*), customer:profiles!customer_id(*)')
+          .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)')
           .eq('worker_id', workerData.id)
           .in('status', ['completed', 'done', 'cancelled'])
           .order('updated_at', { ascending: false });

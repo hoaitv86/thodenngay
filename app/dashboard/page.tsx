@@ -29,11 +29,34 @@ import {
   LogOutIcon
 } from "../components/icons";
 
+type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
+
+type RecentJob = {
+  id: string;
+  job_code?: string | null;
+  status?: string | null;
+  scheduled_at?: string | null;
+  address?: string | null;
+  quoted_price?: number | string | null;
+  service?: { name?: string | null } | null;
+  worker?: { user?: { full_name?: string | null } | null } | null;
+};
+
+type DashboardService = {
+  id?: string;
+  name: string;
+  icon?: string | null;
+  iconComponent: IconComponent;
+  color: string;
+  bg: string;
+  border: string;
+};
+
 export default function CustomerDashboard() {
   const [userName, setUserName] = useState("Khách");
   const [loading, setLoading] = useState(true);
-  const [recentJobs, setRecentJobs] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
+  const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
+  const [services, setServices] = useState<DashboardService[]>([]);
   const router = useRouter();
   const supabase = createClient();
 
@@ -52,7 +75,7 @@ export default function CustomerDashboard() {
         // Fetch recent jobs
         const { data: jobs } = await supabase
           .from('jobs')
-          .select('*, service:services(*), worker:workers(user:profiles(full_name))')
+          .select('*, service:services!jobs_service_id_fkey(*), worker:workers(user:profiles(full_name))')
           .eq('customer_id', user.id)
           .order('created_at', { ascending: false })
           .limit(3);
@@ -69,12 +92,12 @@ export default function CustomerDashboard() {
           .order('name');
         
         if (svcs && svcs.length > 0) {
-          const iconMap: Record<string, any> = {
+          const iconMap: Record<string, IconComponent> = {
             ZapIcon, DropletIcon, CameraIcon, CogIcon, WrenchIcon,
             ShieldCheckIcon, StarIcon, ClockIcon, MapPinIcon, BriefcaseIcon,
             BarChartIcon, CalendarIcon, PhoneIcon, UsersIcon
           };
-          const styleMap: Record<string, any> = {
+          const styleMap: Record<string, Pick<DashboardService, "color" | "bg" | "border">> = {
             'ZapIcon': { color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
             'DropletIcon': { color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
             'CameraIcon': { color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
@@ -228,7 +251,7 @@ export default function CustomerDashboard() {
                       <div className="flex items-center gap-3 text-on-surface-variant">
                         <ClockIcon size={16} />
                         <span className="text-body-sm">
-                          {new Date(job.scheduled_at).toLocaleDateString('vi-VN')}
+                          {job.scheduled_at ? new Date(job.scheduled_at).toLocaleDateString('vi-VN') : "Chưa hẹn"}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-on-surface-variant">
@@ -240,7 +263,7 @@ export default function CustomerDashboard() {
                     </div>
                     <div className="flex flex-col sm:items-end justify-between gap-4">
                       <div className="text-xl sm:text-headline-md font-bold text-on-surface">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(job.quoted_price)}
+                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(job.quoted_price || 0))}
                       </div>
                       
                       <Link href={`/customer/jobs/${job.id}`} className="btn-primary !py-2 !px-4 !text-sm sm:!w-auto">

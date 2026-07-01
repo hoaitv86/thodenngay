@@ -64,7 +64,7 @@ export default function CustomerJobs() {
         .from('jobs')
         .select(`
           *,
-          service:services(*),
+          service:services!jobs_service_id_fkey(*),
           ratings(*)
         `)
         .eq('customer_id', user.id)

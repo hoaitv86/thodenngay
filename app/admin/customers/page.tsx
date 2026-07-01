@@ -370,9 +370,8 @@ export default function AdminCustomers() {
         address,
         scheduled_at,
         quoted_price,
-        final_amount,
         status,
-        service:services(name, icon),
+        service:services!jobs_service_id_fkey(name, icon),
         payments(id, amount, method, status, paid_at, note)
       `)
       .eq("customer_id", customerId)

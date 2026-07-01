@@ -57,7 +57,7 @@ export default function AdminPayments() {
     setLoading(true);
     const { data, error } = await supabase
       .from("jobs")
-      .select("id, job_code, customer_id, worker_id, status, quoted_price, final_amount, created_at, customer:profiles!customer_id(full_name, phone), service:services(name), worker:workers(profiles(full_name)), payments(id, amount, method, status, paid_at, collected_by, note)")
+      .select("id, job_code, customer_id, worker_id, status, quoted_price, created_at, customer:profiles!customer_id(full_name, phone), service:services!jobs_service_id_fkey(name), worker:workers(profiles(full_name)), payments(id, amount, method, status, paid_at, collected_by, note)")
       .order("created_at", { ascending: false });
 
     if (!error && data) setJobs(data as BillGoJob[]);

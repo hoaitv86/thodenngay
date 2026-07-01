@@ -150,7 +150,7 @@ export default function AdminJobs() {
     setLoading(true);
     const query = supabase
       .from('jobs')
-      .select('*, customer:profiles!customer_id(*), service:services(*), worker:workers(profiles(full_name))')
+      .select('*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))')
       .order('created_at', { ascending: false });
 
     const { data } = await query;
