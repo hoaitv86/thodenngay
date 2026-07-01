@@ -100,7 +100,7 @@ export default function WorkerCustomersPage() {
         updated_at,
         scheduled_at,
         created_at,
-        service:services(name),
+        service:services!jobs_service_id_fkey(name),
         customer:profiles!customer_id(id, full_name, phone, address, created_at)
       `)
       .eq("worker_id", workerData.id)
