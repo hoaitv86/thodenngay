@@ -13,7 +13,10 @@ import {
 } from "../components/icons";
 
 interface PendingApprovalProps {
-  worker: any;
+  worker: {
+    status?: string | null;
+    rejection_reason?: string | null;
+  } | null;
   workerName: string;
 }
 

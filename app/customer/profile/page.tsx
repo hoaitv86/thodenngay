@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getGpsLocationErrorMessage } from "@/lib/location";
 import { useSettings } from "@/lib/settings";
-import { formatBillGoCurrency, getBillGoSummary } from "@/lib/billgo";
+import { formatBillGoCurrency, getBillGoReceivableSummary } from "@/lib/billgo";
 import {
   UserIcon,
   PhoneIcon,
@@ -50,14 +50,17 @@ type CustomerPayment = {
   note?: string | null;
 };
 
-type CustomerBillGoJob = {
+type CustomerBillGoReceivable = {
   id: string;
-  job_code?: string | null;
+  title?: string | null;
   status?: string | null;
-  quoted_price?: number | string | null;
-  final_amount?: number | string | null;
-  created_at?: string | null;
-  service?: { name?: string | null } | null;
+  type?: string | null;
+  total_amount?: number | string | null;
+  due_date?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  note?: string | null;
+  subscription?: { package_name?: string | null; next_due_date?: string | null } | null;
   payments?: CustomerPayment[] | null;
 };
 
@@ -85,7 +88,7 @@ export default function CustomerProfile() {
   const [showPolicies, setShowPolicies] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
-  const [billGoJobs, setBillGoJobs] = useState<CustomerBillGoJob[]>([]);
+  const [billGoJobs, setBillGoJobs] = useState<CustomerBillGoReceivable[]>([]);
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -140,13 +143,14 @@ export default function CustomerProfile() {
         }
 
         const { data: billGoData } = await supabase
-          .from("jobs")
-          .select("id, job_code, status, quoted_price, created_at, service:services!jobs_service_id_fkey(name), payments(id, amount, method, status, paid_at, note)")
+          .from("billgo_receivables")
+          .select("id, title, type, total_amount, due_date, period_start, period_end, status, note, subscription:billgo_subscriptions(package_name, next_due_date), payments(id, amount, method, status, paid_at, note)")
           .eq("customer_id", user.id)
-          .order("created_at", { ascending: false });
+          .neq("status", "cancelled")
+          .order("due_date", { ascending: true });
 
         if (billGoData) {
-          setBillGoJobs(billGoData as CustomerBillGoJob[]);
+          setBillGoJobs(billGoData as CustomerBillGoReceivable[]);
         }
       } catch (error) {
         console.error("Error reading profile details:", error);
@@ -385,7 +389,7 @@ export default function CustomerProfile() {
   const avatarChar = profile.full_name ? profile.full_name.trim().charAt(0).toUpperCase() : "C";
   const billGoTotals = billGoJobs.reduce(
     (acc, job) => {
-      const summary = getBillGoSummary(job);
+      const summary = getBillGoReceivableSummary(job);
       acc.receivable += summary.receivable;
       acc.paid += summary.paid;
       acc.debt += summary.debt;
@@ -709,14 +713,14 @@ export default function CustomerProfile() {
                 {billGoJobs.length === 0 ? (
                   <p className="rounded-lg bg-white p-4 text-sm text-on-surface-variant">Chưa có khoản thanh toán.</p>
                 ) : billGoJobs.map(job => {
-                  const summary = getBillGoSummary(job);
+                  const summary = getBillGoReceivableSummary(job);
                   const paidPayments = (job.payments || []).filter(payment => payment.status === "paid");
                   return (
                     <div key={job.id} className="rounded-lg bg-white p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-extrabold text-on-surface">{job.job_code || job.id.slice(0, 8)}</p>
-                          <p className="mt-1 text-xs text-on-surface-variant">{job.service?.name || "Dịch vụ"}</p>
+                          <p className="text-sm font-extrabold text-on-surface">{job.title || job.subscription?.package_name || job.id.slice(0, 8)}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">Hạn tiếp theo: {job.due_date || job.subscription?.next_due_date || "Chưa có"}</p>
                         </div>
                         <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${summary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
                           {summary.statusLabel}

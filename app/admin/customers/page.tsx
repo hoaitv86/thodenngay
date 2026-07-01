@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { formatBillGoCurrency, getBillGoSummary } from "@/lib/billgo";
+import { formatBillGoCurrency, getBillGoReceivableSummary } from "@/lib/billgo";
 import {
   SearchIcon,
   FilterIcon,
@@ -56,6 +56,25 @@ type CustomerJobRow = {
   }> | null;
 };
 
+type CustomerBillGoRow = {
+  id: string;
+  title?: string | null;
+  type?: string | null;
+  total_amount?: number | string | null;
+  due_date?: string | null;
+  status?: string | null;
+  note?: string | null;
+  subscription?: { package_name?: string | null; next_due_date?: string | null } | null;
+  payments?: Array<{
+    id: string;
+    amount: number | string;
+    method: string;
+    status: string;
+    paid_at?: string | null;
+    note?: string | null;
+  }> | null;
+};
+
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Lỗi không xác định";
 
@@ -69,6 +88,7 @@ export default function AdminCustomers() {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [customerJobs, setCustomerJobs] = useState<CustomerJobRow[]>([]);
+  const [customerBillGoRows, setCustomerBillGoRows] = useState<CustomerBillGoRow[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
 
   // Modals & Confirm states
@@ -384,6 +404,19 @@ export default function AdminCustomers() {
         ...job,
         service: Array.isArray(job.service) ? job.service[0] || null : job.service,
       })) as CustomerJobRow[]);
+    }
+
+    const { data: billGoData, error: billGoError } = await supabase
+      .from("billgo_receivables")
+      .select("id, title, type, total_amount, due_date, status, note, subscription:billgo_subscriptions(package_name, next_due_date), payments(id, amount, method, status, paid_at, note)")
+      .eq("customer_id", customerId)
+      .neq("status", "cancelled")
+      .order("due_date", { ascending: true });
+
+    if (billGoError) {
+      setCustomerBillGoRows([]);
+    } else {
+      setCustomerBillGoRows((billGoData || []) as CustomerBillGoRow[]);
     }
     setLoadingJobs(false);
   };
@@ -863,9 +896,9 @@ export default function AdminCustomers() {
                   <h3 className="text-body-lg font-bold text-on-surface">Thanh toán & Công nợ</h3>
                 </div>
                 {(() => {
-                  const billGoTotals = customerJobs.reduce(
-                    (acc, job) => {
-                      const summary = getBillGoSummary(job);
+                  const billGoTotals = customerBillGoRows.reduce(
+                    (acc, item) => {
+                      const summary = getBillGoReceivableSummary(item);
                       acc.receivable += summary.receivable;
                       acc.paid += summary.paid;
                       acc.debt += summary.debt;
@@ -891,16 +924,16 @@ export default function AdminCustomers() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        {customerJobs.length === 0 ? (
+                        {customerBillGoRows.length === 0 ? (
                           <p className="text-sm text-on-surface-variant">Chưa có khoản thu nào.</p>
-                        ) : customerJobs.map(job => {
-                          const summary = getBillGoSummary(job);
+                        ) : customerBillGoRows.map(item => {
+                          const summary = getBillGoReceivableSummary(item);
                           return (
-                            <div key={`billgo-${job.id}`} className="rounded-xl border border-outline-variant/30 p-3">
+                            <div key={`billgo-${item.id}`} className="rounded-xl border border-outline-variant/30 p-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <p className="text-sm font-extrabold text-on-surface">{job.job_code}</p>
-                                  <p className="text-xs text-on-surface-variant">{job.service?.name || "Dịch vụ"}</p>
+                                  <p className="text-sm font-extrabold text-on-surface">{item.title || item.subscription?.package_name || item.id.slice(0, 8)}</p>
+                                  <p className="text-xs text-on-surface-variant">Hạn tiếp theo: {item.due_date || item.subscription?.next_due_date || "Chưa có"}</p>
                                 </div>
                                 <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${summary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
                                   {summary.statusLabel}

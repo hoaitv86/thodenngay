@@ -24,8 +24,8 @@ export async function getSystemSettings(): Promise<SettingsData> {
         privacy_url: data.privacy_url || DEFAULT_SETTINGS.privacy_url,
       };
     }
-  } catch (err: any) {
-    console.warn("Could not load settings from server DB:", err.message);
+  } catch (err: unknown) {
+    console.warn("Could not load settings from server DB:", err instanceof Error ? err.message : err);
   }
   return DEFAULT_SETTINGS;
 }

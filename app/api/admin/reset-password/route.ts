@@ -86,9 +86,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, message: "Đã thiết lập lại mật khẩu thành công." });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: "Lỗi hệ thống: " + error.message },
+      { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
       { status: 500 }
     );
   }

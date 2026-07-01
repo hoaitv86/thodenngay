@@ -23,7 +23,16 @@ import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
-import { formatBillGoCurrency, getBillGoSummary } from "@/lib/billgo";
+import {
+  BILLGO_CYCLE_OPTIONS,
+  BillGoCycle,
+  formatBillGoCurrency,
+  getBillGoCycleOption,
+  getBillGoNextDueDate,
+  getBillGoReceivableSummary,
+  getBillGoSummary,
+  toMoneyNumber,
+} from "@/lib/billgo";
 import { Worker } from "@/lib/types";
 import PendingApproval from "./pending-approval";
 
@@ -96,6 +105,42 @@ interface WorkerJob {
   } | null;
   [key: string]: unknown;
 }
+
+type WorkerBillGoReceivable = {
+  id: string;
+  customer_id: string;
+  worker_id?: string | null;
+  job_id?: string | null;
+  subscription_id?: string | null;
+  type?: string | null;
+  title?: string | null;
+  total_amount?: number | string | null;
+  due_date?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  billing_months?: number | null;
+  bonus_months?: number | null;
+  status?: string | null;
+  note?: string | null;
+  customer?: {
+    full_name?: string | null;
+    phone?: string | null;
+    address?: string | null;
+  } | null;
+  subscription?: {
+    package_name?: string | null;
+    cycle?: string | null;
+    next_due_date?: string | null;
+  } | null;
+  payments?: Array<{
+    id: string;
+    amount: number | string;
+    method: string;
+    status: string;
+    paid_at?: string | null;
+    note?: string | null;
+  }> | null;
+};
 
 type GpsLocation = {
   lat: number;
@@ -258,6 +303,7 @@ export default function WorkerDashboard() {
   const [newJobs, setNewJobs] = useState<WorkerJob[]>([]);
   const [pendingApprovalJobs, setPendingApprovalJobs] = useState<WorkerJob[]>([]);
   const [activeJobs, setActiveJobs] = useState<WorkerJob[]>([]);
+  const [workerBillGoReceivables, setWorkerBillGoReceivables] = useState<WorkerBillGoReceivable[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerPassword: null });
@@ -345,27 +391,25 @@ export default function WorkerDashboard() {
   const [collectingPaymentJobId, setCollectingPaymentJobId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentCycle, setPaymentCycle] = useState<BillGoCycle>("monthly");
   const [paymentNote, setPaymentNote] = useState("");
-  const billGoJobs = useMemo(
-    () => activeJobs.filter(job => {
-      const summary = getBillGoSummary(job);
-      return summary.receivable > 0 || summary.paid > 0;
-    }),
-    [activeJobs]
+  const billGoRows = useMemo(
+    () => workerBillGoReceivables.map(item => ({ item, summary: getBillGoReceivableSummary(item) })),
+    [workerBillGoReceivables]
   );
   const billGoTotals = useMemo(
-    () => billGoJobs.reduce(
-      (acc, job) => {
-        const summary = getBillGoSummary(job);
-        acc.receivable += summary.receivable;
-        acc.paid += summary.paid;
-        acc.debt += summary.debt;
-        if (summary.debt > 0) acc.debtJobs += 1;
+    () => billGoRows.reduce(
+      (acc, row) => {
+        acc.receivable += row.summary.receivable;
+        acc.paid += row.summary.paid;
+        acc.debt += row.summary.debt;
+        if (row.summary.debt > 0) acc.debtItems += 1;
+        if (row.summary.status === "overdue") acc.overdue += 1;
         return acc;
       },
-      { receivable: 0, paid: 0, debt: 0, debtJobs: 0 }
+      { receivable: 0, paid: 0, debt: 0, debtItems: 0, overdue: 0 }
     ),
-    [billGoJobs]
+    [billGoRows]
   );
 
   const toastTimeoutRef = React.useRef<number | null>(null);
@@ -559,6 +603,19 @@ export default function WorkerDashboard() {
         ...mockActiveJobs,
         ...mappedActive.filter(job => !mockActiveJobs.some(mockJob => mockJob.id === job.id)),
       ]));
+
+      const { data: assignedBillGo, error: billGoError } = await supabase
+        .from("billgo_receivables")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, billing_months, bonus_months, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(package_name, cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
+        .eq("worker_id", workerData.id)
+        .neq("status", "cancelled")
+        .order("due_date", { ascending: true });
+
+      if (!billGoError && assignedBillGo) {
+        setWorkerBillGoReceivables(assignedBillGo as WorkerBillGoReceivable[]);
+      } else if (!isBackground) {
+        setWorkerBillGoReceivables([]);
+      }
 
       // 6. Calculate Real Stats
       const { data: workerJobs } = await supabase
@@ -786,6 +843,87 @@ export default function WorkerDashboard() {
     setPaymentAmount("");
     setPaymentNote("");
     showToast("Da ghi nhan thanh toan BillGo.", "success");
+    setCollectingPaymentJobId(null);
+  };
+
+  const handleCollectBillGoReceivable = async (receivable: WorkerBillGoReceivable) => {
+    if (collectingPaymentJobId) return;
+    const parsedAmount = toMoneyNumber(paymentAmount);
+
+    if (parsedAmount <= 0) {
+      showToast("Số tiền thu phải lớn hơn 0.", "error");
+      return;
+    }
+
+    setCollectingPaymentJobId(receivable.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const cycle = getBillGoCycleOption(paymentCycle);
+    const baseDate = receivable.period_start || receivable.due_date || new Date().toISOString().slice(0, 10);
+    const nextDueDate = getBillGoNextDueDate(baseDate, paymentCycle);
+
+    const { data, error } = await supabase
+      .from("payments")
+      .insert({
+        receivable_id: receivable.id,
+        job_id: receivable.job_id || null,
+        amount: parsedAmount,
+        method: paymentMethod,
+        status: "paid",
+        paid_at: new Date().toISOString(),
+        collected_by: user?.id || null,
+        note: [`Thu ${cycle.label}`, paymentNote.trim()].filter(Boolean).join(" · ") || null,
+      })
+      .select("id, amount, method, status, paid_at, note")
+      .single();
+
+    if (error) {
+      showToast("Không thể ghi nhận thanh toán: " + error.message, "error");
+      setCollectingPaymentJobId(null);
+      return;
+    }
+
+    const currentSummary = getBillGoReceivableSummary(receivable);
+    const nextPaid = currentSummary.paid + parsedAmount;
+    const totalAmount = toMoneyNumber(receivable.total_amount);
+    const nextStatus = totalAmount > 0 && nextPaid >= totalAmount ? "paid" : nextPaid > 0 ? "partial" : "unpaid";
+
+    const { error: updateError } = await supabase
+      .from("billgo_receivables")
+      .update({
+        status: nextStatus,
+        billing_months: cycle.paidMonths,
+        bonus_months: cycle.bonusMonths,
+      })
+      .eq("id", receivable.id);
+
+    if (updateError) {
+      showToast("Đã thu tiền nhưng chưa cập nhật được công nợ: " + updateError.message, "error");
+      setCollectingPaymentJobId(null);
+      return;
+    }
+
+    if (receivable.subscription_id) {
+      await supabase
+        .from("billgo_subscriptions")
+        .update({ cycle: paymentCycle, next_due_date: nextDueDate })
+        .eq("id", receivable.subscription_id);
+    }
+
+    setWorkerBillGoReceivables(prev => prev.map(item =>
+      item.id === receivable.id
+        ? {
+            ...item,
+            status: nextStatus,
+            billing_months: cycle.paidMonths,
+            bonus_months: cycle.bonusMonths,
+            payments: [...(item.payments || []), data],
+            subscription: item.subscription ? { ...item.subscription, cycle: paymentCycle, next_due_date: nextDueDate } : item.subscription,
+          }
+        : item
+    ));
+    setPaymentAmount("");
+    setPaymentNote("");
+    showToast("Đã ghi nhận thu cước BillGo.", "success");
     setCollectingPaymentJobId(null);
   };
 
@@ -1496,7 +1634,7 @@ export default function WorkerDashboard() {
           className={`rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "billgo" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
         >
           Thu cước BillGo
-          {billGoTotals.debtJobs > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "billgo" ? "bg-white text-primary" : "bg-error text-white"}`}>{billGoTotals.debtJobs}</span>}
+          {billGoTotals.debtItems > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "billgo" ? "bg-white text-primary" : "bg-error text-white"}`}>{billGoTotals.debtItems}</span>}
         </button>
       </div>
 
@@ -1656,39 +1794,38 @@ export default function WorkerDashboard() {
               </div>
             </div>
 
-            {billGoJobs.length > 0 ? (
-              billGoJobs.map(job => {
-                const billGoSummary = getBillGoSummary(job);
-                const paidCount = job.payments?.filter(payment => payment.status === "paid").length || 0;
+            {billGoRows.length > 0 ? (
+              billGoRows.map(({ item, summary }) => {
+                const paidCount = item.payments?.filter(payment => payment.status === "paid").length || 0;
 
                 return (
-                  <div key={job.id} className="overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-sm">
+                  <div key={item.id} className="overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-primary-fixed/45 px-4 py-3">
                       <div>
                         <p className="text-[10px] font-extrabold uppercase text-primary-container">Thu cước BillGo</p>
-                        <p className="mt-1 text-sm font-bold text-on-surface">{job.job_code || job.id.slice(0, 8)}</p>
+                        <p className="mt-1 text-sm font-bold text-on-surface">{item.title || item.subscription?.package_name || item.id.slice(0, 8)}</p>
                       </div>
-                      <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${billGoSummary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
-                        {billGoSummary.statusLabel}
+                      <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${summary.status === "overdue" ? "bg-error-container text-error" : summary.debt > 0 ? "bg-warning-container text-warning" : "bg-success-container text-success"}`}>
+                        {summary.statusLabel}
                       </span>
                     </div>
 
                     <div className="space-y-4 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{job.customerName || "Khách hàng"}</h3>
-                          <p className="text-body-sm text-on-surface-variant">{job.serviceName || "Dịch vụ"}</p>
-                          <p className="mt-1 text-xs text-on-surface-variant">{job.address || "Chưa cung cấp địa chỉ"}</p>
+                          <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{item.customer?.full_name || "Khách hàng"}</h3>
+                          <p className="text-body-sm text-on-surface-variant">{item.customer?.phone || "Chưa có SĐT"}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">{item.customer?.address || "Chưa có địa chỉ"}</p>
                         </div>
                         <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
-                          {job.time}
+                          Hạn: {item.due_date || item.subscription?.next_due_date || "Chưa có"}
                         </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-2 text-xs text-on-surface-variant">
-                        <span className="rounded-lg bg-surface-container-low p-3">Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(billGoSummary.receivable)}</strong></span>
-                        <span className="rounded-lg bg-success-container p-3">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(billGoSummary.paid)}</strong></span>
-                        <span className="rounded-lg bg-error-container p-3">Còn nợ<br /><strong className="text-error">{formatBillGoCurrency(billGoSummary.debt)}</strong></span>
+                        <span className="rounded-lg bg-surface-container-low p-3">Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(summary.receivable)}</strong></span>
+                        <span className="rounded-lg bg-success-container p-3">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></span>
+                        <span className="rounded-lg bg-error-container p-3">Còn nợ<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong></span>
                       </div>
 
                       <div className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
@@ -1697,6 +1834,16 @@ export default function WorkerDashboard() {
                           <span className="text-xs font-bold text-primary-container">{paidCount} lần thu</span>
                         </div>
                         <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
+                          <select
+                            className="input-field !py-2 text-sm sm:col-span-2"
+                            value={paymentCycle}
+                            onChange={event => setPaymentCycle(event.target.value as BillGoCycle)}
+                            disabled={collectingPaymentJobId === item.id}
+                          >
+                            {BILLGO_CYCLE_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
                           <input
                             className="input-field !py-2 text-sm"
                             type="number"
@@ -1704,13 +1851,13 @@ export default function WorkerDashboard() {
                             value={paymentAmount}
                             onChange={event => setPaymentAmount(event.target.value)}
                             placeholder="Số tiền thu"
-                            disabled={collectingPaymentJobId === job.id}
+                            disabled={collectingPaymentJobId === item.id}
                           />
                           <select
                             className="input-field !py-2 text-sm"
                             value={paymentMethod}
                             onChange={event => setPaymentMethod(event.target.value)}
-                            disabled={collectingPaymentJobId === job.id}
+                            disabled={collectingPaymentJobId === item.id}
                           >
                             <option value="cash">Tiền mặt</option>
                             <option value="transfer">Chuyển khoản</option>
@@ -1724,34 +1871,37 @@ export default function WorkerDashboard() {
                             value={paymentNote}
                             onChange={event => setPaymentNote(event.target.value)}
                             placeholder="Ghi chú thanh toán"
-                            disabled={collectingPaymentJobId === job.id}
+                            disabled={collectingPaymentJobId === item.id}
                           />
                           <div className="grid gap-2 sm:col-span-2 sm:grid-cols-[auto_1fr]">
-                            {billGoSummary.debt > 0 && (
+                            {summary.debt > 0 && (
                               <button
                                 type="button"
-                                onClick={() => setPaymentAmount(String(billGoSummary.debt))}
+                                onClick={() => setPaymentAmount(String(summary.debt))}
                                 className="rounded-lg border border-primary-container/25 px-4 py-3 text-sm font-extrabold text-primary-container"
-                                disabled={collectingPaymentJobId === job.id}
+                                disabled={collectingPaymentJobId === item.id}
                               >
                                 Thu đủ còn nợ
                               </button>
                             )}
                             <button
                               type="button"
-                              onClick={() => void handleCollectPayment(job)}
-                              disabled={collectingPaymentJobId === job.id}
+                              onClick={() => void handleCollectBillGoReceivable(item)}
+                              disabled={collectingPaymentJobId === item.id}
                               className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
                             >
-                              {collectingPaymentJobId === job.id ? "Đang lưu..." : "Ghi nhận thu cước"}
+                              {collectingPaymentJobId === item.id ? "Đang lưu..." : "Ghi nhận thu cước"}
                             </button>
                           </div>
+                          <p className="text-xs text-on-surface-variant sm:col-span-2">
+                            Ngày nhắc sau kỳ này: <strong>{getBillGoNextDueDate(item.period_start || item.due_date || new Date().toISOString().slice(0, 10), paymentCycle)}</strong>
+                          </p>
                         </div>
                       </div>
 
-                      {job.customer?.phone && (
+                      {item.customer?.phone && (
                         <a
-                          href={`tel:${job.customer.phone}`}
+                          href={`tel:${item.customer.phone}`}
                           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-success px-4 py-3 text-sm font-extrabold text-white"
                         >
                           <PhoneIcon size={18} />
@@ -1768,7 +1918,7 @@ export default function WorkerDashboard() {
                   <DollarSignIcon size={32} />
                 </div>
                 <p className="text-base font-bold text-on-surface">Chưa có khoản BillGo</p>
-                <p className="text-body-sm text-on-surface-variant">Các việc đã nhận có báo giá hoặc thanh toán sẽ hiển thị tại đây.</p>
+                <p className="text-body-sm text-on-surface-variant">Các khách thu cước được admin phân công sẽ hiển thị tại đây.</p>
               </div>
             )}
           </>

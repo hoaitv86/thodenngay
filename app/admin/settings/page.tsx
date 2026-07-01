@@ -32,10 +32,6 @@ export default function AdminSettings() {
 
   const supabase = createClient();
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
   const loadSettings = async () => {
     setLoading(true);
     try {
@@ -61,15 +57,15 @@ export default function AdminSettings() {
         });
         setDbConnected(true);
       }
-    } catch (err: any) {
-      console.warn("Could not load settings from DB, falling back to LocalStorage:", err.message);
+    } catch (err: unknown) {
+      console.warn("Could not load settings from DB, falling back to LocalStorage:", err instanceof Error ? err.message : err);
       setDbConnected(false);
       
       const saved = localStorage.getItem('system_settings');
       if (saved) {
         try {
           setSettings(JSON.parse(saved));
-        } catch (e) {
+        } catch {
           setSettings(DEFAULT_SETTINGS);
         }
       }
@@ -77,6 +73,14 @@ export default function AdminSettings() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,9 +105,9 @@ export default function AdminSettings() {
         localStorage.setItem('system_settings', JSON.stringify(settings));
       }
       showToast("Lưu cấu hình chung thành công!", "success");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      showToast("Lỗi khi lưu cấu hình: " + err.message, "error");
+      showToast("Lỗi khi lưu cấu hình: " + (err instanceof Error ? err.message : "Không xác định"), "error");
     } finally {
       setSavingGeneral(false);
     }
@@ -129,9 +133,9 @@ export default function AdminSettings() {
         localStorage.setItem('system_settings', JSON.stringify(settings));
       }
       showToast("Lưu cấu hình hệ thống thành công!", "success");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      showToast("Lỗi khi lưu cấu hình: " + err.message, "error");
+      showToast("Lỗi khi lưu cấu hình: " + (err instanceof Error ? err.message : "Không xác định"), "error");
     } finally {
       setSavingSystem(false);
     }
@@ -354,8 +358,8 @@ export default function AdminSettings() {
           <div className="card bg-surface-container-low border-none">
             <h3 className="font-semibold text-on-surface mb-2">Lưu ý cấu hình</h3>
             <ul className="space-y-3 text-sm text-on-surface-variant list-disc list-inside">
-              <li>Các thay đổi ở "Cấu hình chung" sẽ cập nhật ngay lập tức trên Ứng dụng.</li>
-              <li>Chỉ bật "Chế độ bảo trì" khi có bản cập nhật lớn hoặc sửa lỗi khẩn cấp.</li>
+              <li>Các thay đổi ở &quot;Cấu hình chung&quot; sẽ cập nhật ngay lập tức trên Ứng dụng.</li>
+              <li>Chỉ bật &quot;Chế độ bảo trì&quot; khi có bản cập nhật lớn hoặc sửa lỗi khẩn cấp.</li>
               <li>Các phần cấu hình Dịch vụ, Thanh toán sẽ được cập nhật trong giai đoạn sau.</li>
             </ul>
           </div>
@@ -364,4 +368,3 @@ export default function AdminSettings() {
     </div>
   );
 }
-

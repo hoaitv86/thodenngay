@@ -5,7 +5,15 @@ import { createClient } from "@/lib/supabase/client";
 import { User, Phone, MapPin, Mail, Save, Loader2, UserCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-export default function ProfileClient({ initialData }: { initialData: any }) {
+type ProfileInitialData = {
+  id: string;
+  full_name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  email?: string | null;
+};
+
+export default function ProfileClient({ initialData }: { initialData: ProfileInitialData }) {
   const [formData, setFormData] = useState({
     full_name: initialData?.full_name || "",
     phone: initialData?.phone || "",
