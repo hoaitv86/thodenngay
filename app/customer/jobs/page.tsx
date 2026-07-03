@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import { 
   Briefcase, 
   Clock, 
@@ -42,8 +43,10 @@ type CustomerJob = {
   status: string;
   images?: string[] | null;
   service?: {
+    id?: string | null;
     name?: string | null;
   } | null;
+  job_services?: JobWithWorkflow["job_services"];
   ratings?: unknown[] | null;
 };
 
@@ -60,18 +63,31 @@ export default function CustomerJobs() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      let result = await supabase
         .from('jobs')
         .select(`
           *,
           service:services!jobs_service_id_fkey(*),
+          job_services(service:services(*)),
           ratings(*)
         `)
         .eq('customer_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        setJobs(data);
+      if (result.error && isMissingWorkflowColumn(result.error.message)) {
+        result = await supabase
+          .from('jobs')
+          .select(`
+            *,
+            service:services!jobs_service_id_fkey(*),
+            ratings(*)
+          `)
+          .eq('customer_id', user.id)
+          .order('created_at', { ascending: false });
+      }
+
+      if (!result.error && result.data) {
+        setJobs(result.data);
       }
       setLoading(false);
     };
@@ -128,6 +144,7 @@ export default function CustomerJobs() {
         const haystack = [
           job.job_code,
           job.service?.name,
+          ...getJobServices(job).map(service => service.name),
           job.address,
           job.description,
         ]

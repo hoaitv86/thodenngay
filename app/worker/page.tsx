@@ -34,6 +34,7 @@ import {
   toMoneyNumber,
 } from "@/lib/billgo";
 import { Worker } from "@/lib/types";
+import type { WorkflowData } from "@/config/serviceWorkflows";
 import PendingApproval from "./pending-approval";
 
 interface ServiceOption {
@@ -86,6 +87,7 @@ interface WorkerJob {
   final_amount?: number | null;
   warranty_days?: number | null;
   warranty_note?: string | null;
+  workflow_data?: WorkflowData | null;
   payments?: Array<{
     id: string;
     amount: number | string;
@@ -1138,6 +1140,88 @@ export default function WorkerDashboard() {
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
   };
 
+  const ensureBillGoFromWorkflow = async (job: WorkerJob) => {
+    const billgo = job.workflow_data?.billgo;
+    if (!billgo || typeof billgo !== "object" || !worker?.id || !job.customer_id) return;
+
+    const billgoData = billgo as {
+      cycle?: BillGoCycle;
+      startDate?: string;
+      amount?: number | string;
+      note?: string;
+    };
+    const amount = toMoneyNumber(billgoData.amount);
+    const startDate = billgoData.startDate || new Date().toISOString().slice(0, 10);
+    const cycleKey = billgoData.cycle || "monthly";
+    const cycle = getBillGoCycleOption(cycleKey);
+
+    if (amount <= 0) return;
+
+    const { data: existingSubscription } = await supabase
+      .from("billgo_subscriptions")
+      .select("id")
+      .eq("job_id", job.id)
+      .maybeSingle();
+
+    let subscriptionId = existingSubscription?.id || null;
+    if (!subscriptionId) {
+      const { data: subscription, error: subscriptionError } = await supabase
+        .from("billgo_subscriptions")
+        .insert({
+          customer_id: job.customer_id,
+          worker_id: worker.id,
+          job_id: job.id,
+          service_id: job.service_id || null,
+          package_name: job.serviceName || "Cuoc dich vu",
+          service_type: "internet",
+          cycle: cycleKey,
+          amount_per_cycle: amount,
+          start_date: startDate,
+          next_due_date: getBillGoNextDueDate(startDate, cycleKey),
+          note: billgoData.note || null,
+          created_by: worker.user_id,
+        })
+        .select("id")
+        .single();
+
+      if (subscriptionError) {
+        console.warn("[workflow] Cannot create BillGo subscription", subscriptionError.message);
+        return;
+      }
+      subscriptionId = subscription.id;
+    }
+
+    const { data: existingReceivable } = await supabase
+      .from("billgo_receivables")
+      .select("id")
+      .eq("job_id", job.id)
+      .eq("type", "subscription_fee")
+      .maybeSingle();
+
+    if (existingReceivable) return;
+
+    const { error: receivableError } = await supabase.from("billgo_receivables").insert({
+      customer_id: job.customer_id,
+      worker_id: worker.id,
+      job_id: job.id,
+      subscription_id: subscriptionId,
+      type: "subscription_fee",
+      title: `Thu cuoc ${job.serviceName || "Internet"}`,
+      total_amount: amount,
+      due_date: startDate,
+      period_start: startDate,
+      period_end: getBillGoNextDueDate(startDate, cycleKey),
+      billing_months: cycle.paidMonths,
+      status: "unpaid",
+      note: billgoData.note || null,
+      created_by: worker.user_id,
+    });
+
+    if (receivableError) {
+      console.warn("[workflow] Cannot create BillGo receivable", receivableError.message);
+    }
+  };
+
   const handleConfirmCompleteJob = async () => {
     if (!activeJobToComplete) return;
 
@@ -1211,6 +1295,8 @@ export default function WorkerDashboard() {
       if (!updatedJobs || updatedJobs.length === 0) {
         throw new Error("Cập nhật thất bại. Vui lòng kiểm tra chính sách bảo mật RLS hoặc cấu trúc bảng của dữ liệu.");
       }
+
+      await ensureBillGoFromWorkflow(job);
 
       // 3. Optimistic UI update
       setActiveJobs(prev => prev.filter(j => j.id !== job.id));

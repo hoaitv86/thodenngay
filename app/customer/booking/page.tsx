@@ -17,6 +17,9 @@ import {
   getServiceDisplayCategoryId,
 } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
+import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
+import { attachJobServices, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
+import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
   MapPinIcon,
   ClockIcon,
@@ -134,11 +137,13 @@ function CustomerBookingContent() {
 
   const [formData, setFormData] = useState({
     serviceId: "",
+    serviceIds: [] as string[],
     address: "",
     scheduledAt: "",
     description: "",
     gpsLocation: null as GpsLocation | null,
   });
+  const [workflowData, setWorkflowData] = useState<WorkflowData>({});
 
   useEffect(() => {
     const init = async () => {
@@ -192,6 +197,7 @@ function CustomerBookingContent() {
         address: userAddress,
         gpsLocation: userGpsLocation,
         serviceId: hasServiceFromUrl ? serviceFromUrl : prev.serviceId,
+        serviceIds: hasServiceFromUrl ? [serviceFromUrl] : prev.serviceIds,
       }));
       setLoading(false);
     };
@@ -200,7 +206,24 @@ function CustomerBookingContent() {
 
   const serviceGroups = useMemo(() => getCustomerServiceGroups(services), [services]);
   const selectedGroup = serviceGroups.find((group) => group.category.id === selectedCategoryId) || serviceGroups[0];
-  const selectedService = services.find(service => service.id === formData.serviceId) || null;
+  const selectedServiceIds = normalizeServiceIds(formData.serviceId, formData.serviceIds);
+  const selectedServices = selectedServiceIds
+    .map(serviceId => services.find(service => service.id === serviceId))
+    .filter((service): service is ServiceOption => Boolean(service));
+
+  const toggleService = (serviceId: string) => {
+    setFormData(prev => {
+      const current = normalizeServiceIds(prev.serviceId, prev.serviceIds);
+      const nextIds = current.includes(serviceId)
+        ? current.filter(id => id !== serviceId)
+        : [...current, serviceId];
+      const nextServices = nextIds
+        .map(id => services.find(service => service.id === id))
+        .filter((service): service is ServiceOption => Boolean(service));
+      setWorkflowData(prevWorkflow => pruneWorkflowData(prevWorkflow, nextServices));
+      return { ...prev, serviceId: nextIds[0] || "", serviceIds: nextIds };
+    });
+  };
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -240,6 +263,7 @@ function CustomerBookingContent() {
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
       const ext = file.name.split(".").pop() || "jpg";
+      // eslint-disable-next-line react-hooks/purity
       const filePath = `requests/${userId}/${Date.now()}_${i}.${ext}`;
       const { error } = await supabase.storage
         .from("job-photos")
@@ -280,7 +304,7 @@ function CustomerBookingContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.serviceId || !formData.address || !formData.scheduledAt) {
+    if (selectedServices.length === 0 || !formData.address || !formData.scheduledAt) {
       showToast("Vui lòng điền đầy đủ các thông tin bắt buộc!", "error");
       return;
     }
@@ -297,28 +321,28 @@ function CustomerBookingContent() {
 
     try {
       // Determine quoted_price based on selected service
-      const selectedService = services.find(s => s.id === formData.serviceId);
-      if (!selectedService) {
+      if (selectedServices.length === 0) {
         showToast("Vui lòng chọn dịch vụ hợp lệ!", "error");
         setIsSubmitting(false);
         return;
       }
 
-      const hasAvailableWorker = await hasActiveWorkerForService(selectedService);
-      if (!hasAvailableWorker) {
+      const hasAvailableWorker = await Promise.all(selectedServices.map(service => hasActiveWorkerForService(service)));
+      if (!hasAvailableWorker.some(Boolean)) {
         showToast("Hiện tại chưa có thợ làm cho dịch vụ mà bạn chọn ở khu vực này", "error");
         setIsSubmitting(false);
         return;
       }
 
-      const quotedPrice = getCustomerServiceBasePrice(selectedService, services);
+      const quotedPrice = selectedServices.reduce((sum, service) => sum + getCustomerServiceBasePrice(service, services), 0);
       const imageUrls = await uploadRequestImages(user.id);
+      // eslint-disable-next-line react-hooks/purity
       const jobCode = 'APP' + Math.floor(10000 + Math.random() * 90000);
 
-      const { error } = await supabase.from('jobs').insert({
+      const insertPayload = {
         job_code: jobCode,
         customer_id: user.id,
-        service_id: formData.serviceId,
+        service_id: selectedServices[0].id,
         address: formData.address,
         gps_location: formData.gpsLocation,
         customer_gps_location: formData.gpsLocation,
@@ -326,13 +350,25 @@ function CustomerBookingContent() {
         description: formData.description,
         quoted_price: quotedPrice,
         images: imageUrls,
+        workflow_data: pruneWorkflowData(workflowData, selectedServices),
         status: 'pending',
         source: 'app',
         created_by: user.id
-      });
+      };
 
-      if (error) {
-        throw new Error(error.message);
+      let insertResult = await supabase.from('jobs').insert(insertPayload).select("id").single();
+      if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
+        const legacyPayload = { ...insertPayload };
+        delete (legacyPayload as Partial<typeof insertPayload>).workflow_data;
+        insertResult = await supabase.from('jobs').insert(legacyPayload).select("id").single();
+      }
+
+      if (insertResult.error) {
+        throw new Error(insertResult.error.message);
+      }
+
+      if (insertResult.data?.id) {
+        await attachJobServices(supabase, insertResult.data.id, selectedServices.map(service => service.id));
       }
 
       setIsSubmitting(false);
@@ -404,7 +440,8 @@ function CustomerBookingContent() {
                       type="button"
                       onClick={() => {
                         setSelectedCategoryId(category.id);
-                        setFormData(prev => ({ ...prev, serviceId: "" }));
+                        setFormData(prev => ({ ...prev, serviceId: "", serviceIds: [] }));
+                        setWorkflowData({});
                       }}
                       className={`min-h-[104px] rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] ${isSelected
                           ? "border-primary-container bg-primary-fixed/40 shadow-md shadow-blue-900/10"
@@ -423,9 +460,13 @@ function CustomerBookingContent() {
                 })}
               </div>
 
-              {selectedService && (
-                <div className="rounded-lg border border-success/20 bg-success-container/60 px-3 py-2 text-sm font-extrabold text-success">
-                  Bạn đã chọn: {getCustomerServicePathLabel(selectedService, services).replace(" / ", " → ")}
+              {selectedServices.length > 0 && (
+                <div className="flex flex-wrap gap-2 rounded-lg border border-success/20 bg-success-container/60 px-3 py-2 text-sm font-extrabold text-success">
+                  {selectedServices.map(service => (
+                    <span key={service.id} className="rounded-full bg-white/80 px-3 py-1 text-xs">
+                      {getCustomerServicePathLabel(service, services).replace(" / ", " → ")}
+                    </span>
+                  ))}
                 </div>
               )}
 
@@ -438,7 +479,7 @@ function CustomerBookingContent() {
                     {selectedGroup.services.map(service => {
                   const visual = getServiceVisual(service);
                   const Icon = visual.icon;
-                  const isSelected = formData.serviceId === service.id;
+                  const isSelected = selectedServiceIds.includes(service.id);
                   const displayName = getCustomerServiceDisplayName(service);
                   const displayPrice = getCustomerServiceBasePrice(service, services);
 
@@ -446,7 +487,7 @@ function CustomerBookingContent() {
                     <button
                       key={service.id}
                       type="button"
-                      onClick={() => setFormData({ ...formData, serviceId: service.id })}
+                      onClick={() => toggleService(service.id)}
                       className={`flex min-h-[128px] flex-col items-start justify-between rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:p-4 ${isSelected
                           ? `${visual.selectedClass} shadow-md`
                           : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20'
@@ -477,6 +518,12 @@ function CustomerBookingContent() {
                 </div>
               )}
             </div>
+
+            <DynamicServiceWorkflowForm
+              services={selectedServices}
+              value={workflowData}
+              onChange={setWorkflowData}
+            />
 
             <div className="grid gap-6 lg:grid-cols-2">
             {/* Address */}
@@ -567,7 +614,7 @@ function CustomerBookingContent() {
 
             <button
               type="submit"
-              disabled={isSubmitting || !formData.serviceId || !formData.address || !formData.scheduledAt}
+              disabled={isSubmitting || selectedServices.length === 0 || !formData.address || !formData.scheduledAt}
               className="btn-secondary mt-4 w-full py-4 text-base"
             >
               {isSubmitting ? (

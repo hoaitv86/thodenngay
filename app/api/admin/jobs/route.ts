@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
+import type { WorkflowData } from "@/config/serviceWorkflows";
 
 type CreateJobRequest = {
   customerMode?: "existing" | "new";
@@ -9,6 +11,8 @@ type CreateJobRequest = {
   customerName?: string;
   customerPhone?: string;
   serviceId?: string;
+  serviceIds?: string[];
+  workflowData?: WorkflowData;
   address?: string;
   scheduledAt?: string;
   quotedPrice?: string | number;
@@ -17,7 +21,7 @@ type CreateJobRequest = {
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
-const makeDefaultPassword = (name: string) => `123@123456`;
+const makeDefaultPassword = () => "123@123456";
 
 async function getAdminUser() {
   const cookieStore = await cookies();
@@ -31,15 +35,13 @@ async function getAdminUser() {
         },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
           } catch {
-            // Ignored in route handler.
+            // Route handlers can be invoked in contexts where cookies are read-only.
           }
         },
       },
-    }
+    },
   );
 
   const {
@@ -47,7 +49,7 @@ async function getAdminUser() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { error: NextResponse.json({ error: "Không được phép truy cập." }, { status: 401 }) };
+    return { error: NextResponse.json({ error: "Khong duoc phep truy cap." }, { status: 401 }) };
   }
 
   const { data: profile } = await supabase
@@ -57,7 +59,7 @@ async function getAdminUser() {
     .single();
 
   if (profile?.role !== "admin") {
-    return { error: NextResponse.json({ error: "Không có quyền quản trị viên." }, { status: 403 }) };
+    return { error: NextResponse.json({ error: "Khong co quyen quan tri vien." }, { status: 403 }) };
   }
 
   return { user };
@@ -71,28 +73,26 @@ export async function POST(request: Request) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
       return NextResponse.json(
-        { error: "Vui lòng cấu hình SUPABASE_SERVICE_ROLE_KEY trong file .env.local." },
-        { status: 500 }
+        { error: "Vui long cau hinh SUPABASE_SERVICE_ROLE_KEY trong .env.local." },
+        { status: 500 },
       );
     }
 
     const body = (await request.json()) as CreateJobRequest;
     const customerMode = body.customerMode || "existing";
+    const serviceIds = normalizeServiceIds(body.serviceId, body.serviceIds);
+    const primaryServiceId = getPrimaryServiceId(body.serviceId, body.serviceIds);
 
-    if (!body.serviceId || !body.address || !body.scheduledAt) {
-      return NextResponse.json({ error: "Thiếu thông tin job bắt buộc." }, { status: 400 });
+    if (!primaryServiceId || !body.address || !body.scheduledAt) {
+      return NextResponse.json({ error: "Thieu thong tin job bat buoc." }, { status: 400 });
     }
 
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
+    const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
     let customerId = body.customerId;
     let createdCustomer = null;
@@ -103,10 +103,7 @@ export async function POST(request: Request) {
       const customerPhone = normalizePhone(body.customerPhone || "");
 
       if (!customerName || customerPhone.length < 8) {
-        return NextResponse.json(
-          { error: "Vui lòng nhập tên khách hàng và SĐT hợp lệ." },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Vui long nhap ten khach hang va SDT hop le." }, { status: 400 });
       }
 
       const { data: existingCustomer } = await supabaseAdmin
@@ -119,24 +116,21 @@ export async function POST(request: Request) {
       if (existingCustomer) {
         customerId = existingCustomer.id;
       } else {
-        defaultPassword = makeDefaultPassword(customerName);
-        const email = makePhoneEmail(customerPhone);
-
-        const { data: authData, error: createUserError } =
-          await supabaseAdmin.auth.admin.createUser({
-            email,
-            password: defaultPassword,
-            email_confirm: true,
-            user_metadata: {
-              full_name: customerName,
-              role: "customer",
-            },
-          });
+        defaultPassword = makeDefaultPassword();
+        const { data: authData, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+          email: makePhoneEmail(customerPhone),
+          password: defaultPassword,
+          email_confirm: true,
+          user_metadata: {
+            full_name: customerName,
+            role: "customer",
+          },
+        });
 
         if (createUserError || !authData.user) {
           return NextResponse.json(
-            { error: "Lỗi tạo tài khoản khách hàng: " + (createUserError?.message || "Không có user.") },
-            { status: 500 }
+            { error: "Loi tao tai khoan khach hang: " + (createUserError?.message || "Khong co user.") },
+            { status: 500 },
           );
         }
 
@@ -155,10 +149,7 @@ export async function POST(request: Request) {
           .single();
 
         if (profileError) {
-          return NextResponse.json(
-            { error: "Lỗi cập nhật hồ sơ khách hàng: " + profileError.message },
-            { status: 500 }
-          );
+          return NextResponse.json({ error: "Loi cap nhat ho so khach hang: " + profileError.message }, { status: 500 });
         }
 
         createdCustomer = profile;
@@ -166,7 +157,7 @@ export async function POST(request: Request) {
     }
 
     if (!customerId) {
-      return NextResponse.json({ error: "Vui lòng chọn hoặc tạo khách hàng." }, { status: 400 });
+      return NextResponse.json({ error: "Vui long chon hoac tao khach hang." }, { status: 400 });
     }
 
     const jobCode = "JOB" + Math.floor(10000 + Math.random() * 90000);
@@ -175,40 +166,54 @@ export async function POST(request: Request) {
         ? 0
         : Number.parseInt(String(body.quotedPrice), 10) || 0;
 
-    const { data: insertedJob, error: insertError } = await supabaseAdmin
+    const insertPayload = {
+      job_code: jobCode,
+      customer_id: customerId,
+      service_id: primaryServiceId,
+      address: body.address,
+      scheduled_at: new Date(body.scheduledAt).toISOString(),
+      quoted_price: quotedPrice,
+      description: body.description || null,
+      workflow_data: body.workflowData || {},
+      status: "pending",
+      source: "call",
+      created_by: adminCheck.user.id,
+    };
+
+    let insertResult = await supabaseAdmin
       .from("jobs")
-      .insert({
-        job_code: jobCode,
-        customer_id: customerId,
-        service_id: body.serviceId,
-        address: body.address,
-        scheduled_at: new Date(body.scheduledAt).toISOString(),
-        quoted_price: quotedPrice,
-        description: body.description || null,
-        status: "pending",
-        source: "call",
-        created_by: adminCheck.user.id,
-      })
+      .insert(insertPayload)
       .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
       .single();
 
-    if (insertError) {
-      return NextResponse.json(
-        { error: "Lỗi tạo job: " + insertError.message },
-        { status: 500 }
-      );
+    if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
+      const legacyPayload = { ...insertPayload };
+      delete (legacyPayload as Partial<typeof insertPayload>).workflow_data;
+      insertResult = await supabaseAdmin
+        .from("jobs")
+        .insert(legacyPayload)
+        .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
+        .single();
+    }
+
+    if (insertResult.error) {
+      return NextResponse.json({ error: "Khong the tao job: " + insertResult.error.message }, { status: 500 });
+    }
+
+    if (insertResult.data?.id) {
+      await attachJobServices(supabaseAdmin, insertResult.data.id, serviceIds);
     }
 
     return NextResponse.json({
-      job: insertedJob,
+      job: insertResult.data,
       createdCustomer,
       loginPhone: customerMode === "new" ? normalizePhone(body.customerPhone || "") : null,
       defaultPassword,
     });
   } catch (error: unknown) {
     return NextResponse.json(
-      { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
-      { status: 500 }
+      { error: "Loi he thong: " + (error instanceof Error ? error.message : "Khong xac dinh") },
+      { status: 500 },
     );
   }
 }

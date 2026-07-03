@@ -74,6 +74,7 @@ CREATE TABLE public.jobs (
     source TEXT NOT NULL CHECK (source IN ('app', 'call')) DEFAULT 'app',
     created_by UUID REFERENCES public.profiles(id) NOT NULL,
     completion_items JSONB DEFAULT '[]'::jsonb,
+    workflow_data JSONB DEFAULT '{}'::jsonb NOT NULL,
     final_amount DECIMAL(12,2),
     warranty_days INTEGER DEFAULT 0,
     warranty_note TEXT,
@@ -85,6 +86,15 @@ CREATE TABLE public.jobs (
     cancellation_review_note TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE public.job_services (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id UUID REFERENCES public.jobs(id) ON DELETE CASCADE NOT NULL,
+    service_id UUID REFERENCES public.services(id) ON DELETE RESTRICT NOT NULL,
+    sort_order INTEGER DEFAULT 0 NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    UNIQUE(job_id, service_id)
 );
 
 -- 5. RATINGS
@@ -126,6 +136,7 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_logs ENABLE ROW LEVEL SECURITY;
@@ -181,6 +192,21 @@ CREATE POLICY "Workers view assigned jobs" ON public.jobs FOR SELECT USING (
     worker_id IN (SELECT id FROM public.workers WHERE user_id = auth.uid())
 );
 CREATE POLICY "Admins manage all jobs" ON public.jobs FOR ALL USING (public.is_admin());
+
+CREATE POLICY "Customers view own job services" ON public.job_services FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.jobs WHERE jobs.id = job_services.job_id AND jobs.customer_id = auth.uid())
+);
+CREATE POLICY "Customers create own job services" ON public.job_services FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM public.jobs WHERE jobs.id = job_services.job_id AND jobs.customer_id = auth.uid())
+);
+CREATE POLICY "Workers view assigned job services" ON public.job_services FOR SELECT USING (
+    EXISTS (
+        SELECT 1 FROM public.jobs
+        JOIN public.workers ON workers.id = jobs.worker_id
+        WHERE jobs.id = job_services.job_id AND workers.user_id = auth.uid()
+    )
+);
+CREATE POLICY "Admins manage all job services" ON public.job_services FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 -- Trigger for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()

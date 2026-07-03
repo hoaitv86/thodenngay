@@ -4,11 +4,15 @@ import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { isLegacyServiceId } from "@/lib/standard-service-catalog";
+import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
+import type { WorkflowData } from "@/config/serviceWorkflows";
 
 type CreateWorkerJobRequest = {
   customerName?: string;
   customerPhone?: string;
   serviceId?: string;
+  serviceIds?: string[];
+  workflowData?: WorkflowData;
   address?: string;
   scheduledAt?: string;
   quotedPrice?: string | number | null;
@@ -223,15 +227,17 @@ export async function POST(request: Request) {
     const customerName = (body.customerName || "").trim().replace(/\s+/g, " ");
     const customerPhone = normalizePhone(body.customerPhone || "");
     const address = (body.address || "").trim();
+    const serviceIds = normalizeServiceIds(body.serviceId, body.serviceIds);
+    const primaryServiceId = getPrimaryServiceId(body.serviceId, body.serviceIds);
 
-    if (!customerName || customerPhone.length < 8 || !body.serviceId || !address) {
+    if (!customerName || customerPhone.length < 8 || !primaryServiceId || !address) {
       return NextResponse.json(
         { error: "Vui lòng nhập tên khách, SĐT, dịch vụ và địa chỉ hợp lệ." },
         { status: 400 }
       );
     }
 
-    if (isLegacyServiceId(body.serviceId)) {
+    if (isLegacyServiceId(primaryServiceId)) {
       return NextResponse.json(
         { error: "Dich vu cu da duoc an, vui long chon danh muc chuan moi." },
         { status: 400 }
@@ -258,7 +264,7 @@ export async function POST(request: Request) {
         "worker_create_quick_job",
         {
           p_customer_phone: customerPhone,
-          p_service_id: body.serviceId,
+          p_service_id: primaryServiceId,
           p_address: address,
           p_description: body.description?.trim() || null,
           p_quoted_price: quotedPrice,
@@ -276,7 +282,7 @@ export async function POST(request: Request) {
             actorId: workerCheck.user.id,
             workerId: workerCheck.worker.id,
             customerId: quickJob.customer_id || null,
-            serviceId: body.serviceId,
+            serviceId: primaryServiceId,
             createdCustomer: false,
             mode: "rpc",
           });
@@ -305,7 +311,7 @@ export async function POST(request: Request) {
       const { data: service } = await workerCheck.supabase
         .from("services")
         .select("id, name, base_price, is_active")
-        .eq("id", body.serviceId)
+        .eq("id", primaryServiceId)
         .eq("is_active", true)
         .maybeSingle();
 
@@ -360,23 +366,39 @@ export async function POST(request: Request) {
       }
 
       const jobCode = "FAST" + Math.floor(100000 + Math.random() * 900000);
-      const { data: insertedJob, error: insertError } = await workerCheck.supabase
+      const insertPayload = {
+        job_code: jobCode,
+        customer_id: existingCustomer.id,
+        worker_id: workerCheck.worker.id,
+        service_id: service.id,
+        address,
+        scheduled_at: scheduledAt.toISOString(),
+        quoted_price: quotedPrice || Number(service.base_price || 0),
+        description: body.description?.trim() || null,
+        workflow_data: body.workflowData || {},
+        status: "assigned",
+        source: "app",
+        created_by: workerCheck.user.id,
+      };
+
+      let insertResult = await workerCheck.supabase
         .from("jobs")
-        .insert({
-          job_code: jobCode,
-          customer_id: existingCustomer.id,
-          worker_id: workerCheck.worker.id,
-          service_id: service.id,
-          address,
-          scheduled_at: scheduledAt.toISOString(),
-          quoted_price: quotedPrice || Number(service.base_price || 0),
-          description: body.description?.trim() || null,
-          status: "assigned",
-          source: "app",
-          created_by: workerCheck.user.id,
-        })
+        .insert(insertPayload)
         .select("*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)")
         .single();
+
+      if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
+        const legacyPayload = { ...insertPayload };
+        delete (legacyPayload as Partial<typeof insertPayload>).workflow_data;
+        insertResult = await workerCheck.supabase
+          .from("jobs")
+          .insert(legacyPayload)
+          .select("*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)")
+          .single();
+      }
+
+      const insertedJob = insertResult.data;
+      const insertError = insertResult.error;
 
       if (insertError) {
         if (canReturnMockQuickJob()) {
@@ -420,6 +442,7 @@ export async function POST(request: Request) {
         createdCustomer: false,
         mode: "worker_session",
       });
+      await attachJobServices(workerCheck.supabase as SupabaseClient, insertedJob.id, serviceIds);
 
       return NextResponse.json({
         job: insertedJob,
@@ -444,7 +467,7 @@ export async function POST(request: Request) {
     const { data: service } = await supabaseAdmin
       .from("services")
       .select("id, name, is_active")
-      .eq("id", body.serviceId)
+      .eq("id", primaryServiceId)
       .eq("is_active", true)
       .maybeSingle();
 
@@ -514,23 +537,39 @@ export async function POST(request: Request) {
     }
 
     const jobCode = await makeJobCode(supabaseAdmin);
-    const { data: insertedJob, error: insertError } = await supabaseAdmin
+    const insertPayload = {
+      job_code: jobCode,
+      customer_id: customerId,
+      worker_id: workerCheck.worker.id,
+      service_id: service.id,
+      address,
+      scheduled_at: scheduledAt.toISOString(),
+      quoted_price: quotedPrice,
+      description: body.description?.trim() || null,
+      workflow_data: body.workflowData || {},
+      status: "assigned",
+      source: "app",
+      created_by: workerCheck.user.id,
+    };
+
+    let insertResult = await supabaseAdmin
       .from("jobs")
-      .insert({
-        job_code: jobCode,
-        customer_id: customerId,
-        worker_id: workerCheck.worker.id,
-        service_id: service.id,
-        address,
-        scheduled_at: scheduledAt.toISOString(),
-        quoted_price: quotedPrice,
-        description: body.description?.trim() || null,
-        status: "assigned",
-        source: "app",
-        created_by: workerCheck.user.id,
-      })
+      .insert(insertPayload)
       .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
       .single();
+
+    if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
+      const legacyPayload = { ...insertPayload };
+      delete (legacyPayload as Partial<typeof insertPayload>).workflow_data;
+      insertResult = await supabaseAdmin
+        .from("jobs")
+        .insert(legacyPayload)
+        .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
+        .single();
+    }
+
+    const insertedJob = insertResult.data;
+    const insertError = insertResult.error;
 
     if (insertError) {
       if (createdAuthUserId) {
@@ -552,6 +591,7 @@ export async function POST(request: Request) {
       createdCustomer: Boolean(createdCustomer),
       mode: "service_role",
     });
+    await attachJobServices(supabaseAdmin as SupabaseClient, insertedJob.id, serviceIds);
 
     return NextResponse.json({
       job: insertedJob,

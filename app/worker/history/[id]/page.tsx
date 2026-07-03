@@ -3,6 +3,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { JobWorkflowSummary } from "@/app/components/JobWorkflowSummary";
+import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
+import type { WorkflowData } from "@/config/serviceWorkflows";
 import {
   MapPinIcon,
   ClockIcon,
@@ -38,10 +41,13 @@ interface WorkerJobDetail {
   final_amount?: number | null;
   warranty_days?: number | null;
   warranty_note?: string | null;
+  workflow_data?: WorkflowData | null;
   service?: {
+    id?: string | null;
     name?: string | null;
     description?: string | null;
   } | null;
+  job_services?: JobWithWorkflow["job_services"];
   customer?: {
     full_name?: string | null;
     phone?: string | null;
@@ -82,22 +88,36 @@ export default function WorkerJobDetailPage() {
         if (profile?.phone) setWorkerPhone(profile.phone);
       }
 
-      const { data, error } = await supabase
+      let result = await supabase
         .from('jobs')
         .select(`
           *,
           service:services!jobs_service_id_fkey(*),
+          job_services(service:services(*)),
           customer:profiles!customer_id(*),
           ratings(*)
         `)
         .eq('id', id)
         .single();
 
-      if (error) {
-        console.error("Error fetching job:", error);
+      if (result.error && isMissingWorkflowColumn(result.error.message)) {
+        result = await supabase
+          .from('jobs')
+          .select(`
+            *,
+            service:services!jobs_service_id_fkey(*),
+            customer:profiles!customer_id(*),
+            ratings(*)
+          `)
+          .eq('id', id)
+          .single();
+      }
+
+      if (result.error) {
+        console.error("Error fetching job:", result.error);
         router.push("/worker/history");
       } else {
-        setJob(data);
+        setJob(result.data);
       }
       setLoading(false);
     };
@@ -223,7 +243,18 @@ export default function WorkerJobDetailPage() {
               )}
             </div>
           </div>
+          {getJobServices(job).length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {getJobServices(job).map(service => (
+                <span key={service.id} className="rounded-full bg-primary-fixed px-3 py-1 text-xs font-extrabold text-primary-container">
+                  {service.name || "Dich vu"}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
+
+        <JobWorkflowSummary data={job.workflow_data} />
 
         {/* Customer Info */}
         <div className="space-y-3">

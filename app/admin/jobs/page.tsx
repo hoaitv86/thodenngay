@@ -4,6 +4,9 @@ import React, { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { applyDefaultServiceParents, getSelectableServices, getServicePathLabel } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
+import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
+import { normalizeServiceIds } from "@/lib/job-workflow";
+import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
   SearchIcon,
   FilterIcon,
@@ -129,11 +132,13 @@ export default function AdminJobs() {
     customerName: "",
     customerPhone: "",
     serviceId: "",
+    serviceIds: [] as string[],
     address: "",
     scheduledAt: "",
     quotedPrice: "",
     description: ""
   });
+  const [workflowData, setWorkflowData] = useState<WorkflowData>({});
 
   // Assign Worker Modal states
   const [assignWorkerModalOpen, setAssignWorkerModalOpen] = useState(false);
@@ -219,6 +224,24 @@ export default function AdminJobs() {
   }, []);
 
   const selectableServices = useMemo(() => getSelectableServices(services), [services]);
+  const selectedServiceIds = normalizeServiceIds(newJob.serviceId, newJob.serviceIds);
+  const selectedServices = selectedServiceIds
+    .map(serviceId => services.find(service => service.id === serviceId))
+    .filter((service): service is ServiceOption => Boolean(service));
+
+  const updateSelectedServices = (nextIds: string[]) => {
+    const nextServices = nextIds
+      .map(serviceId => services.find(service => service.id === serviceId))
+      .filter((service): service is ServiceOption => Boolean(service));
+    const nextPrice = nextServices.reduce((sum, service) => sum + Number(service.base_price || 0), 0);
+    setWorkflowData(prev => pruneWorkflowData(prev, nextServices));
+    setNewJob(prev => ({
+      ...prev,
+      serviceId: nextIds[0] || "",
+      serviceIds: nextIds,
+      quotedPrice: nextPrice > 0 ? String(nextPrice) : "",
+    }));
+  };
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,6 +270,8 @@ export default function AdminJobs() {
           customerName: newJob.customerName,
           customerPhone: newJob.customerPhone,
           serviceId: newJob.serviceId,
+          serviceIds: selectedServiceIds,
+          workflowData: pruneWorkflowData(workflowData, selectedServices),
           address: newJob.address,
           scheduledAt: newJob.scheduledAt,
           quotedPrice: newJob.quotedPrice,
@@ -268,11 +293,13 @@ export default function AdminJobs() {
         customerName: "",
         customerPhone: "",
         serviceId: "",
+        serviceIds: [],
         address: "",
         scheduledAt: "",
         quotedPrice: "",
         description: ""
       });
+      setWorkflowData({});
 
       const createdCustomer = data.createdCustomer;
       if (createdCustomer) {
@@ -839,17 +866,10 @@ export default function AdminJobs() {
                       <select
                         className="input-field"
                         required
-                        value={newJob.serviceId}
-                        onChange={e => {
-                          const selected = services.find(s => s.id === e.target.value);
-                          setNewJob({
-                            ...newJob,
-                            serviceId: e.target.value,
-                            quotedPrice: selected?.base_price != null ? String(selected.base_price) : ""
-                          });
-                        }}
+                        multiple
+                        value={selectedServiceIds}
+                        onChange={e => updateSelectedServices(Array.from(e.target.selectedOptions).map(option => option.value))}
                       >
-                        <option value="" disabled>-- Chọn dịch vụ --</option>
                         {selectableServices.map(s => (
                           <option key={s.id} value={s.id}>{getServicePathLabel(s, services)} ({Number(s.base_price || 0).toLocaleString('vi-VN')}đ)</option>
                         ))}
@@ -885,23 +905,32 @@ export default function AdminJobs() {
                     <select
                       className="input-field"
                       required
-                      value={newJob.serviceId}
-                      onChange={e => {
-                        const selected = services.find(s => s.id === e.target.value);
-                        setNewJob({
-                          ...newJob,
-                          serviceId: e.target.value,
-                          quotedPrice: selected?.base_price != null ? String(selected.base_price) : ""
-                        });
-                      }}
+                      multiple
+                      value={selectedServiceIds}
+                      onChange={e => updateSelectedServices(Array.from(e.target.selectedOptions).map(option => option.value))}
                     >
-                      <option value="" disabled>-- Chọn dịch vụ --</option>
                       {selectableServices.map(s => (
                         <option key={s.id} value={s.id}>{getServicePathLabel(s, services)} ({Number(s.base_price || 0).toLocaleString('vi-VN')}đ)</option>
                       ))}
                     </select>
                   </div>
                 )}
+
+                {selectedServices.length > 0 && (
+                  <div className="flex flex-wrap gap-2 rounded-xl border border-primary-container/20 bg-primary-fixed/30 p-3">
+                    {selectedServices.map(service => (
+                      <span key={service.id} className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-primary-container">
+                        {getServicePathLabel(service, services)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <DynamicServiceWorkflowForm
+                  services={selectedServices}
+                  value={workflowData}
+                  onChange={setWorkflowData}
+                />
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-on-surface">Địa chỉ thi công <span className="text-error">*</span></label>

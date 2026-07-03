@@ -79,12 +79,14 @@ export interface Job {
   final_amount?: number;
   warranty_days?: number;
   warranty_note?: string;
+  workflow_data?: Record<string, Record<string, unknown>>;
   created_at: string;
   updated_at: string;
   // Joined fields
   customer?: User;
   worker?: Worker;
   service?: Service;
+  services?: Service[];
   payment?: Payment;
   ratings?: Rating[];
 }
