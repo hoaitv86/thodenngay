@@ -230,14 +230,17 @@ export const serviceMatchesSpecialties = (
   return specialties.some((specialty) => {
     const normalizedSpecialty = normalizeServiceText(specialty);
     if (!normalizedSpecialty) return false;
-    if (serviceName && (normalizedSpecialty === serviceName || normalizedSpecialty.includes(serviceName) || serviceName.includes(normalizedSpecialty))) {
+    if (serviceName && categories.length === 0 && normalizedSpecialty === serviceName) {
       return true;
     }
 
     return categories.some((category) => {
       const categoryName = normalizeServiceText(category.name);
       const categoryId = normalizeServiceText(category.id);
-      if (normalizedSpecialty === categoryName || normalizedSpecialty === categoryId || categoryName.includes(normalizedSpecialty)) {
+      if (
+        (categoryName && (normalizedSpecialty === categoryName || normalizedSpecialty.includes(categoryName))) ||
+        (categoryId && (normalizedSpecialty === categoryId || normalizedSpecialty.includes(categoryId)))
+      ) {
         return true;
       }
       return category.keywords.some((keyword) => {
