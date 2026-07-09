@@ -6,12 +6,15 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useSettings } from "@/lib/settings";
 import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
+import { MapPinCheck } from "lucide-react";
+import { saveLoginLocation } from "@/services/locationService";
 
 export default function LoginPage() {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [locationUpdated, setLocationUpdated] = useState(false);
   const router = useRouter();
   const supabase = createClient();
   const { settings } = useSettings();
@@ -25,6 +28,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     setError("");
+    setLocationUpdated(false);
 
     let email = loginId.trim();
     if (!email.includes("@")) {
@@ -77,9 +81,23 @@ export default function LoginPage() {
         return;
       }
 
-      if (profile.role === "admin") router.replace("/admin/dashboard");
-      else if (profile.role === "worker") router.replace("/worker");
-      else router.replace("/customer/home");
+      const destination =
+        profile.role === "admin"
+          ? "/admin/dashboard"
+          : profile.role === "worker"
+            ? "/worker"
+            : "/customer/home";
+
+      if (profile.role === "worker" || profile.role === "customer") {
+        const locationResult = await saveLoginLocation(supabase, data.user.id);
+        if (locationResult.status === "updated") {
+          setLocationUpdated(true);
+          window.setTimeout(() => router.replace(destination), 700);
+          return;
+        }
+      }
+
+      router.replace(destination);
     }
 
     setLoading(false);
@@ -172,6 +190,13 @@ export default function LoginPage() {
               {error && (
                 <div className="flex gap-2 rounded-lg bg-error-container p-3 text-sm text-error" role="alert">
                   <span aria-hidden="true">!</span> {error}
+                </div>
+              )}
+
+              {locationUpdated && (
+                <div className="flex items-center gap-2 text-xs font-semibold text-success" role="status">
+                  <MapPinCheck size={15} aria-hidden="true" />
+                  Đã cập nhật vị trí
                 </div>
               )}
 
