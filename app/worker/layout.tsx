@@ -19,6 +19,7 @@ import {
 const navItems = [
   { href: "/worker", label: "Việc làm", icon: LayoutDashboardIcon },
   { href: "/worker/customers", label: "Khách hàng", icon: UsersIcon },
+  { href: "/worker/billgo", label: "BillGo", icon: DollarSignIcon },
   { href: "/worker/chat", label: "Chat", icon: MessageCircle },
   { href: "/worker/history", label: "Lịch sử", icon: BriefcaseIcon },
   { href: "/worker/wallet", label: "Ví", icon: DollarSignIcon },
@@ -145,7 +146,7 @@ export default function WorkerLayout({
 
         {/* Premium Bottom Navigation */}
         <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-outline-variant/30 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
-          <div className="grid h-20 grid-cols-6">
+          <div className="grid h-20 grid-cols-7">
             {navItems.map((item) => {
               const isActive = pathname === item.href || (item.href !== "/worker" && pathname.startsWith(item.href));
               return (

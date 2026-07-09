@@ -406,13 +406,13 @@ export default function WorkerDashboard() {
         acc.paid += row.summary.paid;
         acc.debt += row.summary.debt;
         if (row.summary.debt > 0) acc.debtItems += 1;
-        if (row.summary.status === "overdue") acc.overdue += 1;
         return acc;
       },
-      { receivable: 0, paid: 0, debt: 0, debtItems: 0, overdue: 0 }
+      { receivable: 0, paid: 0, debt: 0, debtItems: 0 }
     ),
     [billGoRows]
   );
+  const [addToBillGo, setAddToBillGo] = useState(false);
 
   const toastTimeoutRef = React.useRef<number | null>(null);
 
@@ -605,19 +605,6 @@ export default function WorkerDashboard() {
         ...mockActiveJobs,
         ...mappedActive.filter(job => !mockActiveJobs.some(mockJob => mockJob.id === job.id)),
       ]));
-
-      const { data: assignedBillGo, error: billGoError } = await supabase
-        .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, billing_months, bonus_months, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(package_name, cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
-        .eq("worker_id", workerData.id)
-        .neq("status", "cancelled")
-        .order("due_date", { ascending: true });
-
-      if (!billGoError && assignedBillGo) {
-        setWorkerBillGoReceivables(assignedBillGo as WorkerBillGoReceivable[]);
-      } else if (!isBackground) {
-        setWorkerBillGoReceivables([]);
-      }
 
       // 6. Calculate Real Stats
       const { data: workerJobs } = await supabase
@@ -1040,6 +1027,7 @@ export default function WorkerDashboard() {
 
   const triggerCompleteJob = (job: WorkerJob) => {
     setActiveJobToComplete(job);
+    setAddToBillGo(false);
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
@@ -1296,7 +1284,9 @@ export default function WorkerDashboard() {
         throw new Error("Cập nhật thất bại. Vui lòng kiểm tra chính sách bảo mật RLS hoặc cấu trúc bảng của dữ liệu.");
       }
 
-      await ensureBillGoFromWorkflow(job);
+      if (addToBillGo) {
+        await ensureBillGoFromWorkflow(job);
+      }
 
       // 3. Optimistic UI update
       setActiveJobs(prev => prev.filter(j => j.id !== job.id));
@@ -1311,6 +1301,7 @@ export default function WorkerDashboard() {
       setSelectedFiles([]);
       setPreviewUrls([]);
       setCompletionItems([]);
+      setAddToBillGo(false);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
       console.error(err);
@@ -1693,7 +1684,7 @@ export default function WorkerDashboard() {
       </section>
 
       {/* Tabs */}
-      <div className="sticky top-16 z-30 mx-4 grid grid-cols-2 gap-2 rounded-xl border border-outline-variant/30 bg-white/95 p-1 shadow-sm backdrop-blur sm:mx-6 sm:grid-cols-4 lg:top-20 lg:mx-8">
+      <div className="sticky top-16 z-30 mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white/95 p-1 shadow-sm backdrop-blur sm:mx-6 lg:top-20 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
@@ -1715,13 +1706,13 @@ export default function WorkerDashboard() {
           Đang làm
           {activeJobs.length > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "active" ? "bg-white text-primary" : "bg-success text-white"}`}>{activeJobs.length}</span>}
         </button>
-        <button
+        {false && <button
           onClick={() => setTab("billgo")}
           className={`rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "billgo" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
         >
           Thu cước BillGo
           {billGoTotals.debtItems > 0 && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tab === "billgo" ? "bg-white text-primary" : "bg-error text-white"}`}>{billGoTotals.debtItems}</span>}
-        </button>
+        </button>}
       </div>
 
       {/* Job Feed */}
@@ -1863,7 +1854,7 @@ export default function WorkerDashboard() {
               <p className="text-body-sm text-on-surface-variant">Chưa có job nào đang chờ admin duyệt.</p>
             </div>
           )
-        ) : tab === "billgo" ? (
+        ) : false ? (
           <>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-outline-variant/25 bg-white p-4 shadow-sm">
@@ -2240,6 +2231,24 @@ export default function WorkerDashboard() {
                   Báo giá ban đầu: {formatCurrency(activeJobToComplete.quoted_price)}
                 </p>
               </div>
+
+              {activeJobToComplete.workflow_data?.billgo && (
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/20 bg-primary-fixed p-4">
+                  <input
+                    type="checkbox"
+                    checked={addToBillGo}
+                    onChange={(event) => setAddToBillGo(event.target.checked)}
+                    className="mt-1 h-5 w-5"
+                    disabled={uploadingImages}
+                  />
+                  <span>
+                    <strong className="block text-sm text-on-surface">Thêm vào BillGo</strong>
+                    <span className="mt-1 block text-xs text-on-surface-variant">
+                      Tạo hồ sơ thu cước Internet sau khi hoàn thành. Bỏ chọn nếu khách không dùng thu cước định kỳ.
+                    </span>
+                  </span>
+                </label>
+              )}
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">

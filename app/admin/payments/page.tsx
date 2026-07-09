@@ -136,10 +136,13 @@ export default function AdminPayments() {
   const [statusFilter, setStatusFilter] = useState("debt");
 
   const [newBill, setNewBill] = useState({
-    customerId: "",
-    workerId: "",
-    serviceId: "",
-    packageName: "Cước Internet",
+      customerId: "",
+      workerId: "",
+      serviceId: "",
+      provider: "",
+      internetAccount: "",
+      internetPassword: "",
+      packageName: "Cước Internet",
     monthlyFee: "",
     setupFee: "",
     cycle: "monthly" as BillGoCycle,
@@ -343,6 +346,9 @@ export default function AdminPayments() {
         customerId: "",
         workerId: "",
         serviceId: "",
+        provider: "",
+        internetAccount: "",
+        internetPassword: "",
         packageName: "Cước Internet",
         monthlyFee: "",
         setupFee: "",
@@ -513,6 +519,36 @@ export default function AdminPayments() {
                   <option key={service.id} value={service.id}>{service.name || "Dịch vụ"}</option>
                 ))}
               </select>
+
+              <select
+  className="input-field"
+  value={newBill.provider}
+  onChange={event => updateNewBill("provider", event.target.value)}
+  disabled={saving}
+>
+  <option value="">Chọn nhà mạng</option>
+  <option value="VNPT">VNPT</option>
+  <option value="FPT">FPT</option>
+  <option value="Viettel">Viettel</option>
+  <option value="CMC">CMC</option>
+  <option value="Khác">Khác</option>
+</select>
+
+<input
+  className="input-field"
+  value={newBill.internetAccount}
+  onChange={event => updateNewBill("internetAccount", event.target.value)}
+  placeholder="Account Internet"
+  disabled={saving}
+/>
+
+<input
+  className="input-field"
+  value={newBill.internetPassword}
+  onChange={event => updateNewBill("internetPassword", event.target.value)}
+  placeholder="Mật khẩu Internet"
+  disabled={saving}
+/>
               <input className="input-field" value={newBill.packageName} onChange={event => updateNewBill("packageName", event.target.value)} placeholder="Tên gói cước" disabled={saving} />
               <input className="input-field" type="number" min="0" value={newBill.monthlyFee} onChange={event => updateNewBill("monthlyFee", event.target.value)} placeholder="Cước Internet / tháng" disabled={saving} />
               <input className="input-field" type="number" min="0" value={newBill.setupFee} onChange={event => updateNewBill("setupFee", event.target.value)} placeholder="Phí lắp đặt nếu có" disabled={saving} />

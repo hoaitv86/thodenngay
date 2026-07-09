@@ -3,10 +3,13 @@
 
 CREATE TABLE IF NOT EXISTS public.billgo_subscriptions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  customer_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
   job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL,
   service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
+  customer_name TEXT,
+  internet_account TEXT,
+  customer_address TEXT,
   package_name TEXT NOT NULL DEFAULT 'Cước Internet',
   service_type TEXT NOT NULL DEFAULT 'internet',
   cycle TEXT NOT NULL DEFAULT 'monthly' CHECK (cycle IN ('monthly', 'three_months', 'six_months', 'yearly')),
@@ -22,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.billgo_subscriptions (
 
 CREATE TABLE IF NOT EXISTS public.billgo_receivables (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  customer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  customer_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
   job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL,
   subscription_id UUID REFERENCES public.billgo_subscriptions(id) ON DELETE SET NULL,
@@ -47,9 +50,25 @@ ADD COLUMN IF NOT EXISTS receivable_id UUID REFERENCES public.billgo_receivables
 ALTER TABLE public.payments
 ALTER COLUMN job_id DROP NOT NULL;
 
+-- A BillGo customer can be created independently from a normal app customer.
+-- Existing customer links remain intact; new standalone records use the fields below.
+ALTER TABLE public.billgo_subscriptions
+ALTER COLUMN customer_id DROP NOT NULL;
+
+ALTER TABLE public.billgo_subscriptions
+ADD COLUMN IF NOT EXISTS customer_name TEXT,
+ADD COLUMN IF NOT EXISTS internet_account TEXT,
+ADD COLUMN IF NOT EXISTS customer_address TEXT;
+
+ALTER TABLE public.billgo_receivables
+ALTER COLUMN customer_id DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS billgo_subscriptions_customer_id_idx ON public.billgo_subscriptions(customer_id);
 CREATE INDEX IF NOT EXISTS billgo_subscriptions_worker_id_idx ON public.billgo_subscriptions(worker_id);
 CREATE INDEX IF NOT EXISTS billgo_subscriptions_next_due_date_idx ON public.billgo_subscriptions(next_due_date);
+CREATE UNIQUE INDEX IF NOT EXISTS billgo_subscriptions_worker_account_active_idx
+ON public.billgo_subscriptions(worker_id, internet_account)
+WHERE internet_account IS NOT NULL AND status <> 'cancelled';
 CREATE INDEX IF NOT EXISTS billgo_receivables_customer_id_idx ON public.billgo_receivables(customer_id);
 CREATE INDEX IF NOT EXISTS billgo_receivables_worker_id_idx ON public.billgo_receivables(worker_id);
 CREATE INDEX IF NOT EXISTS billgo_receivables_subscription_id_idx ON public.billgo_receivables(subscription_id);
