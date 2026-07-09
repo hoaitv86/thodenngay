@@ -1,3 +1,5 @@
+import { normalizeServiceText } from "@/lib/service-categories";
+
 export type WorkerFeatureId =
   | "jobs"
   | "customers"
@@ -27,6 +29,7 @@ export type WorkerFeatureDefinition = {
   order: number;
   enabled: boolean;
   roles?: WorkerRole[];
+  requiresSpecialty?: boolean;
   specialtyTags?: string[];
   dataConditions?: WorkerFeatureDataKey[];
 };
@@ -64,6 +67,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     order: 30,
     enabled: true,
     roles: ["worker", "lead_worker"],
+    specialtyTags: ["internet", "mang internet", "wifi", "pppoe"],
     dataConditions: ["billgoHistory"],
   },
   {
@@ -74,6 +78,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     order: 40,
     enabled: true,
     roles: ["worker", "lead_worker", "assistant_worker"],
+    requiresSpecialty: true,
   },
   {
     id: "history",
@@ -83,6 +88,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     order: 50,
     enabled: true,
     roles: ["worker", "lead_worker", "assistant_worker"],
+    requiresSpecialty: true,
   },
   {
     id: "wallet",
@@ -92,6 +98,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     order: 60,
     enabled: true,
     roles: ["worker", "lead_worker"],
+    requiresSpecialty: true,
   },
   {
     id: "profile",
@@ -104,9 +111,10 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
   },
 ];
 
-const normalizeTag = (value: string) => value.trim().toLocaleLowerCase("vi");
+const normalizeTag = (value: string) => normalizeServiceText(value).trim();
 
 function matchesSpecialty(feature: WorkerFeatureDefinition, specialties: string[]) {
+  if (feature.requiresSpecialty && specialties.length === 0) return false;
   if (!feature.specialtyTags?.length) return true;
   const normalizedSpecialties = specialties.map(normalizeTag);
 

@@ -212,8 +212,16 @@ export const groupServicesByCanonicalCategory = <T extends ServiceLike>(services
   return groups.filter((group) => group.services.length > 0);
 };
 
-export const serviceMatchesSpecialties = (service: ServiceLike, specialties: string[] = []) => {
-  if (specialties.length === 0) return true;
+type ServiceSpecialtyMatchOptions = {
+  allowEmptySpecialties?: boolean;
+};
+
+export const serviceMatchesSpecialties = (
+  service: ServiceLike,
+  specialties: string[] = [],
+  options: ServiceSpecialtyMatchOptions = {},
+) => {
+  if (specialties.length === 0) return options.allowEmptySpecialties ?? true;
 
   const serviceName = normalizeServiceText(service.name);
   const searchable = getSearchableServiceText(service);

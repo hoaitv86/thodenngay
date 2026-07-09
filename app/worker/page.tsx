@@ -227,6 +227,32 @@ const buildAdminServiceGroups = (services: ServiceOption[]): QuickServiceGroup[]
   }));
 };
 
+const filterServicesForWorkerSpecialties = (services: ServiceOption[], specialties: string[]) => {
+  if (specialties.length === 0) return [];
+
+  const serviceById = new Map(services.map(service => [service.id, service]));
+  const serviceWithParentNames = services.map(service => ({
+    ...service,
+    parentName: service.parent_service_id ? serviceById.get(service.parent_service_id)?.name || null : service.parentName || null,
+  }));
+  const matchedIds = new Set<string>();
+
+  serviceWithParentNames.forEach(service => {
+    if (!serviceMatchesSpecialties(service, specialties, { allowEmptySpecialties: false })) return;
+
+    matchedIds.add(service.id);
+    let parentId = service.parent_service_id || null;
+    const visited = new Set<string>([service.id]);
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      matchedIds.add(parentId);
+      parentId = serviceById.get(parentId)?.parent_service_id || null;
+    }
+  });
+
+  return serviceWithParentNames.filter(service => matchedIds.has(service.id));
+};
+
 const getQuickServicePathLabel = (service: ServiceOption | null, services: ServiceOption[]) => {
   if (!service) return "";
   const serviceById = new Map(services.map(item => [item.id, item]));
@@ -496,18 +522,9 @@ export default function WorkerDashboard() {
           showToast("Không thể tải danh sách dịch vụ: " + servicesError.message, "error");
         }
       } else {
-        const availableServices = [...(serviceOptions || [])].sort((a, b) => {
-          const aMatches = serviceMatchesSpecialties(a, workerSpecialties) ? 0 : 1;
-          const bMatches = serviceMatchesSpecialties(b, workerSpecialties) ? 0 : 1;
-          return aMatches - bMatches;
-        });
-
-        const servicesWithParents = filterStandardServiceCatalog(applyDefaultServiceParents(availableServices));
-        const serviceById = new Map(servicesWithParents.map(service => [service.id, service]));
-        servicesForMatching = servicesWithParents.map(service => ({
-          ...service,
-          parentName: service.parent_service_id ? serviceById.get(service.parent_service_id)?.name || null : null,
-        }));
+        const servicesWithParents = filterStandardServiceCatalog(applyDefaultServiceParents(serviceOptions || []));
+        servicesForMatching = filterServicesForWorkerSpecialties(servicesWithParents, workerSpecialties)
+          .sort(compareServicesByName);
 
         setServices(servicesForMatching);
       }
@@ -526,7 +543,7 @@ export default function WorkerDashboard() {
         return j.service && serviceMatchesSpecialties({
           ...j.service,
           parentName: matchedService?.parentName || null,
-        }, workerSpecialties);
+        }, workerSpecialties, { allowEmptySpecialties: false });
       });
 
       // Map icon component
