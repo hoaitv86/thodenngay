@@ -3,6 +3,7 @@ import { normalizeServiceText } from "@/lib/service-categories";
 export type WorkerFeatureId =
   | "jobs"
   | "customers"
+  | "inventory"
   | "billgo"
   | "chat"
   | "history"
@@ -14,6 +15,7 @@ export type WorkerRole = "worker" | "lead_worker" | "assistant_worker" | "admin"
 export type WorkerFeatureIconKey =
   | "dashboard"
   | "users"
+  | "package"
   | "money"
   | "chat"
   | "briefcase"
@@ -56,6 +58,15 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     href: "/worker/customers",
     icon: "users",
     order: 20,
+    enabled: true,
+    roles: ["worker", "lead_worker", "assistant_worker"],
+  },
+  {
+    id: "inventory",
+    label: "Kho hàng",
+    href: "/worker/inventory",
+    icon: "package",
+    order: 25,
     enabled: true,
     roles: ["worker", "lead_worker", "assistant_worker"],
   },
