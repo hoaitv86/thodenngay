@@ -277,12 +277,16 @@ export default function JobDetailPage() {
             </div>
           </div>
           {getJobServices(job).length > 1 && (
-            <div className="flex flex-wrap gap-2">
-              {getJobServices(job).map(service => (
-                <span key={service.id} className="rounded-full bg-primary-fixed px-3 py-1 text-xs font-extrabold text-primary-container">
-                  {service.name || "Dich vu"}
-                </span>
-              ))}
+            <div className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
+              <p className="text-xs font-bold uppercase text-on-surface-variant">Các dịch vụ đã chọn</p>
+              <ul className="mt-2 space-y-2">
+                {getJobServices(job).map(service => (
+                  <li key={service.id} className="flex items-start gap-2 text-sm font-bold text-on-surface">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-container" />
+                    {service.name || "Dịch vụ"}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

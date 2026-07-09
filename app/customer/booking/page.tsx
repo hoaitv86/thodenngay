@@ -18,6 +18,7 @@ import {
 } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
+import { HierarchicalServiceSelector } from "@/app/components/HierarchicalServiceSelector";
 import { attachJobServices, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
 import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
@@ -225,6 +226,14 @@ function CustomerBookingContent() {
     });
   };
 
+  const updateSelectedServices = (nextIds: string[]) => {
+    const nextServices = nextIds
+      .map(id => services.find(service => service.id === id))
+      .filter((service): service is ServiceOption => Boolean(service));
+    setWorkflowData(prevWorkflow => pruneWorkflowData(prevWorkflow, nextServices));
+    setFormData(prev => ({ ...prev, serviceId: nextIds[0] || "", serviceIds: nextIds }));
+  };
+
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     if (type === 'error') {
@@ -430,7 +439,13 @@ function CustomerBookingContent() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+              <HierarchicalServiceSelector
+                services={services}
+                value={selectedServiceIds}
+                onChange={updateSelectedServices}
+              />
+
+              {false && <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
                 {serviceGroups.map(({ category, services: categoryServices }) => {
                   const isSelected = selectedGroup?.category.id === category.id;
 
@@ -458,9 +473,9 @@ function CustomerBookingContent() {
                     </button>
                   );
                 })}
-              </div>
+              </div>}
 
-              {selectedServices.length > 0 && (
+              {false && selectedServices.length > 0 && (
                 <div className="flex flex-wrap gap-2 rounded-lg border border-success/20 bg-success-container/60 px-3 py-2 text-sm font-extrabold text-success">
                   {selectedServices.map(service => (
                     <span key={service.id} className="rounded-full bg-white/80 px-3 py-1 text-xs">
@@ -470,7 +485,7 @@ function CustomerBookingContent() {
                 </div>
               )}
 
-              {selectedGroup && (
+              {false && selectedGroup && (
                 <div className="space-y-2">
                   <p className="text-xs font-bold uppercase text-on-surface-variant">
                     Dịch vụ trong {selectedGroup.category.name}

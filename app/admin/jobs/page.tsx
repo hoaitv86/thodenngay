@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { applyDefaultServiceParents, getSelectableServices, getServicePathLabel } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
+import { HierarchicalServiceSelector } from "@/app/components/HierarchicalServiceSelector";
 import { normalizeServiceIds } from "@/lib/job-workflow";
 import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
@@ -67,6 +68,7 @@ interface JobRow {
   cancellation_reviewed_at?: string | null;
   customer?: CustomerOption | null;
   service?: ServiceOption | null;
+  job_services?: Array<{ service?: ServiceOption | null }> | null;
   worker?: {
     profiles?: JobWorkerProfile | null;
   } | null;
@@ -155,7 +157,7 @@ export default function AdminJobs() {
     setLoading(true);
     const query = supabase
       .from('jobs')
-      .select('*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))')
+      .select('*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), job_services(service:services(*)), worker:workers(profiles(full_name))')
       .order('created_at', { ascending: false });
 
     const { data } = await query;
@@ -511,7 +513,10 @@ export default function AdminJobs() {
     const searchLower = searchQuery.toLowerCase();
     const jobCode = job.job_code?.toLowerCase() || "";
     const customerName = job.customer?.full_name?.toLowerCase() || "";
-    const serviceName = job.service?.name?.toLowerCase() || "";
+    const serviceName = [
+      job.service?.name,
+      ...(job.job_services || []).map(link => link.service?.name),
+    ].filter(Boolean).join(" ").toLowerCase();
 
     const matchesSearch = jobCode.includes(searchLower) || customerName.includes(searchLower) || serviceName.includes(searchLower);
 
@@ -701,6 +706,17 @@ export default function AdminJobs() {
                           </div>
                           <div>
                             <span className="text-body-sm text-on-surface font-bold block">{job.service?.name}</span>
+                            {(job.job_services || []).filter(link => link.service?.id !== job.service?.id).length > 0 && (
+                              <ul className="mt-1 space-y-1">
+                                {(job.job_services || [])
+                                  .filter(link => link.service?.id !== job.service?.id)
+                                  .map(link => (
+                                    <li key={link.service?.id} className="text-xs font-semibold text-on-surface-variant">
+                                      • {link.service?.name || "Dịch vụ"}
+                                    </li>
+                                  ))}
+                              </ul>
+                            )}
                             {selectedDetailName && (
                               <span className="mt-0.5 block text-label-sm font-semibold text-secondary-container">
                                 Chi tiết: {selectedDetailName}
@@ -863,9 +879,14 @@ export default function AdminJobs() {
                       {customerMode === "existing" ? "Dịch vụ" : "Số điện thoại"} <span className="text-error">*</span>
                     </label>
                     {customerMode === "existing" ? (
+                      <>
+                      <HierarchicalServiceSelector
+                        services={services}
+                        value={selectedServiceIds}
+                        onChange={updateSelectedServices}
+                      />
                       <select
-                        className="input-field"
-                        required
+                        className="hidden"
                         multiple
                         value={selectedServiceIds}
                         onChange={e => updateSelectedServices(Array.from(e.target.selectedOptions).map(option => option.value))}
@@ -874,6 +895,7 @@ export default function AdminJobs() {
                           <option key={s.id} value={s.id}>{getServicePathLabel(s, services)} ({Number(s.base_price || 0).toLocaleString('vi-VN')}đ)</option>
                         ))}
                       </select>
+                      </>
                     ) : (
                       <input
                         type="tel"
@@ -902,9 +924,13 @@ export default function AdminJobs() {
                 {customerMode === "new" && (
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-on-surface">Dịch vụ <span className="text-error">*</span></label>
+                    <HierarchicalServiceSelector
+                      services={services}
+                      value={selectedServiceIds}
+                      onChange={updateSelectedServices}
+                    />
                     <select
-                      className="input-field"
-                      required
+                      className="hidden"
                       multiple
                       value={selectedServiceIds}
                       onChange={e => updateSelectedServices(Array.from(e.target.selectedOptions).map(option => option.value))}

@@ -34,7 +34,8 @@ import {
   toMoneyNumber,
 } from "@/lib/billgo";
 import { Worker } from "@/lib/types";
-import type { WorkflowData } from "@/config/serviceWorkflows";
+import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
+import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import PendingApproval from "./pending-approval";
 
 interface ServiceOption {
@@ -316,22 +317,15 @@ export default function WorkerDashboard() {
     customerName: "",
     customerPhone: "",
     serviceId: "",
+    serviceIds: [] as string[],
     address: "",
     scheduledAt: getDefaultScheduledAt(),
     quotedPrice: "",
     description: "",
   });
+  const [quickWorkflowData, setQuickWorkflowData] = useState<WorkflowData>({});
   const supabase = createClient();
   const quickServiceGroups = React.useMemo(() => buildAdminServiceGroups(services), [services]);
-  const selectedQuickService = React.useMemo(
-    () => services.find(service => service.id === quickJob.serviceId) || null,
-    [quickJob.serviceId, services]
-  );
-  const selectedQuickServicePath = React.useMemo(
-    () => getQuickServicePathLabel(selectedQuickService, services),
-    [selectedQuickService, services]
-  );
-
   const getTechnicalDetailOptions = React.useCallback((serviceId?: string | null) =>
     services
       .filter(service => service.parent_service_id === serviceId)
@@ -398,6 +392,12 @@ export default function WorkerDashboard() {
   const billGoRows = useMemo(
     () => workerBillGoReceivables.map(item => ({ item, summary: getBillGoReceivableSummary(item) })),
     [workerBillGoReceivables]
+  );
+  const selectedQuickServices = React.useMemo(
+    () => quickJob.serviceIds
+      .map(serviceId => services.find(service => service.id === serviceId))
+      .filter((service): service is ServiceOption => Boolean(service)),
+    [quickJob.serviceIds, services]
   );
   const billGoTotals = useMemo(
     () => billGoRows.reduce(
@@ -766,12 +766,22 @@ export default function WorkerDashboard() {
   };
 
   const handleQuickServiceChange = (serviceId: string) => {
-    const selectedService = services.find(service => service.id === serviceId);
-    setQuickJob(prev => ({
-      ...prev,
-      serviceId,
-      quotedPrice: selectedService?.base_price ? String(selectedService.base_price) : prev.quotedPrice,
-    }));
+    setQuickJob(prev => {
+      const nextIds = prev.serviceIds.includes(serviceId)
+        ? prev.serviceIds.filter(id => id !== serviceId)
+        : [...prev.serviceIds, serviceId];
+      const nextServices = nextIds
+        .map(id => services.find(service => service.id === id))
+        .filter((service): service is ServiceOption => Boolean(service));
+      const totalPrice = nextServices.reduce((sum, service) => sum + Number(service.base_price || 0), 0);
+      setQuickWorkflowData(current => pruneWorkflowData(current, nextServices));
+      return {
+        ...prev,
+        serviceId: nextIds[0] || "",
+        serviceIds: nextIds,
+        quotedPrice: totalPrice > 0 ? String(totalPrice) : "",
+      };
+    });
   };
 
   const handleUpdateServiceDetail = async (job: WorkerJob, serviceDetailId: string) => {
@@ -946,6 +956,8 @@ export default function WorkerDashboard() {
           customerName: quickJob.customerName,
           customerPhone: quickJob.customerPhone,
           serviceId: quickJob.serviceId,
+          serviceIds: quickJob.serviceIds,
+          workflowData: pruneWorkflowData(quickWorkflowData, selectedQuickServices),
           address: quickJob.address,
           scheduledAt: quickJob.scheduledAt,
           quotedPrice: quickJob.quotedPrice,
@@ -962,11 +974,13 @@ export default function WorkerDashboard() {
         customerName: "",
         customerPhone: "",
         serviceId: prev.serviceId,
+        serviceIds: prev.serviceIds,
         address: "",
         scheduledAt: getDefaultScheduledAt(),
         quotedPrice: prev.quotedPrice,
         description: "",
       }));
+      setQuickWorkflowData({});
       setQuickFormOpen(false);
       const createdJob = data.job;
       const createdAsActive = createdJob?.status === "assigned" || createdJob?.status === "in_progress";
@@ -1496,7 +1510,7 @@ export default function WorkerDashboard() {
                           </div>
                           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             {quickSuggestedServices.map(service => {
-                              const isSelected = quickJob.serviceId === service.id;
+                              const isSelected = quickJob.serviceIds.includes(service.id);
                               return (
                                 <button
                                   key={`suggested-${service.id}`}
@@ -1522,7 +1536,7 @@ export default function WorkerDashboard() {
                       <div className="space-y-2">
                         {quickServiceGroups.map(group => {
                           const isOpen = expandedQuickServiceGroup === group.category.id;
-                          const hasSelectedService = group.services.some(service => service.id === quickJob.serviceId);
+                          const hasSelectedService = group.services.some(service => quickJob.serviceIds.includes(service.id));
 
                           return (
                             <div key={group.parent.id} className="rounded-lg border border-outline-variant/30 bg-white">
@@ -1550,7 +1564,7 @@ export default function WorkerDashboard() {
                                   {group.directServices.length > 0 && (
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                       {group.directServices.map(service => {
-                                    const isSelected = quickJob.serviceId === service.id;
+                                    const isSelected = quickJob.serviceIds.includes(service.id);
                                     return (
                                       <button
                                         key={service.id}
@@ -1582,7 +1596,7 @@ export default function WorkerDashboard() {
                                       </div>
                                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         {childServices.map(service => {
-                                          const isSelected = quickJob.serviceId === service.id;
+                                          const isSelected = quickJob.serviceIds.includes(service.id);
                                           return (
                                             <button
                                               key={service.id}
@@ -1612,12 +1626,22 @@ export default function WorkerDashboard() {
                       </div>
                     </div>
                   )}
-                  {selectedQuickService && (
-                    <div className="rounded-lg border border-secondary-container/20 bg-secondary-container/10 px-3 py-2 text-xs font-semibold text-secondary-container">
-                      Đã chọn: {selectedQuickServicePath || selectedQuickService.name}
+                  {selectedQuickServices.length > 0 && (
+                    <div className="flex flex-wrap gap-2 rounded-lg border border-secondary-container/20 bg-secondary-container/10 p-2">
+                      {selectedQuickServices.map(service => (
+                        <span key={service.id} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-secondary-container">
+                          {getQuickServicePathLabel(service, services)}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
+
+                <DynamicServiceWorkflowForm
+                  services={selectedQuickServices}
+                  value={quickWorkflowData}
+                  onChange={setQuickWorkflowData}
+                />
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
