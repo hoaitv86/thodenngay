@@ -1,30 +1,38 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
+import { resolveWorkerFeatures, type WorkerFeatureIconKey } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
 import {
-  LogoIcon,
+  BellIcon,
   BriefcaseIcon,
+  DollarSignIcon,
+  LayoutDashboardIcon,
+  LogoIcon,
+  LogOutIcon,
   UserIcon,
   UsersIcon,
-  LayoutDashboardIcon,
-  DollarSignIcon,
-  BellIcon,
-  LogOutIcon
 } from "../components/icons";
 
-const navItems = [
-  { href: "/worker", label: "Việc làm", icon: LayoutDashboardIcon },
-  { href: "/worker/customers", label: "Khách hàng", icon: UsersIcon },
-  { href: "/worker/billgo", label: "BillGo", icon: DollarSignIcon },
-  { href: "/worker/chat", label: "Chat", icon: MessageCircle },
-  { href: "/worker/history", label: "Lịch sử", icon: BriefcaseIcon },
-  { href: "/worker/wallet", label: "Ví", icon: DollarSignIcon },
-  { href: "/worker/profile", label: "Hồ sơ", icon: UserIcon },
-];
+type NavIcon = React.ComponentType<{ size?: number; className?: string }>;
+
+const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
+  dashboard: LayoutDashboardIcon,
+  users: UsersIcon,
+  money: DollarSignIcon,
+  chat: MessageCircle,
+  briefcase: BriefcaseIcon,
+  user: UserIcon,
+};
+
+const defaultNavItems = resolveWorkerFeatures({
+  role: "worker",
+  specialties: [],
+  data: { billgoHistory: false },
+});
 
 export default function WorkerLayout({
   children,
@@ -33,22 +41,69 @@ export default function WorkerLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
   const [userName, setUserName] = useState("Thợ");
-  const supabase = createClient();
+  const [navItems, setNavItems] = useState(defaultNavItems);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const hasBillGoData = async (workerId: string) => {
+      const [subscriptionResult, receivableResult] = await Promise.all([
+        supabase
+          .from("billgo_subscriptions")
+          .select("id", { count: "exact", head: true })
+          .eq("worker_id", workerId),
+        supabase
+          .from("billgo_receivables")
+          .select("id", { count: "exact", head: true })
+          .eq("worker_id", workerId)
+          .not("subscription_id", "is", null),
+      ]);
+
+      return (subscriptionResult.count || 0) > 0 || (receivableResult.count || 0) > 0;
+    };
+
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .single();
-        if (profile) setUserName(profile.full_name);
-      }
+      if (!user) return;
+
+      const [{ data: profile }, { data: worker }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", user.id)
+          .single(),
+        supabase
+          .from("workers")
+          .select("id, specialties")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ]);
+
+      if (!isMounted) return;
+
+      if (profile?.full_name) setUserName(profile.full_name);
+
+      const specialties = Array.isArray(worker?.specialties)
+        ? worker.specialties.filter((item): item is string => typeof item === "string")
+        : [];
+      const billgoHistory = worker?.id ? await hasBillGoData(worker.id) : false;
+
+      if (!isMounted) return;
+
+      setNavItems(resolveWorkerFeatures({
+        role: "worker",
+        specialties,
+        data: { billgoHistory },
+      }));
     };
-    getUser();
+
+    void getUser();
+
+    return () => {
+      isMounted = false;
+    };
   }, [supabase]);
 
   const handleLogout = async () => {
@@ -58,9 +113,11 @@ export default function WorkerLayout({
     router.refresh();
   };
 
+  const isActiveItem = (href: string) =>
+    pathname === href || (href !== "/worker" && pathname.startsWith(href));
+
   return (
     <div className="min-h-dvh w-full bg-surface lg:flex">
-      {/* Desktop Sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-outline-variant/25 lg:bg-white">
         <div className="flex h-20 items-center gap-3 border-b border-outline-variant/20 px-5">
           <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-surface-container-low shadow-sm">
@@ -77,17 +134,19 @@ export default function WorkerLayout({
 
         <nav className="flex-1 space-y-1 p-3">
           {navItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/worker" && pathname.startsWith(item.href));
+            const isActive = isActiveItem(item.href);
+            const Icon = workerFeatureIcons[item.icon];
+
             return (
               <Link
-                key={item.href}
+                key={item.id}
                 href={item.href}
                 className={`group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-extrabold transition-all ${isActive
                     ? "bg-primary text-white shadow-sm"
                     : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
                   }`}
               >
-                <item.icon size={20} className={isActive ? "stroke-[2.5px]" : ""} />
+                <Icon size={20} className={isActive ? "stroke-[2.5px]" : ""} />
                 <span>{item.label}</span>
               </Link>
             );
@@ -106,7 +165,6 @@ export default function WorkerLayout({
       </aside>
 
       <div className="flex min-h-dvh w-full flex-col lg:pl-64">
-        {/* Premium Header */}
         <header className="sticky top-0 z-40 glass flex h-16 items-center justify-between px-4 sm:px-6 lg:h-20 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm lg:hidden">
@@ -137,29 +195,32 @@ export default function WorkerLayout({
           </div>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto bg-surface pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-8">
           <div className="w-full lg:mx-auto lg:max-w-6xl">
             {children}
           </div>
         </main>
 
-        {/* Premium Bottom Navigation */}
         <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-outline-variant/30 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
-          <div className="grid h-20 grid-cols-7">
+          <div
+            className="grid h-20"
+            style={{ gridTemplateColumns: `repeat(${Math.max(navItems.length, 1)}, minmax(0, 1fr))` }}
+          >
             {navItems.map((item) => {
-              const isActive = pathname === item.href || (item.href !== "/worker" && pathname.startsWith(item.href));
+              const isActive = isActiveItem(item.href);
+              const Icon = workerFeatureIcons[item.icon];
+
               return (
                 <Link
-                  key={item.href}
+                  key={item.id}
                   href={item.href}
                   className={`flex min-w-0 flex-col items-center justify-center gap-1.5 transition-all ${isActive
-                    ? "text-primary"
-                    : "text-on-surface-variant hover:bg-slate-50"
+                      ? "text-primary"
+                      : "text-on-surface-variant hover:bg-slate-50"
                     }`}
                 >
                   <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? "bg-primary-fixed" : ""}`}>
-                    <item.icon size={21} className={isActive ? "stroke-[2.5px]" : ""} />
+                    <Icon size={21} className={isActive ? "stroke-[2.5px]" : ""} />
                   </span>
                   <span className={`max-w-full truncate text-[10px] font-bold uppercase ${isActive ? "opacity-100" : "opacity-60"}`}>
                     {item.label}
