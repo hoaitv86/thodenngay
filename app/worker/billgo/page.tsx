@@ -7,7 +7,7 @@ import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
   formatBillGoCurrency,
-  getBillGoNextDueDate,
+  getBillGoBillingPeriod,
   getBillGoReceivableSummary,
 } from "@/lib/billgo";
 
@@ -26,6 +26,7 @@ type Receivable = {
   total_amount?: number | string | null;
   due_date?: string | null;
   period_start?: string | null;
+  period_end?: string | null;
   status?: string | null;
   customer?: { full_name?: string | null; address?: string | null } | null;
   subscription?: {
@@ -84,7 +85,7 @@ export default function WorkerBillGoPage() {
 
     const { data, error } = await supabase
       .from("billgo_receivables")
-      .select("id, customer_id, title, total_amount, due_date, period_start, status, customer:profiles!customer_id(full_name, address), subscription:billgo_subscriptions(id, customer_name, internet_account, customer_address, package_name, cycle), payments(id, amount, method, status, paid_at)")
+      .select("id, customer_id, title, total_amount, due_date, period_start, period_end, status, customer:profiles!customer_id(full_name, address), subscription:billgo_subscriptions(id, customer_name, internet_account, customer_address, package_name, cycle), payments(id, amount, method, status, paid_at)")
       .eq("worker_id", worker.id)
       .not("subscription_id", "is", null)
       .neq("status", "cancelled")
@@ -132,6 +133,10 @@ export default function WorkerBillGoPage() {
   }, [computedRows, query]);
   const unpaidRows = filteredRows.filter(row => row.summary.debt > 0);
   const paidRows = filteredRows.filter(row => row.summary.debt <= 0);
+  const formBillingPeriod = useMemo(
+    () => getBillGoBillingPeriod(form.startDate, form.cycle),
+    [form.cycle, form.startDate]
+  );
 
   const submitCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -165,7 +170,7 @@ export default function WorkerBillGoPage() {
     }
   };
 
-  const renderList = (title: string, list: typeof filteredRows, paid: boolean) => (
+  const renderList = (title: string, list: typeof filteredRows) => (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-extrabold text-on-surface">{title}</h2>
@@ -187,18 +192,19 @@ export default function WorkerBillGoPage() {
               </p>
               <p className="text-sm text-on-surface-variant">{item.subscription?.package_name || item.title}</p>
             </div>
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${paid ? "bg-success-container text-success" : "bg-error-container text-error"}`}>
-              {paid ? "Đã thu" : "Chưa thu"}
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${summary.status === "paid" ? "bg-success-container text-success" : summary.status === "overdue" ? "bg-error-container text-error" : "bg-warning-container text-warning"}`}>
+              {summary.statusLabel}
             </span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-lg bg-surface-container-low p-3">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
             <div className="rounded-lg bg-surface-container-low p-3">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong></div>
           </div>
-          <p className="mt-3 text-xs text-on-surface-variant">
-            Ngày thu: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "Chưa có"}
-            {" · "}{item.subscription?.customer_address || item.customer?.address || "Chưa có địa chỉ"}
-          </p>
+          <div className="mt-3 grid gap-1 text-xs text-on-surface-variant">
+            <p>Ky su dung: {item.period_start || "Chua co"} - {item.period_end || "Chua co"}</p>
+            <p>Han thanh toan: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "Chua co"}</p>
+            <p>{item.subscription?.customer_address || item.customer?.address || "Chua co dia chi"}</p>
+          </div>
         </article>
       ))}
     </section>
@@ -242,7 +248,7 @@ export default function WorkerBillGoPage() {
             </select>
           </div>
           <p className="mt-3 text-xs text-on-surface-variant">
-            Kỳ tiếp theo dự kiến: {getBillGoNextDueDate(form.startDate, form.cycle)}
+            Ky su dung: {formBillingPeriod.periodStart} - {formBillingPeriod.periodEnd}. Han thanh toan: {formBillingPeriod.dueDate}
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setShowForm(false)} className="btn-outline !w-auto">Hủy</button>
@@ -275,8 +281,8 @@ export default function WorkerBillGoPage() {
         <div className="py-16 text-center text-sm text-on-surface-variant">Đang tải BillGo...</div>
       ) : (
         <div className="mt-5 grid gap-6 lg:grid-cols-2">
-          {renderList("Khách chưa thu", unpaidRows, false)}
-          {renderList("Khách đã thu", paidRows, true)}
+          {renderList("Khách chưa thu", unpaidRows)}
+          {renderList("Khách đã thu", paidRows)}
         </div>
       )}
     </div>

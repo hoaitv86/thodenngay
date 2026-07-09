@@ -27,10 +27,13 @@ import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
   formatBillGoCurrency,
+  getBillGoBillingPeriod,
   getBillGoCycleOption,
   getBillGoNextDueDate,
+  getBillGoNextPeriodStartDate,
   getBillGoReceivableSummary,
   getBillGoSummary,
+  getBillGoStoredStatus,
   toMoneyNumber,
 } from "@/lib/billgo";
 import { Worker } from "@/lib/types";
@@ -857,8 +860,10 @@ export default function WorkerDashboard() {
     setCollectingPaymentJobId(receivable.id);
     const { data: { user } } = await supabase.auth.getUser();
     const cycle = getBillGoCycleOption(paymentCycle);
-    const baseDate = receivable.period_start || receivable.due_date || new Date().toISOString().slice(0, 10);
-    const nextDueDate = getBillGoNextDueDate(baseDate, paymentCycle);
+    const baseDate = receivable.period_end
+      ? getBillGoNextPeriodStartDate(receivable.period_end)
+      : receivable.period_start || new Date().toISOString().slice(0, 10);
+    const nextBillingPeriod = getBillGoBillingPeriod(baseDate, paymentCycle);
 
     const { data, error } = await supabase
       .from("payments")
@@ -884,7 +889,7 @@ export default function WorkerDashboard() {
     const currentSummary = getBillGoReceivableSummary(receivable);
     const nextPaid = currentSummary.paid + parsedAmount;
     const totalAmount = toMoneyNumber(receivable.total_amount);
-    const nextStatus = totalAmount > 0 && nextPaid >= totalAmount ? "paid" : nextPaid > 0 ? "partial" : "unpaid";
+    const nextStatus = getBillGoStoredStatus(totalAmount, nextPaid, receivable.due_date);
 
     const { error: updateError } = await supabase
       .from("billgo_receivables")
@@ -904,7 +909,7 @@ export default function WorkerDashboard() {
     if (receivable.subscription_id) {
       await supabase
         .from("billgo_subscriptions")
-        .update({ cycle: paymentCycle, next_due_date: nextDueDate })
+        .update({ cycle: paymentCycle, next_due_date: nextBillingPeriod.dueDate })
         .eq("id", receivable.subscription_id);
     }
 
@@ -916,7 +921,7 @@ export default function WorkerDashboard() {
             billing_months: cycle.paidMonths,
             bonus_months: cycle.bonusMonths,
             payments: [...(item.payments || []), data],
-            subscription: item.subscription ? { ...item.subscription, cycle: paymentCycle, next_due_date: nextDueDate } : item.subscription,
+            subscription: item.subscription ? { ...item.subscription, cycle: paymentCycle, next_due_date: nextBillingPeriod.dueDate } : item.subscription,
           }
         : item
     ));
@@ -1156,6 +1161,7 @@ export default function WorkerDashboard() {
     const startDate = billgoData.startDate || new Date().toISOString().slice(0, 10);
     const cycleKey = billgoData.cycle || "monthly";
     const cycle = getBillGoCycleOption(cycleKey);
+    const billingPeriod = getBillGoBillingPeriod(startDate, cycleKey);
 
     if (amount <= 0) return;
 
@@ -1178,8 +1184,8 @@ export default function WorkerDashboard() {
           service_type: "internet",
           cycle: cycleKey,
           amount_per_cycle: amount,
-          start_date: startDate,
-          next_due_date: getBillGoNextDueDate(startDate, cycleKey),
+          start_date: billingPeriod.periodStart,
+          next_due_date: billingPeriod.dueDate,
           note: billgoData.note || null,
           created_by: worker.user_id,
         })
@@ -1210,11 +1216,12 @@ export default function WorkerDashboard() {
       type: "subscription_fee",
       title: `Thu cuoc ${job.serviceName || "Internet"}`,
       total_amount: amount,
-      due_date: startDate,
-      period_start: startDate,
-      period_end: getBillGoNextDueDate(startDate, cycleKey),
+      due_date: billingPeriod.dueDate,
+      period_start: billingPeriod.periodStart,
+      period_end: billingPeriod.periodEnd,
       billing_months: cycle.paidMonths,
-      status: "unpaid",
+      bonus_months: cycle.bonusMonths,
+      status: getBillGoStoredStatus(amount, 0, billingPeriod.dueDate),
       note: billgoData.note || null,
       created_by: worker.user_id,
     });
@@ -1919,7 +1926,7 @@ export default function WorkerDashboard() {
                           <p className="mt-1 text-xs text-on-surface-variant">{item.customer?.address || "Chưa có địa chỉ"}</p>
                         </div>
                         <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
-                          Hạn: {item.due_date || item.subscription?.next_due_date || "Chưa có"}
+                          Han: {item.due_date || item.subscription?.next_due_date || "Chua co"}
                         </div>
                       </div>
 
@@ -1995,7 +2002,7 @@ export default function WorkerDashboard() {
                             </button>
                           </div>
                           <p className="text-xs text-on-surface-variant sm:col-span-2">
-                            Ngày nhắc sau kỳ này: <strong>{getBillGoNextDueDate(item.period_start || item.due_date || new Date().toISOString().slice(0, 10), paymentCycle)}</strong>
+                            Han thanh toan ky tiep theo: <strong>{getBillGoNextDueDate(item.period_end ? getBillGoNextPeriodStartDate(item.period_end) : item.period_start || new Date().toISOString().slice(0, 10), paymentCycle)}</strong>
                           </p>
                         </div>
                       </div>

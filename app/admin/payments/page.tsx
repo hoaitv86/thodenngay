@@ -6,10 +6,12 @@ import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
   formatBillGoCurrency,
+  getBillGoBillingPeriod,
   getBillGoCycleOption,
   getBillGoNextDueDate,
-  getBillGoPeriodEndDate,
+  getBillGoNextPeriodStartDate,
   getBillGoReceivableSummary,
+  getBillGoStoredStatus,
   toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
@@ -110,18 +112,6 @@ const normalizeReceivableRows = (rows: unknown[]): BillGoReceivable[] =>
       subscription: firstRelation(item.subscription),
     };
   });
-
-const getReceivableNextStatus = (total: number, paid: number, dueDate?: string | null) => {
-  const debt = Math.max(total - paid, 0);
-  const dueTime = dueDate ? new Date(dueDate).getTime() : null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  if (total > 0 && debt <= 0) return "paid";
-  if (paid > 0 && debt > 0) return "partial";
-  if (dueTime !== null && dueTime < today.getTime() && debt > 0) return "overdue";
-  return "unpaid";
-};
 
 export default function AdminPayments() {
   const supabase = useMemo(() => createClient(), []);
@@ -275,11 +265,10 @@ export default function AdminPayments() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const cycle = getBillGoCycleOption(newBill.cycle);
-      const periodEnd = getBillGoPeriodEndDate(newBill.startDate, newBill.cycle);
-      const nextDueDate = getBillGoNextDueDate(newBill.startDate, newBill.cycle);
+      const billingPeriod = getBillGoBillingPeriod(newBill.startDate, newBill.cycle);
       const subscriptionAmount = monthlyFee * cycle.paidMonths;
       const totalAmount = setupFee + subscriptionAmount;
-      const status = getReceivableNextStatus(totalAmount, paidAmount, nextDueDate);
+      const status = getBillGoStoredStatus(totalAmount, paidAmount, billingPeriod.dueDate);
 
       const { data: subscription, error: subscriptionError } = await supabase
         .from("billgo_subscriptions")
@@ -291,8 +280,8 @@ export default function AdminPayments() {
           service_type: "internet",
           cycle: newBill.cycle,
           amount_per_cycle: monthlyFee,
-          start_date: newBill.startDate,
-          next_due_date: nextDueDate,
+          start_date: billingPeriod.periodStart,
+          next_due_date: billingPeriod.dueDate,
           status: "active",
           note: newBill.note.trim() || null,
           created_by: user?.id || null,
@@ -311,11 +300,11 @@ export default function AdminPayments() {
           type: "subscription_fee",
           title: `${newBill.packageName.trim() || "Cước Internet"} - ${cycle.label}`,
           total_amount: totalAmount,
-          due_date: nextDueDate,
-          period_start: newBill.startDate,
-          period_end: periodEnd,
-          billing_months: cycle.paidMonths,
-          bonus_months: cycle.bonusMonths,
+          due_date: billingPeriod.dueDate,
+          period_start: billingPeriod.periodStart,
+          period_end: billingPeriod.periodEnd,
+          billing_months: billingPeriod.billingMonths,
+          bonus_months: billingPeriod.bonusMonths,
           status,
           note: [
             setupFee > 0 ? `Phí lắp đặt: ${formatBillGoCurrency(setupFee)}` : "",
@@ -386,13 +375,14 @@ export default function AdminPayments() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const cycle = getBillGoCycleOption(paymentForm.cycle);
-      const baseDate = selectedReceivable.period_start || selectedReceivable.due_date || getTodayInput();
-      const periodEnd = getBillGoPeriodEndDate(baseDate, paymentForm.cycle);
-      const nextDueDate = getBillGoNextDueDate(baseDate, paymentForm.cycle);
+      const baseDate = selectedReceivable.period_end
+        ? getBillGoNextPeriodStartDate(selectedReceivable.period_end)
+        : selectedReceivable.period_start || getTodayInput();
+      const billingPeriod = getBillGoBillingPeriod(baseDate, paymentForm.cycle);
       const currentPaid = getBillGoReceivableSummary(selectedReceivable).paid;
       const nextPaid = currentPaid + paidAmount;
       const totalAmount = toMoneyNumber(selectedReceivable.total_amount);
-      const nextStatus = getReceivableNextStatus(totalAmount, nextPaid, selectedReceivable.due_date);
+      const nextStatus = getBillGoStoredStatus(totalAmount, nextPaid, selectedReceivable.due_date);
 
       const { error: paymentError } = await supabase.from("payments").insert({
         receivable_id: selectedReceivable.id,
@@ -416,7 +406,6 @@ export default function AdminPayments() {
           status: nextStatus,
           billing_months: cycle.paidMonths,
           bonus_months: cycle.bonusMonths,
-          period_end: periodEnd,
         })
         .eq("id", selectedReceivable.id);
 
@@ -427,7 +416,7 @@ export default function AdminPayments() {
           .from("billgo_subscriptions")
           .update({
             cycle: paymentForm.cycle,
-            next_due_date: nextDueDate,
+            next_due_date: billingPeriod.dueDate,
           })
           .eq("id", selectedReceivable.subscription_id);
         if (subscriptionError) throw subscriptionError;
@@ -560,7 +549,7 @@ export default function AdminPayments() {
               <input className="input-field" value={newBill.note} onChange={event => updateNewBill("note", event.target.value)} placeholder="Ghi chú" disabled={saving} />
             </div>
             <div className="mt-3 rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">
-              Ngày nhắc tiếp theo: <strong>{getBillGoNextDueDate(newBill.startDate, newBill.cycle)}</strong>
+              Han thanh toan: <strong>{getBillGoNextDueDate(newBill.startDate, newBill.cycle)}</strong>
               {newBill.cycle === "yearly" && <span className="ml-2 font-bold text-success">Đã cộng 1 tháng tặng.</span>}
             </div>
             <button className="btn-primary mt-4 w-full md:w-auto" disabled={saving}>{saving ? "Đang lưu..." : "Thêm khách thu"}</button>
@@ -605,7 +594,8 @@ export default function AdminPayments() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-extrabold text-on-surface">{item.customer?.full_name || "Khách hàng"} · {item.title || "Khoản thu"}</p>
                       <p className="mt-1 text-xs text-on-surface-variant">{item.customer?.phone || "Chưa có SĐT"} · {typeLabels[item.type || "other"] || "Khoản thu"}</p>
-                      <p className="mt-1 text-xs text-on-surface-variant">Hạn tiếp theo: {item.due_date || item.subscription?.next_due_date || "Chưa có"}</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">Ky su dung: {item.period_start || "Chua co"} - {item.period_end || "Chua co"}</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">Han thanh toan: {item.due_date || item.subscription?.next_due_date || "Chua co"}</p>
                     </div>
                     <div className="text-right">
                       <span className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase ${summary.status === "overdue" ? "bg-error-container text-error" : summary.status === "paid" ? "bg-success-container text-success" : "bg-warning-container text-warning"}`}>
@@ -633,7 +623,7 @@ export default function AdminPayments() {
               <div className="mt-3 rounded-lg bg-surface-container-low p-3 text-xs">
                 <p className="font-bold text-on-surface">{selectedReceivable.customer?.full_name || "Khách hàng"}</p>
                 <p className="mt-1 text-on-surface-variant">Còn lại: <strong className="text-error">{formatBillGoCurrency(selectedSummary.debt)}</strong></p>
-                <p className="mt-1 text-on-surface-variant">Ngày nhắc: {selectedReceivable.due_date || "Chưa có"}</p>
+                <p className="mt-1 text-on-surface-variant">Han thanh toan: {selectedReceivable.due_date || "Chua co"}</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-on-surface-variant">Chọn một khoản thu để ghi nhận thanh toán.</p>
@@ -650,7 +640,7 @@ export default function AdminPayments() {
               <textarea className="input-field min-h-20" value={paymentForm.note} onChange={event => setPaymentForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Ghi chú" disabled={!selectedReceivable || saving} />
               {selectedReceivable && (
                 <div className="rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">
-                  Sau khi thu kỳ này, ngày nhắc dự kiến: <strong>{getBillGoNextDueDate(selectedReceivable.period_start || selectedReceivable.due_date || getTodayInput(), paymentForm.cycle)}</strong>
+                  Sau khi thu ky nay, han thanh toan ky tiep theo: <strong>{getBillGoNextDueDate(selectedReceivable.period_end ? getBillGoNextPeriodStartDate(selectedReceivable.period_end) : selectedReceivable.period_start || getTodayInput(), paymentForm.cycle)}</strong>
                 </div>
               )}
               <button className="btn-primary w-full" disabled={!selectedReceivable || saving}>{saving ? "Đang lưu..." : "Ghi nhận thanh toán"}</button>
