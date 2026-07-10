@@ -40,6 +40,12 @@ import { Worker } from "@/lib/types";
 import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import PendingApproval from "./pending-approval";
+import type { InventoryProduct } from "@/lib/worker-inventory";
+import {
+  buildSalesRpcItems,
+  validateSalesDraft,
+  type SalesDraftItem,
+} from "@/lib/worker-sales";
 
 interface ServiceOption {
   id: string;
@@ -169,6 +175,11 @@ interface CompletionItem {
   quantity: number;
   unitPrice: number;
   warrantyDays: number;
+  inventoryProductId?: string;
+  sku?: string;
+  category?: string;
+  unit?: string;
+  source?: "manual" | "inventory";
 }
 
 interface WorkerCreateJobResponse {
@@ -304,6 +315,16 @@ const makeCompletionItem = (name = "", unitPrice = 0): CompletionItem => ({
   quantity: 1,
   unitPrice,
   warrantyDays: 30,
+  source: "manual",
+});
+
+const makeInventoryCompletionItem = (): CompletionItem => ({
+  id: crypto.randomUUID(),
+  name: "",
+  quantity: 1,
+  unitPrice: 0,
+  warrantyDays: 0,
+  source: "inventory",
 });
 
 const getCurrentBrowserLocation = () => {
@@ -335,6 +356,7 @@ export default function WorkerDashboard() {
   const [newJobs, setNewJobs] = useState<WorkerJob[]>([]);
   const [pendingApprovalJobs, setPendingApprovalJobs] = useState<WorkerJob[]>([]);
   const [activeJobs, setActiveJobs] = useState<WorkerJob[]>([]);
+  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [workerBillGoReceivables, setWorkerBillGoReceivables] = useState<WorkerBillGoReceivable[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
@@ -498,6 +520,22 @@ export default function WorkerDashboard() {
       setWorker(workerData);
       const workerSpecialties = workerData.specialties || [];
       const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
+
+      const { data: inventoryData, error: inventoryError } = await supabase
+        .from("worker_inventory_products")
+        .select("*")
+        .eq("worker_id", workerData.id)
+        .gt("stock_quantity", 0)
+        .order("name", { ascending: true });
+
+      if (inventoryError) {
+        if (!isBackground) {
+          showToast("Khong the tai kho hang: " + inventoryError.message, "error");
+        }
+        setInventoryProducts([]);
+      } else {
+        setInventoryProducts((inventoryData || []) as InventoryProduct[]);
+      }
 
       let { data: serviceOptions, error: servicesError } = await supabase
         .from('services')
@@ -1061,13 +1099,14 @@ export default function WorkerDashboard() {
     }
   };
 
-  const triggerCompleteJob = (job: WorkerJob) => {
+  const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
     setActiveJobToComplete(job);
     setAddToBillGo(false);
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
       makeCompletionItem(job.serviceName || "Công dịch vụ", Number(job.quoted_price || 0)),
+      ...(startWithMaterial ? [makeInventoryCompletionItem()] : []),
     ]);
     setWarrantyNote("Bảo hành theo hạng mục đã ghi trên phiếu, không áp dụng cho lỗi phát sinh do sử dụng sai cách.");
   };
@@ -1078,6 +1117,42 @@ export default function WorkerDashboard() {
 
   const addCompletionItem = () => {
     setCompletionItems(prev => [...prev, makeCompletionItem()]);
+  };
+
+  const addInventoryCompletionItem = () => {
+    setCompletionItems(prev => [...prev, makeInventoryCompletionItem()]);
+  };
+
+  const updateInventoryCompletionProduct = (id: string, productId: string) => {
+    const product = inventoryProducts.find(item => item.id === productId);
+    setCompletionItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      if (!product) {
+        return {
+          ...item,
+          inventoryProductId: "",
+          name: "",
+          unitPrice: 0,
+          warrantyDays: 0,
+          sku: "",
+          category: "",
+          unit: "",
+          source: "inventory",
+        };
+      }
+
+      return {
+        ...item,
+        inventoryProductId: product.id,
+        name: product.name,
+        unitPrice: Number(product.default_sale_price || 0),
+        warrantyDays: Number(product.warranty_months || 0) * 30,
+        sku: product.sku,
+        category: product.category,
+        unit: product.unit,
+        source: "inventory",
+      };
+    }));
   };
 
   const removeCompletionItem = (id: string) => {
@@ -1257,6 +1332,11 @@ export default function WorkerDashboard() {
         quantity: Number(item.quantity) || 0,
         unitPrice: Number(item.unitPrice) || 0,
         warrantyDays: Number(item.warrantyDays) || 0,
+        inventoryProductId: item.inventoryProductId || null,
+        sku: item.sku || null,
+        category: item.category || null,
+        unit: item.unit || null,
+        source: item.source || "manual",
       }))
       .filter(item => item.name && item.quantity > 0);
 
@@ -1275,6 +1355,23 @@ export default function WorkerDashboard() {
     const imageUrls: string[] = [];
     const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const maxWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
+    const materialDraftItems: SalesDraftItem[] = cleanedItems
+      .filter(item => item.source === "inventory")
+      .map(item => ({
+        draftId: crypto.randomUUID(),
+        productId: item.inventoryProductId || "",
+        quantity: String(item.quantity),
+        unitPrice: String(item.unitPrice),
+      }));
+    const materialValidation = materialDraftItems.length > 0
+      ? validateSalesDraft(job.customer_id || "", materialDraftItems, inventoryProducts)
+      : "";
+
+    if (materialValidation) {
+      showToast(materialValidation, "error");
+      setUploadingImages(false);
+      return;
+    }
 
     try {
       // 1. Upload images to Supabase Storage if any are selected
@@ -1297,6 +1394,22 @@ export default function WorkerDashboard() {
             .from('job-photos')
             .getPublicUrl(filePath);
           imageUrls.push(publicUrl);
+        }
+      }
+
+      if (materialDraftItems.length > 0) {
+        const { error: completeWithMaterialsError } = await supabase.rpc("complete_worker_job_with_materials", {
+          p_job_id: job.id,
+          p_images: imageUrls,
+          p_completion_items: cleanedItems,
+          p_final_amount: finalAmount,
+          p_warranty_days: maxWarrantyDays,
+          p_warranty_note: warrantyNote.trim(),
+          p_material_items: buildSalesRpcItems(materialDraftItems),
+        });
+
+        if (completeWithMaterialsError) {
+          throw new Error("Khong the hoan thanh cong viec voi vat tu: " + completeWithMaterialsError.message);
         }
       }
 
@@ -2218,6 +2331,12 @@ export default function WorkerDashboard() {
                   Yêu cầu huỷ
                 </button>
                 <button
+                  onClick={() => triggerCompleteJob(job, true)}
+                  className="rounded-lg border border-primary-container/30 bg-primary-fixed px-5 py-3.5 text-sm font-extrabold text-primary-container transition-all hover:bg-primary hover:text-white active:scale-[0.98]"
+                >
+                  Thêm vật tư
+                </button>
+                <button
                   onClick={() => triggerCompleteJob(job)}
                   className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
                 >
@@ -2306,6 +2425,14 @@ export default function WorkerDashboard() {
                   </div>
                   <button
                     type="button"
+                    onClick={addInventoryCompletionItem}
+                    className="shrink-0 rounded-lg border border-secondary-container/30 bg-secondary-fixed px-3 py-2 text-xs font-bold text-secondary-container disabled:opacity-50"
+                    disabled={uploadingImages || inventoryProducts.length === 0}
+                  >
+                    Thêm vật tư
+                  </button>
+                  <button
+                    type="button"
                     onClick={addCompletionItem}
                     className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container"
                     disabled={uploadingImages}
@@ -2328,12 +2455,34 @@ export default function WorkerDashboard() {
                           Xóa
                         </button>
                       </div>
+                      {item.source === "inventory" && (
+                        <div className="space-y-2">
+                          <select
+                            value={item.inventoryProductId || ""}
+                            onChange={(e) => updateInventoryCompletionProduct(item.id, e.target.value)}
+                            className="input-field"
+                            disabled={uploadingImages}
+                          >
+                            <option value="">Chọn vật tư từ kho</option>
+                            {inventoryProducts.map(product => (
+                              <option key={product.id} value={product.id}>
+                                {product.name} - tồn {product.stock_quantity} {product.unit}
+                              </option>
+                            ))}
+                          </select>
+                          {item.inventoryProductId && (
+                            <p className="text-xs font-semibold text-on-surface-variant">
+                              {item.sku} · {item.category} · Đơn vị: {item.unit}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <input
                         value={item.name}
                         onChange={(e) => updateCompletionItem(item.id, { name: e.target.value })}
                         className="input-field"
                         placeholder="Tên sản phẩm/linh kiện/công dịch vụ"
-                        disabled={uploadingImages}
+                        disabled={uploadingImages || item.source === "inventory"}
                       />
                       <div className="grid grid-cols-3 gap-2">
                         <div>
@@ -2341,6 +2490,7 @@ export default function WorkerDashboard() {
                           <input
                             type="number"
                             min="1"
+                            max={item.source === "inventory" && item.inventoryProductId ? inventoryProducts.find(product => product.id === item.inventoryProductId)?.stock_quantity : undefined}
                             step="1"
                             value={item.quantity}
                             onChange={(e) => updateCompletionItem(item.id, { quantity: Number(e.target.value) })}
