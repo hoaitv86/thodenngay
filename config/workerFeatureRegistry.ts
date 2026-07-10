@@ -4,6 +4,7 @@ export type WorkerFeatureId =
   | "jobs"
   | "customers"
   | "inventory"
+  | "sales"
   | "billgo"
   | "chat"
   | "history"
@@ -16,6 +17,7 @@ export type WorkerFeatureIconKey =
   | "dashboard"
   | "users"
   | "package"
+  | "cart"
   | "money"
   | "chat"
   | "briefcase"
@@ -67,6 +69,15 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     href: "/worker/inventory",
     icon: "package",
     order: 25,
+    enabled: true,
+    roles: ["worker", "lead_worker", "assistant_worker"],
+  },
+  {
+    id: "sales",
+    label: "Bán hàng",
+    href: "/worker/sales",
+    icon: "cart",
+    order: 27,
     enabled: true,
     roles: ["worker", "lead_worker", "assistant_worker"],
   },

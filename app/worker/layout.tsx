@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle, Package } from "lucide-react";
+import { MessageCircle, Package, ShoppingCart } from "lucide-react";
 import { resolveWorkerFeatures, type WorkerFeatureIconKey } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -23,6 +23,7 @@ const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
   dashboard: LayoutDashboardIcon,
   users: UsersIcon,
   package: Package,
+  cart: ShoppingCart,
   money: DollarSignIcon,
   chat: MessageCircle,
   briefcase: BriefcaseIcon,
