@@ -24,6 +24,11 @@ import {
 } from "../components/icons";
 
 type NavIcon = React.ComponentType<{ size?: number; className?: string }>;
+type MobileMoreGroup = {
+  id: string;
+  label: string;
+  groups: WorkerFeatureDefinition["group"][];
+};
 
 const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
   dashboard: LayoutDashboardIcon,
@@ -56,6 +61,12 @@ const mobileMoreItem: WorkerFeatureDefinition = {
   group: "more",
 };
 
+const mobileMoreGroups: MobileMoreGroup[] = [
+  { id: "business", label: "Kinh doanh", groups: ["commerce"] },
+  { id: "management", label: "Quản lý", groups: ["work", "communication"] },
+  { id: "system", label: "Hệ thống", groups: ["account", "more"] },
+];
+
 export default function WorkerLayout({
   children,
 }: {
@@ -81,6 +92,28 @@ export default function WorkerLayout({
     [menuContext]
   );
   const mobileItems = [...mobilePrimaryItems, mobileMoreItem];
+  const groupedMobileMoreItems = useMemo(
+    () =>
+      mobileMoreGroups
+        .map((group) => ({
+          ...group,
+          items: mobileMoreItems.filter((item) => group.groups.includes(item.group)),
+        }))
+        .filter((group) => group.items.length > 0),
+    [mobileMoreItems]
+  );
+
+  useEffect(() => {
+    if (!moreOpen) return;
+
+    window.history.pushState({ workerMoreOpen: true }, "", window.location.href);
+    const closeOnBack = () => setMoreOpen(false);
+    window.addEventListener("popstate", closeOnBack);
+
+    return () => {
+      window.removeEventListener("popstate", closeOnBack);
+    };
+  }, [moreOpen]);
 
   useEffect(() => {
     let isMounted = true;
@@ -248,61 +281,99 @@ export default function WorkerLayout({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-surface pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8">
+        <style>{`
+          @media (max-width: 767px) {
+            .worker-mobile-content {
+              padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+            }
+          }
+
+          @media (min-width: 768px) {
+            .worker-mobile-content {
+              padding-bottom: 2rem;
+            }
+          }
+        `}</style>
+
+        <main className="worker-mobile-content flex-1 overflow-y-auto bg-surface">
           <div className="w-full lg:mx-auto lg:max-w-6xl">
             {children}
           </div>
         </main>
 
         {moreOpen && (
-          <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 px-3 md:hidden">
+          <div
+            className="fixed inset-x-0 z-50 px-3 md:hidden"
+            style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom))" }}
+            data-worker-more-sheet
+          >
             <button
               type="button"
               className="fixed inset-0 -z-10 bg-black/20"
               aria-label="Đóng menu thêm"
               onClick={() => setMoreOpen(false)}
             />
-            <div className="mx-auto max-w-md rounded-t-2xl border border-outline-variant/25 bg-white p-3 shadow-[0_-16px_40px_rgba(15,23,42,0.14)]">
-              <div className="mb-2 flex items-center justify-between px-1">
-                <span className="text-sm font-extrabold text-on-surface">Thêm</span>
+            <div className="mx-auto max-w-md overflow-hidden rounded-t-3xl border border-outline-variant/25 bg-white shadow-[0_-16px_40px_rgba(15,23,42,0.16)]">
+              <div className="flex justify-center pt-3">
+                <span className="h-1 w-10 rounded-full bg-outline-variant/50" />
+              </div>
+              <div className="flex items-center justify-between px-4 pb-2 pt-3">
+                <span className="text-base font-extrabold text-on-surface">Thêm</span>
                 <button
                   type="button"
-                  className="rounded-lg px-3 py-2 text-xs font-extrabold uppercase text-on-surface-variant hover:bg-surface-container-low"
+                  className="min-h-10 rounded-lg px-3 text-xs font-extrabold uppercase text-on-surface-variant hover:bg-surface-container-low"
                   onClick={() => setMoreOpen(false)}
                 >
                   Đóng
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {mobileMoreItems.map((item) => {
-                  const Icon = workerFeatureIcons[item.icon];
-                  const isActive = isActiveItem(item);
+              <div className="max-h-[min(28rem,65dvh)] overflow-y-auto px-3 pb-4">
+                {groupedMobileMoreItems.map((group) => (
+                  <section key={group.id} className="border-t border-outline-variant/15 py-3 first:border-t-0 first:pt-1">
+                    <h2 className="px-1 pb-2 text-[11px] font-extrabold uppercase tracking-wide text-on-surface-variant/70">
+                      {group.label}
+                    </h2>
+                    <div className="grid grid-cols-2 gap-2">
+                      {group.items.map((item) => {
+                        const Icon = workerFeatureIcons[item.icon];
+                        const isActive = isActiveItem(item);
 
-                  return (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      onClick={() => setMoreOpen(false)}
-                      className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-sm font-extrabold transition-colors ${
-                        isActive
-                          ? "border-primary bg-primary-fixed text-primary"
-                          : "border-outline-variant/25 text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
-                      }`}
-                    >
-                      <Icon size={19} />
-                      <span className="min-w-0 truncate">{item.label}</span>
-                    </Link>
-                  );
-                })}
+                        return (
+                          <Link
+                            key={item.id}
+                            href={item.href}
+                            onClick={() => setMoreOpen(false)}
+                            className={`flex min-h-14 items-center gap-3 rounded-xl border px-3 text-sm font-extrabold transition-colors ${
+                              isActive
+                                ? "border-primary bg-primary-fixed text-primary"
+                                : "border-outline-variant/25 text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
+                            }`}
+                          >
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-white/80" : "bg-surface-container-low"}`}>
+                              <Icon size={19} className={isActive ? "stroke-[2.5px]" : ""} />
+                            </span>
+                            <span className="min-w-0 truncate leading-tight">{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-outline-variant/30 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
-          <div className="grid h-20 grid-cols-5">
+        <nav
+          className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-outline-variant/25 bg-white/95 px-2 pt-2 shadow-[0_-10px_30px_rgba(15,23,42,0.10)] backdrop-blur-xl md:hidden"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+          data-worker-bottom-nav
+          aria-label="Điều hướng chính trên mobile"
+        >
+          <div className="grid h-20 grid-cols-5 items-end gap-1">
             {mobileItems.map((item) => {
               const isMore = item.id === "more";
+              const isCreateJob = item.id === "create_job";
               const isActive = isMore ? moreOpen : isActiveItem(item);
               const Icon = workerFeatureIcons[item.icon];
 
@@ -312,15 +383,15 @@ export default function WorkerLayout({
                     key={item.id}
                     type="button"
                     onClick={() => setMoreOpen((open) => !open)}
-                    className={`flex min-w-0 flex-col items-center justify-center gap-1.5 transition-all ${
+                    className={`flex h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-xl transition-all ${
                       isActive ? "text-primary" : "text-on-surface-variant hover:bg-slate-50"
                     }`}
                     aria-expanded={moreOpen}
                   >
-                    <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? "bg-primary-fixed" : ""}`}>
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${isActive ? "bg-primary-fixed shadow-sm" : ""}`}>
                       <Icon size={21} className={isActive ? "stroke-[2.5px]" : ""} />
                     </span>
-                    <span className={`max-w-full truncate text-[10px] font-bold uppercase ${isActive ? "opacity-100" : "opacity-60"}`}>
+                    <span className={`max-w-full truncate text-[10px] font-extrabold uppercase leading-none ${isActive ? "opacity-100" : "opacity-70"}`}>
                       {item.label}
                     </span>
                   </button>
@@ -332,14 +403,26 @@ export default function WorkerLayout({
                   key={item.id}
                   href={item.href}
                   onClick={() => setMoreOpen(false)}
-                  className={`flex min-w-0 flex-col items-center justify-center gap-1.5 transition-all ${
+                  className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl transition-all ${
+                    isCreateJob ? "h-20 -translate-y-2" : "h-16"
+                  } ${
                     isActive ? "text-primary" : "text-on-surface-variant hover:bg-slate-50"
                   }`}
                 >
-                  <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${isActive ? "bg-primary-fixed" : ""}`}>
-                    <Icon size={21} className={isActive ? "stroke-[2.5px]" : ""} />
+                  <span
+                    className={`flex items-center justify-center rounded-xl ${
+                      isCreateJob
+                        ? "h-12 w-12 bg-primary text-white shadow-[0_8px_18px_rgba(22,90,88,0.24)]"
+                        : `h-10 w-10 ${isActive ? "bg-primary-fixed shadow-sm" : ""}`
+                    }`}
+                  >
+                    <Icon size={isCreateJob ? 23 : 21} className={isActive || isCreateJob ? "stroke-[2.5px]" : ""} />
                   </span>
-                  <span className={`max-w-full truncate text-[10px] font-bold uppercase ${isActive ? "opacity-100" : "opacity-60"}`}>
+                  <span
+                    className={`max-w-full truncate text-[10px] font-extrabold uppercase leading-none ${
+                      isActive || isCreateJob ? "opacity-100" : "opacity-70"
+                    }`}
+                  >
                     {item.label}
                   </span>
                 </Link>
