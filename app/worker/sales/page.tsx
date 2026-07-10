@@ -6,6 +6,7 @@ import { Package, Plus, Search, ShoppingCart } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatSalesCurrency,
+  getWarrantyStatusLabel,
   type WorkerSalesOrder,
 } from "@/lib/worker-sales";
 
@@ -52,7 +53,8 @@ export default function WorkerSalesPage() {
         note,
         sold_at,
         customer:profiles!customer_id(full_name, phone, address),
-        items:worker_sales_order_items(id, order_id, product_id, product_name, product_sku, category, unit, quantity, unit_price, line_total)
+        items:worker_sales_order_items(id, order_id, product_id, product_name, product_sku, category, unit, quantity, unit_price, line_total),
+        warranties:worker_product_warranties(id, product_name, product_sku, warranty_end, status)
       `)
       .eq("worker_id", worker.id)
       .order("sold_at", { ascending: false });
@@ -190,6 +192,27 @@ export default function WorkerSalesPage() {
 
               {order.note && (
                 <p className="mt-3 rounded-lg bg-surface-container-low p-3 text-sm text-on-surface-variant">{order.note}</p>
+              )}
+
+              {order.warranties && order.warranties.length > 0 && (
+                <div className="mt-3 rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
+                  <p className="text-xs font-bold uppercase text-on-surface-variant">Bao hanh</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {order.warranties.map(warranty => {
+                      const label = getWarrantyStatusLabel(warranty);
+                      const statusClass = label === "Đã bảo hành"
+                        ? "bg-primary-fixed text-primary-container"
+                        : label === "Còn bảo hành"
+                          ? "bg-success-container text-success"
+                          : "bg-error-container text-error";
+                      return (
+                        <span key={warranty.id} className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass}`}>
+                          {warranty.product_name}: {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </article>
           ))}

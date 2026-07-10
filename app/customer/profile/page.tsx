@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getGpsLocationErrorMessage } from "@/lib/location";
 import { useSettings } from "@/lib/settings";
 import { formatBillGoCurrency, getBillGoReceivableSummary } from "@/lib/billgo";
+import { getWarrantyStatusLabel } from "@/lib/worker-sales";
 import {
   UserIcon,
   PhoneIcon,
@@ -64,6 +65,14 @@ type CustomerBillGoReceivable = {
   payments?: CustomerPayment[] | null;
 };
 
+type CustomerWarranty = {
+  id: string;
+  product_name: string;
+  product_sku: string;
+  warranty_end: string;
+  status: string;
+};
+
 export default function CustomerProfile() {
   const { settings } = useSettings();
   const [loading, setLoading] = useState(true);
@@ -88,7 +97,9 @@ export default function CustomerProfile() {
   const [showPolicies, setShowPolicies] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
+  const [showWarranties, setShowWarranties] = useState(false);
   const [billGoJobs, setBillGoJobs] = useState<CustomerBillGoReceivable[]>([]);
+  const [warranties, setWarranties] = useState<CustomerWarranty[]>([]);
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -151,6 +162,16 @@ export default function CustomerProfile() {
 
         if (billGoData) {
           setBillGoJobs(billGoData as CustomerBillGoReceivable[]);
+        }
+
+        const { data: warrantyData } = await supabase
+          .from("worker_product_warranties")
+          .select("id, product_name, product_sku, warranty_end, status")
+          .eq("customer_id", user.id)
+          .order("warranty_end", { ascending: false });
+
+        if (warrantyData) {
+          setWarranties(warrantyData as CustomerWarranty[]);
         }
       } catch (error) {
         console.error("Error reading profile details:", error);
@@ -673,6 +694,52 @@ export default function CustomerProfile() {
             </div>
             <ChevronRightIcon size={18} className="text-outline/75 shrink-0" />
           </button>
+
+          <div className="border-t border-outline-variant/30">
+            <button
+              onClick={() => setShowWarranties(!showWarranties)}
+              className="w-full flex items-center gap-4 p-4 text-left hover:bg-surface-container-low transition-colors active:bg-surface-container/60"
+            >
+              <div className="w-10 h-10 rounded-full bg-success-container flex items-center justify-center text-success shrink-0">
+                <ShieldCheckIcon size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-body-sm font-bold text-on-surface">Phiếu bảo hành</div>
+                <div className="text-label-sm text-on-surface-variant/70 truncate">{warranties.length} sản phẩm đã ghi nhận</div>
+              </div>
+              <div className={`transform transition-transform duration-200 shrink-0 ${showWarranties ? "rotate-90" : ""}`}>
+                <ChevronRightIcon size={18} className="text-outline/75" />
+              </div>
+            </button>
+
+            {showWarranties && (
+              <div className="space-y-2 border-t border-outline-variant/10 bg-surface-container-lowest px-4 py-4 animate-fade-in">
+                {warranties.length === 0 ? (
+                  <p className="rounded-lg bg-white p-4 text-sm text-on-surface-variant">Chưa có phiếu bảo hành.</p>
+                ) : warranties.map(warranty => {
+                  const label = getWarrantyStatusLabel(warranty);
+                  const statusClass = label === "Đã bảo hành"
+                    ? "bg-primary-fixed text-primary-container"
+                    : label === "Còn bảo hành"
+                      ? "bg-success-container text-success"
+                      : "bg-error-container text-error";
+
+                  return (
+                    <div key={warranty.id} className="rounded-lg bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-extrabold text-on-surface">{warranty.product_name}</p>
+                          <p className="mt-1 font-mono text-xs text-on-surface-variant">{warranty.product_sku}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">Hết hạn: {new Date(warranty.warranty_end).toLocaleDateString("vi-VN")}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${statusClass}`}>{label}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <div className="border-t border-outline-variant/30">
             <button

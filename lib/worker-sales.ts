@@ -31,6 +31,15 @@ export type WorkerSalesOrder = {
   sold_at: string;
   customer?: { full_name?: string | null; phone?: string | null; address?: string | null } | null;
   items?: WorkerSalesOrderItem[] | null;
+  warranties?: WorkerProductWarranty[] | null;
+};
+
+export type WorkerProductWarranty = {
+  id: string;
+  product_name: string;
+  product_sku: string;
+  warranty_end: string;
+  status: string;
 };
 
 export type SalesDraftItem = {
@@ -75,6 +84,14 @@ export function buildSalesRpcItems(items: SalesDraftItem[]): SalesOrderRpcItem[]
     quantity: Number(item.quantity || 0),
     unitPrice: Number(item.unitPrice || 0),
   }));
+}
+
+export function getWarrantyStatusLabel(warranty: Pick<WorkerProductWarranty, "status" | "warranty_end">) {
+  if (warranty.status === "serviced") return "Đã bảo hành";
+  if (warranty.status === "active" && new Date(warranty.warranty_end) >= new Date(new Date().toISOString().slice(0, 10))) {
+    return "Còn bảo hành";
+  }
+  return "Hết bảo hành";
 }
 
 export function validateSalesDraft(customerId: string, items: SalesDraftItem[], products: InventoryProduct[]) {

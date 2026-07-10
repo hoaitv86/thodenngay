@@ -9,6 +9,8 @@ export type InventoryProduct = {
   stock_quantity: number;
   unit: string;
   warranty_months: number;
+  is_recurring_billgo?: boolean | null;
+  recurring_cycle?: string | null;
   note?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -23,6 +25,8 @@ export type InventoryProductFormValues = {
   stockQuantity: string;
   unit: string;
   warrantyMonths: string;
+  isRecurringBillGo: boolean;
+  recurringCycle: string;
   note: string;
 };
 
@@ -35,6 +39,8 @@ export const emptyInventoryProductForm: InventoryProductFormValues = {
   stockQuantity: "",
   unit: "",
   warrantyMonths: "",
+  isRecurringBillGo: false,
+  recurringCycle: "monthly",
   note: "",
 };
 
@@ -69,6 +75,8 @@ export function productToFormValues(product: InventoryProduct): InventoryProduct
     stockQuantity: String(Number(product.stock_quantity || 0)),
     unit: product.unit || "",
     warrantyMonths: String(Number(product.warranty_months || 0)),
+    isRecurringBillGo: Boolean(product.is_recurring_billgo),
+    recurringCycle: product.recurring_cycle || "monthly",
     note: product.note || "",
   };
 }
@@ -84,6 +92,8 @@ export function buildInventoryProductPayload(values: InventoryProductFormValues,
     stock_quantity: Number(values.stockQuantity || 0),
     unit: values.unit.trim(),
     warranty_months: Number(values.warrantyMonths || 0),
+    is_recurring_billgo: values.isRecurringBillGo,
+    recurring_cycle: values.isRecurringBillGo ? values.recurringCycle : "monthly",
     note: values.note.trim() || null,
   };
 }
