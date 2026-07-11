@@ -2332,11 +2332,11 @@ export default function WorkerDashboard() {
 
       {/* Complete Job Modal */}
       {activeJobToComplete && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-fade-in-up">
+        <div className="fixed inset-0 z-[70] flex items-stretch justify-center overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
+          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl animate-fade-in-up sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl">
             
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b border-outline-variant/50">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-outline-variant/50">
               <h2 className="text-lg font-bold text-on-surface">Hoàn thành công việc</h2>
               <button 
                 onClick={() => {
@@ -2355,7 +2355,7 @@ export default function WorkerDashboard() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5">
               <div className="bg-surface-container-low p-4 rounded-xl space-y-2">
                 <p className="text-body-sm font-bold text-on-surface">Khách hàng: {activeJobToComplete.customerName}</p>
                 <p className="text-body-sm text-on-surface-variant">Dịch vụ: {activeJobToComplete.serviceName}</p>
@@ -2631,7 +2631,8 @@ export default function WorkerDashboard() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 sm:p-5 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
+            <div className="shrink-0 border-t border-outline-variant/50 bg-surface-container-lowest p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:rounded-b-2xl sm:p-5">
+              <div className="flex justify-end gap-3">
               <button 
                 type="button"
                 onClick={() => {
@@ -2658,6 +2659,7 @@ export default function WorkerDashboard() {
                   </span>
                 ) : "Hoàn thành Job"}
               </button>
+              </div>
             </div>
           </div>
         </div>
