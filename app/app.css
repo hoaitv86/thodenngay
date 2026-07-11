@@ -239,7 +239,19 @@ textarea {
 
   /* Input Fields */
   .input-field {
-    @apply w-full rounded-lg border border-outline-variant/70 bg-white px-4 py-3 text-sm text-on-surface shadow-[inset_0_1px_0_rgba(15,23,42,0.02)] placeholder:text-on-surface-variant/50 transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/15;
+    @apply w-full rounded-lg border border-outline-variant/70 bg-white px-4 py-3 text-base text-on-surface shadow-[inset_0_1px_0_rgba(15,23,42,0.02)] placeholder:text-on-surface-variant/50 transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/15 sm:text-sm;
+  }
+
+  input[type="search"].input-field {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  input[type="search"].input-field::-webkit-search-decoration,
+  input[type="search"].input-field::-webkit-search-cancel-button,
+  input[type="search"].input-field::-webkit-search-results-button,
+  input[type="search"].input-field::-webkit-search-results-decoration {
+    -webkit-appearance: none;
   }
 
   .page-band {
