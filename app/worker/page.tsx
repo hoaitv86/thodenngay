@@ -360,7 +360,14 @@ export default function WorkerDashboard() {
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [workerBillGoReceivables, setWorkerBillGoReceivables] = useState<WorkerBillGoReceivable[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
-  const [workerStats, setWorkerStats] = useState({ jobsDone: 0, income: 0, rating: 0 });
+  const [workerStats, setWorkerStats] = useState({
+    jobsDone: 0,
+    income: 0,
+    rating: 0,
+    monthlyCustomers: 0,
+    monthlyIncome: 0,
+    monthlyRating: 0,
+  });
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerPassword: null });
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
@@ -670,27 +677,74 @@ export default function WorkerDashboard() {
       ]));
 
       // 6. Calculate Real Stats
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
       const { data: workerJobs } = await supabase
         .from('jobs')
-        .select('status, quoted_price')
+        .select('id, status, customer_id, quoted_price, final_amount, updated_at, payments(id, amount, status, paid_at)')
         .eq('worker_id', workerData.id);
 
       let income = 0;
       let jobsDone = 0;
+      let monthlyIncome = 0;
+      const servedCustomerIds = new Set<string>();
+      const monthlyCustomerIds = new Set<string>();
+      let legacyMonthlyIncome = 0;
+      let hasMonthlyJobPayments = false;
 
       if (workerJobs) {
         workerJobs.forEach(j => {
           if (j.status === 'completed' || j.status === 'done') {
-            jobsDone++;
-            income += (j.quoted_price || 0);
+            const completedDate = j.updated_at ? new Date(j.updated_at) : null;
+            const completedThisMonth = Boolean(
+              completedDate &&
+              completedDate >= monthStart &&
+              completedDate < nextMonthStart
+            );
+            const customerKey = j.customer_id || j.id;
+
+            servedCustomerIds.add(customerKey);
+            if (completedThisMonth) monthlyCustomerIds.add(customerKey);
+
+            income += Number(j.final_amount || j.quoted_price || 0);
+            if (completedThisMonth) {
+              legacyMonthlyIncome += Number(j.final_amount || j.quoted_price || 0);
+            }
+
+            (j.payments || []).forEach(payment => {
+              if (payment.status !== "paid" || !payment.paid_at) return;
+              const paidDate = new Date(payment.paid_at);
+              if (paidDate >= monthStart && paidDate < nextMonthStart) {
+                hasMonthlyJobPayments = true;
+                monthlyIncome += Number(payment.amount || 0);
+              }
+            });
           }
         });
       }
 
+      jobsDone = servedCustomerIds.size;
+      if (!hasMonthlyJobPayments) monthlyIncome = legacyMonthlyIncome;
+
+      const { data: monthlyRatings } = await supabase
+        .from("ratings")
+        .select("score, created_at")
+        .eq("worker_id", workerData.id)
+        .gte("created_at", monthStart.toISOString())
+        .lt("created_at", nextMonthStart.toISOString());
+
+      const monthlyRating = monthlyRatings && monthlyRatings.length > 0
+        ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
+        : 0;
+
       setWorkerStats({
         jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
         income: income,
-        rating: workerData.avg_rating || 0
+        rating: workerData.avg_rating || 0,
+        monthlyCustomers: monthlyCustomerIds.size,
+        monthlyIncome,
+        monthlyRating,
       });
     }
 
@@ -1476,7 +1530,9 @@ export default function WorkerDashboard() {
       setWorkerStats(prev => ({
         ...prev,
         jobsDone: prev.jobsDone + 1,
-        income: prev.income + amountToRecord
+        income: prev.income + amountToRecord,
+        monthlyCustomers: prev.monthlyCustomers + 1,
+        monthlyIncome: prev.monthlyIncome + amountToRecord,
       }));
 
       showToast("Đã hoàn thành công việc thành công!", "success");
@@ -1568,7 +1624,10 @@ export default function WorkerDashboard() {
           <div className="grid grid-cols-3 divide-x divide-outline-variant/30 bg-white">
             <div className="px-3 py-4 text-center">
               <div className="text-2xl font-extrabold text-on-surface sm:text-3xl">{workerStats.jobsDone}</div>
-              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Hoàn thành</div>
+              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Tổng khách hàng</div>
+              <div className="mt-1 text-xs font-extrabold text-primary-container">
+                Tháng này: {workerStats.monthlyCustomers}
+              </div>
             </div>
             <div className="px-3 py-4 text-center">
               <div className="flex items-center justify-center gap-1 text-2xl font-extrabold text-on-surface sm:text-3xl">
@@ -1576,6 +1635,9 @@ export default function WorkerDashboard() {
                 <StarIcon size={16} className="fill-current text-warning" />
               </div>
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Đánh giá</div>
+              <div className="mt-1 text-xs font-extrabold text-primary-container">
+                Tháng này: {workerStats.monthlyRating > 0 ? workerStats.monthlyRating : "0"}
+              </div>
             </div>
             <div className="px-3 py-4 text-center">
               <div className="text-xl font-extrabold leading-9 text-primary-container sm:text-2xl">
@@ -1584,6 +1646,11 @@ export default function WorkerDashboard() {
                   : (workerStats.income / 1000).toFixed(0) + "k"}
               </div>
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Thu nhập</div>
+              <div className="mt-1 text-xs font-extrabold text-primary-container">
+                Tháng này: {workerStats.monthlyIncome >= 1000000
+                  ? (workerStats.monthlyIncome / 1000000).toFixed(1) + "tr"
+                  : `${Math.round(workerStats.monthlyIncome / 1000)}k`}
+              </div>
             </div>
           </div>
         </div>
