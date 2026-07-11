@@ -1089,7 +1089,10 @@ export default function WorkerDashboard() {
   };
 
   const addInventoryCompletionItem = () => {
-    setCompletionItems(prev => [...prev, makeInventoryCompletionItem()]);
+    setCompletionItems(prev => [
+      ...prev,
+      inventoryProducts.length > 0 ? makeInventoryCompletionItem() : makeCompletionItem("Vật tư", 0),
+    ]);
   };
 
   const updateInventoryCompletionProduct = (id: string, productId: string) => {
@@ -1876,7 +1879,7 @@ export default function WorkerDashboard() {
       </section>
 
       {/* Tabs */}
-      <div className="sticky top-16 z-30 mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white/95 p-1 shadow-sm backdrop-blur sm:mx-6 lg:top-20 lg:mx-8">
+      <div className="mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm sm:mx-6 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
@@ -2377,7 +2380,7 @@ export default function WorkerDashboard() {
                     type="button"
                     onClick={addInventoryCompletionItem}
                     className="shrink-0 rounded-lg border border-secondary-container/30 bg-secondary-fixed px-3 py-2 text-xs font-bold text-secondary-container disabled:opacity-50"
-                    disabled={uploadingImages || inventoryProducts.length === 0}
+                    disabled={uploadingImages}
                   >
                     Thêm vật tư
                   </button>
