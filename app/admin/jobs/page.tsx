@@ -82,6 +82,7 @@ interface CreateJobResponse {
   createdCustomer?: CustomerOption;
   loginPhone?: string;
   defaultPassword?: string;
+  customerAlreadyExists?: boolean;
 }
 
 function getWorkerProfile(worker?: WorkerOption | null) {
@@ -194,10 +195,12 @@ export default function AdminJobs() {
 
   const openModal = async () => {
     setIsModalOpen(true);
-    if (customers.length === 0) {
-      const { data: cData } = await supabase.from('profiles').select('id, full_name, phone').eq('role', 'customer');
-      if (cData) setCustomers(cData);
-    }
+    const { data: cData } = await supabase
+      .from('profiles')
+      .select('id, full_name, phone')
+      .eq('role', 'customer')
+      .order('created_at', { ascending: false });
+    if (cData) setCustomers(cData);
     if (services.length === 0) {
       await fetchServices();
     }
@@ -314,6 +317,8 @@ export default function AdminJobs() {
 
       if (data.defaultPassword) {
         alert(`Đã tạo job và tài khoản khách hàng.\nTài khoản: ${data.loginPhone}@thodenngay.vn\nMật khẩu mặc định: ${data.defaultPassword}`);
+      } else if (data.customerAlreadyExists) {
+        alert(`Khách hàng đã có tài khoản. Đã tạo thêm công việc cho khách.\nTài khoản: ${data.loginPhone}@thodenngay.vn\nMật khẩu: Giữ nguyên mật khẩu đã tạo trước`);
       }
     } catch (err: unknown) {
       alert("Lỗi kết nối: " + (err instanceof Error ? err.message : "Không xác định"));

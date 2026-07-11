@@ -97,6 +97,7 @@ export async function POST(request: Request) {
     let customerId = body.customerId;
     let createdCustomer = null;
     let defaultPassword: string | null = null;
+    let customerAlreadyExists = false;
 
     if (customerMode === "new") {
       const customerName = (body.customerName || "").trim().replace(/\s+/g, " ");
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
 
       if (existingCustomer) {
         customerId = existingCustomer.id;
+        customerAlreadyExists = true;
       } else {
         defaultPassword = makeDefaultPassword();
         const { data: authData, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
@@ -136,15 +138,18 @@ export async function POST(request: Request) {
 
         customerId = authData.user.id;
 
+        const customerEmail = makePhoneEmail(customerPhone);
         const { data: profile, error: profileError } = await supabaseAdmin
           .from("profiles")
-          .update({
+          .upsert({
+            id: customerId,
+            email: customerEmail,
             full_name: customerName,
             phone: customerPhone,
             address: body.address,
+            role: "customer",
             status: "active",
-          })
-          .eq("id", customerId)
+          }, { onConflict: "id" })
           .select("id, full_name, phone, email")
           .single();
 
@@ -207,6 +212,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       job: insertResult.data,
       createdCustomer,
+      customerAlreadyExists,
       loginPhone: customerMode === "new" ? normalizePhone(body.customerPhone || "") : null,
       defaultPassword,
     });

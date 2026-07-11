@@ -186,6 +186,7 @@ interface WorkerCreateJobResponse {
   job?: WorkerJob;
   loginPhone?: string;
   defaultPassword?: string | null;
+  customerAlreadyExists?: boolean;
   mock?: boolean;
   approvalRequired?: boolean;
 }
@@ -195,6 +196,7 @@ type ToastType = "success" | "error" | "info";
 type ToastState = {
   message: string;
   type: ToastType | null;
+  customerLogin?: string | null;
   customerPassword?: string | null;
 };
 
@@ -376,7 +378,7 @@ export default function WorkerDashboard() {
     monthlyIncome: 0,
     monthlyRating: 0,
   });
-  const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerPassword: null });
+  const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerLogin: null, customerPassword: null });
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [expandedQuickServiceGroup, setExpandedQuickServiceGroup] = useState("internet");
@@ -512,24 +514,29 @@ export default function WorkerDashboard() {
       window.clearTimeout(toastTimeoutRef.current);
       toastTimeoutRef.current = null;
     }
-    setToast({ message: "", type: null, customerPassword: null });
+    setToast({ message: "", type: null, customerLogin: null, customerPassword: null });
   };
 
   const showToast = (
     message: string,
     type: ToastType = "info",
-    options: { durationMs?: number | null; customerPassword?: string | null } = {}
+    options: { durationMs?: number | null; customerLogin?: string | null; customerPassword?: string | null } = {}
   ) => {
     if (toastTimeoutRef.current) {
       window.clearTimeout(toastTimeoutRef.current);
       toastTimeoutRef.current = null;
     }
 
-    setToast({ message, type, customerPassword: options.customerPassword || null });
+    setToast({
+      message,
+      type,
+      customerLogin: options.customerLogin || null,
+      customerPassword: options.customerPassword || null,
+    });
 
     if (options.durationMs !== null) {
       toastTimeoutRef.current = window.setTimeout(() => {
-        setToast({ message: "", type: null, customerPassword: null });
+        setToast({ message: "", type: null, customerLogin: null, customerPassword: null });
         toastTimeoutRef.current = null;
       }, options.durationMs ?? 3000);
     }
@@ -1125,12 +1132,24 @@ export default function WorkerDashboard() {
       showToast(
         data.defaultPassword
           ? "Đã tạo việc nhanh. Nhớ gửi mật khẩu này cho khách."
+          : data.customerAlreadyExists
+            ? "Khách hàng đã có tài khoản. Đã tạo thêm công việc cho khách."
           : createdAsActive
             ? "Đã tạo việc nhanh cho khách quen."
             : "Đã tạo việc nhanh.",
         "success",
         data.defaultPassword
-          ? { durationMs: null, customerPassword: data.defaultPassword }
+          ? {
+              durationMs: null,
+              customerLogin: data.loginPhone ? `${data.loginPhone}@thodenngay.vn` : null,
+              customerPassword: data.defaultPassword,
+            }
+          : data.customerAlreadyExists
+            ? {
+                durationMs: null,
+                customerLogin: data.loginPhone ? `${data.loginPhone}@thodenngay.vn` : null,
+                customerPassword: "Giữ nguyên mật khẩu đã tạo trước",
+              }
           : undefined
       );
       if (!data.mock) {
@@ -1613,8 +1632,16 @@ export default function WorkerDashboard() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-body-sm font-bold leading-tight">{toast.message}</p>
-              {toast.customerPassword && (
+              {(toast.customerLogin || toast.customerPassword) && (
                 <div className="mt-3 rounded-lg border border-success/25 bg-white/80 p-3 text-on-surface shadow-sm">
+                  {toast.customerLogin && (
+                    <>
+                      <div className="text-[10px] font-bold uppercase text-on-surface-variant">Tài khoản khách</div>
+                      <div className="mt-1 break-all font-mono text-sm font-extrabold text-primary-container">
+                        {toast.customerLogin}
+                      </div>
+                    </>
+                  )}
                   <div className="text-[10px] font-bold uppercase text-on-surface-variant">Mật khẩu khách</div>
                   <div className="mt-1 break-all font-mono text-lg font-extrabold text-primary-container">
                     {toast.customerPassword}

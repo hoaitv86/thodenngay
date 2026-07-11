@@ -291,6 +291,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           job: quickJob,
           createdCustomer: null,
+          customerAlreadyExists: true,
           loginPhone: customerPhone,
           defaultPassword: null,
           approvalRequired: false,
@@ -349,6 +350,7 @@ export async function POST(request: Request) {
               full_name: customerName,
               phone: customerPhone,
             },
+            customerAlreadyExists: false,
             loginPhone: customerPhone,
             defaultPassword,
             mock: true,
@@ -416,6 +418,7 @@ export async function POST(request: Request) {
               description: body.description?.trim() || null,
             }),
             createdCustomer: null,
+            customerAlreadyExists: true,
             loginPhone: customerPhone,
             defaultPassword: null,
             mock: true,
@@ -447,6 +450,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         job: insertedJob,
         createdCustomer: null,
+        customerAlreadyExists: true,
         loginPhone: customerPhone,
         defaultPassword: null,
         approvalRequired: false,
@@ -479,6 +483,7 @@ export async function POST(request: Request) {
     let createdCustomer = null;
     let customerId: string | null = null;
     let createdAuthUserId: string | null = null;
+    let customerAlreadyExists = false;
 
     const { data: existingCustomer } = await supabaseAdmin
       .from("profiles")
@@ -489,6 +494,7 @@ export async function POST(request: Request) {
 
     if (existingCustomer) {
       customerId = existingCustomer.id;
+      customerAlreadyExists = true;
     } else {
       defaultPassword = makeDefaultPassword(customerName);
 
@@ -513,15 +519,18 @@ export async function POST(request: Request) {
       customerId = authData.user.id;
       createdAuthUserId = authData.user.id;
 
+      const customerEmail = makePhoneEmail(customerPhone);
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
-        .update({
+        .upsert({
+          id: customerId,
+          email: customerEmail,
           full_name: customerName,
           phone: customerPhone,
           address,
+          role: "customer",
           status: "active",
-        })
-        .eq("id", customerId)
+        }, { onConflict: "id" })
         .select("id, full_name, phone, email")
         .single();
 
@@ -596,6 +605,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       job: insertedJob,
       createdCustomer,
+      customerAlreadyExists,
       loginPhone: customerPhone,
       defaultPassword,
       approvalRequired: false,

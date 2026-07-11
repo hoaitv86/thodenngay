@@ -364,6 +364,33 @@ export default function AdminCustomers() {
     fetchCustomers();
   }, []);
 
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        fetchCustomers();
+      }
+    };
+
+    window.addEventListener("focus", fetchCustomers);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    const channel = supabase
+      .channel("admin-customer-profile-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles", filter: "role=eq.customer" },
+        () => fetchCustomers()
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("focus", fetchCustomers);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function fetchCustomers() {
     setLoading(true);
     const { data, error } = await supabase
