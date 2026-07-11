@@ -283,6 +283,14 @@ const getQuickServicePathLabel = (service: ServiceOption | null, services: Servi
   return names.join(" / ");
 };
 
+const getQuickServiceSearchText = (service: ServiceOption, services: ServiceOption[]) =>
+  normalizeServiceText([
+    service.name,
+    service.description,
+    service.parentName,
+    getQuickServicePathLabel(service, services),
+  ].filter(Boolean).join(" "));
+
 const getJobCreatedDate = (job: Pick<WorkerJob, "created_at" | "scheduled_at">) => {
   const dateValue = job.created_at || job.scheduled_at;
   if (!dateValue) return null;
@@ -372,6 +380,7 @@ export default function WorkerDashboard() {
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [expandedQuickServiceGroup, setExpandedQuickServiceGroup] = useState("internet");
+  const [quickServiceSearch, setQuickServiceSearch] = useState("");
   const [quickJob, setQuickJob] = useState({
     customerName: "",
     customerPhone: "",
@@ -432,6 +441,25 @@ export default function WorkerDashboard() {
 
     return suggestions.slice(0, 6);
   }, [activeJobs, pendingApprovalJobs, quickJob.serviceId, quickServiceGroups, services]);
+
+  const quickServiceSearchResults = React.useMemo(() => {
+    const leafServices = quickServiceGroups
+      .flatMap(group => group.services)
+      .filter((service, index, list) => list.findIndex(item => item.id === service.id) === index);
+    const query = normalizeServiceText(quickServiceSearch);
+
+    if (!query) return [];
+
+    const queryParts = query.split(/\s+/).filter(Boolean);
+    return leafServices
+      .map(service => ({
+        service,
+        searchText: getQuickServiceSearchText(service, services),
+      }))
+      .filter(({ searchText }) => queryParts.every(part => searchText.includes(part)))
+      .slice(0, 8)
+      .map(({ service }) => service);
+  }, [quickServiceGroups, quickServiceSearch, services]);
 
   // Completion modal states
   const [activeJobToComplete, setActiveJobToComplete] = useState<WorkerJob | null>(null);
@@ -899,6 +927,11 @@ export default function WorkerDashboard() {
         quotedPrice: totalPrice > 0 ? String(totalPrice) : "",
       };
     });
+  };
+
+  const handleQuickServiceSuggestionClick = (service: ServiceOption) => {
+    handleQuickServiceChange(service.id);
+    setQuickServiceSearch(getQuickServicePathLabel(service, services));
   };
 
   const handleUpdateServiceDetail = async (job: WorkerJob, serviceDetailId: string) => {
@@ -1737,6 +1770,65 @@ export default function WorkerDashboard() {
                       Chưa có dịch vụ khả dụng
                     </div>
                   ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-lg border border-outline-variant/40 bg-surface-container-low p-3">
+                        <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                          Tìm nhanh dịch vụ
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="search"
+                            value={quickServiceSearch}
+                            onChange={(e) => setQuickServiceSearch(e.target.value)}
+                            placeholder="Gõ tên dịch vụ: camera, internet, máy lạnh..."
+                            className="input-field min-w-0 flex-1 !py-2.5"
+                          />
+                          {quickServiceSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setQuickServiceSearch("")}
+                              className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-outline-variant/50 bg-white text-on-surface-variant transition-colors hover:border-secondary-container hover:text-secondary-container"
+                              aria-label="Xóa tìm kiếm dịch vụ"
+                            >
+                              <XIcon size={18} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+                          {!quickServiceSearch.trim() ? (
+                            <div className="rounded-lg border border-dashed border-outline-variant/60 bg-white px-3 py-4 text-sm font-semibold text-on-surface-variant">
+                              Gõ vài chữ để tìm nhanh trong danh mục dịch vụ
+                            </div>
+                          ) : quickServiceSearchResults.length > 0 ? (
+                            quickServiceSearchResults.map(service => {
+                              const isSelected = quickJob.serviceIds.includes(service.id);
+                              return (
+                                <button
+                                  key={`search-${service.id}`}
+                                  type="button"
+                                  onClick={() => handleQuickServiceSuggestionClick(service)}
+                                  className={`w-full rounded-lg border px-3 py-2.5 text-left transition-all active:scale-[0.99] ${
+                                    isSelected
+                                      ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                      : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                  }`}
+                                >
+                                  <span className="block text-sm font-extrabold leading-5">{service.name}</span>
+                                  <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                    {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                  </span>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-lg border border-dashed border-outline-variant/60 bg-white px-3 py-4 text-sm font-semibold text-on-surface-variant">
+                              Không tìm thấy dịch vụ phù hợp
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                     <div className="max-h-[28rem] space-y-3 overflow-y-auto rounded-lg border border-outline-variant/40 bg-surface-container-low p-2">
                       {quickSuggestedServices.length > 0 && (
                         <div className="rounded-lg border border-secondary-container/20 bg-white p-3">
@@ -1862,6 +1954,7 @@ export default function WorkerDashboard() {
                           );
                         })}
                       </div>
+                    </div>
                     </div>
                   )}
                   {selectedQuickServices.length > 0 && (
