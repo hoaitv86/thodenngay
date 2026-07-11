@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, RefreshCw, Send, ShieldCheck, UserRound, Wrench } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -18,6 +18,13 @@ type ProfileRow = {
 
 type Participant = ProfileRow & {
   subtitle?: string;
+};
+
+type PresenceMeta = {
+  profile_id?: string;
+  full_name?: string | null;
+  role?: ProfileRole;
+  online_at?: string;
 };
 
 type ConversationRow = {
@@ -78,6 +85,18 @@ function getRoleLabel(role: ProfileRole) {
   if (role === "admin") return "Admin";
   if (role === "worker") return "Thợ";
   return "Khách hàng";
+}
+
+function getOnlineLabel(isOnline: boolean) {
+  return isOnline ? "Đang online" : "Offline";
+}
+
+function buildPresenceIds(state: Record<string, PresenceMeta[]>) {
+  return new Set(
+    Object.entries(state)
+      .filter(([, metas]) => metas.length > 0)
+      .map(([key, metas]) => metas[0]?.profile_id || key)
+  );
 }
 
 function getConversationType(currentRole: ProfileRole, participantRole: ProfileRole): ConversationType | null {
@@ -220,9 +239,13 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [migrationNeeded, setMigrationNeeded] = useState(false);
+  const [onlineProfileIds, setOnlineProfileIds] = useState<Set<string>>(new Set());
+  const [presenceNotice, setPresenceNotice] = useState("");
+  const previousOnlineProfileIdsRef = useRef<Set<string>>(new Set());
 
   const selectedParticipant = participants.find((participant) => participant.id === selectedParticipantId) || null;
   const filteredParticipants = participants.filter((participant) => activeRole === "all" || participant.role === activeRole);
+  const onlineParticipantCount = participants.filter((participant) => onlineProfileIds.has(participant.id)).length;
 
   const fetchConversations = async (profileId: string) => {
     const { data, error: conversationsError } = await supabase
@@ -511,6 +534,52 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConversation?.id]);
 
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const channel = supabase.channel("chat-online-users", {
+      config: {
+        presence: {
+          key: currentUser.id,
+        },
+      },
+    });
+
+    channel.on("presence", { event: "sync" }, () => {
+      const nextOnlineProfileIds = buildPresenceIds(channel.presenceState() as Record<string, PresenceMeta[]>);
+      const previousOnlineProfileIds = previousOnlineProfileIdsRef.current;
+      const newlyOnline = participants.find(
+        (participant) => nextOnlineProfileIds.has(participant.id) && !previousOnlineProfileIds.has(participant.id)
+      );
+
+      setOnlineProfileIds(nextOnlineProfileIds);
+      previousOnlineProfileIdsRef.current = nextOnlineProfileIds;
+
+      if (newlyOnline) {
+        setPresenceNotice(`${getDisplayName(newlyOnline)} đang online, bạn có thể chat ngay.`);
+        window.setTimeout(() => setPresenceNotice(""), 5000);
+      }
+    });
+
+    channel.subscribe(async (status) => {
+      if (status !== "SUBSCRIBED") return;
+
+      await channel.track({
+        profile_id: currentUser.id,
+        full_name: currentUser.full_name,
+        role: currentUser.role,
+        online_at: new Date().toISOString(),
+      } satisfies PresenceMeta);
+    });
+
+    return () => {
+      setOnlineProfileIds(new Set());
+      previousOnlineProfileIdsRef.current = new Set();
+      void channel.untrack();
+      void supabase.removeChannel(channel);
+    };
+  }, [currentUser, participants, supabase]);
+
   return (
     <div className="min-h-[calc(100dvh-5rem)] p-4 sm:p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -526,9 +595,15 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant bg-white px-4 py-2 text-sm font-bold text-on-surface-variant transition-colors hover:bg-surface-container-low"
         >
           <RefreshCw size={16} />
-          Làm mới
+          {onlineParticipantCount > 0 ? `${onlineParticipantCount} online` : "Làm mới"}
         </button>
       </div>
+
+      {presenceNotice && (
+        <div className="mb-4 rounded-lg border border-success-container bg-success-container/60 p-4 text-sm font-semibold text-success">
+          {presenceNotice}
+        </div>
+      )}
 
       {migrationNeeded && (
         <div className="mb-4 rounded-lg border border-warning-container bg-warning-container/70 p-4 text-sm font-semibold text-warning">
@@ -576,6 +651,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
               <div className="space-y-2">
                 {filteredParticipants.map((participant) => {
                   const isActive = participant.id === selectedParticipantId;
+                  const isOnline = onlineProfileIds.has(participant.id);
                   const participantConversation = currentUser
                     ? conversations.find((conversation) => conversationMatchesParticipant(conversation, currentUser, participant))
                     : null;
@@ -591,19 +667,33 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-                          participant.role === "admin"
-                            ? "bg-primary-container text-white"
-                            : participant.role === "worker"
-                              ? "bg-success-container text-success"
-                              : "bg-secondary-container text-white"
-                        }`}>
-                          {participant.role === "admin" ? <ShieldCheck size={19} /> : participant.role === "worker" ? <Wrench size={19} /> : <UserRound size={19} />}
+                        <div className="relative shrink-0">
+                          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                            participant.role === "admin"
+                              ? "bg-primary-container text-white"
+                              : participant.role === "worker"
+                                ? "bg-success-container text-success"
+                                : "bg-secondary-container text-white"
+                          }`}>
+                            {participant.role === "admin" ? <ShieldCheck size={19} /> : participant.role === "worker" ? <Wrench size={19} /> : <UserRound size={19} />}
+                          </div>
+                          <span
+                            className={`absolute -right-1 -bottom-1 h-3.5 w-3.5 rounded-full border-2 border-white ${
+                              isOnline ? "bg-success" : "bg-outline-variant"
+                            }`}
+                            aria-label={getOnlineLabel(isOnline)}
+                            title={getOnlineLabel(isOnline)}
+                          />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-extrabold text-on-surface">{getDisplayName(participant)}</div>
-                          <div className="truncate text-xs font-semibold text-on-surface-variant">
-                            {participant.subtitle || getRoleLabel(participant.role)}
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-xs font-semibold text-on-surface-variant">
+                              {participant.subtitle || getRoleLabel(participant.role)}
+                            </span>
+                            <span className={`shrink-0 text-[11px] font-extrabold ${isOnline ? "text-success" : "text-on-surface-variant"}`}>
+                              {getOnlineLabel(isOnline)}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -624,12 +714,25 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
           {selectedParticipant ? (
             <>
               <div className="flex items-center gap-3 border-b border-outline-variant bg-white px-4 py-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
-                  {selectedParticipant.role === "worker" ? <Wrench size={21} /> : selectedParticipant.role === "admin" ? <ShieldCheck size={21} /> : <UserRound size={21} />}
+                <div className="relative shrink-0">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
+                    {selectedParticipant.role === "worker" ? <Wrench size={21} /> : selectedParticipant.role === "admin" ? <ShieldCheck size={21} /> : <UserRound size={21} />}
+                  </div>
+                  <span
+                    className={`absolute -right-1 -bottom-1 h-3.5 w-3.5 rounded-full border-2 border-white ${
+                      onlineProfileIds.has(selectedParticipant.id) ? "bg-success" : "bg-outline-variant"
+                    }`}
+                    aria-label={getOnlineLabel(onlineProfileIds.has(selectedParticipant.id))}
+                    title={getOnlineLabel(onlineProfileIds.has(selectedParticipant.id))}
+                  />
                 </div>
                 <div className="min-w-0">
                   <h2 className="truncate text-base font-extrabold text-on-surface">{getDisplayName(selectedParticipant)}</h2>
-                  <p className="truncate text-xs font-semibold text-on-surface-variant">{getRoleLabel(selectedParticipant.role)}</p>
+                  <p className={`truncate text-xs font-semibold ${
+                    onlineProfileIds.has(selectedParticipant.id) ? "text-success" : "text-on-surface-variant"
+                  }`}>
+                    {getRoleLabel(selectedParticipant.role)} - {getOnlineLabel(onlineProfileIds.has(selectedParticipant.id))}
+                  </p>
                 </div>
               </div>
 
