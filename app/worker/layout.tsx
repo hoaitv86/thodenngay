@@ -205,7 +205,7 @@ export default function WorkerLayout({
         href={item.href}
         title={item.label}
         className={`group flex items-center rounded-lg text-sm font-extrabold transition-all ${
-          compact ? "justify-center px-3 py-3 lg:justify-start lg:gap-3 lg:px-4" : "gap-3 px-4 py-3"
+          compact ? "gap-3 px-4 py-3" : "gap-3 px-4 py-3"
         } ${
           isActive
             ? "bg-primary text-white shadow-sm"
@@ -213,19 +213,19 @@ export default function WorkerLayout({
         }`}
       >
         <Icon size={20} className={isActive ? "stroke-[2.5px]" : ""} />
-        <span className={compact ? "hidden lg:inline" : ""}>{item.label}</span>
+        <span>{item.label}</span>
       </Link>
     );
   };
 
   return (
     <div className="min-h-dvh w-full bg-surface md:flex">
-      <aside className="hidden md:fixed md:inset-y-0 md:left-0 md:z-50 md:flex md:w-20 md:flex-col md:border-r md:border-outline-variant/25 md:bg-white lg:w-64">
-        <div className="flex h-20 items-center justify-center gap-3 border-b border-outline-variant/20 px-3 lg:justify-start lg:px-5">
+      <aside className="hidden md:fixed md:inset-y-0 md:left-0 md:z-50 md:flex md:w-64 md:flex-col md:border-r md:border-outline-variant/25 md:bg-white">
+        <div className="flex h-20 items-center justify-start gap-3 border-b border-outline-variant/20 px-5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-surface-container-low shadow-sm">
             <LogoIcon size={26} />
           </div>
-          <div className="hidden min-w-0 lg:block">
+          <div className="min-w-0">
             <span className="block truncate font-extrabold leading-tight text-primary">{userName}</span>
             <div className="mt-1 flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-success" />
@@ -242,15 +242,15 @@ export default function WorkerLayout({
           <button
             onClick={handleLogout}
             title="Đăng xuất"
-            className="flex w-full items-center justify-center gap-3 rounded-lg px-3 py-3 text-sm font-extrabold text-error transition-colors hover:bg-error-container lg:justify-start lg:px-4"
+            className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-3 text-sm font-extrabold text-error transition-colors hover:bg-error-container"
           >
             <LogOutIcon size={20} />
-            <span className="hidden lg:inline">Đăng xuất</span>
+            <span>Đăng xuất</span>
           </button>
         </div>
       </aside>
 
-      <div className="flex min-h-dvh w-full flex-col md:pl-20 lg:pl-64">
+      <div className="flex min-h-dvh w-full flex-col md:pl-64">
         <header className="sticky top-0 z-40 glass flex h-16 items-center justify-between px-4 sm:px-6 lg:h-20 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm md:hidden">
@@ -272,7 +272,7 @@ export default function WorkerLayout({
             <button
               onClick={handleLogout}
               aria-label="Đăng xuất"
-              className="flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-on-surface-variant transition-colors hover:border-error/20 hover:bg-error-container hover:text-error"
+              className="flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-on-surface-variant transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden"
               title="Đăng xuất"
             >
               <LogOutIcon size={18} />
@@ -434,3 +434,4 @@ export default function WorkerLayout({
     </div>
   );
 }
+
