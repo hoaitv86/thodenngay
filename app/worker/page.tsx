@@ -32,7 +32,6 @@ import {
   getBillGoNextDueDate,
   getBillGoNextPeriodStartDate,
   getBillGoReceivableSummary,
-  getBillGoSummary,
   getBillGoStoredStatus,
   toMoneyNumber,
 } from "@/lib/billgo";
@@ -2165,7 +2164,6 @@ export default function WorkerDashboard() {
           activeJobs.map(job => {
             const detailOptions = getTechnicalDetailOptions(job.service_id);
             const selectedDetailName = getServiceName(job.service_detail_id);
-            const billGoSummary = getBillGoSummary(job);
 
             return (
             <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
@@ -2270,17 +2268,12 @@ export default function WorkerDashboard() {
               <div className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-bold uppercase text-primary-container">BillGo</p>
-                    <p className="mt-1 text-sm font-extrabold text-on-surface">{billGoSummary.statusLabel}</p>
+                    <p className="text-xs font-bold uppercase text-primary-container">Thanh toan cong viec</p>
+                    <p className="mt-1 text-sm font-extrabold text-on-surface">Ghi nhan tien khach da tra cho job nay.</p>
                   </div>
-                  <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${billGoSummary.debt > 0 ? "bg-error-container text-error" : "bg-success-container text-success"}`}>
-                    Còn nợ: {formatBillGoCurrency(billGoSummary.debt)}
+                  <span className="rounded-full bg-primary-fixed px-3 py-1.5 text-xs font-extrabold text-primary-container">
+                    Thu rieng cho job
                   </span>
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-on-surface-variant">
-                  <span>Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(billGoSummary.receivable)}</strong></span>
-                  <span>Đã thu<br /><strong className="text-success">{formatBillGoCurrency(billGoSummary.paid)}</strong></span>
-                  <span>Lần thu<br /><strong className="text-on-surface">{job.payments?.filter(payment => payment.status === "paid").length || 0}</strong></span>
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_150px]">
                   <input
@@ -2398,24 +2391,6 @@ export default function WorkerDashboard() {
                   Báo giá ban đầu: {formatCurrency(activeJobToComplete.quoted_price)}
                 </p>
               </div>
-
-              {activeJobToComplete.workflow_data?.billgo && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/20 bg-primary-fixed p-4">
-                  <input
-                    type="checkbox"
-                    checked={addToBillGo}
-                    onChange={(event) => setAddToBillGo(event.target.checked)}
-                    className="mt-1 h-5 w-5"
-                    disabled={uploadingImages}
-                  />
-                  <span>
-                    <strong className="block text-sm text-on-surface">Thêm vào BillGo</strong>
-                    <span className="mt-1 block text-xs text-on-surface-variant">
-                      Tạo hồ sơ thu cước Internet sau khi hoàn thành. Bỏ chọn nếu khách không dùng thu cước định kỳ.
-                    </span>
-                  </span>
-                </label>
-              )}
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
