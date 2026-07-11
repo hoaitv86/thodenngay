@@ -31,7 +31,7 @@ export default function NewInventoryProductPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMessage("Ban chua dang nhap.");
+      setMessage("Bạn chưa đăng nhập.");
       setSaving(false);
       return;
     }
@@ -43,7 +43,7 @@ export default function NewInventoryProductPage() {
       .single();
 
     if (!worker) {
-      setMessage("Khong tim thay ho so tho.");
+      setMessage("Không tìm thấy hồ sơ thợ.");
       setSaving(false);
       return;
     }
@@ -53,7 +53,7 @@ export default function NewInventoryProductPage() {
       .insert(buildInventoryProductPayload(values, worker.id));
 
     if (error) {
-      setMessage(error.code === "23505" ? "Ma san pham nay da ton tai trong kho." : error.message);
+      setMessage(error.code === "23505" ? "Mã sản phẩm này đã tồn tại trong kho." : error.message);
       setSaving(false);
       return;
     }
@@ -64,11 +64,11 @@ export default function NewInventoryProductPage() {
 
   return (
     <InventoryProductForm
-      title="Them san pham"
-      description="Tao san pham kho rieng cua tho de theo doi gia nhap, gia ban, ton kho va bao hanh mac dinh."
+      title="Thêm sản phẩm"
+      description="Tạo sản phẩm kho riêng của thợ để theo dõi giá nhập, giá bán, tồn kho và bảo hành mặc định."
       values={values}
       saving={saving}
-      submitLabel="Them san pham"
+      submitLabel="Thêm sản phẩm"
       message={message}
       onChange={setValues}
       onSubmit={handleSubmit}

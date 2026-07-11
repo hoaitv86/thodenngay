@@ -30,7 +30,7 @@ export default function EditInventoryProductPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMessage("Ban chua dang nhap.");
+      setMessage("Bạn chưa đăng nhập.");
       setLoading(false);
       return;
     }
@@ -42,7 +42,7 @@ export default function EditInventoryProductPage() {
       .single();
 
     if (!worker) {
-      setMessage("Khong tim thay ho so tho.");
+      setMessage("Không tìm thấy hồ sơ thợ.");
       setLoading(false);
       return;
     }
@@ -55,7 +55,7 @@ export default function EditInventoryProductPage() {
       .single();
 
     if (error || !data) {
-      setMessage(error?.message || "Khong tim thay san pham.");
+      setMessage(error?.message || "Không tìm thấy sản phẩm.");
     } else {
       setWorkerId(worker.id);
       setValues(productToFormValues(data as InventoryProduct));
@@ -86,7 +86,7 @@ export default function EditInventoryProductPage() {
       .eq("id", id);
 
     if (error) {
-      setMessage(error.code === "23505" ? "Ma san pham nay da ton tai trong kho." : error.message);
+      setMessage(error.code === "23505" ? "Mã sản phẩm này đã tồn tại trong kho." : error.message);
       setSaving(false);
       return;
     }
@@ -105,11 +105,11 @@ export default function EditInventoryProductPage() {
 
   return (
     <InventoryProductForm
-      title="Sua san pham"
-      description="Cap nhat thong tin san pham kho. Thay doi nay chi anh huong du lieu kho rieng."
+      title="Sửa sản phẩm"
+      description="Cập nhật thông tin sản phẩm kho. Thay đổi này chỉ ảnh hưởng dữ liệu kho riêng."
       values={values}
       saving={saving}
-      submitLabel="Luu thay doi"
+      submitLabel="Lưu thay đổi"
       message={message}
       onChange={setValues}
       onSubmit={handleSubmit}

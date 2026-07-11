@@ -45,15 +45,29 @@ export const emptyInventoryProductForm: InventoryProductFormValues = {
 };
 
 export const inventoryCategorySuggestions = [
-  "Vat tu dien",
-  "Vat tu nuoc",
-  "Thiet bi mang",
-  "Linh kien dien lanh",
-  "Phu kien lap dat",
-  "Dung cu thi cong",
+  "Vật tư điện",
+  "Vật tư nước",
+  "Thiết bị mạng",
+  "Linh kiện điện lạnh",
+  "Phụ kiện lắp đặt",
+  "Dụng cụ thi công",
 ];
 
-export const inventoryUnitSuggestions = ["cai", "bo", "met", "cuon", "hop", "kg", "lit"];
+export const inventoryUnitSuggestions = ["cái", "bộ", "mét", "cuộn", "hộp", "kg", "lít"];
+
+export const missingWorkerInventorySchemaMessage =
+  "Kho hàng và bán hàng chưa được khởi tạo trên database. Vui lòng chạy migration kho/bán hàng trước khi sử dụng.";
+
+export function isMissingWorkerInventorySchemaError(error: { code?: string; message?: string } | null | undefined) {
+  const message = error?.message || "";
+  return (
+    error?.code === "PGRST205" ||
+    (
+      /worker_inventory_products|worker_sales_orders|worker_sales_order_items/.test(message) &&
+      /schema cache|Could not find|does not exist/i.test(message)
+    )
+  );
+}
 
 export const inventoryCurrencyFormatter = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -99,22 +113,22 @@ export function buildInventoryProductPayload(values: InventoryProductFormValues,
 }
 
 export function validateInventoryProduct(values: InventoryProductFormValues) {
-  if (!values.name.trim()) return "Vui long nhap ten san pham.";
-  if (!values.sku.trim()) return "Vui long nhap ma san pham.";
-  if (!values.category.trim()) return "Vui long nhap danh muc.";
-  if (!values.unit.trim()) return "Vui long nhap don vi tinh.";
+  if (!values.name.trim()) return "Vui lòng nhập tên sản phẩm.";
+  if (!values.sku.trim()) return "Vui lòng nhập mã sản phẩm.";
+  if (!values.category.trim()) return "Vui lòng nhập danh mục.";
+  if (!values.unit.trim()) return "Vui lòng nhập đơn vị tính.";
 
   const numericFields = [
-    ["Gia nhap", values.purchasePrice],
-    ["Gia ban mac dinh", values.defaultSalePrice],
-    ["So luong ton", values.stockQuantity],
-    ["Thoi gian bao hanh", values.warrantyMonths],
+    ["Giá nhập", values.purchasePrice],
+    ["Giá bán mặc định", values.defaultSalePrice],
+    ["Số lượng tồn", values.stockQuantity],
+    ["Thời gian bảo hành", values.warrantyMonths],
   ] as const;
 
   for (const [label, value] of numericFields) {
     const parsed = Number(value || 0);
     if (!Number.isFinite(parsed) || parsed < 0) {
-      return `${label} phai la so khong am.`;
+      return `${label} phải là số không âm.`;
     }
   }
 

@@ -6,7 +6,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { InventoryProduct } from "@/lib/worker-inventory";
+import {
+  isMissingWorkerInventorySchemaError,
+  missingWorkerInventorySchemaMessage,
+  type InventoryProduct,
+} from "@/lib/worker-inventory";
 import {
   buildSalesRpcItems,
   createEmptySalesDraftItem,
@@ -61,7 +65,7 @@ export default function NewWorkerSalesOrderPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMessage("Ban chua dang nhap.");
+      setMessage("Bạn chưa đăng nhập.");
       setLoading(false);
       return;
     }
@@ -73,7 +77,7 @@ export default function NewWorkerSalesOrderPage() {
       .single();
 
     if (!worker) {
-      setMessage("Khong tim thay ho so tho.");
+      setMessage("Không tìm thấy hồ sơ thợ.");
       setLoading(false);
       return;
     }
@@ -93,14 +97,16 @@ export default function NewWorkerSalesOrderPage() {
     ]);
 
     if (productsResult.error) {
-      setMessage("Khong the tai kho hang: " + productsResult.error.message);
+      setMessage(isMissingWorkerInventorySchemaError(productsResult.error)
+        ? missingWorkerInventorySchemaMessage
+        : "Không thể tải kho hàng: " + productsResult.error.message);
       setProducts([]);
     } else {
       setProducts((productsResult.data || []) as InventoryProduct[]);
     }
 
     if (jobsResult.error) {
-      setMessage("Khong the tai danh sach khach hang: " + jobsResult.error.message);
+      setMessage("Không thể tải danh sách khách hàng: " + jobsResult.error.message);
       setCustomers([]);
     } else {
       const customerMap = new Map<string, WorkerSalesCustomer>();
@@ -110,7 +116,7 @@ export default function NewWorkerSalesOrderPage() {
         if (!customerMap.has(id)) {
           customerMap.set(id, {
             id,
-            name: profile?.full_name || "Khach hang",
+            name: profile?.full_name || "Khách hàng",
             phone: profile?.phone,
             address: profile?.address || job.address,
           });
@@ -196,15 +202,15 @@ export default function NewWorkerSalesOrderPage() {
     <form onSubmit={submitOrder} className="min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in lg:p-6">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase text-primary">Ban hang</p>
-          <h1 className="text-2xl font-extrabold text-on-surface">Tao don ban</h1>
+          <p className="text-xs font-bold uppercase text-primary">Bán hàng</p>
+          <h1 className="text-2xl font-extrabold text-on-surface">Tạo đơn bán</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
-            Chon khach hang, chon san pham tu kho, nhap so luong va gia ban thuc te. Khi luu, he thong se tu dong tru ton kho.
+            Chọn khách hàng, chọn sản phẩm từ kho, nhập số lượng và giá bán thực tế. Khi lưu, hệ thống sẽ tự động trừ tồn kho.
           </p>
         </div>
         <Link href="/worker/sales" className="btn-outline !w-auto !px-4">
           <X size={18} />
-          Huy
+          Hủy
         </Link>
       </header>
 
@@ -218,9 +224,9 @@ export default function NewWorkerSalesOrderPage() {
         <section className="space-y-4">
           <div className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Khach hang</span>
+              <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Khách hàng</span>
               <select required value={customerId} onChange={event => setCustomerId(event.target.value)} className="input-field">
-                <option value="">Chon khach hang da phuc vu</option>
+                <option value="">Chọn khách hàng đã phục vụ</option>
                 {customers.map(customer => (
                   <option key={customer.id} value={customer.id}>
                     {customer.name}{customer.phone ? ` - ${customer.phone}` : ""}
@@ -229,25 +235,25 @@ export default function NewWorkerSalesOrderPage() {
               </select>
             </label>
             {customers.length === 0 && (
-              <p className="mt-2 text-sm text-error">Chua co khach hang nao trong danh sach phuc vu cua tho.</p>
+              <p className="mt-2 text-sm text-error">Chưa có khách hàng nào trong danh sách phục vụ của thợ.</p>
             )}
           </div>
 
           <div className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="font-extrabold text-on-surface">San pham ban</h2>
-                <p className="text-sm text-on-surface-variant">Co the sua gia ban cho tung dong hang neu can.</p>
+                <h2 className="font-extrabold text-on-surface">Sản phẩm bán</h2>
+                <p className="text-sm text-on-surface-variant">Có thể sửa giá bán cho từng dòng hàng nếu cần.</p>
               </div>
               <button type="button" onClick={addItem} className="btn-outline !w-auto !px-3">
                 <Plus size={18} />
-                Them dong
+                Thêm dòng
               </button>
             </div>
 
             {products.length === 0 ? (
               <div className="rounded-lg border border-dashed border-outline-variant p-8 text-center text-sm text-on-surface-variant">
-                Kho hang chua co san pham con ton de ban.
+                Kho hàng chưa có sản phẩm còn tồn để bán.
               </div>
             ) : (
               <div className="space-y-3">
@@ -257,32 +263,32 @@ export default function NewWorkerSalesOrderPage() {
                     <div key={item.draftId} className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
                       <div className="grid gap-3 lg:grid-cols-[1fr_120px_150px_44px] lg:items-end">
                         <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">San pham</span>
+                          <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Sản phẩm</span>
                           <select required value={item.productId} onChange={event => updateItem(item.draftId, { productId: event.target.value })} className="input-field">
-                            <option value="">Chon san pham</option>
+                            <option value="">Chọn sản phẩm</option>
                             {products.map(productOption => (
                               <option key={productOption.id} value={productOption.id}>
-                                {productOption.name} - ton {productOption.stock_quantity} {productOption.unit}{productOption.is_recurring_billgo ? " - thu dinh ky" : ""}
+                                {productOption.name} - tồn {productOption.stock_quantity} {productOption.unit}{productOption.is_recurring_billgo ? " - thu định kỳ" : ""}
                               </option>
                             ))}
                           </select>
                         </label>
                         <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">So luong</span>
+                          <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Số lượng</span>
                           <input required min="1" max={product?.stock_quantity || undefined} step="1" type="number" value={item.quantity} onChange={event => updateItem(item.draftId, { quantity: event.target.value })} className="input-field" />
                         </label>
                         <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Gia ban</span>
+                          <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Giá bán</span>
                           <input required min="0" type="number" value={item.unitPrice} onChange={event => updateItem(item.draftId, { unitPrice: event.target.value })} className="input-field" />
                         </label>
-                        <button type="button" onClick={() => removeItem(item.draftId)} disabled={items.length === 1} className="flex h-11 w-11 items-center justify-center rounded-lg border border-error/25 text-error transition-colors hover:bg-error-container disabled:opacity-40" title="Xoa dong">
+                        <button type="button" onClick={() => removeItem(item.draftId)} disabled={items.length === 1} className="flex h-11 w-11 items-center justify-center rounded-lg border border-error/25 text-error transition-colors hover:bg-error-container disabled:opacity-40" title="Xóa dòng">
                           <Trash2 size={18} />
                         </button>
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                         <p className="text-on-surface-variant">
-                          {product ? `${product.sku} · ${product.category} · Ton ${product.stock_quantity} ${product.unit}` : "Chua chon san pham"}
+                          {product ? `${product.sku} · ${product.category} · Tồn ${product.stock_quantity} ${product.unit}` : "Chưa chọn sản phẩm"}
                         </p>
                         <p className="font-extrabold text-on-surface">{formatSalesCurrency(getDraftLineTotal(item))}</p>
                       </div>
@@ -294,8 +300,8 @@ export default function NewWorkerSalesOrderPage() {
           </div>
 
           <label className="block rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
-            <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Ghi chu</span>
-            <textarea value={note} onChange={event => setNote(event.target.value)} className="input-field min-h-24 resize-y" placeholder="Ghi chu ve don ban, giao hang, thanh toan..." />
+            <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Ghi chú</span>
+            <textarea value={note} onChange={event => setNote(event.target.value)} className="input-field min-h-24 resize-y" placeholder="Ghi chú về đơn bán, giao hàng, thanh toán..." />
           </label>
 
           {hasRecurringProducts && (
@@ -328,24 +334,24 @@ export default function NewWorkerSalesOrderPage() {
         </section>
 
         <aside className="h-fit rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm lg:sticky lg:top-24">
-          <p className="text-xs font-bold uppercase text-on-surface-variant">Tong tien</p>
+          <p className="text-xs font-bold uppercase text-on-surface-variant">Tổng tiền</p>
           <p className="mt-2 text-3xl font-extrabold text-primary">{formatSalesCurrency(totalAmount)}</p>
           <div className="mt-4 space-y-2 text-sm text-on-surface-variant">
             <div className="flex justify-between gap-3">
-              <span>So dong hang</span>
+              <span>Số dòng hàng</span>
               <strong className="text-on-surface">{items.length}</strong>
             </div>
             <div className="flex justify-between gap-3">
-              <span>Tong so luong</span>
+              <span>Tổng số lượng</span>
               <strong className="text-on-surface">{items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}</strong>
             </div>
           </div>
           <button disabled={saving || products.length === 0 || customers.length === 0} className="btn-primary mt-5 w-full">
             <Save size={18} />
-            {saving ? "Dang luu..." : "Luu don va tru ton"}
+            {saving ? "Đang lưu..." : "Lưu đơn và trừ tồn"}
           </button>
           <p className="mt-3 text-xs leading-5 text-on-surface-variant">
-            Don ban se duoc luu vao lich su ban hang, tu dong tao bao hanh neu co va co the tao lich BillGo cho san pham dinh ky.
+            Đơn bán sẽ được lưu vào lịch sử bán hàng, tự động tạo bảo hành nếu có và có thể tạo lịch BillGo cho sản phẩm định kỳ.
           </p>
         </aside>
       </div>

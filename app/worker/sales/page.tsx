@@ -5,6 +5,10 @@ import Link from "next/link";
 import { Package, Plus, Search, ShoppingCart } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  isMissingWorkerInventorySchemaError,
+  missingWorkerInventorySchemaMessage,
+} from "@/lib/worker-inventory";
+import {
   formatSalesCurrency,
   getWarrantyStatusLabel,
   type WorkerSalesOrder,
@@ -35,7 +39,7 @@ export default function WorkerSalesPage() {
       .single();
 
     if (!worker) {
-      setMessage("Khong tim thay ho so tho.");
+      setMessage("Không tìm thấy hồ sơ thợ.");
       setOrders([]);
       setLoading(false);
       return;
@@ -60,7 +64,9 @@ export default function WorkerSalesPage() {
       .order("sold_at", { ascending: false });
 
     if (error) {
-      setMessage("Khong the tai lich su ban hang: " + error.message);
+      setMessage(isMissingWorkerInventorySchemaError(error)
+        ? missingWorkerInventorySchemaMessage
+        : "Không thể tải lịch sử bán hàng: " + error.message);
       setOrders([]);
     } else {
       setOrders((data || []) as WorkerSalesOrder[]);
@@ -105,23 +111,23 @@ export default function WorkerSalesPage() {
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in lg:p-6">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase text-primary">Ban hang</p>
-          <h1 className="text-2xl font-extrabold text-on-surface">Lich su don ban</h1>
+          <p className="text-xs font-bold uppercase text-primary">Bán hàng</p>
+          <h1 className="text-2xl font-extrabold text-on-surface">Lịch sử đơn bán</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
-            Theo doi cac don ban tu kho hang rieng. Module nay chua tich hop BillGo va Bao hanh.
+            Theo dõi các đơn bán từ kho hàng riêng. Module này chưa tích hợp BillGo và bảo hành.
           </p>
         </div>
         <Link href="/worker/sales/new" className="btn-primary !w-auto !px-4">
           <Plus size={18} />
-          Tao don ban
+          Tạo đơn bán
         </Link>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-3">
         {[
-          ["Don ban", String(stats.totalOrders), ShoppingCart],
-          ["San pham da ban", String(stats.totalItems), Package],
-          ["Doanh thu ban hang", formatSalesCurrency(stats.totalRevenue), ShoppingCart],
+          ["Đơn bán", String(stats.totalOrders), ShoppingCart],
+          ["Sản phẩm đã bán", String(stats.totalItems), Package],
+          ["Doanh thu bán hàng", formatSalesCurrency(stats.totalRevenue), ShoppingCart],
         ].map(([label, value, Icon]) => (
           <div key={String(label)} className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
             <Icon size={18} className="text-primary" />
@@ -137,7 +143,7 @@ export default function WorkerSalesPage() {
           value={query}
           onChange={event => setQuery(event.target.value)}
           className="input-field !pl-10"
-          placeholder="Tim ma don, khach hang, san pham..."
+          placeholder="Tìm mã đơn, khách hàng, sản phẩm..."
         />
       </label>
 
@@ -156,8 +162,8 @@ export default function WorkerSalesPage() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed text-primary">
             <ShoppingCart size={28} />
           </div>
-          <p className="mt-4 font-bold text-on-surface">Chua co don ban phu hop</p>
-          <p className="mt-1 text-sm text-on-surface-variant">Tao don ban dau tien tu san pham trong kho hang.</p>
+          <p className="mt-4 font-bold text-on-surface">Chưa có đơn bán phù hợp</p>
+          <p className="mt-1 text-sm text-on-surface-variant">Tạo đơn bán đầu tiên từ sản phẩm trong kho hàng.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -167,11 +173,11 @@ export default function WorkerSalesPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-mono text-sm font-extrabold text-primary-container">{order.sale_code}</h2>
-                    <span className="rounded-full bg-success-container px-2.5 py-1 text-xs font-bold text-success">Da luu</span>
+                    <span className="rounded-full bg-success-container px-2.5 py-1 text-xs font-bold text-success">Đã lưu</span>
                   </div>
-                  <p className="mt-2 font-bold text-on-surface">{order.customer?.full_name || "Khach hang"}</p>
+                  <p className="mt-2 font-bold text-on-surface">{order.customer?.full_name || "Khách hàng"}</p>
                   <p className="text-sm text-on-surface-variant">
-                    {order.customer?.phone || "Chua co so dien thoai"} · {new Date(order.sold_at).toLocaleString("vi-VN")}
+                    {order.customer?.phone || "Chưa có số điện thoại"} · {new Date(order.sold_at).toLocaleString("vi-VN")}
                   </p>
                 </div>
                 <p className="text-xl font-extrabold text-primary">{formatSalesCurrency(order.total_amount)}</p>
@@ -196,7 +202,7 @@ export default function WorkerSalesPage() {
 
               {order.warranties && order.warranties.length > 0 && (
                 <div className="mt-3 rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
-                  <p className="text-xs font-bold uppercase text-on-surface-variant">Bao hanh</p>
+                  <p className="text-xs font-bold uppercase text-on-surface-variant">Bảo hành</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {order.warranties.map(warranty => {
                       const label = getWarrantyStatusLabel(warranty);

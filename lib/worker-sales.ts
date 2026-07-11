@@ -95,25 +95,25 @@ export function getWarrantyStatusLabel(warranty: Pick<WorkerProductWarranty, "st
 }
 
 export function validateSalesDraft(customerId: string, items: SalesDraftItem[], products: InventoryProduct[]) {
-  if (!customerId) return "Vui long chon khach hang.";
-  if (items.length === 0) return "Vui long chon it nhat mot san pham.";
+  if (!customerId) return "Vui lòng chọn khách hàng.";
+  if (items.length === 0) return "Vui lòng chọn ít nhất một sản phẩm.";
 
   const selectedProductIds = new Set<string>();
 
   for (const item of items) {
-    if (!item.productId) return "Moi dong hang can chon san pham.";
-    if (selectedProductIds.has(item.productId)) return "Moi san pham chi nen xuat hien mot lan trong don.";
+    if (!item.productId) return "Mỗi dòng hàng cần chọn sản phẩm.";
+    if (selectedProductIds.has(item.productId)) return "Mỗi sản phẩm chỉ nên xuất hiện một lần trong đơn.";
     selectedProductIds.add(item.productId);
 
     const product = getDraftProduct(item, products);
-    if (!product) return "San pham khong ton tai trong kho.";
+    if (!product) return "Sản phẩm không tồn tại trong kho.";
 
     const quantity = Number(item.quantity || 0);
     const unitPrice = Number(item.unitPrice || 0);
 
-    if (!Number.isInteger(quantity) || quantity <= 0) return "So luong phai la so nguyen lon hon 0.";
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) return "Gia ban phai la so khong am.";
-    if (quantity > Number(product.stock_quantity || 0)) return `${product.name} khong du ton kho.`;
+    if (!Number.isInteger(quantity) || quantity <= 0) return "Số lượng phải là số nguyên lớn hơn 0.";
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) return "Giá bán phải là số không âm.";
+    if (quantity > Number(product.stock_quantity || 0)) return `${product.name} không đủ tồn kho.`;
   }
 
   return "";

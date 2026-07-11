@@ -39,7 +39,7 @@ import { Worker } from "@/lib/types";
 import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import PendingApproval from "./pending-approval";
-import type { InventoryProduct } from "@/lib/worker-inventory";
+import { isMissingWorkerInventorySchemaError, type InventoryProduct } from "@/lib/worker-inventory";
 import {
   buildSalesRpcItems,
   validateSalesDraft,
@@ -534,8 +534,8 @@ export default function WorkerDashboard() {
         .order("name", { ascending: true });
 
       if (inventoryError) {
-        if (!isBackground) {
-          showToast("Khong the tai kho hang: " + inventoryError.message, "error");
+        if (!isMissingWorkerInventorySchemaError(inventoryError) && !isBackground) {
+          showToast("Không thể tải kho hàng: " + inventoryError.message, "error");
         }
         setInventoryProducts([]);
       } else {
@@ -1407,7 +1407,7 @@ export default function WorkerDashboard() {
         });
 
         if (completeWithMaterialsError) {
-          throw new Error("Khong the hoan thanh cong viec voi vat tu: " + completeWithMaterialsError.message);
+          throw new Error("Không thể hoàn thành công việc với vật tư: " + completeWithMaterialsError.message);
         }
       }
 
@@ -2087,7 +2087,7 @@ export default function WorkerDashboard() {
                           <p className="mt-1 text-xs text-on-surface-variant">{item.customer?.address || "Chưa có địa chỉ"}</p>
                         </div>
                         <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
-                          Han: {item.due_date || item.subscription?.next_due_date || "Chua co"}
+                          Hạn: {item.due_date || item.subscription?.next_due_date || "Chưa có"}
                         </div>
                       </div>
 

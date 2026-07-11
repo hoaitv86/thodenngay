@@ -26,7 +26,7 @@ export default function DeleteInventoryProductPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMessage("Ban chua dang nhap.");
+      setMessage("Bạn chưa đăng nhập.");
       setLoading(false);
       return;
     }
@@ -38,7 +38,7 @@ export default function DeleteInventoryProductPage() {
       .single();
 
     if (!worker) {
-      setMessage("Khong tim thay ho so tho.");
+      setMessage("Không tìm thấy hồ sơ thợ.");
       setLoading(false);
       return;
     }
@@ -51,7 +51,7 @@ export default function DeleteInventoryProductPage() {
       .single();
 
     if (error || !data) {
-      setMessage(error?.message || "Khong tim thay san pham.");
+      setMessage(error?.message || "Không tìm thấy sản phẩm.");
     } else {
       setWorkerId(worker.id);
       setProduct(data as InventoryProduct);
@@ -101,10 +101,10 @@ export default function DeleteInventoryProductPage() {
             <AlertTriangle size={24} />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase text-error">Xoa san pham</p>
-            <h1 className="mt-1 text-2xl font-extrabold text-on-surface">Xac nhan xoa san pham</h1>
+            <p className="text-xs font-bold uppercase text-error">Xóa sản phẩm</p>
+            <h1 className="mt-1 text-2xl font-extrabold text-on-surface">Xác nhận xóa sản phẩm</h1>
             <p className="mt-2 text-sm leading-6 text-on-surface-variant">
-              San pham se bi xoa khoi kho rieng cua tho. Thao tac nay khong anh huong cong viec, BillGo hay bao hanh.
+              Sản phẩm sẽ bị xóa khỏi kho riêng của thợ. Thao tác này không ảnh hưởng công việc, BillGo hay bảo hành.
             </p>
           </div>
         </div>
@@ -121,19 +121,19 @@ export default function DeleteInventoryProductPage() {
             <p className="mt-1 font-mono text-xs font-bold text-primary-container">{product.sku}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
-                <p className="text-xs font-bold uppercase text-on-surface-variant">Danh muc</p>
+                <p className="text-xs font-bold uppercase text-on-surface-variant">Danh mục</p>
                 <p className="font-bold text-on-surface">{product.category}</p>
               </div>
               <div>
-                <p className="text-xs font-bold uppercase text-on-surface-variant">Ton kho</p>
+                <p className="text-xs font-bold uppercase text-on-surface-variant">Tồn kho</p>
                 <p className="font-bold text-on-surface">{product.stock_quantity} {product.unit}</p>
               </div>
               <div>
-                <p className="text-xs font-bold uppercase text-on-surface-variant">Gia nhap</p>
+                <p className="text-xs font-bold uppercase text-on-surface-variant">Giá nhập</p>
                 <p className="font-bold text-on-surface">{formatInventoryCurrency(product.purchase_price)}</p>
               </div>
               <div>
-                <p className="text-xs font-bold uppercase text-on-surface-variant">Gia ban</p>
+                <p className="text-xs font-bold uppercase text-on-surface-variant">Giá bán</p>
                 <p className="font-bold text-on-surface">{formatInventoryCurrency(product.default_sale_price)}</p>
               </div>
             </div>
@@ -141,10 +141,10 @@ export default function DeleteInventoryProductPage() {
         )}
 
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Link href="/worker/inventory" className="btn-outline">Huy</Link>
+          <Link href="/worker/inventory" className="btn-outline">Hủy</Link>
           <button type="button" onClick={() => void deleteProduct()} disabled={!product || deleting} className="btn-primary !bg-error hover:!bg-error">
             <Trash2 size={18} />
-            {deleting ? "Dang xoa..." : "Xoa san pham"}
+            {deleting ? "Đang xóa..." : "Xóa sản phẩm"}
           </button>
         </div>
       </div>
