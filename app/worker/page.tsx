@@ -198,6 +198,8 @@ type ToastState = {
   customerPassword?: string | null;
 };
 
+type CompletionPaymentStatus = "paid" | "partial" | "unpaid";
+
 type WorkerWithProfile = Worker & {
   user?: {
     full_name?: string | null;
@@ -439,6 +441,10 @@ export default function WorkerDashboard() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentCycle, setPaymentCycle] = useState<BillGoCycle>("monthly");
   const [paymentNote, setPaymentNote] = useState("");
+  const [completionPaymentStatus, setCompletionPaymentStatus] = useState<CompletionPaymentStatus>("paid");
+  const [completionPaymentAmount, setCompletionPaymentAmount] = useState("");
+  const [completionPaymentMethod, setCompletionPaymentMethod] = useState("cash");
+  const [completionPaymentNote, setCompletionPaymentNote] = useState("");
   const billGoRows = useMemo(
     () => workerBillGoReceivables.map(item => ({ item, summary: getBillGoReceivableSummary(item) })),
     [workerBillGoReceivables]
@@ -862,46 +868,6 @@ export default function WorkerDashboard() {
     showToast("Đã cập nhật chi tiết kỹ thuật.", "success");
   };
 
-  const handleCollectPayment = async (job: WorkerJob) => {
-    if (collectingPaymentJobId) return;
-    const parsedAmount = Number(paymentAmount);
-
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      showToast("So tien thu phai lon hon 0.", "error");
-      return;
-    }
-
-    setCollectingPaymentJobId(job.id);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from("payments")
-      .insert({
-        job_id: job.id,
-        amount: parsedAmount,
-        method: paymentMethod,
-        status: "paid",
-        paid_at: new Date().toISOString(),
-        collected_by: user?.id || null,
-        note: paymentNote.trim() || null,
-      })
-      .select("id, amount, method, status, paid_at, note")
-      .single();
-
-    if (error) {
-      showToast("Khong the ghi nhan thanh toan: " + error.message, "error");
-      setCollectingPaymentJobId(null);
-      return;
-    }
-
-    setActiveJobs(prev => prev.map(item =>
-      item.id === job.id ? { ...item, payments: [...(item.payments || []), data] } : item
-    ));
-    setPaymentAmount("");
-    setPaymentNote("");
-    showToast("Da ghi nhan thanh toan BillGo.", "success");
-    setCollectingPaymentJobId(null);
-  };
-
   const handleCollectBillGoReceivable = async (receivable: WorkerBillGoReceivable) => {
     if (collectingPaymentJobId) return;
     const parsedAmount = toMoneyNumber(paymentAmount);
@@ -1101,6 +1067,10 @@ export default function WorkerDashboard() {
   const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
     setActiveJobToComplete(job);
     setAddToBillGo(false);
+    setCompletionPaymentStatus("paid");
+    setCompletionPaymentAmount("");
+    setCompletionPaymentMethod("cash");
+    setCompletionPaymentNote("");
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
@@ -1163,6 +1133,13 @@ export default function WorkerDashboard() {
     const unitPrice = Number(item.unitPrice) || 0;
     return sum + quantity * unitPrice;
   }, 0);
+  const completionPaidAmount =
+    completionPaymentStatus === "paid"
+      ? completionTotal
+      : completionPaymentStatus === "unpaid"
+        ? 0
+        : toMoneyNumber(completionPaymentAmount);
+  const completionRemainingAmount = Math.max(completionTotal - completionPaidAmount, 0);
 
   const openCancelRequestModal = (job: WorkerJob) => {
     setJobToCancel(job);
@@ -1353,6 +1330,15 @@ export default function WorkerDashboard() {
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
     const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const paidAmount =
+      completionPaymentStatus === "paid"
+        ? finalAmount
+        : completionPaymentStatus === "unpaid"
+          ? 0
+          : toMoneyNumber(completionPaymentAmount);
+    const remainingAmount = Math.max(finalAmount - paidAmount, 0);
+    const existingPaidAmount = (job.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const amountToRecord = Math.max(paidAmount - existingPaidAmount, 0);
     const maxWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
     const materialDraftItems: SalesDraftItem[] = cleanedItems
       .filter(item => item.source === "inventory")
@@ -1362,6 +1348,19 @@ export default function WorkerDashboard() {
         quantity: String(item.quantity),
         unitPrice: String(item.unitPrice),
       }));
+
+    if (paidAmount < 0) {
+      showToast("Số tiền đã thu không được âm.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (paidAmount > finalAmount) {
+      showToast("Số tiền đã thu không được lớn hơn tổng tiền hóa đơn.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
     const materialValidation = materialDraftItems.length > 0
       ? validateSalesDraft(job.customer_id || "", materialDraftItems, inventoryProducts)
       : "";
@@ -1421,7 +1420,19 @@ export default function WorkerDashboard() {
           completion_items: cleanedItems,
           final_amount: finalAmount,
           warranty_days: maxWarrantyDays,
-          warranty_note: warrantyNote.trim()
+          warranty_note: warrantyNote.trim(),
+          workflow_data: {
+            ...(job.workflow_data || {}),
+            payment: {
+              status: completionPaymentStatus,
+              totalAmount: finalAmount,
+              paidAmount,
+              remainingAmount,
+              method: completionPaymentMethod,
+              note: completionPaymentNote.trim() || null,
+              recordedAt: new Date().toISOString(),
+            },
+          },
         })
         .eq('id', job.id)
         .select();
@@ -1438,12 +1449,31 @@ export default function WorkerDashboard() {
         await ensureBillGoFromWorkflow(job);
       }
 
+      if (amountToRecord > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error: paymentError } = await supabase
+          .from("payments")
+          .insert({
+            job_id: job.id,
+            amount: amountToRecord,
+            method: completionPaymentMethod,
+            status: "paid",
+            paid_at: new Date().toISOString(),
+            collected_by: user?.id || null,
+            note: completionPaymentNote.trim() || null,
+          });
+
+        if (paymentError) {
+          throw new Error("Công việc đã hoàn thành nhưng chưa ghi được thanh toán: " + paymentError.message);
+        }
+      }
+
       // 3. Optimistic UI update
       setActiveJobs(prev => prev.filter(j => j.id !== job.id));
       setWorkerStats(prev => ({
         ...prev,
         jobsDone: prev.jobsDone + 1,
-        income: prev.income + finalAmount
+        income: prev.income + amountToRecord
       }));
 
       showToast("Đã hoàn thành công việc thành công!", "success");
@@ -1451,6 +1481,8 @@ export default function WorkerDashboard() {
       setSelectedFiles([]);
       setPreviewUrls([]);
       setCompletionItems([]);
+      setCompletionPaymentAmount("");
+      setCompletionPaymentNote("");
       setAddToBillGo(false);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
@@ -2265,69 +2297,12 @@ export default function WorkerDashboard() {
                 </button>
               </div>
 
-              <div className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold uppercase text-primary-container">Thanh toan cong viec</p>
-                    <p className="mt-1 text-sm font-extrabold text-on-surface">Ghi nhan tien khach da tra cho job nay.</p>
-                  </div>
-                  <span className="rounded-full bg-primary-fixed px-3 py-1.5 text-xs font-extrabold text-primary-container">
-                    Thu rieng cho job
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_150px]">
-                  <input
-                    className="input-field !py-2 text-sm"
-                    type="number"
-                    min="0"
-                    value={paymentAmount}
-                    onChange={event => setPaymentAmount(event.target.value)}
-                    placeholder="Số tiền thu"
-                    disabled={collectingPaymentJobId === job.id}
-                  />
-                  <select
-                    className="input-field !py-2 text-sm"
-                    value={paymentMethod}
-                    onChange={event => setPaymentMethod(event.target.value)}
-                    disabled={collectingPaymentJobId === job.id}
-                  >
-                    <option value="cash">Tiền mặt</option>
-                    <option value="transfer">Chuyển khoản</option>
-                    <option value="card">Thẻ</option>
-                    <option value="momo">MoMo</option>
-                    <option value="zalopay">ZaloPay</option>
-                    <option value="other">Khác</option>
-                  </select>
-                  <input
-                    className="input-field !py-2 text-sm sm:col-span-2"
-                    value={paymentNote}
-                    onChange={event => setPaymentNote(event.target.value)}
-                    placeholder="Ghi chú thanh toán"
-                    disabled={collectingPaymentJobId === job.id}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleCollectPayment(job)}
-                    disabled={collectingPaymentJobId === job.id}
-                    className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white sm:col-span-2 disabled:opacity-60"
-                  >
-                    {collectingPaymentJobId === job.id ? "Đang lưu..." : "Ghi nhận thu tiền"}
-                  </button>
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   onClick={() => openCancelRequestModal(job)}
                   className="rounded-lg border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
                 >
                   Yêu cầu huỷ
-                </button>
-                <button
-                  onClick={() => triggerCompleteJob(job, true)}
-                  className="rounded-lg border border-primary-container/30 bg-primary-fixed px-5 py-3.5 text-sm font-extrabold text-primary-container transition-all hover:bg-primary hover:text-white active:scale-[0.98]"
-                >
-                  Thêm vật tư
                 </button>
                 <button
                   onClick={() => triggerCompleteJob(job)}
@@ -2354,7 +2329,7 @@ export default function WorkerDashboard() {
 
       {/* Complete Job Modal */}
       {activeJobToComplete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-fade-in-up">
             
             {/* Modal Header */}
@@ -2510,6 +2485,89 @@ export default function WorkerDashboard() {
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-bold text-on-success-container">Tổng tiền hóa đơn</span>
                     <span className="text-xl font-extrabold text-success">{formatCurrency(completionTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-4">
+                  <div className="mb-3">
+                    <label className="block text-sm font-bold text-on-surface">Thanh toán công việc</label>
+                    <p className="text-xs text-on-surface-variant">Khoản thu này chỉ áp dụng cho job hiện tại.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2 sm:col-span-2">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Trạng thái thanh toán</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { value: "paid", label: "Đã thu đủ" },
+                          { value: "partial", label: "Thu một phần" },
+                          { value: "unpaid", label: "Chưa thu" },
+                        ].map(option => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              const nextStatus = option.value as CompletionPaymentStatus;
+                              setCompletionPaymentStatus(nextStatus);
+                              if (nextStatus !== "partial") setCompletionPaymentAmount("");
+                            }}
+                            className={`min-h-11 rounded-lg border px-2 text-xs font-extrabold transition ${
+                              completionPaymentStatus === option.value
+                                ? "border-primary bg-primary text-white shadow-sm"
+                                : "border-outline-variant/40 bg-white text-on-surface-variant hover:bg-surface-container-low"
+                            }`}
+                            disabled={uploadingImages}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Số tiền đã thu</label>
+                      <input
+                        className="input-field !py-2 text-sm"
+                        type="number"
+                        min="0"
+                        max={completionTotal}
+                        step="1000"
+                        value={completionPaymentStatus === "partial" ? completionPaymentAmount : String(completionPaidAmount)}
+                        onChange={event => setCompletionPaymentAmount(event.target.value)}
+                        disabled={uploadingImages || completionPaymentStatus !== "partial"}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Số tiền còn thiếu</label>
+                      <div className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-extrabold text-error">
+                        {formatCurrency(completionRemainingAmount)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Phương thức thanh toán</label>
+                      <select
+                        className="input-field !py-2 text-sm"
+                        value={completionPaymentMethod}
+                        onChange={event => setCompletionPaymentMethod(event.target.value)}
+                        disabled={uploadingImages || completionPaymentStatus === "unpaid"}
+                      >
+                        <option value="cash">Tiền mặt</option>
+                        <option value="transfer">Chuyển khoản</option>
+                        <option value="other">Khác</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Ghi chú thanh toán</label>
+                      <input
+                        className="input-field !py-2 text-sm"
+                        value={completionPaymentNote}
+                        onChange={event => setCompletionPaymentNote(event.target.value)}
+                        placeholder="Không bắt buộc"
+                        disabled={uploadingImages}
+                      />
+                    </div>
                   </div>
                 </div>
 
