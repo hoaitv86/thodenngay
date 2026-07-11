@@ -234,11 +234,11 @@ export default function WorkerLayout({
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
           {sidebarItems.map((item) => renderNavLink(item, true))}
         </nav>
 
-        <div className="border-t border-outline-variant/20 p-3">
+        <div className="mt-auto border-t border-outline-variant/20 p-3">
           <button
             onClick={handleLogout}
             title="Đăng xuất"
