@@ -1,5 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
+import { unstable_cache } from "next/cache";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { ReactElement } from "react";
 import {
   LogoIcon,
@@ -21,12 +23,11 @@ import {
   ArrowRightIcon,
   ChevronRightIcon,
 } from "./components/icons";
-import { createClient } from "@/lib/supabase/server";
-import { getSystemSettings } from "@/lib/settings-server";
+import { DEFAULT_SETTINGS, type SettingsData } from "@/lib/settings-types";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 type IconComponent = (props: { size?: number; className?: string; strokeWidth?: number }) => ReactElement;
 
@@ -224,21 +225,76 @@ const testimonials = [
   },
 ];
 
-export default async function HomePage() {
-  const systemSettings = await getSystemSettings();
-  let dbServices = null;
-  try {
-    const supabase = await createClient();
-    const { data } = await supabase
-      .from("services")
-      .select("*")
-      .eq("is_active", true)
-      .order("name", { ascending: true });
-    dbServices = data;
-  } catch (e) {
-    console.error("Failed to fetch services in page.tsx:", e);
-  }
+type HomepageService = {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  icon?: string | null;
+  parent_service_id?: string | null;
+};
 
+const getPublicSupabase = () =>
+  createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+
+const getHomepageData = unstable_cache(
+  async (): Promise<{ systemSettings: SettingsData; dbServices: HomepageService[] }> => {
+    const supabase = getPublicSupabase();
+
+    const [settingsResult, servicesResult] = await Promise.all([
+      supabase
+        .from("system_settings")
+        .select("*")
+        .eq("id", "default")
+        .maybeSingle(),
+      supabase
+        .from("services")
+        .select("id,name,description,icon,parent_service_id,is_active")
+        .eq("is_active", true)
+        .order("name", { ascending: true }),
+    ]);
+
+    if (settingsResult.error) {
+      console.warn("Could not load homepage settings:", settingsResult.error.message);
+    }
+
+    if (servicesResult.error) {
+      console.warn("Could not load homepage services:", servicesResult.error.message);
+    }
+
+    const settings = settingsResult.data;
+
+    return {
+      systemSettings: settings
+        ? {
+            app_name: settings.app_name || DEFAULT_SETTINGS.app_name,
+            hotline: settings.hotline || DEFAULT_SETTINGS.hotline,
+            support_email: settings.support_email || DEFAULT_SETTINGS.support_email,
+            company_address: settings.company_address || DEFAULT_SETTINGS.company_address,
+            facebook_url: settings.facebook_url || DEFAULT_SETTINGS.facebook_url,
+            zalo_url: settings.zalo_url || DEFAULT_SETTINGS.zalo_url,
+            maintenance_mode: settings.maintenance_mode ?? DEFAULT_SETTINGS.maintenance_mode,
+            terms_url: settings.terms_url || DEFAULT_SETTINGS.terms_url,
+            privacy_url: settings.privacy_url || DEFAULT_SETTINGS.privacy_url,
+          }
+        : DEFAULT_SETTINGS,
+      dbServices: servicesResult.data || [],
+    };
+  },
+  ["homepage-data"],
+  { revalidate: 300 }
+);
+
+export default async function HomePage() {
+  const { systemSettings, dbServices } = await getHomepageData();
 
   const standardDbServices = dbServices && dbServices.length > 0
     ? filterStandardServiceCatalog(applyDefaultServiceParents(dbServices))
