@@ -218,6 +218,12 @@ const getDefaultScheduledAt = () => {
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 
+const formatCompactCurrency = (amount: number) => {
+  if (amount >= 1000000) return `${(amount / 1000000).toFixed(amount >= 10000000 ? 0 : 1)}tr`;
+  if (amount >= 1000) return `${Math.round(amount / 1000)}k`;
+  return `${amount || 0}`;
+};
+
 const compareServicesByName = (a: ServiceOption, b: ServiceOption) =>
   (a.name || "").localeCompare(b.name || "", "vi");
 
@@ -374,6 +380,9 @@ export default function WorkerDashboard() {
     jobsDone: 0,
     income: 0,
     rating: 0,
+    todayCustomers: 0,
+    todayIncome: 0,
+    todayRating: 0,
     monthlyCustomers: 0,
     monthlyIncome: 0,
     monthlyRating: 0,
@@ -713,6 +722,8 @@ export default function WorkerDashboard() {
 
       // 6. Calculate Real Stats
       const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const nextDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
       const { data: workerJobs } = await supabase
@@ -724,7 +735,11 @@ export default function WorkerDashboard() {
       let jobsDone = 0;
       let monthlyIncome = 0;
       const servedCustomerIds = new Set<string>();
+      const todayCustomerIds = new Set<string>();
       const monthlyCustomerIds = new Set<string>();
+      let todayIncome = 0;
+      let legacyTodayIncome = 0;
+      let hasTodayJobPayments = false;
       let legacyMonthlyIncome = 0;
       let hasMonthlyJobPayments = false;
 
@@ -732,6 +747,11 @@ export default function WorkerDashboard() {
         workerJobs.forEach(j => {
           if (j.status === 'completed' || j.status === 'done') {
             const completedDate = j.updated_at ? new Date(j.updated_at) : null;
+            const completedToday = Boolean(
+              completedDate &&
+              completedDate >= todayStart &&
+              completedDate < nextDayStart
+            );
             const completedThisMonth = Boolean(
               completedDate &&
               completedDate >= monthStart &&
@@ -740,9 +760,13 @@ export default function WorkerDashboard() {
             const customerKey = j.customer_id || j.id;
 
             servedCustomerIds.add(customerKey);
+            if (completedToday) todayCustomerIds.add(customerKey);
             if (completedThisMonth) monthlyCustomerIds.add(customerKey);
 
             income += Number(j.final_amount || j.quoted_price || 0);
+            if (completedToday) {
+              legacyTodayIncome += Number(j.final_amount || j.quoted_price || 0);
+            }
             if (completedThisMonth) {
               legacyMonthlyIncome += Number(j.final_amount || j.quoted_price || 0);
             }
@@ -750,6 +774,10 @@ export default function WorkerDashboard() {
             (j.payments || []).forEach(payment => {
               if (payment.status !== "paid" || !payment.paid_at) return;
               const paidDate = new Date(payment.paid_at);
+              if (paidDate >= todayStart && paidDate < nextDayStart) {
+                hasTodayJobPayments = true;
+                todayIncome += Number(payment.amount || 0);
+              }
               if (paidDate >= monthStart && paidDate < nextMonthStart) {
                 hasMonthlyJobPayments = true;
                 monthlyIncome += Number(payment.amount || 0);
@@ -760,7 +788,15 @@ export default function WorkerDashboard() {
       }
 
       jobsDone = servedCustomerIds.size;
+      if (!hasTodayJobPayments) todayIncome = legacyTodayIncome;
       if (!hasMonthlyJobPayments) monthlyIncome = legacyMonthlyIncome;
+
+      const { data: todayRatings } = await supabase
+        .from("ratings")
+        .select("score, created_at")
+        .eq("worker_id", workerData.id)
+        .gte("created_at", todayStart.toISOString())
+        .lt("created_at", nextDayStart.toISOString());
 
       const { data: monthlyRatings } = await supabase
         .from("ratings")
@@ -768,6 +804,10 @@ export default function WorkerDashboard() {
         .eq("worker_id", workerData.id)
         .gte("created_at", monthStart.toISOString())
         .lt("created_at", nextMonthStart.toISOString());
+
+      const todayRating = todayRatings && todayRatings.length > 0
+        ? Number((todayRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / todayRatings.length).toFixed(1))
+        : 0;
 
       const monthlyRating = monthlyRatings && monthlyRatings.length > 0
         ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
@@ -777,6 +817,9 @@ export default function WorkerDashboard() {
         jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
         income: income,
         rating: workerData.avg_rating || 0,
+        todayCustomers: todayCustomerIds.size,
+        todayIncome,
+        todayRating,
         monthlyCustomers: monthlyCustomerIds.size,
         monthlyIncome,
         monthlyRating,
@@ -1684,7 +1727,7 @@ export default function WorkerDashboard() {
           <div className="grid grid-cols-3 divide-x divide-outline-variant/30 bg-white">
             <div className="px-3 py-4 text-center">
               <div className="text-2xl font-extrabold text-on-surface sm:text-3xl">{workerStats.jobsDone}</div>
-              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Tổng khách hàng</div>
+              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Khách hàng</div>
               <div className="mt-1 text-xs font-extrabold text-primary-container">
                 Tháng này: {workerStats.monthlyCustomers}
               </div>
@@ -1696,20 +1739,42 @@ export default function WorkerDashboard() {
               </div>
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Đánh giá</div>
               <div className="mt-1 text-xs font-extrabold text-primary-container">
-                Tháng này: {workerStats.monthlyRating > 0 ? workerStats.monthlyRating : "0"}
+                Tháng này: {workerStats.monthlyRating > 0 ? workerStats.monthlyRating : "0"}★
               </div>
             </div>
             <div className="px-3 py-4 text-center">
               <div className="text-xl font-extrabold leading-9 text-primary-container sm:text-2xl">
-                {workerStats.income >= 1000000
-                  ? (workerStats.income / 1000000).toFixed(1) + "tr"
-                  : (workerStats.income / 1000).toFixed(0) + "k"}
+                {formatCompactCurrency(workerStats.income)}
               </div>
-              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Thu nhập</div>
+              <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Tổng tiền</div>
               <div className="mt-1 text-xs font-extrabold text-primary-container">
-                Tháng này: {workerStats.monthlyIncome >= 1000000
-                  ? (workerStats.monthlyIncome / 1000000).toFixed(1) + "tr"
-                  : `${Math.round(workerStats.monthlyIncome / 1000)}k`}
+                Tháng này: {formatCompactCurrency(workerStats.monthlyIncome)}
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-outline-variant/30 bg-surface-container-low px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[10px] font-extrabold uppercase text-primary-container">Hôm nay</p>
+              <p className="text-[10px] font-semibold text-on-surface-variant">
+                Cập nhật theo việc hoàn thành và thanh toán đã thu
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-white px-2.5 py-2 text-center shadow-sm">
+                <p className="text-base font-extrabold text-on-surface">{workerStats.todayCustomers}</p>
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Khách</p>
+              </div>
+              <div className="rounded-lg bg-white px-2.5 py-2 text-center shadow-sm">
+                <p className="flex items-center justify-center gap-1 text-base font-extrabold text-on-surface">
+                  {workerStats.todayRating > 0 ? workerStats.todayRating : "0"}
+                  <StarIcon size={12} className="fill-current text-warning" />
+                </p>
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Đánh giá</p>
+              </div>
+              <div className="rounded-lg bg-white px-2.5 py-2 text-center shadow-sm">
+                <p className="text-base font-extrabold text-primary-container">{formatCompactCurrency(workerStats.todayIncome)}</p>
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng tiền</p>
               </div>
             </div>
           </div>
