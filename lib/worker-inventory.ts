@@ -45,6 +45,10 @@ export const emptyInventoryProductForm: InventoryProductFormValues = {
 };
 
 export const inventoryCategorySuggestions = [
+  "Mạng internet",
+  "Camera",
+  "Máy tính",
+  "Máy in",
   "Vật tư điện",
   "Vật tư nước",
   "Thiết bị mạng",
@@ -77,6 +81,41 @@ export const inventoryCurrencyFormatter = new Intl.NumberFormat("vi-VN", {
 
 export function formatInventoryCurrency(value: number | string | null | undefined) {
   return inventoryCurrencyFormatter.format(Number(value || 0));
+}
+
+function normalizeInventoryCategory(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase("vi")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+}
+
+export function getInventoryProductCodePrefix(category: string) {
+  const normalized = normalizeInventoryCategory(category);
+  if (/internet|mang|wifi|router|network|thiet bi mang/.test(normalized)) return "NET";
+  if (/camera|cctv|dau ghi/.test(normalized)) return "CAM";
+  if (/may tinh|laptop|computer|pc|linh kien may tinh/.test(normalized)) return "PC";
+  if (/may in|printer/.test(normalized)) return "PRI";
+  return "SP";
+}
+
+export function formatInventoryProductCode(prefix: string, sequence: number) {
+  return `${prefix}${String(sequence).padStart(4, "0")}`;
+}
+
+export function getNextInventoryProductCode(category: string, existingSkus: Array<string | null | undefined>) {
+  const prefix = getInventoryProductCodePrefix(category);
+  const matcher = new RegExp(`^${prefix}(\\d+)$`, "i");
+  const maxSequence = existingSkus.reduce((max, sku) => {
+    const match = String(sku || "").trim().toUpperCase().match(matcher);
+    if (!match) return max;
+    const sequence = Number(match[1]);
+    return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+  }, 0);
+
+  return formatInventoryProductCode(prefix, maxSequence + 1);
 }
 
 export function productToFormValues(product: InventoryProduct): InventoryProductFormValues {

@@ -22,6 +22,7 @@ export default function EditInventoryProductPage() {
   const [workerId, setWorkerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [customSku, setCustomSku] = useState(false);
   const [message, setMessage] = useState("");
 
   const fetchProduct = useCallback(async () => {
@@ -111,6 +112,8 @@ export default function EditInventoryProductPage() {
       saving={saving}
       submitLabel="Lưu thay đổi"
       message={message}
+      customSku={customSku}
+      onCustomSkuChange={setCustomSku}
       onChange={setValues}
       onSubmit={handleSubmit}
     />

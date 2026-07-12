@@ -16,6 +16,9 @@ type InventoryProductFormProps = {
   saving: boolean;
   submitLabel: string;
   message?: string;
+  customSku: boolean;
+  skuLoading?: boolean;
+  onCustomSkuChange: (enabled: boolean) => void;
   onChange: (values: InventoryProductFormValues) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 };
@@ -27,6 +30,9 @@ export function InventoryProductForm({
   saving,
   submitLabel,
   message,
+  customSku,
+  skuLoading = false,
+  onCustomSkuChange,
   onChange,
   onSubmit,
 }: InventoryProductFormProps) {
@@ -60,10 +66,33 @@ export function InventoryProductForm({
             <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Tên sản phẩm</span>
             <input required className="input-field" value={values.name} onChange={e => updateField("name", e.target.value)} placeholder="VD: Dây điện Cadivi 2.5" />
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Mã sản phẩm</span>
-            <input required className="input-field uppercase" value={values.sku} onChange={e => updateField("sku", e.target.value)} placeholder="VD: DAY-CAD-25" />
-          </label>
+          <div className="block">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="block text-xs font-bold uppercase text-on-surface-variant">Mã sản phẩm</span>
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-primary">
+                <input
+                  type="checkbox"
+                  checked={customSku}
+                  onChange={e => onCustomSkuChange(e.target.checked)}
+                  className="h-4 w-4 accent-primary"
+                />
+                Nhập mã riêng
+              </label>
+            </div>
+            <input
+              required
+              readOnly={!customSku}
+              className={`input-field uppercase ${!customSku ? "bg-surface-container-low font-mono font-bold text-primary-container" : ""}`}
+              value={values.sku}
+              onChange={e => updateField("sku", e.target.value)}
+              placeholder={skuLoading ? "Đang tạo mã..." : "VD: CAM0001"}
+            />
+            {!customSku && (
+              <p className="mt-1 text-xs text-on-surface-variant">
+                {skuLoading ? "Hệ thống đang lấy mã kế tiếp theo danh mục." : "Mã được tự tạo theo danh mục và kho riêng của thợ."}
+              </p>
+            )}
+          </div>
           <label className="block">
             <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Danh mục</span>
             <input required list="inventory-categories" className="input-field" value={values.category} onChange={e => updateField("category", e.target.value)} placeholder="Chọn hoặc nhập danh mục" />

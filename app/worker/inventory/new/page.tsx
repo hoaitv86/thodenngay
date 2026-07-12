@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   buildInventoryProductPayload,
   emptyInventoryProductForm,
+  getInventoryProductCodePrefix,
+  getNextInventoryProductCode,
   validateInventoryProduct,
   type InventoryProductFormValues,
 } from "@/lib/worker-inventory";
@@ -15,12 +17,95 @@ export default function NewInventoryProductPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [values, setValues] = useState<InventoryProductFormValues>(emptyInventoryProductForm);
+  const [workerId, setWorkerId] = useState("");
+  const [customSku, setCustomSku] = useState(false);
+  const [skuLoading, setSkuLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  const fetchWorkerId = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return "";
+
+    const { data: worker } = await supabase
+      .from("workers")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    return worker?.id || "";
+  }, [supabase]);
+
+  const fetchNextSku = useCallback(async (category: string, currentWorkerId: string) => {
+    const trimmedCategory = category.trim();
+    if (!trimmedCategory || !currentWorkerId) return "";
+
+    const prefix = getInventoryProductCodePrefix(trimmedCategory);
+    const { data, error } = await supabase
+      .from("worker_inventory_products")
+      .select("sku")
+      .eq("worker_id", currentWorkerId)
+      .ilike("sku", `${prefix}%`);
+
+    if (error) throw error;
+    return getNextInventoryProductCode(trimmedCategory, (data || []).map(product => product.sku));
+  }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkerId().then(id => {
+      if (!cancelled) setWorkerId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchWorkerId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncAutoSku() {
+      if (customSku) return;
+      if (!values.category.trim()) {
+        setValues(current => current.sku ? { ...current, sku: "" } : current);
+        return;
+      }
+      if (!workerId) return;
+
+      setSkuLoading(true);
+      try {
+        const nextSku = await fetchNextSku(values.category, workerId);
+        if (!cancelled) {
+          setValues(current => current.sku === nextSku ? current : { ...current, sku: nextSku });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(error instanceof Error ? error.message : "Không thể tạo mã sản phẩm tự động.");
+        }
+      } finally {
+        if (!cancelled) setSkuLoading(false);
+      }
+    }
+
+    void syncAutoSku();
+    return () => {
+      cancelled = true;
+    };
+  }, [customSku, fetchNextSku, values.category, workerId]);
+
+  const updateCustomSku = (enabled: boolean) => {
+    setCustomSku(enabled);
+    if (!enabled && values.category.trim() && workerId) {
+      setValues(current => ({ ...current, sku: "" }));
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const validationMessage = validateInventoryProduct(values);
+    const validationValues = !customSku && values.category.trim() && !values.sku.trim()
+      ? { ...values, sku: "AUTO" }
+      : values;
+    const validationMessage = validateInventoryProduct(validationValues);
     if (validationMessage) {
       setMessage(validationMessage);
       return;
@@ -29,37 +114,44 @@ export default function NewInventoryProductPage() {
     setSaving(true);
     setMessage("");
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setMessage("Bạn chưa đăng nhập.");
+    const currentWorkerId = workerId || await fetchWorkerId();
+    if (!currentWorkerId) {
+      setMessage("Bạn chưa đăng nhập hoặc chưa có hồ sơ thợ.");
       setSaving(false);
       return;
     }
 
-    const { data: worker } = await supabase
-      .from("workers")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const draftValues = { ...values };
+      if (!customSku) {
+        try {
+          draftValues.sku = await fetchNextSku(values.category, currentWorkerId);
+          setValues(current => ({ ...current, sku: draftValues.sku }));
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Không thể tạo mã sản phẩm tự động.");
+          setSaving(false);
+          return;
+        }
+      }
 
-    if (!worker) {
-      setMessage("Không tìm thấy hồ sơ thợ.");
-      setSaving(false);
-      return;
+      const { error } = await supabase
+        .from("worker_inventory_products")
+        .insert(buildInventoryProductPayload(draftValues, currentWorkerId));
+
+      if (!error) {
+        router.push("/worker/inventory");
+        router.refresh();
+        return;
+      }
+
+      if (error.code !== "23505" || customSku || attempt === 1) {
+        setMessage(error.code === "23505"
+          ? "Mã sản phẩm này đã tồn tại trong kho. Vui lòng thử lưu lại hoặc nhập mã riêng khác."
+          : error.message);
+        setSaving(false);
+        return;
+      }
     }
-
-    const { error } = await supabase
-      .from("worker_inventory_products")
-      .insert(buildInventoryProductPayload(values, worker.id));
-
-    if (error) {
-      setMessage(error.code === "23505" ? "Mã sản phẩm này đã tồn tại trong kho." : error.message);
-      setSaving(false);
-      return;
-    }
-
-    router.push("/worker/inventory");
-    router.refresh();
   };
 
   return (
@@ -70,6 +162,9 @@ export default function NewInventoryProductPage() {
       saving={saving}
       submitLabel="Thêm sản phẩm"
       message={message}
+      customSku={customSku}
+      skuLoading={skuLoading}
+      onCustomSkuChange={updateCustomSku}
       onChange={setValues}
       onSubmit={handleSubmit}
     />
