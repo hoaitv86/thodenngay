@@ -88,34 +88,6 @@ export function InventoryProductForm({
             <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Bảo hành (tháng)</span>
             <input required min="0" step="1" type="number" className="input-field" value={values.warrantyMonths} onChange={e => updateField("warrantyMonths", e.target.value)} placeholder="0" />
           </label>
-          <div className="rounded-lg border border-outline-variant/40 bg-surface-container-low p-3">
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={values.isRecurringBillGo}
-                onChange={e => onChange({ ...values, isRecurringBillGo: e.target.checked })}
-                className="mt-1 h-5 w-5"
-              />
-              <span>
-                <span className="block text-xs font-bold uppercase text-on-surface-variant">Thu tiền định kỳ</span>
-                <span className="mt-1 block text-sm text-on-surface-variant">Cho phép tạo lịch thu BillGo sau khi bán sản phẩm này.</span>
-              </span>
-            </label>
-          </div>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Chu kỳ BillGo</span>
-            <select
-              className="input-field"
-              value={values.recurringCycle}
-              onChange={e => updateField("recurringCycle", e.target.value)}
-              disabled={!values.isRecurringBillGo}
-            >
-              <option value="monthly">Hàng tháng</option>
-              <option value="three_months">3 tháng</option>
-              <option value="six_months">6 tháng</option>
-              <option value="yearly">Hàng năm</option>
-            </select>
-          </label>
           <label className="block sm:col-span-2">
             <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Ghi chú</span>
             <textarea className="input-field min-h-28 resize-y" value={values.note} onChange={e => updateField("note", e.target.value)} placeholder="Thông tin nhà cung cấp, vị trí cất giữ, lưu ý lắp đặt..." />

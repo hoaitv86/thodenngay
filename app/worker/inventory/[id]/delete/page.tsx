@@ -104,7 +104,7 @@ export default function DeleteInventoryProductPage() {
             <p className="text-xs font-bold uppercase text-error">Xóa sản phẩm</p>
             <h1 className="mt-1 text-2xl font-extrabold text-on-surface">Xác nhận xóa sản phẩm</h1>
             <p className="mt-2 text-sm leading-6 text-on-surface-variant">
-              Sản phẩm sẽ bị xóa khỏi kho riêng của thợ. Thao tác này không ảnh hưởng công việc, BillGo hay bảo hành.
+              Sản phẩm sẽ bị xóa khỏi kho riêng của thợ. Thao tác này chỉ ảnh hưởng dữ liệu kho hàng.
             </p>
           </div>
         </div>

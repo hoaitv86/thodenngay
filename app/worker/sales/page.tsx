@@ -114,7 +114,7 @@ export default function WorkerSalesPage() {
           <p className="text-xs font-bold uppercase text-primary">Bán hàng</p>
           <h1 className="text-2xl font-extrabold text-on-surface">Lịch sử đơn bán</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
-            Theo dõi các đơn bán từ kho hàng riêng. Module này chưa tích hợp BillGo và bảo hành.
+            Theo dõi các đơn bán từ kho hàng riêng của thợ.
           </p>
         </div>
         <Link href="/worker/sales/new" className="btn-primary !w-auto !px-4">

@@ -89,8 +89,8 @@ export function productToFormValues(product: InventoryProduct): InventoryProduct
     stockQuantity: String(Number(product.stock_quantity || 0)),
     unit: product.unit || "",
     warrantyMonths: String(Number(product.warranty_months || 0)),
-    isRecurringBillGo: Boolean(product.is_recurring_billgo),
-    recurringCycle: product.recurring_cycle || "monthly",
+    isRecurringBillGo: false,
+    recurringCycle: "monthly",
     note: product.note || "",
   };
 }
@@ -106,8 +106,8 @@ export function buildInventoryProductPayload(values: InventoryProductFormValues,
     stock_quantity: Number(values.stockQuantity || 0),
     unit: values.unit.trim(),
     warranty_months: Number(values.warrantyMonths || 0),
-    is_recurring_billgo: values.isRecurringBillGo,
-    recurring_cycle: values.isRecurringBillGo ? values.recurringCycle : "monthly",
+    is_recurring_billgo: false,
+    recurring_cycle: "monthly",
     note: values.note.trim() || null,
   };
 }

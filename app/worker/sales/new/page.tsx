@@ -52,9 +52,6 @@ export default function NewWorkerSalesOrderPage() {
   const [customerId, setCustomerId] = useState("");
   const [items, setItems] = useState<SalesDraftItem[]>([createEmptySalesDraftItem()]);
   const [note, setNote] = useState("");
-  const [createBillGo, setCreateBillGo] = useState(false);
-  const [billGoCycle, setBillGoCycle] = useState("monthly");
-  const [billGoStartDate, setBillGoStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -134,10 +131,6 @@ export default function NewWorkerSalesOrderPage() {
   }, [fetchFormData]);
 
   const totalAmount = useMemo(() => getSalesDraftTotal(items), [items]);
-  const hasRecurringProducts = useMemo(
-    () => items.some(item => products.find(product => product.id === item.productId)?.is_recurring_billgo),
-    [items, products]
-  );
 
   const updateItem = (draftId: string, patch: Partial<SalesDraftItem>) => {
     setItems(current => current.map(item => {
@@ -175,9 +168,9 @@ export default function NewWorkerSalesOrderPage() {
       p_customer_id: customerId,
       p_note: note,
       p_items: buildSalesRpcItems(items),
-      p_create_billgo: createBillGo && hasRecurringProducts,
-      p_billgo_cycle: billGoCycle,
-      p_billgo_start_date: billGoStartDate,
+      p_create_billgo: false,
+      p_billgo_cycle: "monthly",
+      p_billgo_start_date: new Date().toISOString().slice(0, 10),
     });
 
     if (error) {
@@ -268,7 +261,7 @@ export default function NewWorkerSalesOrderPage() {
                             <option value="">Chọn sản phẩm</option>
                             {products.map(productOption => (
                               <option key={productOption.id} value={productOption.id}>
-                                {productOption.name} - tồn {productOption.stock_quantity} {productOption.unit}{productOption.is_recurring_billgo ? " - thu định kỳ" : ""}
+                                {productOption.name} - tồn {productOption.stock_quantity} {productOption.unit}
                               </option>
                             ))}
                           </select>
@@ -288,7 +281,7 @@ export default function NewWorkerSalesOrderPage() {
 
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                         <p className="text-on-surface-variant">
-                          {product ? `${product.sku} · ${product.category} · Tồn ${product.stock_quantity} ${product.unit}` : "Chưa chọn sản phẩm"}
+                          {product ? `${product.sku} - ${product.category} - Tồn ${product.stock_quantity} ${product.unit}` : "Chưa chọn sản phẩm"}
                         </p>
                         <p className="font-extrabold text-on-surface">{formatSalesCurrency(getDraftLineTotal(item))}</p>
                       </div>
@@ -303,34 +296,6 @@ export default function NewWorkerSalesOrderPage() {
             <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Ghi chú</span>
             <textarea value={note} onChange={event => setNote(event.target.value)} className="input-field min-h-24 resize-y" placeholder="Ghi chú về đơn bán, giao hàng, thanh toán..." />
           </label>
-
-          {hasRecurringProducts && (
-            <section className="rounded-lg border border-primary-container/25 bg-white p-4 shadow-sm">
-              <label className="flex cursor-pointer items-start gap-3">
-                <input
-                  type="checkbox"
-                  checked={createBillGo}
-                  onChange={event => setCreateBillGo(event.target.checked)}
-                  className="mt-1 h-5 w-5"
-                />
-                <span>
-                  <strong className="block text-sm text-on-surface">Tạo lịch thu BillGo</strong>
-                  <span className="mt-1 block text-sm text-on-surface-variant">
-                    Dùng thông tin khách hàng đã chọn, không cần nhập lại.
-                  </span>
-                </span>
-              </label>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <select className="input-field" value={billGoCycle} onChange={event => setBillGoCycle(event.target.value)} disabled={!createBillGo}>
-                  <option value="monthly">Hàng tháng</option>
-                  <option value="three_months">3 tháng</option>
-                  <option value="six_months">6 tháng</option>
-                  <option value="yearly">Hàng năm</option>
-                </select>
-                <input className="input-field" type="date" value={billGoStartDate} onChange={event => setBillGoStartDate(event.target.value)} disabled={!createBillGo} />
-              </div>
-            </section>
-          )}
         </section>
 
         <aside className="h-fit rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm lg:sticky lg:top-24">
@@ -351,7 +316,7 @@ export default function NewWorkerSalesOrderPage() {
             {saving ? "Đang lưu..." : "Lưu đơn và trừ tồn"}
           </button>
           <p className="mt-3 text-xs leading-5 text-on-surface-variant">
-            Đơn bán sẽ được lưu vào lịch sử bán hàng, tự động tạo bảo hành nếu có và có thể tạo lịch BillGo cho sản phẩm định kỳ.
+            Đơn bán chỉ lưu vào lịch sử bán hàng, tự động trừ tồn kho và tạo bảo hành nếu có.
           </p>
         </aside>
       </div>

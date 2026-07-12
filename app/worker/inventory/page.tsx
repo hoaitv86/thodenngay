@@ -103,7 +103,7 @@ export default function WorkerInventoryPage() {
           <p className="text-xs font-bold uppercase text-primary">Kho hàng</p>
           <h1 className="text-2xl font-extrabold text-on-surface">Danh sách sản phẩm</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
-            Quản lý vật tư, linh kiện và hàng tồn riêng của thợ. Module này chưa liên kết với công việc, BillGo hay bảo hành.
+            Quản lý vật tư, linh kiện và hàng tồn riêng của thợ. Kho hàng chỉ phục vụ bán hàng cho thợ.
           </p>
         </div>
         <Link href="/worker/inventory/new" className="btn-primary !w-auto !px-4">
@@ -177,7 +177,6 @@ export default function WorkerInventoryPage() {
                 <div className="min-w-0">
                   <h2 className="truncate font-extrabold text-on-surface">{product.name}</h2>
                   <p className="mt-1 font-mono text-xs font-bold text-primary-container">{product.sku}</p>
-                  {product.is_recurring_billgo && <p className="mt-1 text-xs font-bold text-secondary-container">Thu tiền định kỳ</p>}
                   {product.note && <p className="mt-1 line-clamp-1 text-xs text-on-surface-variant">{product.note}</p>}
                 </div>
                 <span className="w-fit rounded-full bg-primary-fixed px-2.5 py-1 text-xs font-bold text-primary-container">{product.category}</span>
