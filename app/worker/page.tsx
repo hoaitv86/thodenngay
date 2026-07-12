@@ -514,9 +514,23 @@ export default function WorkerDashboard() {
     ),
     [billGoRows]
   );
+  const statPeriodLabels = useMemo(() => {
+    const now = new Date();
+    return {
+      today: `Hôm nay ${now.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}`,
+      month: `Tháng ${now.getMonth() + 1}`,
+    };
+  }, []);
   const [addToBillGo, setAddToBillGo] = useState(false);
 
   const toastTimeoutRef = React.useRef<number | null>(null);
+
+  const openQuickJobForm = () => {
+    setQuickFormOpen(true);
+    window.setTimeout(() => {
+      document.getElementById("worker-quick-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  };
 
   const closeToast = () => {
     if (toastTimeoutRef.current) {
@@ -1728,8 +1742,9 @@ export default function WorkerDashboard() {
             <div className="px-3 py-4 text-center">
               <div className="text-2xl font-extrabold text-on-surface sm:text-3xl">{workerStats.jobsDone}</div>
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Khách hàng</div>
-              <div className="mt-1 text-xs font-extrabold text-primary-container">
-                Tháng này: {workerStats.monthlyCustomers}
+              <div className="mt-2 space-y-0.5 text-[11px] font-extrabold leading-4 text-primary-container">
+                <p>{statPeriodLabels.month}: {workerStats.monthlyCustomers}</p>
+                <p className="text-on-surface-variant">{statPeriodLabels.today}: {workerStats.todayCustomers}</p>
               </div>
             </div>
             <div className="px-3 py-4 text-center">
@@ -1738,8 +1753,9 @@ export default function WorkerDashboard() {
                 <StarIcon size={16} className="fill-current text-warning" />
               </div>
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Đánh giá</div>
-              <div className="mt-1 text-xs font-extrabold text-primary-container">
-                Tháng này: {workerStats.monthlyRating > 0 ? workerStats.monthlyRating : "0"}★
+              <div className="mt-2 space-y-0.5 text-[11px] font-extrabold leading-4 text-primary-container">
+                <p>{statPeriodLabels.month}: {workerStats.monthlyRating > 0 ? workerStats.monthlyRating : "0"}★</p>
+                <p className="text-on-surface-variant">{statPeriodLabels.today}: {workerStats.todayRating > 0 ? workerStats.todayRating : "0"}★</p>
               </div>
             </div>
             <div className="px-3 py-4 text-center">
@@ -1747,42 +1763,27 @@ export default function WorkerDashboard() {
                 {formatCompactCurrency(workerStats.income)}
               </div>
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Tổng tiền</div>
-              <div className="mt-1 text-xs font-extrabold text-primary-container">
-                Tháng này: {formatCompactCurrency(workerStats.monthlyIncome)}
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-outline-variant/30 bg-surface-container-low px-3 py-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-[10px] font-extrabold uppercase text-primary-container">Hôm nay</p>
-              <p className="text-[10px] font-semibold text-on-surface-variant">
-                Cập nhật theo việc hoàn thành và thanh toán đã thu
-              </p>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg bg-white px-2.5 py-2 text-center shadow-sm">
-                <p className="text-base font-extrabold text-on-surface">{workerStats.todayCustomers}</p>
-                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Khách</p>
-              </div>
-              <div className="rounded-lg bg-white px-2.5 py-2 text-center shadow-sm">
-                <p className="flex items-center justify-center gap-1 text-base font-extrabold text-on-surface">
-                  {workerStats.todayRating > 0 ? workerStats.todayRating : "0"}
-                  <StarIcon size={12} className="fill-current text-warning" />
-                </p>
-                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Đánh giá</p>
-              </div>
-              <div className="rounded-lg bg-white px-2.5 py-2 text-center shadow-sm">
-                <p className="text-base font-extrabold text-primary-container">{formatCompactCurrency(workerStats.todayIncome)}</p>
-                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng tiền</p>
+              <div className="mt-2 space-y-0.5 text-[11px] font-extrabold leading-4 text-primary-container">
+                <p>{statPeriodLabels.month}: {formatCompactCurrency(workerStats.monthlyIncome)}</p>
+                <p className="text-on-surface-variant">{statPeriodLabels.today}: {formatCompactCurrency(workerStats.todayIncome)}</p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
+      <button
+        type="button"
+        onClick={openQuickJobForm}
+        className="fixed right-4 z-40 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-white shadow-[0_12px_28px_rgba(22,90,88,0.28)] transition-transform active:scale-95 md:hidden"
+        style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
+      >
+        <BriefcaseIcon size={18} />
+        Tạo việc
+      </button>
+
       {/* Quick Job Creation */}
-      <section className="px-4 py-4 sm:px-6 lg:px-8">
+      <section id="worker-quick-job" className="scroll-mt-20 px-4 py-4 sm:px-6 lg:px-8">
         <div className="rounded-xl border border-secondary-container/20 bg-white p-4 shadow-sm">
           <button
             type="button"
