@@ -2,7 +2,7 @@
 
 import type React from "react";
 import Link from "next/link";
-import { Save, X } from "lucide-react";
+import { RefreshCw, Save, X } from "lucide-react";
 import {
   inventoryCategorySuggestions,
   inventoryUnitSuggestions,
@@ -18,7 +18,10 @@ type InventoryProductFormProps = {
   message?: string;
   customSku: boolean;
   skuLoading?: boolean;
+  canRegenerateSku?: boolean;
+  skuRegenerateDisabled?: boolean;
   onCustomSkuChange: (enabled: boolean) => void;
+  onRegenerateSku?: () => void;
   onChange: (values: InventoryProductFormValues) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 };
@@ -32,7 +35,10 @@ export function InventoryProductForm({
   message,
   customSku,
   skuLoading = false,
+  canRegenerateSku = false,
+  skuRegenerateDisabled = false,
   onCustomSkuChange,
+  onRegenerateSku,
   onChange,
   onSubmit,
 }: InventoryProductFormProps) {
@@ -68,6 +74,16 @@ export function InventoryProductForm({
           </label>
           <div className="block">
             <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                disabled={!canRegenerateSku || skuRegenerateDisabled}
+                onClick={onRegenerateSku}
+                className="order-2 inline-flex h-8 items-center gap-1.5 rounded-md border border-outline-variant/70 px-2.5 text-xs font-bold text-primary transition-colors hover:border-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
+                title={canRegenerateSku ? "Tạo lại mã theo tên sản phẩm" : "Chỉ có thể tạo lại mã trước khi lưu sản phẩm mới"}
+              >
+                <RefreshCw size={14} className={skuLoading ? "animate-spin" : ""} />
+                Tạo lại mã
+              </button>
               <span className="block text-xs font-bold uppercase text-on-surface-variant">Mã sản phẩm</span>
               <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-primary">
                 <input

@@ -83,30 +83,51 @@ export function formatInventoryCurrency(value: number | string | null | undefine
   return inventoryCurrencyFormatter.format(Number(value || 0));
 }
 
-function normalizeInventoryCategory(value: string) {
+function normalizeInventoryProductCodeText(value: string) {
   return value
     .trim()
-    .toLocaleLowerCase("vi")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d");
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
 }
 
-export function getInventoryProductCodePrefix(category: string) {
-  const normalized = normalizeInventoryCategory(category);
-  if (/internet|mang|wifi|router|network|thiet bi mang/.test(normalized)) return "NET";
-  if (/camera|cctv|dau ghi/.test(normalized)) return "CAM";
-  if (/may tinh|laptop|computer|pc|linh kien may tinh/.test(normalized)) return "PC";
-  if (/may in|printer/.test(normalized)) return "PRI";
-  return "SP";
+const inventoryProductCodeWordAliases: Record<string, string> = {
+  wifi: "WF",
+};
+
+export function getInventoryProductCodePrefix(productName: string) {
+  const words = productName
+    .trim()
+    .split(/\s+/)
+    .map(word => normalizeInventoryProductCodeText(word).replace(/[^a-zA-Z0-9]/g, ""))
+    .filter(Boolean)
+    .map(value => ({
+      value,
+      normalized: value.toLowerCase(),
+      isShortCode: /^[A-Z0-9]{1,3}$/.test(value),
+    }));
+
+  return words
+    .map((word, index) => {
+      if (word.normalized === "hikvision" && words.length === 2 && index === 1) return "HV";
+      if (inventoryProductCodeWordAliases[word.normalized]) return inventoryProductCodeWordAliases[word.normalized];
+      if (word.isShortCode || /^[0-9]+$/.test(word.value)) return word.value;
+      return word.value.charAt(0);
+    })
+    .join("")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 }
 
 export function formatInventoryProductCode(prefix: string, sequence: number) {
-  return `${prefix}${String(sequence).padStart(4, "0")}`;
+  return `${prefix}${String(sequence).padStart(3, "0")}`;
 }
 
-export function getNextInventoryProductCode(category: string, existingSkus: Array<string | null | undefined>) {
-  const prefix = getInventoryProductCodePrefix(category);
+export function getNextInventoryProductCode(productName: string, existingSkus: Array<string | null | undefined>) {
+  const prefix = getInventoryProductCodePrefix(productName);
+  if (!prefix) return "";
+
   const matcher = new RegExp(`^${prefix}(\\d+)$`, "i");
   const maxSequence = existingSkus.reduce((max, sku) => {
     const match = String(sku || "").trim().toUpperCase().match(matcher);

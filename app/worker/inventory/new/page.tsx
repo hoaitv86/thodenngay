@@ -36,11 +36,13 @@ export default function NewInventoryProductPage() {
     return worker?.id || "";
   }, [supabase]);
 
-  const fetchNextSku = useCallback(async (category: string, currentWorkerId: string) => {
-    const trimmedCategory = category.trim();
-    if (!trimmedCategory || !currentWorkerId) return "";
+  const fetchNextSku = useCallback(async (productName: string, currentWorkerId: string) => {
+    const trimmedName = productName.trim();
+    if (!trimmedName || !currentWorkerId) return "";
 
-    const prefix = getInventoryProductCodePrefix(trimmedCategory);
+    const prefix = getInventoryProductCodePrefix(trimmedName);
+    if (!prefix) return "";
+
     const { data, error } = await supabase
       .from("worker_inventory_products")
       .select("sku")
@@ -48,7 +50,7 @@ export default function NewInventoryProductPage() {
       .ilike("sku", `${prefix}%`);
 
     if (error) throw error;
-    return getNextInventoryProductCode(trimmedCategory, (data || []).map(product => product.sku));
+    return getNextInventoryProductCode(trimmedName, (data || []).map(product => product.sku));
   }, [supabase]);
 
   useEffect(() => {
@@ -66,15 +68,16 @@ export default function NewInventoryProductPage() {
 
     async function syncAutoSku() {
       if (customSku) return;
-      if (!values.category.trim()) {
+      if (!values.name.trim()) {
         setValues(current => current.sku ? { ...current, sku: "" } : current);
         return;
       }
+      if (values.sku.trim()) return;
       if (!workerId) return;
 
       setSkuLoading(true);
       try {
-        const nextSku = await fetchNextSku(values.category, workerId);
+        const nextSku = await fetchNextSku(values.name, workerId);
         if (!cancelled) {
           setValues(current => current.sku === nextSku ? current : { ...current, sku: nextSku });
         }
@@ -91,18 +94,34 @@ export default function NewInventoryProductPage() {
     return () => {
       cancelled = true;
     };
-  }, [customSku, fetchNextSku, values.category, workerId]);
+  }, [customSku, fetchNextSku, values.name, values.sku, workerId]);
 
   const updateCustomSku = (enabled: boolean) => {
     setCustomSku(enabled);
-    if (!enabled && values.category.trim() && workerId) {
+    if (!enabled && values.name.trim() && workerId) {
       setValues(current => ({ ...current, sku: "" }));
+    }
+  };
+
+  const regenerateSku = async () => {
+    if (!values.name.trim() || !workerId || skuLoading || saving) return;
+
+    setSkuLoading(true);
+    setMessage("");
+    setCustomSku(false);
+    try {
+      const nextSku = await fetchNextSku(values.name, workerId);
+      setValues(current => ({ ...current, sku: nextSku }));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể tạo mã sản phẩm tự động.");
+    } finally {
+      setSkuLoading(false);
     }
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const validationValues = !customSku && values.category.trim() && !values.sku.trim()
+    const validationValues = !customSku && values.name.trim() && !values.sku.trim()
       ? { ...values, sku: "AUTO" }
       : values;
     const validationMessage = validateInventoryProduct(validationValues);
@@ -125,7 +144,9 @@ export default function NewInventoryProductPage() {
       const draftValues = { ...values };
       if (!customSku) {
         try {
-          draftValues.sku = await fetchNextSku(values.category, currentWorkerId);
+          draftValues.sku = attempt === 0 && values.sku.trim()
+            ? values.sku.trim()
+            : await fetchNextSku(values.name, currentWorkerId);
           setValues(current => ({ ...current, sku: draftValues.sku }));
         } catch (error) {
           setMessage(error instanceof Error ? error.message : "Không thể tạo mã sản phẩm tự động.");
@@ -164,7 +185,10 @@ export default function NewInventoryProductPage() {
       message={message}
       customSku={customSku}
       skuLoading={skuLoading}
+      canRegenerateSku
+      skuRegenerateDisabled={!values.name.trim() || skuLoading || saving}
       onCustomSkuChange={updateCustomSku}
+      onRegenerateSku={regenerateSku}
       onChange={setValues}
       onSubmit={handleSubmit}
     />
