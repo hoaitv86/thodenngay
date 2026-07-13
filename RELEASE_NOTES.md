@@ -1,5 +1,21 @@
 # Release Notes
 
+## Worker Dashboard Today Label
+
+Release date: 2026-07-13
+
+### Features
+- Worker dashboard today stats now show only the day number, keeping the stat cards shorter on mobile.
+
+### Fixes
+- No bug fixes included.
+
+### Database Changes
+- None.
+
+### Upgrade Notes
+- No migration is required.
+
 ## Worker Inventory Category Suggestions
 
 Release date: 2026-07-13

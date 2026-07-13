@@ -538,7 +538,7 @@ export default function WorkerDashboard() {
   const statPeriodLabels = useMemo(() => {
     const now = new Date();
     return {
-      today: `Hôm nay ${now.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}`,
+      today: `Hôm nay ${now.toLocaleDateString("vi-VN", { day: "2-digit" })}`,
       month: `Tháng ${now.getMonth() + 1}`,
     };
   }, []);

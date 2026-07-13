@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-13 - Worker Dashboard Today Label
+
+### Changed
+- Shortened the worker dashboard today stat label to show only the day number.
+
+### Database
+- No database schema changes.
+
 ## 2026-07-13 - Worker Inventory Category Suggestions
 
 ### Changed
