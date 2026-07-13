@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-13 - Project Spreadsheet Cleanup
+
+### Changed
+- Removed duplicated project spreadsheet files from the source repository.
+- Added project spreadsheet names to `.gitignore` so the external workbook copies stay outside GitHub.
+- Updated the external project manager workbook in `C:\Users\Admin\Desktop\Thodenngay` with recent commit history.
+
+### Database
+- No database schema changes.
+
 ## 2026-07-13 - Worker Inventory Category Rename
 
 ### Added

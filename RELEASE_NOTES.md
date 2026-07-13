@@ -1,5 +1,21 @@
 # Release Notes
 
+## Project Spreadsheet Cleanup
+
+Release date: 2026-07-13
+
+### Features
+- Project spreadsheet tracking now uses the external files under `C:\Users\Admin\Desktop\Thodenngay`.
+
+### Fixes
+- Removed duplicated spreadsheet files from the repository so GitHub no longer carries the unreadable copies.
+
+### Database Changes
+- None.
+
+### Upgrade Notes
+- No migration is required.
+
 ## Worker Inventory Category Rename
 
 Release date: 2026-07-13

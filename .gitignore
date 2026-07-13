@@ -25,6 +25,10 @@
 *.pem
 .agent/
 .vs/
+ThoDenNgay_Project_Manager.xlsx
+ThoDenNgay_Product_Bible.xlsx
+THODENNGAY_PROJECT_MANAGER.xlsx
+THODENNGAY_PRODUCT_BIBLE.xlsx
 
 # debug
 npm-debug.log*
