@@ -45,6 +45,7 @@ import {
   validateSalesDraft,
   type SalesDraftItem,
 } from "@/lib/worker-sales";
+import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 
 interface ServiceOption {
   id: string;
@@ -97,6 +98,8 @@ interface WorkerJob {
   warranty_days?: number | null;
   warranty_note?: string | null;
   workflow_data?: WorkflowData | null;
+  service?: JobWithWorkflow["service"];
+  job_services?: JobWithWorkflow["job_services"];
   payments?: Array<{
     id: string;
     amount: number | string;
@@ -503,7 +506,13 @@ export default function WorkerDashboard() {
     [quickJob.serviceIds, services]
   );
   const getWorkflowServicesForJob = React.useCallback((job: WorkerJob) => {
-    const ids = [job.service_id, job.service_detail_id].filter((serviceId): serviceId is string => Boolean(serviceId));
+    const linkedServiceIds = getJobServices(job).map(service => service.id).filter((serviceId): serviceId is string => Boolean(serviceId));
+    const ids = [
+      ...linkedServiceIds,
+      job.service_id,
+      job.service_detail_id,
+    ].filter((serviceId): serviceId is string => Boolean(serviceId));
+
     return ids
       .map(serviceId => services.find(service => service.id === serviceId))
       .filter((service): service is ServiceOption => Boolean(service))
@@ -717,12 +726,23 @@ export default function WorkerDashboard() {
       setPendingApprovalJobs(mappedPendingApproval);
 
       // 5. Get Active Jobs (Assigned to this worker)
-      const { data: assignedJobs } = await supabase
+      let assignedJobsResult = await supabase
         .from('jobs')
-        .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
+        .select('*, service:services!jobs_service_id_fkey(*), job_services(service:services(*)), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
         .eq('worker_id', workerData.id)
         .in('status', ['assigned', 'in_progress'])
         .order('created_at', { ascending: false });
+
+      if (assignedJobsResult.error && isMissingWorkflowColumn(assignedJobsResult.error.message)) {
+        assignedJobsResult = await supabase
+          .from('jobs')
+          .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
+          .eq('worker_id', workerData.id)
+          .in('status', ['assigned', 'in_progress'])
+          .order('created_at', { ascending: false });
+      }
+
+      const assignedJobs = assignedJobsResult.data || [];
       
       const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
@@ -1177,6 +1197,7 @@ export default function WorkerDashboard() {
           ...createdJob,
           customerName: createdJob.customerName || quickJob.customerName,
           serviceName: createdJob.serviceName || services.find(service => service.id === quickJob.serviceId)?.name || "Dịch vụ",
+          job_services: selectedQuickServices.map(service => ({ service })),
           customer: createdJob.customer || { phone: quickJob.customerPhone },
           time: createdJob.scheduled_at
             ? new Date(createdJob.scheduled_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
