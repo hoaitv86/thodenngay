@@ -36,7 +36,7 @@ import {
   toMoneyNumber,
 } from "@/lib/billgo";
 import { Worker } from "@/lib/types";
-import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
+import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import PendingApproval from "./pending-approval";
 import { isMissingWorkerInventorySchemaError, type InventoryProduct } from "@/lib/worker-inventory";
@@ -491,6 +491,7 @@ export default function WorkerDashboard() {
   const [completionPaymentAmount, setCompletionPaymentAmount] = useState("");
   const [completionPaymentMethod, setCompletionPaymentMethod] = useState("cash");
   const [completionPaymentNote, setCompletionPaymentNote] = useState("");
+  const [completionHandoverData, setCompletionHandoverData] = useState<WorkflowData>({});
   const billGoRows = useMemo(
     () => workerBillGoReceivables.map(item => ({ item, summary: getBillGoReceivableSummary(item) })),
     [workerBillGoReceivables]
@@ -500,6 +501,17 @@ export default function WorkerDashboard() {
       .map(serviceId => services.find(service => service.id === serviceId))
       .filter((service): service is ServiceOption => Boolean(service)),
     [quickJob.serviceIds, services]
+  );
+  const getWorkflowServicesForJob = React.useCallback((job: WorkerJob) => {
+    const ids = [job.service_id, job.service_detail_id].filter((serviceId): serviceId is string => Boolean(serviceId));
+    return ids
+      .map(serviceId => services.find(service => service.id === serviceId))
+      .filter((service): service is ServiceOption => Boolean(service))
+      .filter((service, index, list) => list.findIndex(item => item.id === service.id) === index);
+  }, [services]);
+  const completionWorkflowServices = React.useMemo(
+    () => activeJobToComplete ? getWorkflowServicesForJob(activeJobToComplete) : [],
+    [activeJobToComplete, getWorkflowServicesForJob]
   );
   const billGoTotals = useMemo(
     () => billGoRows.reduce(
@@ -983,7 +995,7 @@ export default function WorkerDashboard() {
         .map(id => services.find(service => service.id === id))
         .filter((service): service is ServiceOption => Boolean(service));
       const totalPrice = nextServices.reduce((sum, service) => sum + Number(service.base_price || 0), 0);
-      setQuickWorkflowData(current => pruneWorkflowData(current, nextServices));
+      setQuickWorkflowData(current => pruneWorkflowData(current, nextServices, { excludeSectionKeys: handoverWorkflowSectionKeys }));
       return {
         ...prev,
         serviceId: nextIds[0] || "",
@@ -1133,7 +1145,7 @@ export default function WorkerDashboard() {
           customerPhone: quickJob.customerPhone,
           serviceId: quickJob.serviceId,
           serviceIds: quickJob.serviceIds,
-          workflowData: pruneWorkflowData(quickWorkflowData, selectedQuickServices),
+          workflowData: pruneWorkflowData(quickWorkflowData, selectedQuickServices, { excludeSectionKeys: handoverWorkflowSectionKeys }),
           address: quickJob.address,
           scheduledAt: quickJob.scheduledAt,
           quotedPrice: quickJob.quotedPrice,
@@ -1234,6 +1246,11 @@ export default function WorkerDashboard() {
     setCompletionPaymentAmount("");
     setCompletionPaymentMethod("cash");
     setCompletionPaymentNote("");
+    setCompletionHandoverData(pruneWorkflowData(
+      job.workflow_data || {},
+      getWorkflowServicesForJob(job),
+      { includeSectionKeys: handoverWorkflowSectionKeys }
+    ));
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
@@ -1506,6 +1523,11 @@ export default function WorkerDashboard() {
     const existingPaidAmount = (job.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const amountToRecord = Math.max(paidAmount - existingPaidAmount, 0);
     const maxWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
+    const handoverWorkflowData = pruneWorkflowData(
+      completionHandoverData,
+      getWorkflowServicesForJob(job),
+      { includeSectionKeys: handoverWorkflowSectionKeys }
+    );
     const materialDraftItems: SalesDraftItem[] = cleanedItems
       .filter(item => item.source === "inventory")
       .map(item => ({
@@ -1589,6 +1611,7 @@ export default function WorkerDashboard() {
           warranty_note: warrantyNote.trim(),
           workflow_data: {
             ...(job.workflow_data || {}),
+            ...handoverWorkflowData,
             payment: {
               status: completionPaymentStatus,
               totalAmount: finalAmount,
@@ -1649,6 +1672,7 @@ export default function WorkerDashboard() {
       setSelectedFiles([]);
       setPreviewUrls([]);
       setCompletionItems([]);
+      setCompletionHandoverData({});
       setCompletionPaymentAmount("");
       setCompletionPaymentNote("");
       setAddToBillGo(false);
@@ -2065,6 +2089,7 @@ export default function WorkerDashboard() {
                   services={selectedQuickServices}
                   value={quickWorkflowData}
                   onChange={setQuickWorkflowData}
+                  excludeSectionKeys={handoverWorkflowSectionKeys}
                 />
 
                 <div className="space-y-1.5">
@@ -2598,6 +2623,7 @@ export default function WorkerDashboard() {
                     setSelectedFiles([]);
                     setPreviewUrls([]);
                     setCompletionItems([]);
+                    setCompletionHandoverData({});
                   }
                 }}
                 className="p-1.5 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
@@ -2622,6 +2648,14 @@ export default function WorkerDashboard() {
                   Báo giá ban đầu: {formatCurrency(activeJobToComplete.quoted_price)}
                 </p>
               </div>
+
+              <DynamicServiceWorkflowForm
+                services={completionWorkflowServices}
+                value={completionHandoverData}
+                onChange={setCompletionHandoverData}
+                includeSectionKeys={handoverWorkflowSectionKeys}
+                disabled={uploadingImages}
+              />
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
@@ -2893,6 +2927,7 @@ export default function WorkerDashboard() {
                   setSelectedFiles([]);
                   setPreviewUrls([]);
                   setCompletionItems([]);
+                  setCompletionHandoverData({});
                 }}
                 className="btn-outline !w-auto flex-1 !py-2 !px-4 text-sm sm:flex-none"
                 disabled={uploadingImages}

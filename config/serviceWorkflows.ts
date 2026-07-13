@@ -43,6 +43,13 @@ export type ServiceLikeForWorkflow = {
 
 export type WorkflowData = Record<string, Record<string, unknown>>;
 
+export const handoverWorkflowSectionKeys: WorkflowSectionKey[] = [
+  "internet_account",
+  "wifi",
+  "camera_account",
+  "camera_devices",
+];
+
 export const workflowSections: Record<WorkflowSectionKey, WorkflowSectionConfig> = {
   internet_account: {
     key: "internet_account",
@@ -119,7 +126,7 @@ export const workflowSections: Record<WorkflowSectionKey, WorkflowSectionConfig>
 export const serviceWorkflows: Record<ServiceWorkflowKey, ServiceWorkflowConfig> = {
   internet_install: {
     key: "internet_install",
-    sections: ["internet_account", "wifi", "billgo"],
+    sections: ["internet_account", "wifi"],
   },
   camera_install: {
     key: "camera_install",
@@ -156,19 +163,52 @@ export function getServiceWorkflowKey(service: ServiceLikeForWorkflow): ServiceW
   return null;
 }
 
-export function getWorkflowSectionsForServices(services: ServiceLikeForWorkflow[]) {
+function isBillGoInternetInstallService(service: ServiceLikeForWorkflow) {
+  const name = normalizeWorkflowText(service.name || "");
+  const parentName = normalizeWorkflowText(service.parentName || "");
+  const isInternetService = /internet/.test(name) || (/internet|mang/.test(parentName) && /^lap( dat)?$/.test(name));
+  const isInstallInternet = /lap|install|moi/.test(name) && isInternetService;
+
+  return isInstallInternet && !/wifi|wi-fi|mesh|router|modem|lan|cap|day|sua|bao tri|di doi|cau hinh|mo rong|nang cap/.test(name);
+}
+
+type WorkflowSectionFilterOptions = {
+  includeSectionKeys?: WorkflowSectionKey[];
+  excludeSectionKeys?: WorkflowSectionKey[];
+};
+
+export function getWorkflowSectionsForServices(
+  services: ServiceLikeForWorkflow[],
+  options: WorkflowSectionFilterOptions = {}
+) {
   const sectionKeys = new Set<WorkflowSectionKey>();
+  const includeKeys = options.includeSectionKeys ? new Set(options.includeSectionKeys) : null;
+  const excludeKeys = new Set(options.excludeSectionKeys || []);
 
   services.forEach((service) => {
     const workflowKey = getServiceWorkflowKey(service);
     if (!workflowKey) return;
-    serviceWorkflows[workflowKey].sections.forEach((sectionKey) => sectionKeys.add(sectionKey));
+    serviceWorkflows[workflowKey].sections.forEach((sectionKey) => {
+      if (includeKeys && !includeKeys.has(sectionKey)) return;
+      if (excludeKeys.has(sectionKey)) return;
+      sectionKeys.add(sectionKey);
+    });
+
+    if (isBillGoInternetInstallService(service)) {
+      if ((!includeKeys || includeKeys.has("billgo")) && !excludeKeys.has("billgo")) {
+        sectionKeys.add("billgo");
+      }
+    }
   });
 
   return Array.from(sectionKeys).map((sectionKey) => workflowSections[sectionKey]);
 }
 
-export function pruneWorkflowData(data: WorkflowData, services: ServiceLikeForWorkflow[]): WorkflowData {
-  const allowed = new Set(getWorkflowSectionsForServices(services).map((section) => section.key));
+export function pruneWorkflowData(
+  data: WorkflowData,
+  services: ServiceLikeForWorkflow[],
+  options: WorkflowSectionFilterOptions = {}
+): WorkflowData {
+  const allowed = new Set(getWorkflowSectionsForServices(services, options).map((section) => section.key));
   return Object.fromEntries(Object.entries(data).filter(([sectionKey]) => allowed.has(sectionKey as WorkflowSectionKey)));
 }

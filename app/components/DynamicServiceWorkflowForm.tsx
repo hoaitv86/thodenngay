@@ -7,6 +7,7 @@ import {
   type ServiceLikeForWorkflow,
   type WorkflowData,
   type WorkflowField,
+  type WorkflowSectionKey,
   type WorkflowSectionConfig,
 } from "@/config/serviceWorkflows";
 
@@ -23,6 +24,9 @@ type Props = {
   services: ServiceLikeForWorkflow[];
   value: WorkflowData;
   onChange: (value: WorkflowData) => void;
+  includeSectionKeys?: WorkflowSectionKey[];
+  excludeSectionKeys?: WorkflowSectionKey[];
+  disabled?: boolean;
 };
 
 const getSectionValue = (value: WorkflowData, key: string) => value[key] || {};
@@ -31,10 +35,12 @@ function WorkflowInput({
   field,
   value,
   onChange,
+  disabled = false,
 }: {
   field: WorkflowField;
   value: unknown;
   onChange: (nextValue: unknown) => void;
+  disabled?: boolean;
 }) {
   const commonClass = "input-field w-full !rounded-lg text-sm";
   const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : "";
@@ -46,13 +52,14 @@ function WorkflowInput({
         placeholder={field.placeholder}
         value={stringValue}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
       />
     );
   }
 
   if (field.type === "select") {
     return (
-      <select className={commonClass} value={stringValue} onChange={(event) => onChange(event.target.value)}>
+      <select className={commonClass} value={stringValue} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
         <option value="">-- Chon --</option>
         {(field.options || []).map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -69,6 +76,7 @@ function WorkflowInput({
       value={stringValue}
       onChange={(event) => onChange(field.type === "number" ? Number(event.target.value || 0) : event.target.value)}
       autoComplete={field.type === "password" ? "new-password" : undefined}
+      disabled={disabled}
     />
   );
 }
@@ -76,9 +84,11 @@ function WorkflowInput({
 function CameraDevicesEditor({
   section,
   onSectionChange,
+  disabled = false,
 }: {
   section: Record<string, unknown>;
   onSectionChange: (nextSection: Record<string, unknown>) => void;
+  disabled?: boolean;
 }) {
   const devices = Array.isArray(section.devices) ? (section.devices as CameraDevice[]) : [];
   const normalizedDevices = devices.length > 0 ? devices : [{}];
@@ -104,7 +114,7 @@ function CameraDevicesEditor({
             <button
               type="button"
               onClick={() => removeDevice(index)}
-              disabled={normalizedDevices.length === 1}
+              disabled={disabled || normalizedDevices.length === 1}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-error hover:bg-error-container disabled:opacity-40"
               aria-label="Xoa camera"
             >
@@ -112,12 +122,12 @@ function CameraDevicesEditor({
             </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="input-field !rounded-lg text-sm" placeholder="Ten camera" value={device.name || ""} onChange={(event) => updateDevice(index, { name: event.target.value })} />
-            <input className="input-field !rounded-lg text-sm" placeholder="Vi tri" value={device.location || ""} onChange={(event) => updateDevice(index, { location: event.target.value })} />
-            <input className="input-field !rounded-lg text-sm" placeholder="Serial" value={device.serial || ""} onChange={(event) => updateDevice(index, { serial: event.target.value })} />
-            <input className="input-field !rounded-lg text-sm" placeholder="UID neu co" value={device.uid || ""} onChange={(event) => updateDevice(index, { uid: event.target.value })} />
-            <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="QR Text" value={device.qrText || ""} onChange={(event) => updateDevice(index, { qrText: event.target.value })} />
-            <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="Ghi chu" value={device.note || ""} onChange={(event) => updateDevice(index, { note: event.target.value })} />
+            <input className="input-field !rounded-lg text-sm" placeholder="Ten camera" value={device.name || ""} onChange={(event) => updateDevice(index, { name: event.target.value })} disabled={disabled} />
+            <input className="input-field !rounded-lg text-sm" placeholder="Vi tri" value={device.location || ""} onChange={(event) => updateDevice(index, { location: event.target.value })} disabled={disabled} />
+            <input className="input-field !rounded-lg text-sm" placeholder="Serial" value={device.serial || ""} onChange={(event) => updateDevice(index, { serial: event.target.value })} disabled={disabled} />
+            <input className="input-field !rounded-lg text-sm" placeholder="UID neu co" value={device.uid || ""} onChange={(event) => updateDevice(index, { uid: event.target.value })} disabled={disabled} />
+            <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="QR Text" value={device.qrText || ""} onChange={(event) => updateDevice(index, { qrText: event.target.value })} disabled={disabled} />
+            <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="Ghi chu" value={device.note || ""} onChange={(event) => updateDevice(index, { note: event.target.value })} disabled={disabled} />
           </div>
         </div>
       ))}
@@ -125,6 +135,7 @@ function CameraDevicesEditor({
         type="button"
         onClick={() => onSectionChange({ ...section, devices: [...normalizedDevices, {}] })}
         className="inline-flex items-center gap-2 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container"
+        disabled={disabled}
       >
         <Plus size={14} />
         Them camera
@@ -137,10 +148,12 @@ function WorkflowSection({
   section,
   value,
   onChange,
+  disabled = false,
 }: {
   section: WorkflowSectionConfig;
   value: WorkflowData;
   onChange: (value: WorkflowData) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const sectionValue = getSectionValue(value, section.key);
@@ -164,7 +177,7 @@ function WorkflowSection({
       {open && (
         <div className="space-y-3 border-t border-outline-variant/20 p-4">
           {section.key === "camera_devices" ? (
-            <CameraDevicesEditor section={sectionValue} onSectionChange={onSectionChange} />
+            <CameraDevicesEditor section={sectionValue} onSectionChange={onSectionChange} disabled={disabled} />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {(section.fields || []).map((field) => (
@@ -174,6 +187,7 @@ function WorkflowSection({
                     field={field}
                     value={sectionValue[field.key]}
                     onChange={(nextValue) => onSectionChange({ ...sectionValue, [field.key]: nextValue })}
+                    disabled={disabled}
                   />
                 </label>
               ))}
@@ -185,8 +199,11 @@ function WorkflowSection({
   );
 }
 
-export function DynamicServiceWorkflowForm({ services, value, onChange }: Props) {
-  const sections = useMemo(() => getWorkflowSectionsForServices(services), [services]);
+export function DynamicServiceWorkflowForm({ services, value, onChange, includeSectionKeys, excludeSectionKeys, disabled = false }: Props) {
+  const sections = useMemo(
+    () => getWorkflowSectionsForServices(services, { includeSectionKeys, excludeSectionKeys }),
+    [excludeSectionKeys, includeSectionKeys, services]
+  );
 
   if (sections.length === 0) return null;
 
@@ -197,7 +214,7 @@ export function DynamicServiceWorkflowForm({ services, value, onChange }: Props)
         <p className="mt-1 text-xs text-on-surface-variant">Chi hien cac section phu hop voi dich vu da chon.</p>
       </div>
       {sections.map((section) => (
-        <WorkflowSection key={section.key} section={section} value={value} onChange={onChange} />
+        <WorkflowSection key={section.key} section={section} value={value} onChange={onChange} disabled={disabled} />
       ))}
     </div>
   );

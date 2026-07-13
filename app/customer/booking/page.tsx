@@ -20,7 +20,7 @@ import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import { HierarchicalServiceSelector } from "@/app/components/HierarchicalServiceSelector";
 import { attachJobServices, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
-import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
+import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
   MapPinIcon,
   ClockIcon,
@@ -221,7 +221,7 @@ function CustomerBookingContent() {
       const nextServices = nextIds
         .map(id => services.find(service => service.id === id))
         .filter((service): service is ServiceOption => Boolean(service));
-      setWorkflowData(prevWorkflow => pruneWorkflowData(prevWorkflow, nextServices));
+      setWorkflowData(prevWorkflow => pruneWorkflowData(prevWorkflow, nextServices, { excludeSectionKeys: handoverWorkflowSectionKeys }));
       return { ...prev, serviceId: nextIds[0] || "", serviceIds: nextIds };
     });
   };
@@ -230,7 +230,7 @@ function CustomerBookingContent() {
     const nextServices = nextIds
       .map(id => services.find(service => service.id === id))
       .filter((service): service is ServiceOption => Boolean(service));
-    setWorkflowData(prevWorkflow => pruneWorkflowData(prevWorkflow, nextServices));
+    setWorkflowData(prevWorkflow => pruneWorkflowData(prevWorkflow, nextServices, { excludeSectionKeys: handoverWorkflowSectionKeys }));
     setFormData(prev => ({ ...prev, serviceId: nextIds[0] || "", serviceIds: nextIds }));
   };
 
@@ -359,7 +359,7 @@ function CustomerBookingContent() {
         description: formData.description,
         quoted_price: quotedPrice,
         images: imageUrls,
-        workflow_data: pruneWorkflowData(workflowData, selectedServices),
+        workflow_data: pruneWorkflowData(workflowData, selectedServices, { excludeSectionKeys: handoverWorkflowSectionKeys }),
         status: 'pending',
         source: 'app',
         created_by: user.id
@@ -538,6 +538,7 @@ function CustomerBookingContent() {
               services={selectedServices}
               value={workflowData}
               onChange={setWorkflowData}
+              excludeSectionKeys={handoverWorkflowSectionKeys}
             />
 
             <div className="grid gap-6 lg:grid-cols-2">

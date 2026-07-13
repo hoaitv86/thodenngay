@@ -7,7 +7,7 @@ import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import { HierarchicalServiceSelector } from "@/app/components/HierarchicalServiceSelector";
 import { normalizeServiceIds } from "@/lib/job-workflow";
-import { pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
+import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
   SearchIcon,
   FilterIcon,
@@ -239,7 +239,7 @@ export default function AdminJobs() {
       .map(serviceId => services.find(service => service.id === serviceId))
       .filter((service): service is ServiceOption => Boolean(service));
     const nextPrice = nextServices.reduce((sum, service) => sum + Number(service.base_price || 0), 0);
-    setWorkflowData(prev => pruneWorkflowData(prev, nextServices));
+    setWorkflowData(prev => pruneWorkflowData(prev, nextServices, { excludeSectionKeys: handoverWorkflowSectionKeys }));
     setNewJob(prev => ({
       ...prev,
       serviceId: nextIds[0] || "",
@@ -276,7 +276,7 @@ export default function AdminJobs() {
           customerPhone: newJob.customerPhone,
           serviceId: newJob.serviceId,
           serviceIds: selectedServiceIds,
-          workflowData: pruneWorkflowData(workflowData, selectedServices),
+          workflowData: pruneWorkflowData(workflowData, selectedServices, { excludeSectionKeys: handoverWorkflowSectionKeys }),
           address: newJob.address,
           scheduledAt: newJob.scheduledAt,
           quotedPrice: newJob.quotedPrice,
@@ -961,6 +961,7 @@ export default function AdminJobs() {
                   services={selectedServices}
                   value={workflowData}
                   onChange={setWorkflowData}
+                  excludeSectionKeys={handoverWorkflowSectionKeys}
                 />
 
                 <div className="space-y-2">
