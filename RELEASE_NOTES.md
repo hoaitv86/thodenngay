@@ -1,5 +1,23 @@
 # Release Notes
 
+## Worker Directions Link
+
+Release date: 2026-07-13
+
+### Features
+- Worker job cards can now show Google Maps directions inside the worker page from the `Chi duong` action.
+
+### Fixes
+- Jobs with GPS open directions by coordinate; jobs without GPS fall back to the saved address.
+- Current worker location is used as the route origin, while customer GPS/address/manual input is used as the destination.
+- Jobs missing both GPS and address now ask workers to enter a destination address or coordinates before showing directions.
+
+### Database Changes
+- None.
+
+### Upgrade Notes
+- No migration is required.
+
 ## Project Spreadsheet Cleanup
 
 Release date: 2026-07-13

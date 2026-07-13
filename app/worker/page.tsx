@@ -171,6 +171,43 @@ const getJobCustomerGps = (job: WorkerJob) => {
   return isGpsPoint(customer?.gps_location) ? customer.gps_location : null;
 };
 
+const getJobDirectionDestination = (job: WorkerJob) => {
+  const customerGps = getJobCustomerGps(job);
+  return customerGps
+    ? `${customerGps.lat},${customerGps.lng}`
+    : job.address?.trim() || null;
+};
+
+const buildDirectionsExternalUrl = (destination: string, origin?: GpsLocation | null) => {
+  const params = new URLSearchParams({
+    api: "1",
+    destination,
+    travelmode: "driving",
+  });
+
+  if (isGpsPoint(origin)) {
+    params.set("origin", `${origin.lat},${origin.lng}`);
+  }
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+};
+
+const buildDirectionsEmbedUrl = (destination: string, origin?: GpsLocation | null) => {
+  if (!destination) return null;
+
+  const params = new URLSearchParams({
+    output: "embed",
+    daddr: destination,
+    dirflg: "d",
+  });
+
+  if (isGpsPoint(origin)) {
+    params.set("saddr", `${origin.lat},${origin.lng}`);
+  }
+
+  return `https://maps.google.com/maps?${params.toString()}`;
+};
+
 interface CompletionItem {
   id: string;
   name: string;
@@ -392,6 +429,15 @@ export default function WorkerDashboard() {
   });
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerLogin: null, customerPassword: null });
+  const [directionsView, setDirectionsView] = useState<{
+    job: WorkerJob;
+    embedUrl: string | null;
+    externalUrl: string | null;
+    origin: GpsLocation | null;
+    destinationInput: string;
+    destinationLat: string;
+    destinationLng: string;
+  } | null>(null);
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [expandedQuickServiceGroup, setExpandedQuickServiceGroup] = useState("internet");
@@ -578,6 +624,81 @@ export default function WorkerDashboard() {
         toastTimeoutRef.current = null;
       }, options.durationMs ?? 3000);
     }
+  };
+
+  const openDirections = async (job: WorkerJob) => {
+    const destination = getJobDirectionDestination(job);
+    const browserLocation = await getCurrentBrowserLocation();
+    const origin = browserLocation || (isGpsPoint(job.worker_gps_location) ? job.worker_gps_location : null);
+    const embedUrl = destination ? buildDirectionsEmbedUrl(destination, origin) : null;
+    const externalUrl = destination ? buildDirectionsExternalUrl(destination, origin) : null;
+
+    if (!destination) {
+      showToast("Công việc này chưa có vị trí khách hàng. Vui lòng nhập điểm đến để chỉ đường.", "info");
+    }
+
+    setDirectionsView({
+      job,
+      embedUrl,
+      externalUrl,
+      origin,
+      destinationInput: job.address?.trim() || "",
+      destinationLat: "",
+      destinationLng: "",
+    });
+  };
+
+  const setDirectionsField = (field: "destinationInput" | "destinationLat" | "destinationLng", value: string) => {
+    setDirectionsView(prev => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const showDirectionsForDraft = () => {
+    setDirectionsView(prev => {
+      if (!prev) return prev;
+
+      const lat = Number(prev.destinationLat.trim());
+      const lng = Number(prev.destinationLng.trim());
+      const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng);
+      const destination = hasCoordinates
+        ? `${lat},${lng}`
+        : prev.destinationInput.trim();
+
+      if (!destination) {
+        showToast("Vui lòng nhập địa điểm hoặc tọa độ điểm đến.", "error");
+        return prev;
+      }
+
+      return {
+        ...prev,
+        embedUrl: buildDirectionsEmbedUrl(destination, prev.origin),
+        externalUrl: buildDirectionsExternalUrl(destination, prev.origin),
+      };
+    });
+  };
+
+  const useCurrentLocationAsOrigin = async () => {
+    const currentLocation = await getCurrentBrowserLocation();
+    if (!currentLocation) {
+      showToast("Không lấy được vị trí hiện tại của thợ. Vui lòng cho phép trình duyệt lấy vị trí.", "error");
+      return;
+    }
+
+    setDirectionsView(prev => {
+      if (!prev) return prev;
+
+      const lat = Number(prev.destinationLat.trim());
+      const lng = Number(prev.destinationLng.trim());
+      const destination = Number.isFinite(lat) && Number.isFinite(lng)
+        ? `${lat},${lng}`
+        : getJobDirectionDestination(prev.job) || prev.destinationInput.trim();
+
+      return {
+        ...prev,
+        origin: currentLocation,
+        embedUrl: destination ? buildDirectionsEmbedUrl(destination, currentLocation) : null,
+        externalUrl: destination ? buildDirectionsExternalUrl(destination, currentLocation) : null,
+      };
+    });
   };
 
   const newJobsRef = React.useRef<WorkerJob[]>([]);
@@ -2300,6 +2421,13 @@ export default function WorkerDashboard() {
                   <div className="flex items-start gap-2 text-on-surface-variant">
                     <MapPinIcon size={15} className="mt-1 shrink-0 text-primary-container" />
                     <span className="min-w-0 flex-1 text-body-sm leading-6">{job.address}</span>
+                    <button
+                      type="button"
+                      onClick={() => openDirections(job)}
+                      className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold uppercase text-primary-container shadow-sm transition-colors hover:bg-primary-container hover:text-white"
+                    >
+                      Chỉ đường
+                    </button>
                   </div>
                   <div className="flex items-center gap-2 text-on-surface-variant">
                     <ClockIcon size={15} className="text-primary-container" />
@@ -2656,7 +2784,11 @@ export default function WorkerDashboard() {
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase">Gọi khách</span>
                 </a>
                 <div className="h-8 w-px bg-outline-variant/50" />
-                <button className="flex flex-col items-center gap-1 rounded-lg bg-primary-fixed p-2 text-primary-container transition-colors hover:bg-primary-container hover:text-white">
+                <button
+                  type="button"
+                  onClick={() => openDirections(job)}
+                  className="flex flex-col items-center gap-1 rounded-lg bg-primary-fixed p-2 text-primary-container transition-colors hover:bg-primary-container hover:text-white"
+                >
                   <MapPinIcon size={20} />
                   <span className="text-[10px] font-bold uppercase">Chỉ đường</span>
                 </button>
@@ -2691,6 +2823,105 @@ export default function WorkerDashboard() {
           )
         )}
       </div>
+
+      {directionsView && (
+        <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center sm:px-4">
+          <div className="flex h-[82dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:h-[78vh] sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-outline-variant/40 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-extrabold uppercase text-primary-container">Chỉ đường</p>
+                <h3 className="truncate text-base font-extrabold text-on-surface">
+                  {directionsView.job.customerName || directionsView.job.serviceName || "Khách hàng"}
+                </h3>
+                <p className="line-clamp-1 text-xs text-on-surface-variant">
+                  {directionsView.job.address || "Điểm đến theo GPS"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDirectionsView(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface-variant transition-colors hover:bg-error-container hover:text-error"
+                aria-label="Đóng bản đồ"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-3 border-b border-outline-variant/40 bg-surface-container-lowest px-4 py-3 sm:grid-cols-[1.4fr_0.7fr_0.7fr_auto]">
+              <input
+                className="input-field !py-2 text-sm"
+                value={directionsView.destinationInput}
+                onChange={(e) => setDirectionsField("destinationInput", e.target.value)}
+                placeholder="Nhập địa điểm khách hàng"
+              />
+              <input
+                className="input-field !py-2 text-sm"
+                value={directionsView.destinationLat}
+                onChange={(e) => setDirectionsField("destinationLat", e.target.value)}
+                placeholder="Vĩ độ"
+                inputMode="decimal"
+              />
+              <input
+                className="input-field !py-2 text-sm"
+                value={directionsView.destinationLng}
+                onChange={(e) => setDirectionsField("destinationLng", e.target.value)}
+                placeholder="Kinh độ"
+                inputMode="decimal"
+              />
+              <button
+                type="button"
+                onClick={showDirectionsForDraft}
+                className="rounded-lg bg-primary-container px-4 py-2 text-xs font-extrabold text-white shadow-sm transition hover:brightness-110"
+              >
+                Hiển thị
+              </button>
+              <button
+                type="button"
+                onClick={useCurrentLocationAsOrigin}
+                className="rounded-lg border border-outline-variant/60 bg-white px-4 py-2 text-xs font-extrabold text-primary-container transition hover:bg-primary-fixed sm:col-span-4"
+              >
+                Lấy vị trí của tôi làm điểm xuất phát
+              </button>
+            </div>
+
+            {directionsView.embedUrl ? (
+              <iframe
+                title="Bản đồ chỉ đường"
+                src={directionsView.embedUrl}
+                className="min-h-0 flex-1 border-0"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center bg-surface-container-low px-6 text-center">
+                <div>
+                  <MapPinIcon size={36} className="mx-auto mb-3 text-primary-container" />
+                  <p className="text-sm font-extrabold text-on-surface">Nhập vị trí khách hàng</p>
+                  <p className="mt-1 text-xs font-semibold text-on-surface-variant">
+                    Nhập địa điểm hoặc tọa độ điểm thợ đã tích trên bản đồ.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 border-t border-outline-variant/40 px-4 py-3">
+              <p className="min-w-0 text-xs font-semibold text-on-surface-variant">
+                Nếu bản đồ cần quyền vị trí, hãy cho phép trình duyệt lấy vị trí hiện tại.
+              </p>
+              {directionsView.externalUrl && (
+                <a
+                  href={directionsView.externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 rounded-lg bg-primary-container px-4 py-2 text-xs font-extrabold text-white shadow-sm transition hover:brightness-110"
+                >
+                  Mở Maps
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Complete Job Modal */}
       {activeJobToComplete && (

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-13 - Worker Directions Link
+
+### Fixed
+- Connected the worker `Chi duong` action to an in-page Google Maps directions panel using customer GPS when available, falling back to the job address.
+- Let workers enter a destination address or coordinates when the customer location is missing.
+- Fixed current worker location handling so it is used as the route origin, not the destination.
+- Added a clear worker toast when a job has neither GPS nor address for directions.
+
+### Database
+- No database schema changes.
+
 ## 2026-07-13 - Project Spreadsheet Cleanup
 
 ### Changed
