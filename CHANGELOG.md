@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-13 - Worker Old Backlog Jobs
+
+### Added
+- Added the worker `Tồn việc` view for unfinished jobs from previous months only.
+- Added search across customer name, phone, job code, service, address, and description in the backlog view.
+
+### Changed
+- Renamed the mobile worker navigation item from `Công việc` to `Tồn việc`.
+- Changed the middle mobile `+` action to open and scroll to the quick job form.
+- Removed the floating mobile quick job button from the worker dashboard.
+
+### Database
+- No database schema changes.
+
 ## 2026-07-12 - Worker Dashboard Mobile Stats Layout
 
 ### Changed

@@ -189,6 +189,16 @@ export default function WorkerLayout({
     router.refresh();
   };
 
+  const handleCreateJobNav = () => {
+    setMoreOpen(false);
+    if (pathname === "/worker") {
+      window.dispatchEvent(new CustomEvent("worker:open-quick-job"));
+      window.setTimeout(() => {
+        document.getElementById("worker-quick-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
+  };
+
   const isActiveItem = (item: WorkerFeatureDefinition) => {
     if (item.id === "create_job" || item.id === "more") return false;
     if (item.exactActive) return pathname === item.route;
@@ -402,7 +412,7 @@ export default function WorkerLayout({
                 <Link
                   key={item.id}
                   href={item.href}
-                  onClick={() => setMoreOpen(false)}
+                  onClick={isCreateJob ? handleCreateJobNav : () => setMoreOpen(false)}
                   className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl transition-all ${
                     isCreateJob ? "h-20 -translate-y-2" : "h-16"
                   } ${

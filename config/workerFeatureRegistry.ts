@@ -99,7 +99,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     id: "create_job",
     label: "Tạo việc",
     route: "/worker",
-    href: "/worker",
+    href: "/worker#worker-quick-job",
     icon: "plus",
     order: 30,
     enabled: true,
@@ -110,7 +110,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
   },
   {
     id: "jobs",
-    label: "Công việc",
+    label: "Tồn việc",
     route: "/worker/jobs",
     href: "/worker/jobs",
     icon: "briefcase",

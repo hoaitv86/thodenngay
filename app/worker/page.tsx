@@ -546,13 +546,6 @@ export default function WorkerDashboard() {
 
   const toastTimeoutRef = React.useRef<number | null>(null);
 
-  const openQuickJobForm = () => {
-    setQuickFormOpen(true);
-    window.setTimeout(() => {
-      document.getElementById("worker-quick-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-  };
-
   const closeToast = () => {
     if (toastTimeoutRef.current) {
       window.clearTimeout(toastTimeoutRef.current);
@@ -592,6 +585,12 @@ export default function WorkerDashboard() {
   useEffect(() => {
     newJobsRef.current = newJobs;
   }, [newJobs]);
+
+  useEffect(() => {
+    const openQuickJob = () => setQuickFormOpen(true);
+    window.addEventListener("worker:open-quick-job", openQuickJob);
+    return () => window.removeEventListener("worker:open-quick-job", openQuickJob);
+  }, []);
 
   const fetchData = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -1816,16 +1815,6 @@ export default function WorkerDashboard() {
           </div>
         </div>
       </section>
-
-      <button
-        type="button"
-        onClick={openQuickJobForm}
-        className="fixed right-4 z-40 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-white shadow-[0_12px_28px_rgba(22,90,88,0.28)] transition-transform active:scale-95 md:hidden"
-        style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
-      >
-        <BriefcaseIcon size={18} />
-        Tạo việc
-      </button>
 
       {/* Quick Job Creation */}
       <section id="worker-quick-job" className="scroll-mt-20 px-4 py-4 sm:px-6 lg:px-8">

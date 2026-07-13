@@ -1,5 +1,24 @@
 # Release Notes
 
+## Worker Old Backlog Jobs
+
+Release date: 2026-07-13
+
+### Features
+- Worker mobile navigation now shows `Tồn việc` for old unfinished jobs.
+- The `Tồn việc` page lists only unfinished jobs from months before the current month.
+- The mobile `+` button opens the existing quick job form on the worker dashboard.
+
+### Fixes
+- Removed the extra floating mobile quick job button to keep the 5-button mobile layout clean.
+- Clarified the job backlog scope so current-month jobs do not appear in `Tồn việc`.
+
+### Database Changes
+- None.
+
+### Upgrade Notes
+- No migration is required.
+
 ## Worker Dashboard Mobile Stats Layout
 
 Release date: 2026-07-12
