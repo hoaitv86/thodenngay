@@ -33,6 +33,7 @@ export interface Worker {
   user_id: string;
   specialties: string[];
   status: WorkerStatus;
+  is_available?: boolean;
   avg_rating: number;
   total_jobs: number;
   avatar_url?: string;

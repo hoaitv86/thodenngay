@@ -39,6 +39,7 @@ CREATE TABLE public.workers (
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
     specialties TEXT[] DEFAULT '{}',
     status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'blocked')) DEFAULT 'pending',
+    is_available BOOLEAN NOT NULL DEFAULT TRUE,
     avg_rating DECIMAL(3,2) DEFAULT 0,
     total_jobs INTEGER DEFAULT 0,
     certificates TEXT,

@@ -40,6 +40,7 @@ interface ServiceOption {
 
 interface WorkerOption {
   id: string;
+  is_available?: boolean | null;
   profiles?: WorkerProfile | WorkerProfile[] | null;
 }
 
@@ -336,8 +337,9 @@ export default function AdminJobs() {
     if (workersList.length === 0) {
       const { data } = await supabase
         .from('workers')
-        .select('id, profiles(full_name, phone)')
-        .eq('status', 'active');
+        .select('id, is_available, profiles(full_name, phone)')
+        .eq('status', 'active')
+        .eq('is_available', true);
       if (data) setWorkersList(data as WorkerOption[]);
     }
   };
@@ -359,9 +361,15 @@ export default function AdminJobs() {
       : { data: null };
     const { data: selectedWorker } = await supabase
       .from('workers')
-      .select('profiles(gps_location)')
+      .select('is_available, profiles(gps_location)')
       .eq('id', selectedWorkerId)
       .single();
+
+    if (selectedWorker?.is_available === false) {
+      alert("Thợ này đang Offline nên chưa thể nhận việc mới.");
+      setIsAssigning(false);
+      return;
+    }
     const workerProfiles = selectedWorker?.profiles;
     const workerProfile = Array.isArray(workerProfiles) ? workerProfiles[0] : workerProfiles;
 

@@ -76,6 +76,7 @@ export default function WorkerLayout({
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [userName, setUserName] = useState("Thợ");
+  const [isAvailable, setIsAvailable] = useState(true);
   const [menuContext, setMenuContext] = useState(defaultMenuContext);
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -148,7 +149,7 @@ export default function WorkerLayout({
           .single(),
         supabase
           .from("workers")
-          .select("id, specialties")
+          .select("*")
           .eq("user_id", user.id)
           .maybeSingle(),
       ]);
@@ -156,9 +157,11 @@ export default function WorkerLayout({
       if (!isMounted) return;
 
       if (profile?.full_name) setUserName(profile.full_name);
+      setIsAvailable(worker?.is_available !== false);
 
-      const specialties = Array.isArray(worker?.specialties)
-        ? worker.specialties.filter((item): item is string => typeof item === "string")
+      const workerSpecialties = Array.isArray(worker?.specialties) ? worker.specialties as unknown[] : [];
+      const specialties = workerSpecialties.length > 0
+        ? workerSpecialties.filter((item): item is string => typeof item === "string")
         : [];
       const billgoHistory = worker?.id ? await hasBillGoData(worker.id) : false;
       const role = typeof profile?.role === "string" ? profile.role : "worker";
@@ -177,8 +180,16 @@ export default function WorkerLayout({
 
     void getUser();
 
+    const handleAvailabilityChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ isAvailable?: boolean }>).detail;
+      if (typeof detail?.isAvailable === "boolean") setIsAvailable(detail.isAvailable);
+    };
+
+    window.addEventListener("worker:availability-changed", handleAvailabilityChange);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("worker:availability-changed", handleAvailabilityChange);
     };
   }, [supabase]);
 
@@ -269,8 +280,10 @@ export default function WorkerLayout({
             <div>
               <span className="block max-w-[180px] truncate text-base font-bold leading-tight text-primary lg:max-w-none lg:text-lg">Trang thợ</span>
               <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                <span className="max-w-[180px] truncate text-[10px] font-bold uppercase text-success sm:max-w-none">{userName} đang online</span>
+                <span className={`h-2 w-2 rounded-full ${isAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
+                <span className={`max-w-[180px] truncate text-[10px] font-bold uppercase sm:max-w-none ${isAvailable ? "text-success" : "text-on-surface-variant"}`}>
+                  {userName} {isAvailable ? "đang online" : "đang offline"}
+                </span>
               </div>
             </div>
           </div>

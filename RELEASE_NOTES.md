@@ -1,5 +1,25 @@
 # Release Notes
 
+## Worker Availability Toggle
+
+Release date: 2026-07-13
+
+### Features
+- Worker dashboard now has an Online/Offline toggle for pausing new job intake.
+- The worker header and dashboard status light now reflect the current availability.
+- Offline workers can still view existing work and create quick jobs, but new external jobs are hidden.
+
+### Fixes
+- Admin manual assignment and worker job acceptance now respect worker availability.
+
+### Database Changes
+- Added `workers.is_available BOOLEAN NOT NULL DEFAULT TRUE`.
+- Updated `worker_accept_job` to reject Offline workers with `WORKER_OFFLINE`.
+- Updated the unassigned pending job policy to show new jobs only to active available workers.
+
+### Upgrade Notes
+- Run `supabase/migration_worker_availability.sql` before using the Online/Offline toggle in production.
+
 ## Worker Dashboard Today Label
 
 Release date: 2026-07-13

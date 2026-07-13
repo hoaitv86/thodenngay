@@ -390,6 +390,7 @@ export default function WorkerDashboard() {
     monthlyIncome: 0,
     monthlyRating: 0,
   });
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerLogin: null, customerPassword: null });
   const [quickFormOpen, setQuickFormOpen] = useState(false);
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
@@ -608,6 +609,7 @@ export default function WorkerDashboard() {
 
     if (workerData) {
       setWorker(workerData);
+      const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
       const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
 
@@ -676,7 +678,7 @@ export default function WorkerDashboard() {
 
       // Map icon component
       const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
-      const mappedNew = sortJobsNewestFirst(filteredPending.map(j => {
+      const mappedNew = workerIsAvailable ? sortJobsNewestFirst(filteredPending.map(j => {
         const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
 
         return {
@@ -689,7 +691,7 @@ export default function WorkerDashboard() {
           eta: route.eta,
           hasGpsEstimate: route.hasGps,
         };
-      }));
+      })) : [];
 
       // Check if there are new jobs that weren't in the list before
       if (isBackground && mappedNew.length > 0) {
@@ -907,6 +909,10 @@ export default function WorkerDashboard() {
 
   const handleAcceptJob = async (jobId: string) => {
     if (!worker) return;
+    if (worker.is_available === false) {
+      showToast("Bạn đang Offline nên không thể nhận việc mới. Bật Online để nhận việc.", "info");
+      return;
+    }
     const jobToAssign = newJobs.find(j => j.id === jobId);
     const workerBrowserLocation = await getCurrentBrowserLocation();
     const { data: { user } } = await supabase.auth.getUser();
@@ -940,6 +946,7 @@ export default function WorkerDashboard() {
       const jobAlreadyAccepted =
         error.message?.includes("Công việc đã được thợ khác nhận") ||
         error.message?.includes("JOB_ALREADY_ACCEPTED");
+      const workerOffline = error.message?.includes("WORKER_OFFLINE");
       const acceptJobRpcMissing =
         error.code === "PGRST202" ||
         error.message?.includes("worker_accept_job");
@@ -950,13 +957,15 @@ export default function WorkerDashboard() {
       showToast(
         jobAlreadyAccepted
           ? "Công việc đã được thợ khác nhận."
+          : workerOffline
+            ? "Bạn đang Offline nên không thể nhận việc mới. Bật Online để nhận việc."
           : acceptJobRpcMissing || acceptJobSchemaMissing
             ? "Chức năng nhận việc chưa được bật trong database. Vui lòng chạy migration worker_accept_job trước."
           : "Lỗi khi nhận việc: " + error.message,
-        jobAlreadyAccepted ? "info" : "error"
+        jobAlreadyAccepted || workerOffline ? "info" : "error"
       );
 
-      if (jobAlreadyAccepted) {
+      if (jobAlreadyAccepted || workerOffline) {
         setNewJobs(prev => prev.filter(j => j.id !== jobId));
       }
 
@@ -1003,6 +1012,48 @@ export default function WorkerDashboard() {
     // Just hide from feed (don't change job status)
     setNewJobs(prev => prev.filter(j => j.id !== jobId));
     showToast('Đã bỏ qua công việc này.', 'info');
+  };
+
+  const handleToggleAvailability = async () => {
+    if (!worker || availabilitySaving) return;
+
+    const nextAvailable = worker.is_available === false;
+    setAvailabilitySaving(true);
+
+    const { error } = await supabase
+      .from("workers")
+      .update({ is_available: nextAvailable })
+      .eq("id", worker.id);
+
+    if (error) {
+      showToast(
+        error.code === "42703"
+          ? "Database chưa có cột is_available. Vui lòng chạy migration worker availability trước."
+          : "Không thể cập nhật trạng thái nhận việc: " + error.message,
+        "error"
+      );
+      setAvailabilitySaving(false);
+      return;
+    }
+
+    setWorker(current => current ? { ...current, is_available: nextAvailable } : current);
+    window.dispatchEvent(new CustomEvent("worker:availability-changed", {
+      detail: { isAvailable: nextAvailable },
+    }));
+
+    if (!nextAvailable) {
+      setNewJobs([]);
+      setTab(current => current === "new" ? "active" : current);
+    }
+
+    showToast(
+      nextAvailable
+        ? "Bạn đã Online, hệ thống sẽ hiển thị việc mới phù hợp."
+        : "Bạn đã Offline, hệ thống sẽ tạm ẩn việc mới để bạn nghỉ ngơi.",
+      "success"
+    );
+    setAvailabilitySaving(false);
+    fetchData(true);
   };
 
   const handleQuickServiceChange = (serviceId: string) => {
@@ -1717,6 +1768,8 @@ export default function WorkerDashboard() {
     return <PendingApproval worker={worker} workerName={(worker as WorkerWithProfile).user?.full_name || 'Thợ'} />;
   }
 
+  const isWorkerAvailable = worker?.is_available !== false;
+
   return (
     <div className="flex flex-col w-full relative">
       {/* Toast Notification */}
@@ -1770,15 +1823,30 @@ export default function WorkerDashboard() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-[11px] font-bold uppercase text-white/75">Bảng điều khiển thợ</p>
-                <h1 className="mt-1 text-2xl font-extrabold leading-tight drop-shadow-sm" style={{ color: "#fde68a" }}>Sẵn sàng nhận việc</h1>
+                <h1 className="mt-1 text-2xl font-extrabold leading-tight drop-shadow-sm" style={{ color: "#fde68a" }}>
+                  {isWorkerAvailable ? "Sẵn sàng nhận việc" : "Đang nghỉ nhận việc"}
+                </h1>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">
-                  Theo dõi việc mới, việc đang làm và tạo đơn nhanh cho khách quen.
+                  {isWorkerAvailable
+                    ? "Theo dõi việc mới, việc đang làm và tạo đơn nhanh cho khách quen."
+                    : "Bạn đang Offline nên hệ thống tạm ẩn việc mới để bạn nghỉ ngơi."}
                 </p>
               </div>
-              <div className="inline-flex w-fit items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-xs font-extrabold text-success shadow-sm">
-                <span className="h-2 w-2 rounded-full bg-success" />
-                Online
-              </div>
+              <button
+                type="button"
+                onClick={handleToggleAvailability}
+                disabled={availabilitySaving}
+                className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold shadow-sm transition-all active:scale-95 disabled:cursor-wait disabled:opacity-70 ${
+                  isWorkerAvailable
+                    ? "bg-white/95 text-success"
+                    : "bg-white/80 text-on-surface-variant"
+                }`}
+                aria-pressed={isWorkerAvailable}
+                title={isWorkerAvailable ? "Bấm để chuyển Offline" : "Bấm để chuyển Online"}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${isWorkerAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
+                {availabilitySaving ? "Đang lưu..." : isWorkerAvailable ? "Online" : "Offline"}
+              </button>
             </div>
           </div>
 
@@ -2289,8 +2357,14 @@ export default function WorkerDashboard() {
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
                 <BriefcaseIcon size={32} />
               </div>
-              <p className="text-base font-bold text-on-surface">Chưa có việc mới</p>
-              <p className="text-body-sm text-on-surface-variant">Chưa có việc mới nào quanh đây.</p>
+              <p className="text-base font-bold text-on-surface">
+                {isWorkerAvailable ? "Chưa có việc mới" : "Bạn đang Offline"}
+              </p>
+              <p className="text-body-sm text-on-surface-variant">
+                {isWorkerAvailable
+                  ? "Chưa có việc mới nào quanh đây."
+                  : "Bật Online ở bảng điều khiển để tiếp tục nhận việc mới."}
+              </p>
             </div>
           )
         ) : tab === "pending" ? (

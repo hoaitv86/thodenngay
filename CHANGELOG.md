@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-13 - Worker Availability Toggle
+
+### Added
+- Added an Online/Offline toggle to the worker dashboard.
+- Added `workers.is_available` to let active workers pause receiving new jobs without changing account approval status.
+
+### Changed
+- Hidden new job feed items while a worker is Offline.
+- Filtered admin manual assignment and worker job acceptance by worker availability.
+
+### Database
+- Added `supabase/migration_worker_availability.sql`.
+
 ## 2026-07-13 - Worker Dashboard Today Label
 
 ### Changed
