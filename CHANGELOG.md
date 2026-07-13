@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-13 - Worker Inventory Category Suggestions
+
+### Changed
+- Filtered inventory product category suggestions by the logged-in worker's specialties.
+- Kept category suggestions compact for workers without clear specialties.
+- Kept custom category entry available for shops with their own product grouping.
+
+### Database
+- No database schema changes.
+
 ## 2026-07-13 - Worker Old Backlog Jobs
 
 ### Added

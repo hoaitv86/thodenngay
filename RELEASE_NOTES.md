@@ -1,5 +1,23 @@
 # Release Notes
 
+## Worker Inventory Category Suggestions
+
+Release date: 2026-07-13
+
+### Features
+- Inventory product category suggestions now follow the worker's specialties.
+- Workers without a clear specialty see a compact fallback list instead of the full category set.
+- Custom category entry remains available for each shop's own product grouping.
+
+### Fixes
+- Prevented the add/edit product category field from showing an overly broad global category list.
+
+### Database Changes
+- None.
+
+### Upgrade Notes
+- No migration is required.
+
 ## Worker Old Backlog Jobs
 
 Release date: 2026-07-13

@@ -20,6 +20,7 @@ type InventoryProductFormProps = {
   skuLoading?: boolean;
   canRegenerateSku?: boolean;
   skuRegenerateDisabled?: boolean;
+  categorySuggestions?: string[];
   onCustomSkuChange: (enabled: boolean) => void;
   onRegenerateSku?: () => void;
   onChange: (values: InventoryProductFormValues) => void;
@@ -37,6 +38,7 @@ export function InventoryProductForm({
   skuLoading = false,
   canRegenerateSku = false,
   skuRegenerateDisabled = false,
+  categorySuggestions = inventoryCategorySuggestions,
   onCustomSkuChange,
   onRegenerateSku,
   onChange,
@@ -140,7 +142,7 @@ export function InventoryProductForm({
         </div>
 
         <datalist id="inventory-categories">
-          {inventoryCategorySuggestions.map(category => <option key={category} value={category} />)}
+          {categorySuggestions.map(category => <option key={category} value={category} />)}
         </datalist>
         <datalist id="inventory-units">
           {inventoryUnitSuggestions.map(unit => <option key={unit} value={unit} />)}

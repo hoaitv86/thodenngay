@@ -30,6 +30,12 @@ export type InventoryProductFormValues = {
   note: string;
 };
 
+type InventoryCategoryGroup = {
+  id: string;
+  keywords: string[];
+  categories: string[];
+};
+
 export const emptyInventoryProductForm: InventoryProductFormValues = {
   name: "",
   sku: "",
@@ -44,20 +50,196 @@ export const emptyInventoryProductForm: InventoryProductFormValues = {
   note: "",
 };
 
-export const inventoryCategorySuggestions = [
-  "Mạng internet",
+const commonInventoryCategorySuggestions = [
+  "Phụ kiện lắp đặt",
+  "Dụng cụ thi công",
+  "Danh mục khác",
+];
+
+const compactInventoryCategorySuggestions = [
+  "Mạng Internet",
   "Camera",
   "Máy tính",
   "Máy in",
+  ...commonInventoryCategorySuggestions,
+];
+
+const inventoryCategoryGroups: InventoryCategoryGroup[] = [
+  {
+    id: "internet",
+    keywords: ["mang internet", "internet", "wifi", "wi-fi", "router", "modem", "mesh", "lan", "switch", "thiet bi mang", "cap quang"],
+    categories: [
+      "Mạng Internet",
+      "Thiết bị mạng",
+      "Router",
+      "Modem",
+      "WiFi Mesh",
+      "Switch mạng",
+      "Access Point",
+      "Dây mạng LAN",
+      "Cáp quang",
+      "Phụ kiện mạng",
+    ],
+  },
+  {
+    id: "camera",
+    keywords: ["camera", "cctv", "dau ghi", "ghi hinh"],
+    categories: [
+      "Camera",
+      "Camera IP",
+      "Camera Analog",
+      "Đầu ghi camera",
+      "Ổ cứng camera",
+      "Nguồn camera",
+      "Dây camera",
+      "Jack camera",
+      "Phụ kiện camera",
+    ],
+  },
+  {
+    id: "computer",
+    keywords: ["may tinh", "laptop", "pc", "windows", "office", "phan mem", "ram", "ssd", "tin hoc"],
+    categories: [
+      "Máy tính",
+      "Laptop",
+      "PC",
+      "Linh kiện máy tính",
+      "RAM",
+      "SSD/HDD",
+      "Màn hình",
+      "Bàn phím/chuột",
+      "Phụ kiện máy tính",
+    ],
+  },
+  {
+    id: "printer",
+    keywords: ["may in", "printer", "muc in", "do muc", "scan", "fax"],
+    categories: [
+      "Máy in",
+      "Mực in",
+      "Hộp mực",
+      "Drum/trống máy in",
+      "Linh kiện máy in",
+      "Giấy in",
+      "Phụ kiện máy in",
+    ],
+  },
+  {
+    id: "low-voltage",
+    keywords: ["dien nhe", "thiet bi mang", "cap mang", "day mang", "tin hieu", "nguon"],
+    categories: [
+      "Thiết bị mạng",
+      "Dây mạng LAN",
+      "Cáp quang",
+      "Camera",
+      "Nguồn camera",
+      "Vật tư điện",
+      "Phụ kiện lắp đặt",
+    ],
+  },
+  {
+    id: "other",
+    keywords: ["khac", "sua chua", "bao tri", "lap dat"],
+    categories: [
+      "Vật tư điện",
+      "Vật tư nước",
+      "Linh kiện điện lạnh",
+    ],
+  },
+];
+
+export const inventoryCategorySuggestions = [
+  "Mạng Internet",
+  "Thiết bị mạng",
+  "Router",
+  "Modem",
+  "WiFi Mesh",
+  "Switch mạng",
+  "Access Point",
+  "Dây mạng LAN",
+  "Cáp quang",
+  "Hạt mạng RJ45",
+  "Tủ mạng",
+  "Bộ chuyển đổi quang",
+  "Phụ kiện mạng",
+  "Camera",
+  "Camera IP",
+  "Camera Analog",
+  "Đầu ghi camera",
+  "Ổ cứng camera",
+  "Nguồn camera",
+  "Dây camera",
+  "Jack camera",
+  "Phụ kiện camera",
+  "Máy tính",
+  "Laptop",
+  "PC",
+  "Linh kiện máy tính",
+  "RAM",
+  "SSD/HDD",
+  "Mainboard",
+  "CPU",
+  "VGA",
+  "Màn hình",
+  "Bàn phím/chuột",
+  "Phần mềm bản quyền",
+  "Phụ kiện máy tính",
+  "Máy in",
+  "Mực in",
+  "Hộp mực",
+  "Drum/trống máy in",
+  "Linh kiện máy in",
+  "Giấy in",
+  "Phụ kiện máy in",
   "Vật tư điện",
   "Vật tư nước",
-  "Thiết bị mạng",
   "Linh kiện điện lạnh",
   "Phụ kiện lắp đặt",
   "Dụng cụ thi công",
+  "Danh mục khác",
 ];
 
 export const inventoryUnitSuggestions = ["cái", "bộ", "mét", "cuộn", "hộp", "kg", "lít"];
+
+function normalizeInventoryCategoryText(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d");
+}
+
+function uniqueInventoryCategories(categories: string[]) {
+  const seen = new Set<string>();
+  return categories.filter(category => {
+    const key = normalizeInventoryCategoryText(category);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function getInventoryCategorySuggestionsForSpecialties(specialties: string[] = []) {
+  const normalizedSpecialties = specialties.map(normalizeInventoryCategoryText).filter(Boolean);
+  if (normalizedSpecialties.length === 0) return compactInventoryCategorySuggestions;
+
+  const matchedGroups = inventoryCategoryGroups.filter(group =>
+    normalizedSpecialties.some(specialty =>
+      specialty === group.id ||
+      specialty.includes(group.id) ||
+      group.keywords.some(keyword => specialty.includes(normalizeInventoryCategoryText(keyword)))
+    )
+  );
+
+  if (matchedGroups.length === 0) return compactInventoryCategorySuggestions;
+
+  return uniqueInventoryCategories([
+    ...matchedGroups.flatMap(group => group.categories),
+    ...commonInventoryCategorySuggestions,
+  ]);
+}
 
 export const missingWorkerInventorySchemaMessage =
   "Kho hàng và bán hàng chưa được khởi tạo trên database. Vui lòng chạy migration kho/bán hàng trước khi sử dụng.";

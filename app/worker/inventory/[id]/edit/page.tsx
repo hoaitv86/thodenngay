@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   buildInventoryProductPayload,
   emptyInventoryProductForm,
+  getInventoryCategorySuggestionsForSpecialties,
   productToFormValues,
   validateInventoryProduct,
   type InventoryProduct,
@@ -24,6 +25,7 @@ export default function EditInventoryProductPage() {
   const [saving, setSaving] = useState(false);
   const [customSku, setCustomSku] = useState(false);
   const [message, setMessage] = useState("");
+  const [categorySuggestions, setCategorySuggestions] = useState(() => getInventoryCategorySuggestionsForSpecialties());
 
   const fetchProduct = useCallback(async () => {
     setLoading(true);
@@ -38,7 +40,7 @@ export default function EditInventoryProductPage() {
 
     const { data: worker } = await supabase
       .from("workers")
-      .select("id")
+      .select("id, specialties")
       .eq("user_id", user.id)
       .single();
 
@@ -59,6 +61,9 @@ export default function EditInventoryProductPage() {
       setMessage(error?.message || "Không tìm thấy sản phẩm.");
     } else {
       setWorkerId(worker.id);
+      setCategorySuggestions(getInventoryCategorySuggestionsForSpecialties(
+        Array.isArray(worker.specialties) ? worker.specialties : []
+      ));
       setValues(productToFormValues(data as InventoryProduct));
     }
     setLoading(false);
@@ -113,6 +118,7 @@ export default function EditInventoryProductPage() {
       submitLabel="Lưu thay đổi"
       message={message}
       customSku={customSku}
+      categorySuggestions={categorySuggestions}
       onCustomSkuChange={setCustomSku}
       onChange={setValues}
       onSubmit={handleSubmit}

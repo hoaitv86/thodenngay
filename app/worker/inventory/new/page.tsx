@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   buildInventoryProductPayload,
   emptyInventoryProductForm,
+  getInventoryCategorySuggestionsForSpecialties,
   getInventoryProductCodePrefix,
   getNextInventoryProductCode,
   validateInventoryProduct,
@@ -22,18 +23,22 @@ export default function NewInventoryProductPage() {
   const [skuLoading, setSkuLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [categorySuggestions, setCategorySuggestions] = useState(() => getInventoryCategorySuggestionsForSpecialties());
 
-  const fetchWorkerId = useCallback(async () => {
+  const fetchWorkerProfile = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return "";
+    if (!user) return { id: "", specialties: [] as string[] };
 
     const { data: worker } = await supabase
       .from("workers")
-      .select("id")
+      .select("id, specialties")
       .eq("user_id", user.id)
       .single();
 
-    return worker?.id || "";
+    return {
+      id: worker?.id || "",
+      specialties: Array.isArray(worker?.specialties) ? worker.specialties : [],
+    };
   }, [supabase]);
 
   const fetchNextSku = useCallback(async (productName: string, currentWorkerId: string) => {
@@ -55,13 +60,16 @@ export default function NewInventoryProductPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchWorkerId().then(id => {
-      if (!cancelled) setWorkerId(id);
+    fetchWorkerProfile().then(worker => {
+      if (!cancelled) {
+        setWorkerId(worker.id);
+        setCategorySuggestions(getInventoryCategorySuggestionsForSpecialties(worker.specialties));
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [fetchWorkerId]);
+  }, [fetchWorkerProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,11 +141,15 @@ export default function NewInventoryProductPage() {
     setSaving(true);
     setMessage("");
 
-    const currentWorkerId = workerId || await fetchWorkerId();
+    const currentWorker = workerId ? { id: workerId, specialties: [] as string[] } : await fetchWorkerProfile();
+    const currentWorkerId = currentWorker.id;
     if (!currentWorkerId) {
       setMessage("Bạn chưa đăng nhập hoặc chưa có hồ sơ thợ.");
       setSaving(false);
       return;
+    }
+    if (!workerId) {
+      setCategorySuggestions(getInventoryCategorySuggestionsForSpecialties(currentWorker.specialties));
     }
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -187,6 +199,7 @@ export default function NewInventoryProductPage() {
       skuLoading={skuLoading}
       canRegenerateSku
       skuRegenerateDisabled={!values.name.trim() || skuLoading || saving}
+      categorySuggestions={categorySuggestions}
       onCustomSkuChange={updateCustomSku}
       onRegenerateSku={regenerateSku}
       onChange={setValues}
