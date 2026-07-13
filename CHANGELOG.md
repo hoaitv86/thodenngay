@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-13 - Worker Inventory Category Rename
+
+### Added
+- Added inline category rename support on the worker inventory page.
+
+### Changed
+- Renaming a category updates all current worker inventory products using that category.
+
+### Database
+- No database schema changes.
+
 ## 2026-07-13 - Worker Availability Toggle
 
 ### Added

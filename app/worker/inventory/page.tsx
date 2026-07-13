@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Edit, Package, Plus, Search, Trash2 } from "lucide-react";
+import { Check, Edit, Package, Plus, Search, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatInventoryCurrency,
@@ -16,8 +16,12 @@ export default function WorkerInventoryPage() {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [workerId, setWorkerId] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const [editingCategory, setEditingCategory] = useState("");
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [categorySaving, setCategorySaving] = useState(false);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -38,10 +42,12 @@ export default function WorkerInventoryPage() {
 
     if (!worker) {
       setMessage("Không tìm thấy hồ sơ thợ.");
+      setWorkerId("");
       setProducts([]);
       setLoading(false);
       return;
     }
+    setWorkerId(worker.id);
 
     const { data, error } = await supabase
       .from("worker_inventory_products")
@@ -70,6 +76,14 @@ export default function WorkerInventoryPage() {
     [products]
   );
 
+  const categoryCounts = useMemo(
+    () => categories.map(item => ({
+      name: item,
+      count: products.filter(product => product.category === item).length,
+    })),
+    [categories, products]
+  );
+
   const filteredProducts = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("vi");
     return products.filter(product => {
@@ -95,6 +109,57 @@ export default function WorkerInventoryPage() {
     },
     { totalProducts: 0, totalUnits: 0, stockValue: 0, outOfStock: 0 }
   ), [products]);
+
+  const startEditCategory = (name: string) => {
+    setEditingCategory(name);
+    setCategoryDraft(name);
+    setMessage("");
+  };
+
+  const cancelEditCategory = () => {
+    setEditingCategory("");
+    setCategoryDraft("");
+  };
+
+  const saveCategoryName = async () => {
+    const oldName = editingCategory.trim();
+    const nextName = categoryDraft.trim();
+    if (!oldName) return;
+    if (!nextName) {
+      setMessage("Vui lòng nhập tên danh mục.");
+      return;
+    }
+    if (nextName === oldName) {
+      cancelEditCategory();
+      return;
+    }
+    if (!workerId) {
+      setMessage("Không tìm thấy hồ sơ thợ để cập nhật danh mục.");
+      return;
+    }
+
+    setCategorySaving(true);
+    setMessage("");
+
+    const { error } = await supabase
+      .from("worker_inventory_products")
+      .update({ category: nextName })
+      .eq("worker_id", workerId)
+      .eq("category", oldName);
+
+    if (error) {
+      setMessage("Không thể sửa danh mục: " + error.message);
+      setCategorySaving(false);
+      return;
+    }
+
+    setProducts(current => current.map(product =>
+      product.category === oldName ? { ...product, category: nextName } : product
+    ));
+    if (category === oldName) setCategory(nextName);
+    cancelEditCategory();
+    setCategorySaving(false);
+  };
 
   return (
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in lg:p-6">
@@ -142,6 +207,64 @@ export default function WorkerInventoryPage() {
           {categories.map(item => <option key={item} value={item}>{item}</option>)}
         </select>
       </section>
+
+      {categoryCounts.length > 0 && (
+        <section className="mb-4 rounded-lg border border-outline-variant/30 bg-white p-3 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-bold uppercase text-on-surface-variant">Danh mục đang dùng</p>
+              <p className="text-sm text-on-surface-variant">Sửa tên danh mục nếu nhập nhầm, sản phẩm cùng danh mục sẽ đổi theo.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {categoryCounts.map(item => (
+              <div key={item.name} className="flex min-h-10 items-center gap-2 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-2">
+                {editingCategory === item.name ? (
+                  <>
+                    <input
+                      value={categoryDraft}
+                      onChange={event => setCategoryDraft(event.target.value)}
+                      className="h-8 w-40 rounded-md border border-outline-variant/60 bg-white px-2 text-sm font-bold outline-none focus:border-primary"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={saveCategoryName}
+                      disabled={categorySaving}
+                      className="flex h-8 w-8 items-center justify-center rounded-md bg-success text-white disabled:opacity-50"
+                      title="Lưu danh mục"
+                    >
+                      <Check size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditCategory}
+                      disabled={categorySaving}
+                      className="flex h-8 w-8 items-center justify-center rounded-md border border-outline-variant/50 text-on-surface-variant disabled:opacity-50"
+                      title="Hủy sửa"
+                    >
+                      <X size={16} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm font-extrabold text-on-surface">{item.name}</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-on-surface-variant">{item.count}</span>
+                    <button
+                      type="button"
+                      onClick={() => startEditCategory(item.name)}
+                      className="flex h-8 w-8 items-center justify-center rounded-md border border-outline-variant/50 text-primary transition-colors hover:bg-primary-fixed"
+                      title="Sửa tên danh mục"
+                    >
+                      <Edit size={15} />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {message && (
         <div className="mb-4 rounded-lg border border-error/20 bg-error-container p-3 text-sm font-bold text-error">

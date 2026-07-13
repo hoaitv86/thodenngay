@@ -1,5 +1,21 @@
 # Release Notes
 
+## Worker Inventory Category Rename
+
+Release date: 2026-07-13
+
+### Features
+- Workers can rename an existing inventory category from the inventory list page.
+
+### Fixes
+- Category typos can be corrected once and applied to all products in that category.
+
+### Database Changes
+- None.
+
+### Upgrade Notes
+- No migration is required.
+
 ## Worker Availability Toggle
 
 Release date: 2026-07-13
