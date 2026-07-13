@@ -3,9 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { JobWorkflowSummary } from "@/app/components/JobWorkflowSummary";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
-import type { WorkflowData } from "@/config/serviceWorkflows";
 import {
   MapPinIcon,
   ClockIcon,
@@ -41,7 +39,6 @@ interface WorkerJobDetail {
   final_amount?: number | null;
   warranty_days?: number | null;
   warranty_note?: string | null;
-  workflow_data?: WorkflowData | null;
   service?: {
     id?: string | null;
     name?: string | null;
@@ -257,8 +254,6 @@ export default function WorkerJobDetailPage() {
             </div>
           )}
         </div>
-
-        <JobWorkflowSummary data={job.workflow_data} />
 
         {/* Customer Info */}
         <div className="space-y-3">

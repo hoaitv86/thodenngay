@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MessageCircle, MoreHorizontal, Package, Plus, ShoppingCart } from "lucide-react";
@@ -28,6 +28,15 @@ type MobileMoreGroup = {
   id: string;
   label: string;
   groups: WorkerFeatureDefinition["group"][];
+};
+
+type WorkerNotification = {
+  id: string;
+  title: string;
+  body: string;
+  level: "info" | "success" | "warning";
+  published_at: string;
+  read_at?: string | null;
 };
 
 const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
@@ -79,6 +88,9 @@ export default function WorkerLayout({
   const [isAvailable, setIsAvailable] = useState(true);
   const [menuContext, setMenuContext] = useState(defaultMenuContext);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationUserId, setNotificationUserId] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<WorkerNotification[]>([]);
 
   const sidebarItems = useMemo(
     () => resolveWorkerMenuByPlacement(menuContext, "sidebar"),
@@ -103,6 +115,72 @@ export default function WorkerLayout({
         .filter((group) => group.items.length > 0),
     [mobileMoreItems]
   );
+  const unreadNotificationCount = notifications.filter((notification) => !notification.read_at).length;
+
+  const fetchWorkerNotifications = useCallback(async (userId: string) => {
+    const { data: notificationRows, error: notificationError } = await supabase
+      .from("admin_worker_notifications")
+      .select("id, title, body, level, published_at")
+      .eq("is_active", true)
+      .lte("published_at", new Date().toISOString())
+      .order("published_at", { ascending: false })
+      .limit(10);
+
+    if (notificationError) {
+      if (!notificationError.message.includes("admin_worker_notifications")) {
+        console.warn("Could not load worker notifications:", notificationError.message);
+      }
+      setNotifications([]);
+      return;
+    }
+
+    const ids = (notificationRows || []).map((notification) => notification.id);
+    let readMap = new Map<string, string>();
+
+    if (ids.length > 0) {
+      const { data: readRows, error: readError } = await supabase
+        .from("admin_worker_notification_reads")
+        .select("notification_id, read_at")
+        .eq("worker_user_id", userId)
+        .in("notification_id", ids);
+
+      if (!readError) {
+        readMap = new Map((readRows || []).map((row) => [row.notification_id as string, row.read_at as string]));
+      }
+    }
+
+    setNotifications(
+      ((notificationRows || []) as WorkerNotification[]).map((notification) => ({
+        ...notification,
+        read_at: readMap.get(notification.id) || null,
+      }))
+    );
+  }, [supabase]);
+
+  const markNotificationsRead = useCallback(async () => {
+    if (!notificationUserId) return;
+
+    const unreadNotifications = notifications.filter((notification) => !notification.read_at);
+    if (unreadNotifications.length === 0) return;
+
+    const readAt = new Date().toISOString();
+    setNotifications((items) => items.map((item) => ({ ...item, read_at: item.read_at || readAt })));
+
+    const { error } = await supabase
+      .from("admin_worker_notification_reads")
+      .upsert(
+        unreadNotifications.map((notification) => ({
+          notification_id: notification.id,
+          worker_user_id: notificationUserId,
+          read_at: readAt,
+        })),
+        { onConflict: "notification_id,worker_user_id" }
+      );
+
+    if (error) {
+      console.warn("Could not mark worker notifications as read:", error.message);
+    }
+  }, [notificationUserId, notifications, supabase]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -140,6 +218,7 @@ export default function WorkerLayout({
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+      if (isMounted) setNotificationUserId(user.id);
 
       const [{ data: profile }, { data: worker }] = await Promise.all([
         supabase
@@ -158,6 +237,11 @@ export default function WorkerLayout({
 
       if (profile?.full_name) setUserName(profile.full_name);
       setIsAvailable(worker?.is_available !== false);
+      if (worker?.status === "active") {
+        void fetchWorkerNotifications(user.id);
+      } else {
+        setNotifications([]);
+      }
 
       const workerSpecialties = Array.isArray(worker?.specialties) ? worker.specialties as unknown[] : [];
       const specialties = workerSpecialties.length > 0
@@ -191,7 +275,26 @@ export default function WorkerLayout({
       isMounted = false;
       window.removeEventListener("worker:availability-changed", handleAvailabilityChange);
     };
-  }, [supabase]);
+  }, [fetchWorkerNotifications, supabase]);
+
+  useEffect(() => {
+    if (!notificationUserId) return;
+
+    const channel = supabase
+      .channel("worker-admin-notifications")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "admin_worker_notifications" },
+        () => {
+          void fetchWorkerNotifications(notificationUserId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchWorkerNotifications, notificationUserId, supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -288,10 +391,81 @@ export default function WorkerLayout({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div
+              className="relative"
+              onClick={() => {
+                setNotificationOpen((open) => !open);
+                setMoreOpen(false);
+                void markNotificationsRead();
+              }}
+            >
             <button className="relative rounded-lg p-2.5 text-on-surface-variant transition-colors hover:bg-surface-container" aria-label="Thông báo">
               <BellIcon size={22} />
-              <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-error" />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-error px-1 text-[10px] font-extrabold leading-none text-white">
+                  {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                </span>
+              )}
             </button>
+            {notificationOpen && (
+              <div
+                className="absolute right-0 top-12 z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.18)]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-outline-variant/20 px-4 py-3">
+                  <div>
+                    <h2 className="text-sm font-extrabold text-on-surface">Thông báo</h2>
+                    <p className="text-[11px] font-bold text-on-surface-variant">Tin mới từ admin</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNotificationOpen(false)}
+                    className="rounded-lg px-2 py-1 text-xs font-extrabold text-on-surface-variant hover:bg-surface-container-low"
+                  >
+                    Đóng
+                  </button>
+                </div>
+
+                <div className="max-h-[24rem] overflow-y-auto p-2">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant">
+                        <BellIcon size={20} />
+                      </div>
+                      <p className="mt-3 text-sm font-bold text-on-surface">Chưa có thông báo</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">Khi admin gửi tin, nội dung sẽ hiện ở đây.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {notifications.map((notification) => (
+                        <article
+                          key={notification.id}
+                          className={`rounded-lg border p-3 ${
+                            notification.level === "warning"
+                              ? "border-warning/25 bg-warning-container/60"
+                              : notification.level === "success"
+                                ? "border-success/25 bg-success-container/40"
+                                : "border-info/20 bg-info/5"
+                          } ${notification.read_at ? "opacity-75" : ""}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            {!notification.read_at && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-error" />}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm font-extrabold text-on-surface">{notification.title}</h3>
+                              <p className="mt-1 whitespace-pre-line text-xs leading-5 text-on-surface-variant">{notification.body}</p>
+                              <p className="mt-2 text-[10px] font-bold uppercase text-on-surface-variant">
+                                {new Date(notification.published_at).toLocaleString("vi-VN")}
+                              </p>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            </div>
             <button
               onClick={handleLogout}
               aria-label="Đăng xuất"

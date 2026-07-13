@@ -39,7 +39,7 @@ export function JobWorkflowSummary({ data }: Props) {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-label-sm font-bold uppercase tracking-widest text-on-surface-variant">Du lieu workflow</h3>
+      <h3 className="text-label-sm font-bold uppercase tracking-widest text-on-surface-variant">Chi tiết công việc</h3>
       <div className="space-y-3">
         {entries.map(([sectionKey, rawSection]) => {
           const section = workflowSections[sectionKey as keyof typeof workflowSections];
