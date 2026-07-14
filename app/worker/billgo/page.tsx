@@ -128,14 +128,20 @@ const previousMonthFirstInput = () => {
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 };
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const parseDateInput = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+};
 const monthLabel = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "tháng cước";
-  return `tháng ${date.getMonth() + 1}/${date.getFullYear()}`;
+  const date = parseDateInput(value);
+  if (!date) return "tháng cước";
+  return `tháng ${date.month}/${date.year}`;
 };
 const dateLabel = (value: string) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("vi-VN");
+  const date = parseDateInput(value);
+  if (!date) return value;
+  return `${String(date.day).padStart(2, "0")}/${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const BILLGO_VIEW_STATE_KEY = "billgo.collection.view";
 
