@@ -469,6 +469,35 @@ export default function WorkerBillGoPage() {
     () => areas.find(area => area.id === form.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
     [areas, form.areaId],
   );
+  const legacyAddressSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const suggestions: string[] = [];
+    const addSuggestion = (value: string | null | undefined) => {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) return;
+      const key = trimmed.toLocaleLowerCase("vi");
+      if (seen.has(key)) return;
+      seen.add(key);
+      suggestions.push(trimmed);
+    };
+
+    formSubAreas.forEach(subArea => addSuggestion(subArea.name));
+    areas
+      .filter(area => area.is_active !== false)
+      .flatMap(area => area.sub_areas || [])
+      .filter(subArea => subArea.is_active !== false)
+      .forEach(subArea => addSuggestion(subArea.name));
+    rows.forEach(row => {
+      const subscription = row.subscription;
+      const subArea = areas.flatMap(area => area.sub_areas || []).find(item => item.id === subscription?.sub_area_id);
+      addSuggestion(subArea?.name);
+      addSuggestion(subscription?.legacy_address);
+      addSuggestion(subscription?.address_detail);
+      addSuggestion(subscription?.customer_address);
+    });
+
+    return suggestions.sort((a, b) => a.localeCompare(b, "vi"));
+  }, [areas, formSubAreas, rows]);
   const editSubAreas = useMemo(
     () => areas.find(area => area.id === editForm.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
     [areas, editForm.areaId],
@@ -488,6 +517,30 @@ export default function WorkerBillGoPage() {
           .find(item => item.id === prev.areaId)
           ?.sub_areas?.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
         return { ...prev, subAreaName: value, subAreaId: subArea?.id || "" };
+      }
+      if (key === "address") {
+        const normalizedValue = value.trim().toLocaleLowerCase("vi");
+        const matchedArea = areas.find(area =>
+          area.sub_areas?.some(subArea =>
+            subArea.is_active !== false &&
+            subArea.name.trim().toLocaleLowerCase("vi") === normalizedValue
+          )
+        );
+        const matchedSubArea = matchedArea?.sub_areas?.find(subArea =>
+          subArea.is_active !== false &&
+          subArea.name.trim().toLocaleLowerCase("vi") === normalizedValue
+        );
+        if (matchedArea && matchedSubArea) {
+          return {
+            ...prev,
+            address: value,
+            areaId: prev.areaId || matchedArea.id,
+            areaName: prev.areaName || matchedArea.name,
+            subAreaId: matchedSubArea.id,
+            subAreaName: matchedSubArea.name,
+          };
+        }
+        return { ...prev, address: value };
       }
       if (key === "cycle" && value === "monthly") return { ...prev, cycle: value as BillGoCycle, startDate: previousMonthFirstInput(), dueDate: "" };
       if (key !== "packageName") return { ...prev, [key]: value };
@@ -801,7 +854,10 @@ export default function WorkerBillGoPage() {
               {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
             </datalist>
             <input className="input-field" placeholder="Địa chỉ chi tiết" value={form.addressDetail} onChange={e => updateForm("addressDetail", e.target.value)} />
-            <input required className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
+            <input required list="billgo-legacy-address-suggestions" className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
+            <datalist id="billgo-legacy-address-suggestions">
+              {legacyAddressSuggestions.map(address => <option key={address} value={address} />)}
+            </datalist>
             <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
             <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
             <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
