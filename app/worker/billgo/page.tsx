@@ -133,6 +133,7 @@ const previousMonthFirstInput = () => {
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 };
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const dueDateForMonthInput = (monthValue: string) => `${monthValue}-19`;
 const parseDateInput = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return null;
@@ -473,6 +474,7 @@ export default function WorkerBillGoPage() {
   const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
   const formBilling = useMemo(() => getBillGoBillingPeriod(form.startDate, form.cycle), [form.cycle, form.startDate]);
+  const formDueDate = form.dueDate || dueDateForMonthInput(monthFilter);
   const formTotal = useMemo(() => getBillGoCollectableAmount(form.monthlyFee, form.cycle), [form.cycle, form.monthlyFee]);
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
   const formSubAreas = useMemo(
@@ -587,10 +589,13 @@ export default function WorkerBillGoPage() {
       const response = await fetch("/api/worker/billgo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, dueDate: form.dueDate || formBilling.dueDate }),
+        body: JSON.stringify({ ...form, dueDate: formDueDate }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể thêm khách hàng BillGo.");
+      if (typeof result.collectionMonth === "string" && result.collectionMonth.length >= 7) {
+        setMonthFilter(result.collectionMonth.slice(0, 7));
+      }
       setForm(initialForm());
       setShowForm(false);
       setMessage("Đã thêm khách hàng BillGo.");
@@ -885,7 +890,7 @@ export default function WorkerBillGoPage() {
               </label>
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
                 Hạn nộp tiền
-                <input type="date" className="input-field" value={form.dueDate || formBilling.dueDate} onChange={e => updateForm("dueDate", e.target.value)} />
+                <input type="date" className="input-field" value={formDueDate} onChange={e => updateForm("dueDate", e.target.value)} />
               </label>
               <input type="number" min="0" inputMode="numeric" className="input-field" placeholder="Tổng tiền đã thu ban đầu" value={form.initialPaidAmount} onChange={e => updateForm("initialPaidAmount", e.target.value)} />
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
@@ -898,7 +903,7 @@ export default function WorkerBillGoPage() {
               <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
             </div>
             <p className="mt-3 text-xs text-on-surface-variant">
-              Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(form.dueDate || formBilling.dueDate)}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+              Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(formDueDate)}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
             </p>
           </div>
           <div className="sticky bottom-0 flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">

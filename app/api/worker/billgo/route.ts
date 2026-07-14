@@ -45,6 +45,12 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
 
 const asText = (value: unknown) => String(value || "").trim();
 
+const getCollectionMonthFromDueDate = (dueDate: string) => {
+  const date = new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return toBillGoDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth(), 1));
+};
+
 const resolveBillGoArea = async (
   db: SupabaseClient,
   userId: string,
@@ -321,13 +327,15 @@ export async function POST(request: Request) {
   if (duplicate) return jsonError("Account này đã có trong BillGo.", 409);
 
   const billing = getBillGoBillingPeriod(startDate, cycle);
-  const billingParts = getBillingParts(billing.collectionMonth);
+  const effectiveDueDate = dueDate || billing.dueDate;
+  const collectionMonth = getCollectionMonthFromDueDate(effectiveDueDate);
+  const billingParts = getBillingParts(collectionMonth);
   const billingOption = getBillGoCycleOption(cycle);
   const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
   const nextBilling = getBillGoBillingPeriod(nextPeriodStart, cycle);
   const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
   const paidAmount = Math.min(Math.max(initialPaidAmount, 0), totalAmount);
-  const receivableStatus = getBillGoStoredStatus(totalAmount, paidAmount, dueDate || billing.dueDate);
+  const receivableStatus = getBillGoStoredStatus(totalAmount, paidAmount, effectiveDueDate);
   const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
   if ("error" in location) return jsonError(location.error || "Không thể tạo địa bàn khách hàng.");
 
@@ -352,7 +360,7 @@ export async function POST(request: Request) {
       amount_per_cycle: monthlyFee,
       monthly_fee: monthlyFee,
       start_date: billing.periodStart,
-      next_due_date: dueDate || billing.dueDate,
+      next_due_date: effectiveDueDate,
       next_period_start: billing.periodStart,
       status: "active",
       note,
@@ -372,10 +380,10 @@ export async function POST(request: Request) {
       type: "subscription_fee",
       title: `Thu cước ${packageName}`,
       total_amount: totalAmount,
-      due_date: dueDate || billing.dueDate,
+      due_date: effectiveDueDate,
       period_start: billing.periodStart,
       period_end: billing.periodEnd,
-      collection_month: billing.collectionMonth,
+      collection_month: collectionMonth,
       usage_month: billing.usageMonth,
       billing_month: billingParts.billingMonth,
       billing_year: billingParts.billingYear,
@@ -434,7 +442,7 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivable.id }, { status: 201 });
+  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivable.id, collectionMonth }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
