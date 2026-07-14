@@ -62,11 +62,7 @@ export async function GET() {
 
   const visibleAreas = isAdmin
     ? areas || []
-    : (areas || []).filter(area =>
-        area.owner_id === userId
-        || assignedAreaIds.has(area.id)
-        || (area.sub_areas || []).some((subArea: { id: string }) => assignedSubAreaIds.has(subArea.id))
-      );
+    : areas || [];
 
   return NextResponse.json({ areas: visibleAreas });
 }

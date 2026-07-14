@@ -333,12 +333,6 @@ export default function WorkerBillGoPage() {
     return () => window.clearTimeout(timeoutId);
   }, [fetchAreas]);
 
-  useEffect(() => {
-    if (viewMode !== "area" || selectedAreaId || areas.length === 0) return;
-    const firstActiveArea = areas.find(area => area.is_active !== false);
-    if (firstActiveArea) setSelectedAreaId(firstActiveArea.id);
-  }, [areas, selectedAreaId, viewMode]);
-
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
     const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
     return {
@@ -378,13 +372,12 @@ export default function WorkerBillGoPage() {
     () => selectedArea?.sub_areas?.filter(subArea => subArea.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name)) || [],
     [selectedArea],
   );
-  const selectedSubArea = useMemo(
-    () => selectedAreaSubAreas.find(subArea => subArea.id === selectedSubAreaId),
-    [selectedAreaSubAreas, selectedSubAreaId],
-  );
-
   useEffect(() => {
-    if (viewMode !== "area" || !selectedAreaId) return;
+    if (viewMode !== "area") return;
+    if (!selectedAreaId) {
+      if (selectedSubAreaId) setSelectedSubAreaId("");
+      return;
+    }
     if (selectedAreaSubAreas.length === 0) {
       if (selectedSubAreaId) setSelectedSubAreaId("");
       return;
@@ -404,21 +397,22 @@ export default function WorkerBillGoPage() {
     if (selectedAreaId) {
       const areaName = normalizeLocationText(selectedArea?.name);
       const matchesAreaId = subscription?.area_id === selectedAreaId;
-      const matchesAreaName = !!areaName && locationText.includes(areaName);
-      if (!matchesAreaId && !matchesAreaName) return false;
+      const matchesLegacyAreaName = !subscription?.area_id && !!areaName && locationText.includes(areaName);
+      if (!matchesAreaId && !matchesLegacyAreaName) return false;
     }
     if (selectedSubAreaId) {
-      const subAreaName = normalizeLocationText(selectedSubArea?.name);
+      const subArea = selectedAreaSubAreas.find(item => item.id === selectedSubAreaId);
+      const subAreaName = normalizeLocationText(subArea?.name);
       const matchesSubAreaId = subscription?.sub_area_id === selectedSubAreaId;
-      const matchesSubAreaName = !!subAreaName && locationText.includes(subAreaName);
-      if (!matchesSubAreaId && !matchesSubAreaName) return false;
+      const matchesLegacySubAreaName = !subscription?.sub_area_id && !!subAreaName && locationText.includes(subAreaName);
+      if (!matchesSubAreaId && !matchesLegacySubAreaName) return false;
     }
     if (areaStatusFilter !== "all" && row.summary.status !== areaStatusFilter) return false;
     return matchesSearch(row);
   }).sort((a, b) => {
     const order: Record<string, number> = { unpaid: 0, partial: 1, overdue: 2, paid: 3, promo: 4 };
     return (order[a.summary.status] ?? 9) - (order[b.summary.status] ?? 9) || a.customerName.localeCompare(b.customerName);
-  }), [areaStatusFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedSubArea, selectedSubAreaId]);
+  }), [areaStatusFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedAreaSubAreas, selectedSubAreaId]);
 
   const getAreaStats = useCallback((items: RowView[]) => items.reduce((acc, row) => {
     acc.total += 1;
@@ -830,12 +824,12 @@ export default function WorkerBillGoPage() {
       ) : (
         <section className="mt-4 rounded-lg border border-outline-variant/40 bg-white p-4 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg bg-surface-container-low px-3 py-2">
-              <p className="text-[11px] font-bold uppercase text-on-surface-variant">Xã phụ trách</p>
-              <p className="mt-1 truncate font-extrabold text-on-surface">{selectedArea?.name || "Chưa được giao xã"}</p>
-            </div>
+            <select className="input-field" value={selectedAreaId} onChange={e => { setSelectedAreaId(e.target.value); setSelectedSubAreaId(""); }}>
+              <option value="">Tất cả xã</option>
+              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+            </select>
             <select className="input-field" value={selectedSubAreaId} onChange={e => setSelectedSubAreaId(e.target.value)} disabled={!selectedAreaId || selectedAreaSubAreas.length === 0}>
-              {selectedAreaSubAreas.length === 0 && <option value="">Chưa có xóm</option>}
+              <option value="">{selectedAreaId ? "Tất cả xóm" : "Chọn xã trước"}</option>
               {selectedAreaSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
             </select>
             <div className="grid grid-cols-2 gap-2">

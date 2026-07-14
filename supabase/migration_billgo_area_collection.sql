@@ -152,17 +152,7 @@ WITH CHECK (public.is_admin());
 CREATE POLICY "Workers view assigned or own areas"
 ON public.areas
 FOR SELECT
-USING (
-  owner_id = auth.uid()
-  OR EXISTS (
-    SELECT 1
-    FROM public.collector_assignments assignment
-    WHERE assignment.area_id = areas.id
-      AND assignment.user_id = auth.uid()
-      AND assignment.is_active
-  )
-  OR public.billgo_user_has_sub_area_assignment(areas.id, auth.uid())
-);
+USING (is_active);
 
 CREATE POLICY "Workers create own areas"
 ON public.areas
@@ -187,16 +177,7 @@ WITH CHECK (public.is_admin());
 CREATE POLICY "Workers view assigned or own sub areas"
 ON public.sub_areas
 FOR SELECT
-USING (
-  public.billgo_user_owns_area(sub_areas.area_id, auth.uid())
-  OR EXISTS (
-    SELECT 1
-    FROM public.collector_assignments assignment
-    WHERE assignment.user_id = auth.uid()
-      AND assignment.is_active
-      AND (assignment.sub_area_id = sub_areas.id OR assignment.area_id = sub_areas.area_id)
-  )
-);
+USING (is_active);
 
 CREATE POLICY "Workers create sub areas in own areas"
 ON public.sub_areas
