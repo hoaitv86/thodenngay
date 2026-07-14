@@ -808,59 +808,63 @@ export default function WorkerBillGoPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={submitCustomer} className="mt-4 rounded-lg border border-outline-variant/50 bg-white p-4 shadow-sm">
-          <h2 className="mb-4 text-base font-extrabold">Thêm khách hàng</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
-            <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
-            <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={form.account} onChange={e => updateForm("account", e.target.value)} />
-            <datalist id="billgo-account-suggestions">
-              {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
-            </datalist>
-            <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
-              {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
-            </select>
-            <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
-            <datalist id="billgo-area-suggestions">
-              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
-            </datalist>
-            <input list="billgo-sub-area-suggestions" className="input-field" placeholder="Xóm/thôn/khối" value={form.subAreaName} onChange={e => updateForm("subAreaName", e.target.value)} disabled={!form.areaName.trim()} />
-            <datalist id="billgo-sub-area-suggestions">
-              {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
-            </datalist>
-            <input className="input-field" placeholder="Địa chỉ chi tiết" value={form.addressDetail} onChange={e => updateForm("addressDetail", e.target.value)} />
-            <input required list="billgo-legacy-address-suggestions" className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
-            <datalist id="billgo-legacy-address-suggestions">
-              {legacyAddressSuggestions.map(address => <option key={address} value={address} />)}
-            </datalist>
-            <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
-            <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
-            <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
-              {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
-            <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-              Kỳ cước {monthLabel(form.startDate)}
-              <input required type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
-            </label>
-            <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-              Hạn nộp tiền
-              <input type="date" className="input-field" value={form.dueDate || formBilling.dueDate} onChange={e => updateForm("dueDate", e.target.value)} />
-            </label>
-            <input type="number" min="0" inputMode="numeric" className="input-field" placeholder="Tổng tiền đã thu ban đầu" value={form.initialPaidAmount} onChange={e => updateForm("initialPaidAmount", e.target.value)} />
-            <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-              Ngày nhập khách hàng
-              <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />
-            </label>
-            <select className="input-field" value={form.initialPaymentMethod} onChange={e => updateForm("initialPaymentMethod", e.target.value)}>
-              {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-            <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
+        <form onSubmit={submitCustomer} className="mt-4 flex max-h-[calc(100dvh-12rem)] flex-col overflow-hidden rounded-lg border border-outline-variant/50 bg-white shadow-sm">
+          <div className="border-b border-outline-variant/25 bg-white px-4 py-3">
+            <h2 className="text-base font-extrabold">Thêm khách hàng</h2>
           </div>
-          <p className="mt-3 text-xs text-on-surface-variant">
-            Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(form.dueDate || formBilling.dueDate)}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
-          </p>
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="overflow-y-auto p-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
+              <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
+              <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={form.account} onChange={e => updateForm("account", e.target.value)} />
+              <datalist id="billgo-account-suggestions">
+                {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
+              </datalist>
+              <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
+                {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
+              </select>
+              <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
+              <datalist id="billgo-area-suggestions">
+                {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
+              </datalist>
+              <input list="billgo-sub-area-suggestions" className="input-field" placeholder="Xóm/thôn/khối" value={form.subAreaName} onChange={e => updateForm("subAreaName", e.target.value)} disabled={!form.areaName.trim()} />
+              <datalist id="billgo-sub-area-suggestions">
+                {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
+              </datalist>
+              <input className="input-field" placeholder="Địa chỉ chi tiết" value={form.addressDetail} onChange={e => updateForm("addressDetail", e.target.value)} />
+              <input required list="billgo-legacy-address-suggestions" className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
+              <datalist id="billgo-legacy-address-suggestions">
+                {legacyAddressSuggestions.map(address => <option key={address} value={address} />)}
+              </datalist>
+              <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
+              <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
+              <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
+                {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
+              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                Kỳ cước {monthLabel(form.startDate)}
+                <input required type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
+              </label>
+              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                Hạn nộp tiền
+                <input type="date" className="input-field" value={form.dueDate || formBilling.dueDate} onChange={e => updateForm("dueDate", e.target.value)} />
+              </label>
+              <input type="number" min="0" inputMode="numeric" className="input-field" placeholder="Tổng tiền đã thu ban đầu" value={form.initialPaidAmount} onChange={e => updateForm("initialPaidAmount", e.target.value)} />
+              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                Ngày nhập khách hàng
+                <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />
+              </label>
+              <select className="input-field" value={form.initialPaymentMethod} onChange={e => updateForm("initialPaymentMethod", e.target.value)}>
+                {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
+            </div>
+            <p className="mt-3 text-xs text-on-surface-variant">
+              Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(form.dueDate || formBilling.dueDate)}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+            </p>
+          </div>
+          <div className="sticky bottom-0 flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
             <button type="button" onClick={() => setShowForm(false)} className="btn-outline !w-auto">Hủy</button>
             <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Đang lưu..." : "Thêm vào BillGo"}</button>
           </div>
