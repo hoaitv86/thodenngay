@@ -48,8 +48,11 @@ type Receivable = {
   usage_month?: string | null;
   billing_month?: number | null;
   billing_year?: number | null;
+  cycle_at_collection?: string | null;
   billing_months?: number | null;
   bonus_months?: number | null;
+  service_months?: number | null;
+  next_due_date?: string | null;
   paid_amount?: number | string | null;
   paid_at?: string | null;
   payment_method?: string | null;
@@ -75,6 +78,7 @@ type Subscription = {
   current_cycle?: string | null;
   amount_per_cycle?: number | string | null;
   monthly_fee?: number | string | null;
+  next_due_date?: string | null;
   next_period_start?: string | null;
   covered_until?: string | null;
   status?: string | null;
@@ -163,6 +167,12 @@ const statusOptions = [
   { value: "promo", label: "Khuyến mại" },
 ];
 
+const dueFilterOptions = [
+  { value: "all", label: "Tất cả hạn thu" },
+  { value: "due_this_month", label: "Đến hạn tháng này" },
+  { value: "not_due", label: "Chưa đến hạn" },
+];
+
 const initialForm = () => ({
   customerName: "",
   phone: "",
@@ -205,6 +215,17 @@ const getNumericPackageAmount = (value: string) => {
 const normalizeLocationText = (value: string | null | undefined) =>
   String(value || "").trim().toLocaleLowerCase("vi");
 
+const isSameMonth = (dateValue: string | null | undefined, monthValue: string) =>
+  !!dateValue && dateValue.slice(0, 7) === monthValue;
+
+const isFutureDate = (dateValue: string | null | undefined) => {
+  if (!dateValue) return false;
+  const date = new Date(dateValue);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
+};
+
 export default function WorkerBillGoPage() {
   const [rows, setRows] = useState<Receivable[]>([]);
   const [areas, setAreas] = useState<AreaOption[]>([]);
@@ -213,9 +234,10 @@ export default function WorkerBillGoPage() {
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<"cycle" | "area">("cycle");
-  const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>("monthly");
+  const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>(BILLGO_ALL_TAB);
   const [monthFilter, setMonthFilter] = useState(monthInput());
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dueFilter, setDueFilter] = useState("all");
   const [areaStatusFilter, setAreaStatusFilter] = useState("all");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
@@ -258,6 +280,7 @@ export default function WorkerBillGoPage() {
           activeTab: BillGoCycle | typeof BILLGO_ALL_TAB;
           monthFilter: string;
           statusFilter: string;
+          dueFilter: string;
           areaStatusFilter: string;
           selectedAreaId: string;
           selectedSubAreaId: string;
@@ -267,6 +290,7 @@ export default function WorkerBillGoPage() {
         if (saved.activeTab) setActiveTab(saved.activeTab);
         if (saved.monthFilter) setMonthFilter(saved.monthFilter);
         if (saved.statusFilter) setStatusFilter(saved.statusFilter);
+        if (saved.dueFilter) setDueFilter(saved.dueFilter);
         if (saved.areaStatusFilter) setAreaStatusFilter(saved.areaStatusFilter);
         if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
         if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
@@ -284,12 +308,13 @@ export default function WorkerBillGoPage() {
       activeTab,
       monthFilter,
       statusFilter,
+      dueFilter,
       areaStatusFilter,
       selectedAreaId,
       selectedSubAreaId,
       query,
     }));
-  }, [activeTab, areaStatusFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
 
   const fetchAreas = useCallback(async () => {
     const response = await fetch("/api/worker/areas");
@@ -328,7 +353,7 @@ export default function WorkerBillGoPage() {
   }, [fetchAreas]);
 
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
-    const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
+    const cycle = (item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
     return {
       item,
       cycle,
@@ -352,11 +377,20 @@ export default function WorkerBillGoPage() {
       ].filter(Boolean).join(" ").toLocaleLowerCase("vi").includes(normalizedQuery);
   }, [query]);
 
+  const matchesDueFilter = useCallback((row: RowView) => {
+    if (dueFilter === "due_this_month") return isSameMonth(row.item.due_date, monthFilter);
+    if (dueFilter === "not_due") {
+      return row.summary.status !== "paid" && row.summary.status !== "promo" && isFutureDate(row.item.due_date);
+    }
+    return true;
+  }, [dueFilter, monthFilter]);
+
   const filteredRows = useMemo(() => rowViews.filter(row => {
     if (activeTab !== BILLGO_ALL_TAB && row.cycle !== activeTab) return false;
     if (statusFilter !== "all" && row.summary.status !== statusFilter) return false;
+    if (!matchesDueFilter(row)) return false;
     return matchesSearch(row);
-  }), [activeTab, matchesSearch, rowViews, statusFilter]);
+  }), [activeTab, matchesDueFilter, matchesSearch, rowViews, statusFilter]);
 
   const selectedArea = useMemo(
     () => areas.find(area => area.id === selectedAreaId),
@@ -400,11 +434,12 @@ export default function WorkerBillGoPage() {
       if (!matchesSubAreaId && !matchesLegacySubAreaName) return false;
     }
     if (areaStatusFilter !== "all" && row.summary.status !== areaStatusFilter) return false;
+    if (!matchesDueFilter(row)) return false;
     return matchesSearch(row);
   }).sort((a, b) => {
     const order: Record<string, number> = { unpaid: 0, partial: 1, overdue: 2, paid: 3, promo: 4 };
     return (order[a.summary.status] ?? 9) - (order[b.summary.status] ?? 9) || a.customerName.localeCompare(b.customerName);
-  }), [areaStatusFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedAreaSubAreas, selectedSubAreaId]);
+  }), [areaStatusFilter, matchesDueFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedAreaSubAreas, selectedSubAreaId]);
 
   const getAreaStats = useCallback((items: RowView[]) => items.reduce((acc, row) => {
     acc.total += 1;
@@ -757,9 +792,11 @@ export default function WorkerBillGoPage() {
         </div>
 
         <div className="mt-3 grid gap-1 text-xs text-on-surface-variant lg:mt-0">
-          <p>Hình thức: {cycle.label}</p>
+          <p>Chu kỳ: {cycle.label}</p>
+          <p>Sử dụng: {item.service_months || ((item.billing_months || 0) + (item.bonus_months || 0)) || cycle.paidMonths + cycle.bonusMonths} tháng</p>
           <p>Kỳ cước: {item.period_start || "Chưa có"} - {item.period_end || "Chưa có"}</p>
           <p>Hạn thanh toán: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "Chưa có"}</p>
+          <p>Đến hạn tiếp theo: {(item.next_due_date || item.subscription?.next_due_date) ? new Date(item.next_due_date || item.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "Chưa có"}</p>
           <p>{item.subscription?.customer_address || "Chưa có địa chỉ"}</p>
         </div>
 
@@ -925,7 +962,7 @@ export default function WorkerBillGoPage() {
         </section>
       )}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
         <label className="relative block">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
@@ -934,6 +971,12 @@ export default function WorkerBillGoPage() {
         <label className="relative block">
           <select className="input-field appearance-none pr-10" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+        </label>
+        <label className="relative block">
+          <select className="input-field appearance-none pr-10" value={dueFilter} onChange={e => setDueFilter(e.target.value)}>
+            {dueFilterOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
         </label>
@@ -1004,11 +1047,12 @@ export default function WorkerBillGoPage() {
               <div className="mt-4 grid gap-2 text-sm">
                 <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
                 <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Hình thức đóng: <strong>{getBillGoCycleOption(collecting.subscription?.current_cycle || collecting.subscription?.cycle || "monthly").label}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(collecting.cycle_at_collection || collecting.subscription?.current_cycle || collecting.subscription?.cycle || "monthly").label}</strong></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
-                  <div className="rounded-lg bg-surface-container-low p-3">Số tháng tặng<br /><strong>{collecting.bonus_months || 0}</strong></div>
+                  <div className="rounded-lg bg-surface-container-low p-3">Số tháng sử dụng<br /><strong>{collecting.service_months || ((collecting.billing_months || 0) + (collecting.bonus_months || 0))}</strong></div>
                 </div>
+                <div className="rounded-lg bg-surface-container-low p-3">Đến hạn tiếp theo: <strong>{(collecting.next_due_date || collecting.subscription?.next_due_date) ? new Date(collecting.next_due_date || collecting.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "Chưa có"}</strong></div>
                 <div className="rounded-lg bg-surface-container-low p-3">Tổng tiền cần thu: <strong>{formatBillGoCurrency(selectedSummary.receivable)}</strong></div>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
