@@ -200,12 +200,6 @@ export default function WorkerBillGoPage() {
   const [areaStatusFilter, setAreaStatusFilter] = useState("all");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
-  const [selectedSubscriptionIds, setSelectedSubscriptionIds] = useState<string[]>([]);
-  const [bulkAssignAreaId, setBulkAssignAreaId] = useState("");
-  const [bulkAssignSubAreaId, setBulkAssignSubAreaId] = useState("");
-  const [quickAreaName, setQuickAreaName] = useState("");
-  const [quickSubAreaName, setQuickSubAreaName] = useState("");
-  const [quickSubAreaParentId, setQuickSubAreaParentId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
@@ -339,6 +333,12 @@ export default function WorkerBillGoPage() {
     return () => window.clearTimeout(timeoutId);
   }, [fetchAreas]);
 
+  useEffect(() => {
+    if (viewMode !== "area" || selectedAreaId || areas.length === 0) return;
+    const firstActiveArea = areas.find(area => area.is_active !== false);
+    if (firstActiveArea) setSelectedAreaId(firstActiveArea.id);
+  }, [areas, selectedAreaId, viewMode]);
+
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
     const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
     return {
@@ -383,6 +383,17 @@ export default function WorkerBillGoPage() {
     [selectedAreaSubAreas, selectedSubAreaId],
   );
 
+  useEffect(() => {
+    if (viewMode !== "area" || !selectedAreaId) return;
+    if (selectedAreaSubAreas.length === 0) {
+      if (selectedSubAreaId) setSelectedSubAreaId("");
+      return;
+    }
+    if (!selectedAreaSubAreas.some(subArea => subArea.id === selectedSubAreaId)) {
+      setSelectedSubAreaId(selectedAreaSubAreas[0].id);
+    }
+  }, [selectedAreaId, selectedAreaSubAreas, selectedSubAreaId, viewMode]);
+
   const areaRows = useMemo(() => rowViews.filter(row => {
     const subscription = row.item.subscription;
     const locationText = normalizeLocationText([
@@ -390,9 +401,7 @@ export default function WorkerBillGoPage() {
       subscription?.customer_address,
       subscription?.legacy_address,
     ].filter(Boolean).join(" "));
-    if (selectedAreaId === "unclassified") {
-      if (subscription?.area_id || subscription?.sub_area_id) return false;
-    } else if (selectedAreaId) {
+    if (selectedAreaId) {
       const areaName = normalizeLocationText(selectedArea?.name);
       const matchesAreaId = subscription?.area_id === selectedAreaId;
       const matchesAreaName = !!areaName && locationText.includes(areaName);
@@ -453,11 +462,6 @@ export default function WorkerBillGoPage() {
     () => areas.find(area => area.id === editForm.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
     [areas, editForm.areaId],
   );
-  const bulkAssignSubAreas = useMemo(
-    () => areas.find(area => area.id === bulkAssignAreaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
-    [areas, bulkAssignAreaId],
-  );
-
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
       if (key === "areaId") {
@@ -654,90 +658,6 @@ export default function WorkerBillGoPage() {
     }
   };
 
-  const assignSelectedArea = async () => {
-    if (selectedSubscriptionIds.length === 0 || !bulkAssignAreaId) return;
-    setSaving(true);
-    setMessage("");
-    try {
-      const response = await fetch("/api/worker/billgo", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "assign_area_bulk",
-          subscriptionIds: selectedSubscriptionIds,
-          areaId: bulkAssignAreaId,
-          subAreaId: bulkAssignSubAreaId,
-          note: "Gán nhanh từ nhóm chưa phân loại địa bàn",
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể gán địa bàn.");
-      setSelectedSubscriptionIds([]);
-      setMessage(`Đã gán địa bàn cho ${result.updated || selectedSubscriptionIds.length} khách.`);
-      await refreshBillGoKeepingScroll();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể gán địa bàn.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const createQuickArea = async () => {
-    if (!quickAreaName.trim()) return;
-    setSaving(true);
-    setMessage("");
-    try {
-      const response = await fetch("/api/worker/areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "area", name: quickAreaName.trim(), sortOrder: areas.length + 1 }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể thêm xã.");
-      setQuickAreaName("");
-      setSelectedAreaId(result.id);
-      setSelectedSubAreaId("");
-      await fetchAreas();
-      setMessage("Đã thêm xã/phường/thị trấn.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể thêm xã.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const createQuickSubArea = async () => {
-    const areaId = quickSubAreaParentId || selectedAreaId;
-    if (!areaId || areaId === "unclassified" || !quickSubAreaName.trim()) return;
-    const parentArea = areas.find(area => area.id === areaId);
-    setSaving(true);
-    setMessage("");
-    try {
-      const response = await fetch("/api/worker/areas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "sub_area",
-          areaId,
-          name: quickSubAreaName.trim(),
-          sortOrder: (parentArea?.sub_areas?.length || 0) + 1,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể thêm xóm.");
-      setQuickSubAreaName("");
-      setQuickSubAreaParentId(areaId);
-      setSelectedAreaId(areaId);
-      setSelectedSubAreaId(result.id);
-      await fetchAreas();
-      setMessage("Đã thêm xóm/thôn/khối.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể thêm xóm.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
     const cycle = getBillGoCycleOption(row.cycle);
@@ -747,16 +667,6 @@ export default function WorkerBillGoPage() {
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
         <div className="flex items-start justify-between gap-3 lg:contents">
           <div className="min-w-0">
-            {viewMode === "area" && selectedAreaId === "unclassified" && item.subscription?.id && (
-              <label className="mb-2 flex items-center gap-2 text-xs font-bold text-primary">
-                <input
-                  type="checkbox"
-                  checked={selectedSubscriptionIds.includes(item.subscription.id)}
-                  onChange={event => setSelectedSubscriptionIds(prev => event.target.checked ? [...prev, item.subscription!.id] : prev.filter(id => id !== item.subscription!.id))}
-                />
-                Chọn gán địa bàn
-              </label>
-            )}
             <h3 className="truncate text-base font-extrabold text-on-surface">{row.customerName}</h3>
             <p className="mt-1 text-sm text-on-surface-variant">{row.account}</p>
             <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "Chưa có số điện thoại"}</p>
@@ -920,37 +830,19 @@ export default function WorkerBillGoPage() {
       ) : (
         <section className="mt-4 rounded-lg border border-outline-variant/40 bg-white p-4 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-3">
-            <select className="input-field" value={selectedAreaId} onChange={e => { setSelectedAreaId(e.target.value); setSelectedSubAreaId(""); }}>
-              <option value="">Tất cả xã được phép</option>
-              <option value="unclassified">Chưa phân loại địa bàn</option>
-              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
-            </select>
-            <select className="input-field" value={selectedSubAreaId} onChange={e => setSelectedSubAreaId(e.target.value)} disabled={!selectedAreaId || selectedAreaId === "unclassified"}>
-              <option value="">Tất cả xóm</option>
+            <div className="rounded-lg bg-surface-container-low px-3 py-2">
+              <p className="text-[11px] font-bold uppercase text-on-surface-variant">Xã phụ trách</p>
+              <p className="mt-1 truncate font-extrabold text-on-surface">{selectedArea?.name || "Chưa được giao xã"}</p>
+            </div>
+            <select className="input-field" value={selectedSubAreaId} onChange={e => setSelectedSubAreaId(e.target.value)} disabled={!selectedAreaId || selectedAreaSubAreas.length === 0}>
+              {selectedAreaSubAreas.length === 0 && <option value="">Chưa có xóm</option>}
               {selectedAreaSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
             </select>
-            <div className="grid grid-cols-3 gap-2">
-              <button type="button" onClick={() => setSelectedSubAreaId("")} className="btn-outline !w-full !px-3">Danh sách xóm</button>
+            <div className="grid grid-cols-2 gap-2">
               <button type="button" disabled={!previousSubArea} onClick={() => previousSubArea && setSelectedSubAreaId(previousSubArea.id)} className="btn-outline !w-full !px-3 disabled:opacity-40">Xóm trước</button>
               <button type="button" disabled={!nextSubArea} onClick={() => nextSubArea && setSelectedSubAreaId(nextSubArea.id)} className={`${remainingCount === 0 && nextSubArea ? "btn-primary" : "btn-outline"} !w-full !px-3 disabled:opacity-40`}>Xóm tiếp</button>
             </div>
           </div>
-
-          <details className="mt-3 rounded-lg border border-outline-variant/40 bg-surface-container-low p-3">
-            <summary className="cursor-pointer list-none text-sm font-extrabold text-primary">
-              Thêm nhanh xã / xóm
-            </summary>
-            <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto_1fr_1fr_auto]">
-              <input className="input-field" placeholder="Tên xã mới" value={quickAreaName} onChange={e => setQuickAreaName(e.target.value)} />
-              <button type="button" disabled={saving || !quickAreaName.trim()} onClick={() => void createQuickArea()} className="btn-primary !w-full lg:!w-auto">Thêm xã</button>
-              <select className="input-field" value={quickSubAreaParentId || (selectedAreaId !== "unclassified" ? selectedAreaId : "")} onChange={e => setQuickSubAreaParentId(e.target.value)}>
-                <option value="">Chọn xã để thêm xóm</option>
-                {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
-              </select>
-              <input className="input-field" placeholder="Tên xóm mới" value={quickSubAreaName} onChange={e => setQuickSubAreaName(e.target.value)} />
-              <button type="button" disabled={saving || !quickSubAreaName.trim() || !(quickSubAreaParentId || (selectedAreaId && selectedAreaId !== "unclassified"))} onClick={() => void createQuickSubArea()} className="btn-primary !w-full lg:!w-auto">Thêm xóm</button>
-            </div>
-          </details>
 
           <div className="mt-3 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">
             {remainingCount === 0 && areaStats.total > 0
@@ -973,22 +865,6 @@ export default function WorkerBillGoPage() {
               </div>
             ))}
           </div>
-
-          {selectedAreaId === "unclassified" && (
-            <div className="mt-3 grid gap-2 rounded-lg border border-dashed border-outline-variant bg-surface-container-low p-3 sm:grid-cols-[1fr_1fr_auto]">
-              <select className="input-field" value={bulkAssignAreaId} onChange={e => { setBulkAssignAreaId(e.target.value); setBulkAssignSubAreaId(""); }}>
-                <option value="">Chọn xã để gán</option>
-                {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
-              </select>
-              <select className="input-field" value={bulkAssignSubAreaId} onChange={e => setBulkAssignSubAreaId(e.target.value)} disabled={!bulkAssignAreaId}>
-                <option value="">Chọn xóm</option>
-                {bulkAssignSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
-              </select>
-              <button type="button" disabled={saving || selectedSubscriptionIds.length === 0 || !bulkAssignAreaId} onClick={() => void assignSelectedArea()} className="btn-primary !w-full sm:!w-auto">
-                Gán {selectedSubscriptionIds.length} khách
-              </button>
-            </div>
-          )}
         </section>
       )}
 

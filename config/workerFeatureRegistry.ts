@@ -8,7 +8,6 @@ export type WorkerFeatureId =
   | "inventory"
   | "sales"
   | "billgo"
-  | "areas"
   | "chat"
   | "history"
   | "wallet"
@@ -133,21 +132,6 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     group: "commerce",
     roles: ["worker", "lead_worker"],
     specialtyTags: ["internet", "mạng internet", "mang internet", "wifi", "pppoe"],
-    featureFlag: "billgo",
-    dataConditions: ["billgoHistory", "billgoAccess"],
-    accessMode: "any",
-  },
-  {
-    id: "areas",
-    label: "Địa bàn",
-    route: "/worker/areas",
-    href: "/worker/areas",
-    icon: "users",
-    order: 55,
-    enabled: true,
-    placements: ["sidebar", "mobileMore"],
-    group: "commerce",
-    roles: ["worker", "lead_worker"],
     featureFlag: "billgo",
     dataConditions: ["billgoHistory", "billgoAccess"],
     accessMode: "any",

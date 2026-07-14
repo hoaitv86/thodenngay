@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MapPin, Plus, RefreshCw, Save } from "lucide-react";
+import { MapPin, Pencil, Plus, RefreshCw, Save, X } from "lucide-react";
 
 type SubArea = {
   id: string;
@@ -31,6 +31,8 @@ export default function WorkerAreasPage() {
   const [message, setMessage] = useState("");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [areaForm, setAreaForm] = useState(initialArea);
+  const [editingAreaId, setEditingAreaId] = useState("");
+  const [editAreaForm, setEditAreaForm] = useState(initialArea);
   const [subAreaForm, setSubAreaForm] = useState(initialSubArea);
   const [assignmentForm, setAssignmentForm] = useState(initialAssignment);
 
@@ -115,6 +117,48 @@ export default function WorkerAreasPage() {
     setSaving(false);
   };
 
+  const startEditArea = (area: Area) => {
+    setSelectedAreaId(area.id);
+    setEditingAreaId(area.id);
+    setEditAreaForm({ name: area.name, sortOrder: String(area.sort_order ?? 0) });
+  };
+
+  const cancelEditArea = () => {
+    setEditingAreaId("");
+    setEditAreaForm(initialArea);
+  };
+
+  const saveAreaEdit = async (area: Area) => {
+    if (!editAreaForm.name.trim()) {
+      setMessage("Vui lòng nhập tên xã.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/areas", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "area",
+          id: area.id,
+          name: editAreaForm.name.trim(),
+          sortOrder: editAreaForm.sortOrder,
+          isActive: area.is_active,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể sửa xã.");
+      cancelEditArea();
+      setMessage("Đã sửa xã/phường/thị trấn.");
+      await fetchAreas();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể sửa xã.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const toggleSubArea = async (subArea: SubArea) => {
     setSaving(true);
     await fetch("/api/worker/areas", {
@@ -169,20 +213,40 @@ export default function WorkerAreasPage() {
             <div className="rounded-lg border border-dashed border-outline-variant bg-white p-8 text-center text-sm text-on-surface-variant">Chưa có xã nào.</div>
           ) : areas.map(area => (
             <article key={area.id} className={`rounded-lg border bg-white p-4 shadow-sm ${selectedArea?.id === area.id ? "border-primary" : "border-outline-variant/40"}`}>
-              <button type="button" onClick={() => { setSelectedAreaId(area.id); setSubAreaForm(prev => ({ ...prev, areaId: area.id })); }} className="flex w-full items-start justify-between gap-3 text-left">
-                <div>
-                  <h2 className="font-extrabold text-on-surface">{area.name}</h2>
-                  <p className="mt-1 text-xs text-on-surface-variant">{area.sub_areas?.length || 0} xóm/thôn/khối · thứ tự {area.sort_order}</p>
+              {editingAreaId === area.id ? (
+                <div className="grid gap-3">
+                  <input required className="input-field" value={editAreaForm.name} onChange={event => setEditAreaForm(prev => ({ ...prev, name: event.target.value }))} />
+                  <input className="input-field" type="number" value={editAreaForm.sortOrder} onChange={event => setEditAreaForm(prev => ({ ...prev, sortOrder: event.target.value }))} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" disabled={saving} onClick={() => void saveAreaEdit(area)} className="btn-primary !w-full !py-2 text-xs">
+                      <Save size={16} /> Lưu xã
+                    </button>
+                    <button type="button" disabled={saving} onClick={cancelEditArea} className="btn-outline !w-full !py-2 text-xs">
+                      <X size={16} /> Hủy
+                    </button>
+                  </div>
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${area.is_active ? "bg-success-container text-success" : "bg-surface-container text-on-surface-variant"}`}>
-                  {area.is_active ? "Đang dùng" : "Tạm ngưng"}
-                </span>
-              </button>
-              <div className="mt-3 flex justify-end">
-                <button type="button" disabled={saving} onClick={() => void toggleArea(area)} className="btn-outline !w-auto !py-2 text-xs">
-                  {area.is_active ? "Ngừng sử dụng" : "Kích hoạt lại"}
-                </button>
-              </div>
+              ) : (
+                <>
+                  <button type="button" onClick={() => { setSelectedAreaId(area.id); setSubAreaForm(prev => ({ ...prev, areaId: area.id })); }} className="flex w-full items-start justify-between gap-3 text-left">
+                    <div>
+                      <h2 className="font-extrabold text-on-surface">{area.name}</h2>
+                      <p className="mt-1 text-xs text-on-surface-variant">{area.sub_areas?.length || 0} xóm/thôn/khối · thứ tự {area.sort_order}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${area.is_active ? "bg-success-container text-success" : "bg-surface-container text-on-surface-variant"}`}>
+                      {area.is_active ? "Đang dùng" : "Tạm ngưng"}
+                    </span>
+                  </button>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button type="button" disabled={saving} onClick={() => startEditArea(area)} className="btn-outline !w-auto !py-2 text-xs">
+                      <Pencil size={14} /> Sửa
+                    </button>
+                    <button type="button" disabled={saving} onClick={() => void toggleArea(area)} className="btn-outline !w-auto !py-2 text-xs">
+                      {area.is_active ? "Ngừng sử dụng" : "Kích hoạt lại"}
+                    </button>
+                  </div>
+                </>
+              )}
             </article>
           ))}
         </section>

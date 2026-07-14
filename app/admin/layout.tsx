@@ -14,6 +14,7 @@ import {
   Bell,
   Menu,
   MessageCircle,
+  MapPin,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/admin/chat", label: "Chat", icon: MessageCircle },
   { href: "/admin/notifications", label: "Thông báo", icon: Bell },
   { href: "/admin/payments", label: "BillGo", icon: CreditCard },
+  { href: "/admin/areas", label: "Địa bàn", icon: MapPin },
   { href: "/admin/settings", label: "Cài đặt", icon: Settings },
 ];
 
