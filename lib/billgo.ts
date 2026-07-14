@@ -45,7 +45,7 @@ export const BILLGO_CYCLE_OPTIONS: Array<{
 ];
 
 export const BILLGO_ALL_TAB = "all";
-export const BILLGO_ACCOUNT_SUGGESTIONS = ["n350_gftth", "nbh_gftth"];
+export const BILLGO_ACCOUNT_SUGGESTIONS = ["n350_gftth_", "nbh_gftth_"];
 
 export const toMoneyNumber = (value?: number | string | null) => {
   const amount = Number(value || 0);
