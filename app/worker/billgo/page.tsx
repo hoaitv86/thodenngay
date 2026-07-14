@@ -124,6 +124,7 @@ type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const BILLGO_VIEW_STATE_KEY = "billgo.collection.view";
 
 const methodLabels: Record<string, string> = {
   cash: "Tiền mặt",
@@ -220,6 +221,46 @@ export default function WorkerBillGoPage() {
     cycle: "monthly" as BillGoCycle,
     effectivePeriodStart: todayInput(),
   });
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(BILLGO_VIEW_STATE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<{
+        viewMode: "cycle" | "area";
+        activeTab: BillGoCycle | typeof BILLGO_ALL_TAB;
+        monthFilter: string;
+        statusFilter: string;
+        areaStatusFilter: string;
+        selectedAreaId: string;
+        selectedSubAreaId: string;
+        query: string;
+      }>;
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.activeTab) setActiveTab(saved.activeTab);
+      if (saved.monthFilter) setMonthFilter(saved.monthFilter);
+      if (saved.statusFilter) setStatusFilter(saved.statusFilter);
+      if (saved.areaStatusFilter) setAreaStatusFilter(saved.areaStatusFilter);
+      if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
+      if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
+      if (typeof saved.query === "string") setQuery(saved.query);
+    } catch {
+      window.localStorage.removeItem(BILLGO_VIEW_STATE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(BILLGO_VIEW_STATE_KEY, JSON.stringify({
+      viewMode,
+      activeTab,
+      monthFilter,
+      statusFilter,
+      areaStatusFilter,
+      selectedAreaId,
+      selectedSubAreaId,
+      query,
+    }));
+  }, [activeTab, areaStatusFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
 
   const fetchAreas = useCallback(async () => {
     const response = await fetch("/api/worker/areas");
@@ -389,6 +430,12 @@ export default function WorkerBillGoPage() {
     });
   };
 
+  const refreshBillGoKeepingScroll = async () => {
+    const scrollY = window.scrollY;
+    await fetchBillGo();
+    window.requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
+  };
+
   const submitCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -404,7 +451,7 @@ export default function WorkerBillGoPage() {
       setForm(initialForm());
       setShowForm(false);
       setMessage("Đã thêm khách hàng BillGo.");
-      await fetchBillGo();
+      await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể thêm khách hàng BillGo.");
     } finally {
@@ -459,7 +506,7 @@ export default function WorkerBillGoPage() {
       if (!response.ok) throw new Error(result.error || "Không thể xác nhận thu tiền.");
       setCollecting(null);
       setMessage("Đã xác nhận thu tiền.");
-      await fetchBillGo();
+      await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể xác nhận thu tiền.");
     } finally {
@@ -529,7 +576,7 @@ export default function WorkerBillGoPage() {
       setActionTarget(null);
       setActionMode(null);
       setMessage("Đã lưu thay đổi BillGo.");
-      await fetchBillGo();
+      await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể lưu thay đổi BillGo.");
     } finally {
@@ -718,7 +765,8 @@ export default function WorkerBillGoPage() {
               <option value="">Tất cả xóm</option>
               {selectedAreaSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
             </select>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              <button type="button" onClick={() => setSelectedSubAreaId("")} className="btn-outline !w-full !px-3">Danh sách xóm</button>
               <button type="button" disabled={!previousSubArea} onClick={() => previousSubArea && setSelectedSubAreaId(previousSubArea.id)} className="btn-outline !w-full !px-3 disabled:opacity-40">Xóm trước</button>
               <button type="button" disabled={!nextSubArea} onClick={() => nextSubArea && setSelectedSubAreaId(nextSubArea.id)} className={`${remainingCount === 0 && nextSubArea ? "btn-primary" : "btn-outline"} !w-full !px-3 disabled:opacity-40`}>Xóm tiếp</button>
             </div>
