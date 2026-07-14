@@ -3,7 +3,7 @@ import { createClient as createAdminClient, type SupabaseClient } from "@supabas
 import { createClient } from "@/lib/supabase/server";
 
 type WorkerContext = {
-  admin: SupabaseClient;
+  db: SupabaseClient;
   userId: string;
   workerId: string;
   isAdmin: boolean;
@@ -34,26 +34,24 @@ const getContext = async (): Promise<WorkerContext | NextResponse> => {
     supabase.from("workers").select("id").eq("user_id", user.id).maybeSingle(),
   ]);
 
-  const admin = getAdmin();
-  if (!admin) return jsonError("Máy chủ chưa cấu hình SUPABASE_SERVICE_ROLE_KEY.", 500);
   if (!worker && profile?.role !== "admin") return jsonError("Không tìm thấy hồ sơ thợ.", 403);
 
-  return { admin, userId: user.id, workerId: worker?.id || "", isAdmin: profile?.role === "admin" };
+  return { db: getAdmin() || supabase, userId: user.id, workerId: worker?.id || "", isAdmin: profile?.role === "admin" };
 };
 
 export async function GET() {
   const context = await getContext();
   if (context instanceof NextResponse) return context;
-  const { admin, userId, isAdmin } = context;
+  const { db, userId, isAdmin } = context;
 
-  const { data: areas, error } = await admin
+  const { data: areas, error } = await db
     .from("areas")
     .select("id, name, area_type, owner_id, is_active, sort_order, sub_areas(id, area_id, name, sub_area_type, is_active, sort_order)")
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
   if (error) return jsonError(error.message);
 
-  const { data: assignments } = await admin
+  const { data: assignments } = await db
     .from("collector_assignments")
     .select("area_id, sub_area_id")
     .eq("user_id", userId)
@@ -76,14 +74,14 @@ export async function GET() {
 export async function POST(request: Request) {
   const context = await getContext();
   if (context instanceof NextResponse) return context;
-  const { admin, userId } = context;
+  const { db, userId } = context;
   const body = await request.json();
   const action = asText(body.action);
 
   if (action === "area") {
     const name = asText(body.name);
     if (!name) return jsonError("Vui lòng nhập tên xã/phường/thị trấn.");
-    const { data, error } = await admin
+    const { data, error } = await db
       .from("areas")
       .insert({
         name,
@@ -103,7 +101,7 @@ export async function POST(request: Request) {
     const areaId = asText(body.areaId);
     const name = asText(body.name);
     if (!areaId || !name) return jsonError("Vui lòng chọn xã và nhập tên xóm.");
-    const { data, error } = await admin
+    const { data, error } = await db
       .from("sub_areas")
       .insert({
         area_id: areaId,
@@ -124,7 +122,7 @@ export async function POST(request: Request) {
     const areaId = asText(body.areaId) || null;
     const subAreaId = asText(body.subAreaId) || null;
     if (!userId || (!areaId && !subAreaId)) return jsonError("Vui lòng nhập người thu và địa bàn.");
-    const { data, error } = await admin
+    const { data, error } = await db
       .from("collector_assignments")
       .insert({
         user_id: userId,
@@ -145,14 +143,14 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const context = await getContext();
   if (context instanceof NextResponse) return context;
-  const { admin } = context;
+  const { db } = context;
   const body = await request.json();
   const action = asText(body.action);
   const id = asText(body.id);
   if (!id) return jsonError("Thiếu mã địa bàn.");
 
   if (action === "area") {
-    const { error } = await admin
+    const { error } = await db
       .from("areas")
       .update({
         name: asText(body.name),
@@ -165,7 +163,7 @@ export async function PATCH(request: Request) {
   }
 
   if (action === "sub_area") {
-    const { error } = await admin
+    const { error } = await db
       .from("sub_areas")
       .update({
         area_id: asText(body.areaId) || undefined,

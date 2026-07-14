@@ -95,6 +95,36 @@ BEFORE UPDATE ON public.collector_assignments
 FOR EACH ROW
 EXECUTE PROCEDURE update_updated_at_column();
 
+CREATE OR REPLACE FUNCTION public.billgo_user_owns_area(p_area_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.areas area
+    WHERE area.id = p_area_id
+      AND area.owner_id = p_user_id
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.billgo_user_has_sub_area_assignment(p_area_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.collector_assignments assignment
+    JOIN public.sub_areas sub_area ON sub_area.id = assignment.sub_area_id
+    WHERE sub_area.area_id = p_area_id
+      AND assignment.user_id = p_user_id
+      AND assignment.is_active
+  );
+$$;
+
 ALTER TABLE public.areas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sub_areas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collector_assignments ENABLE ROW LEVEL SECURITY;
@@ -102,8 +132,12 @@ ALTER TABLE public.billgo_area_changes ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Admins manage all areas" ON public.areas;
 DROP POLICY IF EXISTS "Workers view assigned or own areas" ON public.areas;
+DROP POLICY IF EXISTS "Workers create own areas" ON public.areas;
+DROP POLICY IF EXISTS "Workers update own areas" ON public.areas;
 DROP POLICY IF EXISTS "Admins manage all sub areas" ON public.sub_areas;
 DROP POLICY IF EXISTS "Workers view assigned or own sub areas" ON public.sub_areas;
+DROP POLICY IF EXISTS "Workers create sub areas in own areas" ON public.sub_areas;
+DROP POLICY IF EXISTS "Workers update sub areas in own areas" ON public.sub_areas;
 DROP POLICY IF EXISTS "Admins manage collector assignments" ON public.collector_assignments;
 DROP POLICY IF EXISTS "Workers view own collector assignments" ON public.collector_assignments;
 DROP POLICY IF EXISTS "Admins manage BillGo area changes" ON public.billgo_area_changes;
@@ -127,15 +161,22 @@ USING (
       AND assignment.user_id = auth.uid()
       AND assignment.is_active
   )
-  OR EXISTS (
-    SELECT 1
-    FROM public.collector_assignments assignment
-    JOIN public.sub_areas sub_area ON sub_area.id = assignment.sub_area_id
-    WHERE sub_area.area_id = areas.id
-      AND assignment.user_id = auth.uid()
-      AND assignment.is_active
-  )
+  OR public.billgo_user_has_sub_area_assignment(areas.id, auth.uid())
 );
+
+CREATE POLICY "Workers create own areas"
+ON public.areas
+FOR INSERT
+WITH CHECK (
+  owner_id = auth.uid()
+  AND created_by = auth.uid()
+);
+
+CREATE POLICY "Workers update own areas"
+ON public.areas
+FOR UPDATE
+USING (owner_id = auth.uid())
+WITH CHECK (owner_id = auth.uid());
 
 CREATE POLICY "Admins manage all sub areas"
 ON public.sub_areas
@@ -147,12 +188,7 @@ CREATE POLICY "Workers view assigned or own sub areas"
 ON public.sub_areas
 FOR SELECT
 USING (
-  EXISTS (
-    SELECT 1
-    FROM public.areas area
-    WHERE area.id = sub_areas.area_id
-      AND area.owner_id = auth.uid()
-  )
+  public.billgo_user_owns_area(sub_areas.area_id, auth.uid())
   OR EXISTS (
     SELECT 1
     FROM public.collector_assignments assignment
@@ -161,6 +197,20 @@ USING (
       AND (assignment.sub_area_id = sub_areas.id OR assignment.area_id = sub_areas.area_id)
   )
 );
+
+CREATE POLICY "Workers create sub areas in own areas"
+ON public.sub_areas
+FOR INSERT
+WITH CHECK (
+  created_by = auth.uid()
+  AND public.billgo_user_owns_area(sub_areas.area_id, auth.uid())
+);
+
+CREATE POLICY "Workers update sub areas in own areas"
+ON public.sub_areas
+FOR UPDATE
+USING (public.billgo_user_owns_area(sub_areas.area_id, auth.uid()))
+WITH CHECK (public.billgo_user_owns_area(sub_areas.area_id, auth.uid()));
 
 CREATE POLICY "Admins manage collector assignments"
 ON public.collector_assignments

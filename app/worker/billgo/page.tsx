@@ -149,7 +149,9 @@ const initialForm = () => ({
   account: "",
   address: "",
   areaId: "",
+  areaName: "",
   subAreaId: "",
+  subAreaName: "",
   addressDetail: "",
   provider: "Viettel",
   packageName: "",
@@ -180,6 +182,9 @@ const getNumericPackageAmount = (value: string) => {
   return normalized ? String(Number(normalized)) : "";
 };
 
+const normalizeLocationText = (value: string | null | undefined) =>
+  String(value || "").trim().toLocaleLowerCase("vi");
+
 export default function WorkerBillGoPage() {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
@@ -198,6 +203,9 @@ export default function WorkerBillGoPage() {
   const [selectedSubscriptionIds, setSelectedSubscriptionIds] = useState<string[]>([]);
   const [bulkAssignAreaId, setBulkAssignAreaId] = useState("");
   const [bulkAssignSubAreaId, setBulkAssignSubAreaId] = useState("");
+  const [quickAreaName, setQuickAreaName] = useState("");
+  const [quickSubAreaName, setQuickSubAreaName] = useState("");
+  const [quickSubAreaParentId, setQuickSubAreaParentId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
@@ -216,7 +224,9 @@ export default function WorkerBillGoPage() {
     address: "",
     provider: "",
     areaId: "",
+    areaName: "",
     subAreaId: "",
+    subAreaName: "",
     addressDetail: "",
     packageName: "",
     monthlyFee: "",
@@ -368,21 +378,38 @@ export default function WorkerBillGoPage() {
     () => selectedArea?.sub_areas?.filter(subArea => subArea.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name)) || [],
     [selectedArea],
   );
+  const selectedSubArea = useMemo(
+    () => selectedAreaSubAreas.find(subArea => subArea.id === selectedSubAreaId),
+    [selectedAreaSubAreas, selectedSubAreaId],
+  );
 
   const areaRows = useMemo(() => rowViews.filter(row => {
     const subscription = row.item.subscription;
+    const locationText = normalizeLocationText([
+      subscription?.address_detail,
+      subscription?.customer_address,
+      subscription?.legacy_address,
+    ].filter(Boolean).join(" "));
     if (selectedAreaId === "unclassified") {
       if (subscription?.area_id || subscription?.sub_area_id) return false;
     } else if (selectedAreaId) {
-      if (subscription?.area_id !== selectedAreaId) return false;
+      const areaName = normalizeLocationText(selectedArea?.name);
+      const matchesAreaId = subscription?.area_id === selectedAreaId;
+      const matchesAreaName = !!areaName && locationText.includes(areaName);
+      if (!matchesAreaId && !matchesAreaName) return false;
     }
-    if (selectedSubAreaId && subscription?.sub_area_id !== selectedSubAreaId) return false;
+    if (selectedSubAreaId) {
+      const subAreaName = normalizeLocationText(selectedSubArea?.name);
+      const matchesSubAreaId = subscription?.sub_area_id === selectedSubAreaId;
+      const matchesSubAreaName = !!subAreaName && locationText.includes(subAreaName);
+      if (!matchesSubAreaId && !matchesSubAreaName) return false;
+    }
     if (areaStatusFilter !== "all" && row.summary.status !== areaStatusFilter) return false;
     return matchesSearch(row);
   }).sort((a, b) => {
     const order: Record<string, number> = { unpaid: 0, partial: 1, overdue: 2, paid: 3, promo: 4 };
     return (order[a.summary.status] ?? 9) - (order[b.summary.status] ?? 9) || a.customerName.localeCompare(b.customerName);
-  }), [areaStatusFilter, matchesSearch, rowViews, selectedAreaId, selectedSubAreaId]);
+  }), [areaStatusFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedSubArea, selectedSubAreaId]);
 
   const getAreaStats = useCallback((items: RowView[]) => items.reduce((acc, row) => {
     acc.total += 1;
@@ -433,10 +460,37 @@ export default function WorkerBillGoPage() {
 
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
-      if (key === "areaId") return { ...prev, areaId: value, subAreaId: "" };
+      if (key === "areaId") {
+        const area = areas.find(item => item.id === value);
+        return { ...prev, areaId: value, areaName: area?.name || "", subAreaId: "", subAreaName: "" };
+      }
+      if (key === "areaName") {
+        const area = areas.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
+        return { ...prev, areaName: value, areaId: area?.id || "", subAreaId: "", subAreaName: "" };
+      }
+      if (key === "subAreaName") {
+        const subArea = areas
+          .find(item => item.id === prev.areaId)
+          ?.sub_areas?.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
+        return { ...prev, subAreaName: value, subAreaId: subArea?.id || "" };
+      }
       if (key !== "packageName") return { ...prev, [key]: value };
       const packageAmount = getNumericPackageAmount(value);
       return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
+    });
+  };
+
+  const updateEditAreaName = (value: string) => {
+    const area = areas.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
+    setEditForm(prev => ({ ...prev, areaName: value, areaId: area?.id || "", subAreaId: "", subAreaName: "" }));
+  };
+
+  const updateEditSubAreaName = (value: string) => {
+    setEditForm(prev => {
+      const subArea = areas
+        .find(item => item.id === prev.areaId)
+        ?.sub_areas?.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
+      return { ...prev, subAreaName: value, subAreaId: subArea?.id || "" };
     });
   };
 
@@ -461,6 +515,7 @@ export default function WorkerBillGoPage() {
       setForm(initialForm());
       setShowForm(false);
       setMessage("Đã thêm khách hàng BillGo.");
+      await fetchAreas();
       await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể thêm khách hàng BillGo.");
@@ -490,7 +545,9 @@ export default function WorkerBillGoPage() {
       account: subscription?.internet_account || "",
       address: subscription?.customer_address || "",
       areaId: subscription?.area_id || "",
+      areaName: areas.find(area => area.id === subscription?.area_id)?.name || "",
       subAreaId: subscription?.sub_area_id || "",
+      subAreaName: areas.flatMap(area => area.sub_areas || []).find(subArea => subArea.id === subscription?.sub_area_id)?.name || "",
       addressDetail: subscription?.address_detail || "",
       provider: subscription?.provider || "Viettel",
       packageName: subscription?.package_name || "",
@@ -548,7 +605,9 @@ export default function WorkerBillGoPage() {
             account: editForm.account,
             address: editForm.address,
             areaId: editForm.areaId,
+            areaName: editForm.areaName,
             subAreaId: editForm.subAreaId,
+            subAreaName: editForm.subAreaName,
             addressDetail: editForm.addressDetail,
             provider: editForm.provider,
             packageName: editForm.packageName,
@@ -586,6 +645,7 @@ export default function WorkerBillGoPage() {
       setActionTarget(null);
       setActionMode(null);
       setMessage("Đã lưu thay đổi BillGo.");
+      if (actionMode === "edit") await fetchAreas();
       await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể lưu thay đổi BillGo.");
@@ -617,6 +677,62 @@ export default function WorkerBillGoPage() {
       await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể gán địa bàn.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createQuickArea = async () => {
+    if (!quickAreaName.trim()) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/areas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "area", name: quickAreaName.trim(), sortOrder: areas.length + 1 }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể thêm xã.");
+      setQuickAreaName("");
+      setSelectedAreaId(result.id);
+      setSelectedSubAreaId("");
+      await fetchAreas();
+      setMessage("Đã thêm xã/phường/thị trấn.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể thêm xã.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createQuickSubArea = async () => {
+    const areaId = quickSubAreaParentId || selectedAreaId;
+    if (!areaId || areaId === "unclassified" || !quickSubAreaName.trim()) return;
+    const parentArea = areas.find(area => area.id === areaId);
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/areas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sub_area",
+          areaId,
+          name: quickSubAreaName.trim(),
+          sortOrder: (parentArea?.sub_areas?.length || 0) + 1,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể thêm xóm.");
+      setQuickSubAreaName("");
+      setQuickSubAreaParentId(areaId);
+      setSelectedAreaId(areaId);
+      setSelectedSubAreaId(result.id);
+      await fetchAreas();
+      setMessage("Đã thêm xóm/thôn/khối.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể thêm xóm.");
     } finally {
       setSaving(false);
     }
@@ -753,14 +869,14 @@ export default function WorkerBillGoPage() {
             <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
               {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
             </select>
-            <select className="input-field" value={form.areaId} onChange={e => updateForm("areaId", e.target.value)}>
-              <option value="">Chưa phân loại xã/phường</option>
-              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
-            </select>
-            <select className="input-field" value={form.subAreaId} onChange={e => updateForm("subAreaId", e.target.value)} disabled={!form.areaId}>
-              <option value="">Chọn xóm/thôn/khối</option>
-              {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
-            </select>
+            <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
+            <datalist id="billgo-area-suggestions">
+              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
+            </datalist>
+            <input list="billgo-sub-area-suggestions" className="input-field" placeholder="Xóm/thôn/khối" value={form.subAreaName} onChange={e => updateForm("subAreaName", e.target.value)} disabled={!form.areaName.trim()} />
+            <datalist id="billgo-sub-area-suggestions">
+              {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
+            </datalist>
             <input className="input-field" placeholder="Địa chỉ chi tiết" value={form.addressDetail} onChange={e => updateForm("addressDetail", e.target.value)} />
             <input required className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
             <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
@@ -819,6 +935,22 @@ export default function WorkerBillGoPage() {
               <button type="button" disabled={!nextSubArea} onClick={() => nextSubArea && setSelectedSubAreaId(nextSubArea.id)} className={`${remainingCount === 0 && nextSubArea ? "btn-primary" : "btn-outline"} !w-full !px-3 disabled:opacity-40`}>Xóm tiếp</button>
             </div>
           </div>
+
+          <details className="mt-3 rounded-lg border border-outline-variant/40 bg-surface-container-low p-3">
+            <summary className="cursor-pointer list-none text-sm font-extrabold text-primary">
+              Thêm nhanh xã / xóm
+            </summary>
+            <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto_1fr_1fr_auto]">
+              <input className="input-field" placeholder="Tên xã mới" value={quickAreaName} onChange={e => setQuickAreaName(e.target.value)} />
+              <button type="button" disabled={saving || !quickAreaName.trim()} onClick={() => void createQuickArea()} className="btn-primary !w-full lg:!w-auto">Thêm xã</button>
+              <select className="input-field" value={quickSubAreaParentId || (selectedAreaId !== "unclassified" ? selectedAreaId : "")} onChange={e => setQuickSubAreaParentId(e.target.value)}>
+                <option value="">Chọn xã để thêm xóm</option>
+                {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+              </select>
+              <input className="input-field" placeholder="Tên xóm mới" value={quickSubAreaName} onChange={e => setQuickSubAreaName(e.target.value)} />
+              <button type="button" disabled={saving || !quickSubAreaName.trim() || !(quickSubAreaParentId || (selectedAreaId && selectedAreaId !== "unclassified"))} onClick={() => void createQuickSubArea()} className="btn-primary !w-full lg:!w-auto">Thêm xóm</button>
+            </div>
+          </details>
 
           <div className="mt-3 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">
             {remainingCount === 0 && areaStats.total > 0
@@ -909,7 +1041,7 @@ export default function WorkerBillGoPage() {
         <div className="py-16 text-center text-sm text-on-surface-variant">Đang tải BillGo...</div>
       ) : (viewMode === "area" ? areaRows : filteredRows).length === 0 ? (
         <div className="mt-5 rounded-lg border border-dashed border-outline-variant bg-white p-8 text-center text-sm text-on-surface-variant">
-          Chưa có khách hàng phù hợp bộ lọc.
+          Chưa có khách hàng phù hợp bộ lọc tháng, trạng thái hoặc địa bàn.
         </div>
       ) : (
         <section className="mt-5 space-y-2">
@@ -1030,14 +1162,14 @@ export default function WorkerBillGoPage() {
                 <select className="input-field" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))}>
                   {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
                 </select>
-                <select className="input-field" value={editForm.areaId} onChange={e => setEditForm(prev => ({ ...prev, areaId: e.target.value, subAreaId: "" }))}>
-                  <option value="">Chưa phân loại xã/phường</option>
-                  {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
-                </select>
-                <select className="input-field" value={editForm.subAreaId} onChange={e => setEditForm(prev => ({ ...prev, subAreaId: e.target.value }))} disabled={!editForm.areaId}>
-                  <option value="">Chọn xóm/thôn/khối</option>
-                  {editSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
-                </select>
+                <input list="billgo-edit-area-suggestions" className="input-field" placeholder="Xã/phường" value={editForm.areaName} onChange={e => updateEditAreaName(e.target.value)} />
+                <datalist id="billgo-edit-area-suggestions">
+                  {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
+                </datalist>
+                <input list="billgo-edit-sub-area-suggestions" className="input-field" placeholder="Xóm/thôn/khối" value={editForm.subAreaName} onChange={e => updateEditSubAreaName(e.target.value)} disabled={!editForm.areaName.trim()} />
+                <datalist id="billgo-edit-sub-area-suggestions">
+                  {editSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
+                </datalist>
                 <input className="input-field" placeholder="Địa chỉ chi tiết" value={editForm.addressDetail} onChange={e => setEditForm(prev => ({ ...prev, addressDetail: e.target.value }))} />
                 <input required className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
                 <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {

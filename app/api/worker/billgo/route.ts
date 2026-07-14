@@ -40,13 +40,76 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
   const { data: worker } = await supabase.from("workers").select("id").eq("user_id", user.id).single();
   if (!worker) return jsonError("Không tìm thấy hồ sơ thợ.", 403);
 
-  const admin = getAdmin();
-  if (!admin) return jsonError("Máy chủ chưa cấu hình SUPABASE_SERVICE_ROLE_KEY.", 500);
-
-  return { admin, userId: user.id, workerId: worker.id };
+  return { admin: getAdmin() || supabase, userId: user.id, workerId: worker.id };
 };
 
 const asText = (value: unknown) => String(value || "").trim();
+
+const resolveBillGoArea = async (
+  db: SupabaseClient,
+  userId: string,
+  areaId: string | null,
+  areaName: string,
+  subAreaId: string | null,
+  subAreaName: string,
+) => {
+  let resolvedAreaId = areaId;
+  let resolvedSubAreaId = subAreaId;
+
+  if (!resolvedAreaId && areaName) {
+    const { data: existingArea } = await db
+      .from("areas")
+      .select("id")
+      .eq("owner_id", userId)
+      .ilike("name", areaName)
+      .maybeSingle();
+
+    if (existingArea?.id) {
+      resolvedAreaId = existingArea.id;
+    } else {
+      const { data: createdArea, error: areaError } = await db
+        .from("areas")
+        .insert({
+          name: areaName,
+          area_type: "commune",
+          owner_id: userId,
+          created_by: userId,
+        })
+        .select("id")
+        .single();
+      if (areaError) return { error: areaError.message };
+      resolvedAreaId = createdArea.id;
+    }
+  }
+
+  if (resolvedAreaId && !resolvedSubAreaId && subAreaName) {
+    const { data: existingSubArea } = await db
+      .from("sub_areas")
+      .select("id")
+      .eq("area_id", resolvedAreaId)
+      .ilike("name", subAreaName)
+      .maybeSingle();
+
+    if (existingSubArea?.id) {
+      resolvedSubAreaId = existingSubArea.id;
+    } else {
+      const { data: createdSubArea, error: subAreaError } = await db
+        .from("sub_areas")
+        .insert({
+          area_id: resolvedAreaId,
+          name: subAreaName,
+          sub_area_type: "village",
+          created_by: userId,
+        })
+        .select("id")
+        .single();
+      if (subAreaError) return { error: subAreaError.message };
+      resolvedSubAreaId = createdSubArea.id;
+    }
+  }
+
+  return { areaId: resolvedAreaId, subAreaId: resolvedSubAreaId };
+};
 
 const todayInputForServer = () => toBillGoDateInput(new Date());
 
@@ -142,8 +205,10 @@ export async function POST(request: Request) {
   const phone = asText(body.phone);
   const account = asText(body.account);
   const address = asText(body.address);
-  const areaId = asText(body.areaId) || null;
-  const subAreaId = asText(body.subAreaId) || null;
+  const requestedAreaId = asText(body.areaId) || null;
+  const requestedSubAreaId = asText(body.subAreaId) || null;
+  const areaName = asText(body.areaName);
+  const subAreaName = asText(body.subAreaName);
   const addressDetail = asText(body.addressDetail);
   const provider = asText(body.provider);
   const packageName = asText(body.packageName) || "Cước Internet";
@@ -174,6 +239,8 @@ export async function POST(request: Request) {
   const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
   const paidAmount = Math.min(Math.max(initialPaidAmount, 0), totalAmount);
   const receivableStatus = getBillGoStoredStatus(totalAmount, paidAmount, dueDate || billing.dueDate);
+  const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
+  if ("error" in location) return jsonError(location.error || "Không thể tạo địa bàn khách hàng.");
 
   const { data: subscription, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
@@ -184,8 +251,8 @@ export async function POST(request: Request) {
       phone,
       internet_account: account,
       customer_address: address,
-      area_id: areaId,
-      sub_area_id: subAreaId,
+      area_id: location.areaId,
+      sub_area_id: location.subAreaId,
       address_detail: addressDetail,
       legacy_address: address || null,
       provider: provider || null,
@@ -290,9 +357,15 @@ export async function PATCH(request: Request) {
     const subscriptionId = asText(body.subscriptionId);
     const monthlyFee = toMoneyNumber(body.monthlyFee);
     if (!subscriptionId || monthlyFee < 0) return jsonError("Thông tin khách hàng không hợp lệ.");
-    const nextAreaId = asText(body.areaId) || null;
-    const nextSubAreaId = asText(body.subAreaId) || null;
+    const requestedAreaId = asText(body.areaId) || null;
+    const requestedSubAreaId = asText(body.subAreaId) || null;
+    const areaName = asText(body.areaName);
+    const subAreaName = asText(body.subAreaName);
     const nextAddressDetail = asText(body.addressDetail);
+    const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
+    if ("error" in location) return jsonError(location.error || "Không thể tạo địa bàn khách hàng.");
+    const nextAreaId = location.areaId;
+    const nextSubAreaId = location.subAreaId;
 
     const { data: currentSubscription } = await admin
       .from("billgo_subscriptions")
