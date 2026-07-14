@@ -85,6 +85,8 @@ type RowView = {
   account: string;
 };
 
+type ActionMode = "edit" | "cycle" | "status" | "detail";
+
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -146,11 +148,25 @@ export default function WorkerBillGoPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
+  const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
+  const [actionMode, setActionMode] = useState<ActionMode | null>(null);
   const [collectForm, setCollectForm] = useState({
     amount: "",
     paidAt: todayInput(),
     method: "cash",
     note: "",
+  });
+  const [editForm, setEditForm] = useState({
+    customerName: "",
+    phone: "",
+    account: "",
+    address: "",
+    provider: "",
+    packageName: "",
+    monthlyFee: "",
+    note: "",
+    cycle: "monthly" as BillGoCycle,
+    effectivePeriodStart: todayInput(),
   });
 
   const fetchBillGo = useCallback(async () => {
@@ -280,6 +296,24 @@ export default function WorkerBillGoPage() {
     });
   };
 
+  const openAction = (mode: ActionMode, item: Receivable) => {
+    const subscription = item.subscription;
+    setActionTarget(item);
+    setActionMode(mode);
+    setEditForm({
+      customerName: subscription?.customer_name || "",
+      phone: subscription?.phone || "",
+      account: subscription?.internet_account || "",
+      address: subscription?.customer_address || "",
+      provider: subscription?.provider || "",
+      packageName: subscription?.package_name || "",
+      monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
+      note: subscription?.note || "",
+      cycle: (subscription?.current_cycle || subscription?.cycle || "monthly") as BillGoCycle,
+      effectivePeriodStart: subscription?.next_period_start || item.period_start || todayInput(),
+    });
+  };
+
   const submitCollection = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!collecting) return;
@@ -298,6 +332,65 @@ export default function WorkerBillGoPage() {
       await fetchBillGo();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể xác nhận thu tiền.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitAction = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!actionTarget?.subscription?.id || !actionMode) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const action = actionMode === "edit"
+        ? "update_customer"
+        : actionMode === "cycle"
+          ? "change_cycle"
+          : actionTarget.subscription.status === "paused"
+            ? "reactivate"
+            : "pause";
+      const payload = actionMode === "edit"
+        ? {
+            action,
+            subscriptionId: actionTarget.subscription.id,
+            customerName: editForm.customerName,
+            phone: editForm.phone,
+            account: editForm.account,
+            address: editForm.address,
+            provider: editForm.provider,
+            packageName: editForm.packageName,
+            monthlyFee: editForm.monthlyFee,
+            note: editForm.note,
+          }
+        : actionMode === "cycle"
+          ? {
+              action,
+              subscriptionId: actionTarget.subscription.id,
+              cycle: editForm.cycle,
+              effectivePeriodStart: editForm.effectivePeriodStart,
+              note: editForm.note,
+            }
+          : {
+              action,
+              subscriptionId: actionTarget.subscription.id,
+              effectivePeriodStart: editForm.effectivePeriodStart,
+              note: editForm.note,
+            };
+
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể lưu thay đổi BillGo.");
+      setActionTarget(null);
+      setActionMode(null);
+      setMessage("Đã lưu thay đổi BillGo.");
+      await fetchBillGo();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể lưu thay đổi BillGo.");
     } finally {
       setSaving(false);
     }
@@ -328,17 +421,17 @@ export default function WorkerBillGoPage() {
                 <button type="button" disabled={!canCollect} onClick={() => openCollect(item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low disabled:opacity-45">
                   <CircleDollarSign size={16} /> Thu tiền
                 </button>
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                <button type="button" onClick={() => openAction("detail", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <Eye size={16} /> Xem chi tiết
                 </button>
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                <button type="button" onClick={() => openAction("edit", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <Pencil size={16} /> Sửa thông tin
                 </button>
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                <button type="button" onClick={() => openAction("cycle", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <RotateCcw size={16} /> Chuyển hình thức đóng
                 </button>
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <PauseCircle size={16} /> Ngừng sử dụng
+                <button type="button" onClick={() => openAction("status", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                  <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng"}
                 </button>
                 <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
                   <Trash2 size={16} /> Xóa khách hàng
@@ -513,6 +606,87 @@ export default function WorkerBillGoPage() {
             <button disabled={saving || toMoneyNumber(collectForm.amount) <= 0} className="btn-primary mt-4 !w-full">
               {saving ? "Đang xác nhận..." : "Xác nhận thu tiền"}
             </button>
+          </form>
+        </div>
+      )}
+
+      {actionTarget && actionMode && (
+        <div className="fixed inset-0 z-40 flex items-end bg-black/35 p-3 sm:items-center sm:justify-center">
+          <form onSubmit={submitAction} className="modal-panel w-full max-w-lg overflow-y-auto p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase text-primary">BillGo</p>
+                <h2 className="text-lg font-extrabold">
+                  {actionMode === "edit" ? "Sửa thông tin" : actionMode === "cycle" ? "Chuyển hình thức đóng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng") : "Chi tiết khách hàng"}
+                </h2>
+              </div>
+              <button type="button" onClick={() => { setActionTarget(null); setActionMode(null); }} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+            </div>
+
+            {actionMode === "detail" ? (
+              <div className="mt-4 grid gap-2 text-sm">
+                {[
+                  ["Tên khách hàng", actionTarget.subscription?.customer_name || "Chưa có"],
+                  ["Số điện thoại", actionTarget.subscription?.phone || "Chưa có"],
+                  ["Account", actionTarget.subscription?.internet_account || "Chưa có"],
+                  ["Địa chỉ", actionTarget.subscription?.customer_address || "Chưa có"],
+                  ["Nhà mạng", actionTarget.subscription?.provider || "Chưa có"],
+                  ["Hình thức hiện tại", getBillGoCycleOption(actionTarget.subscription?.current_cycle || actionTarget.subscription?.cycle || "monthly").label],
+                  ["Đã thanh toán đến", actionTarget.subscription?.covered_until || "Chưa có"],
+                  ["Kỳ thu tiếp theo", actionTarget.subscription?.next_period_start || "Chưa có"],
+                  ["Ghi chú", actionTarget.subscription?.note || actionTarget.note || "Chưa có"],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg bg-surface-container-low p-3">
+                    <span className="text-on-surface-variant">{label}</span><br />
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+                <div className="rounded-lg bg-surface-container-low p-3">
+                  <span className="text-on-surface-variant">Lịch sử giao dịch</span>
+                  {(actionTarget.payments || []).length === 0 ? (
+                    <p className="mt-1 font-bold">Chưa có giao dịch</p>
+                  ) : (actionTarget.payments || []).map(payment => (
+                    <p key={payment.id} className="mt-1">
+                      <strong>{formatBillGoCurrency(payment.amount)}</strong> · {methodLabels[payment.method] || payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString("vi-VN") : "Chưa có ngày"}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : actionMode === "edit" ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <input required className="input-field" placeholder="Tên khách hàng" value={editForm.customerName} onChange={e => setEditForm(prev => ({ ...prev, customerName: e.target.value }))} />
+                <input className="input-field" placeholder="Số điện thoại" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} />
+                <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={editForm.account} onChange={e => setEditForm(prev => ({ ...prev, account: e.target.value }))} />
+                <input className="input-field" placeholder="Nhà mạng" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))} />
+                <input required className="input-field sm:col-span-2" placeholder="Địa chỉ" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
+                <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => ({ ...prev, packageName: e.target.value }))} />
+                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
+                <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+              </div>
+            ) : actionMode === "cycle" ? (
+              <div className="mt-4 grid gap-3">
+                <select className="input-field" value={editForm.cycle} onChange={e => setEditForm(prev => ({ ...prev, cycle: e.target.value as BillGoCycle }))}>
+                  {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
+                <textarea className="input-field min-h-20" placeholder="Ghi chú thay đổi" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+                <p className="text-xs text-on-surface-variant">Hình thức mới chỉ áp dụng từ kỳ đầu tiên chưa được thanh toán hoặc khuyến mại.</p>
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-3">
+                <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
+                <textarea className="input-field min-h-20" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+                <p className="text-xs text-on-surface-variant">
+                  {actionTarget.subscription?.status === "paused" ? "Khi kích hoạt lại, hệ thống tạo kỳ mới từ kỳ bắt đầu đã chọn." : "Khi ngừng sử dụng, hệ thống giữ lịch sử và không tạo kỳ cước mới."}
+                </p>
+              </div>
+            )}
+
+            {actionMode !== "detail" && (
+              <button disabled={saving || (actionMode === "edit" && toMoneyNumber(editForm.monthlyFee) < 0)} className="btn-primary mt-4 !w-full">
+                {saving ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            )}
           </form>
         </div>
       )}

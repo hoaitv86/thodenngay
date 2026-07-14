@@ -48,6 +48,8 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
 
 const asText = (value: unknown) => String(value || "").trim();
 
+const todayInputForServer = () => toBillGoDateInput(new Date());
+
 const firstOfMonth = (value: string | Date) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return toBillGoDateInput(new Date());
@@ -276,6 +278,99 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
   const action = asText(body.action);
+
+  if (action === "update_customer") {
+    const subscriptionId = asText(body.subscriptionId);
+    const monthlyFee = toMoneyNumber(body.monthlyFee);
+    if (!subscriptionId || monthlyFee < 0) return jsonError("Thông tin khách hàng không hợp lệ.");
+
+    const { error } = await admin
+      .from("billgo_subscriptions")
+      .update({
+        customer_name: asText(body.customerName),
+        phone: asText(body.phone),
+        internet_account: asText(body.account),
+        customer_address: asText(body.address),
+        provider: asText(body.provider) || null,
+        package_name: asText(body.packageName) || "Cước Internet",
+        monthly_fee: monthlyFee,
+        amount_per_cycle: monthlyFee,
+        note: asText(body.note),
+        last_changed_by: userId,
+      })
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null);
+    if (error) return jsonError(error.message);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "change_cycle") {
+    const subscriptionId = asText(body.subscriptionId);
+    const newCycle = asText(body.cycle);
+    const note = asText(body.note);
+    if (!subscriptionId || !allowedCycles.has(newCycle as BillGoCycle)) return jsonError("Hình thức đóng không hợp lệ.");
+
+    const { data: subscription, error: subscriptionError } = await admin
+      .from("billgo_subscriptions")
+      .select("id, current_cycle, cycle, covered_until, next_period_start")
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .single();
+    if (subscriptionError || !subscription) return jsonError("Không tìm thấy khách hàng BillGo.", 404);
+
+    const effectivePeriodStart = asText(body.effectivePeriodStart)
+      || (subscription.covered_until ? getBillGoNextPeriodStartDate(subscription.covered_until) : subscription.next_period_start)
+      || todayInputForServer();
+    const oldCycle = String(subscription.current_cycle || subscription.cycle || "monthly");
+
+    const { error: updateError } = await admin
+      .from("billgo_subscriptions")
+      .update({ current_cycle: newCycle, cycle: newCycle, next_period_start: effectivePeriodStart, last_changed_by: userId })
+      .eq("id", subscriptionId);
+    if (updateError) return jsonError(updateError.message);
+
+    await admin.from("billgo_cycle_changes").insert({
+      subscription_id: subscriptionId,
+      old_cycle: oldCycle,
+      new_cycle: newCycle,
+      effective_period_start: effectivePeriodStart,
+      changed_by: userId,
+      note,
+    });
+    await createNextReceivable(admin, subscriptionId, userId, effectivePeriodStart);
+    return NextResponse.json({ ok: true, effectivePeriodStart });
+  }
+
+  if (action === "pause" || action === "reactivate") {
+    const subscriptionId = asText(body.subscriptionId);
+    const effectivePeriodStart = asText(body.effectivePeriodStart) || todayInputForServer();
+    const note = asText(body.note);
+    if (!subscriptionId) return jsonError("Thiếu khách hàng BillGo.");
+
+    const update = action === "pause"
+      ? { status: "paused", paused_at: new Date().toISOString(), last_changed_by: userId }
+      : { status: "active", reactivated_at: new Date().toISOString(), reactivated_period_start: effectivePeriodStart, next_period_start: effectivePeriodStart, last_changed_by: userId };
+
+    const { error } = await admin
+      .from("billgo_subscriptions")
+      .update(update)
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null);
+    if (error) return jsonError(error.message);
+
+    await admin.from("billgo_status_events").insert({
+      subscription_id: subscriptionId,
+      event_type: action === "pause" ? "paused" : "reactivated",
+      effective_period_start: effectivePeriodStart,
+      performed_by: userId,
+      note,
+    });
+    if (action === "reactivate") await createNextReceivable(admin, subscriptionId, userId, effectivePeriodStart);
+    return NextResponse.json({ ok: true });
+  }
 
   if (action !== "collect") return jsonError("Hành động BillGo không hợp lệ.");
 
