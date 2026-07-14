@@ -15,7 +15,6 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import {
   BILLGO_ACCOUNT_SUGGESTIONS,
   BILLGO_ALL_TAB,
@@ -47,6 +46,8 @@ type Receivable = {
   period_end?: string | null;
   collection_month?: string | null;
   usage_month?: string | null;
+  billing_month?: number | null;
+  billing_year?: number | null;
   billing_months?: number | null;
   bonus_months?: number | null;
   paid_amount?: number | string | null;
@@ -205,7 +206,6 @@ const normalizeLocationText = (value: string | null | undefined) =>
   String(value || "").trim().toLocaleLowerCase("vi");
 
 export default function WorkerBillGoPage() {
-  const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -304,43 +304,18 @@ export default function WorkerBillGoPage() {
   const fetchBillGo = useCallback(async () => {
     setLoading(true);
     setMessage("");
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    try {
+      const response = await fetch(`/api/worker/billgo?month=${encodeURIComponent(monthFilter)}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
+      setRows(normalizeRows(result.rows || []));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể tải BillGo.");
       setRows([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: worker } = await supabase.from("workers").select("id").eq("user_id", user.id).single();
-    if (!worker) {
-      setMessage("Không tìm thấy hồ sơ thợ.");
-      setLoading(false);
-      return;
-    }
-
-    const start = `${monthFilter}-01`;
-    const endDate = new Date(`${start}T00:00:00`);
-    endDate.setMonth(endDate.getMonth() + 1);
-    const end = toBillGoDateInput(endDate);
-
-    const { data, error } = await supabase
-      .from("billgo_receivables")
-      .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_months, bonus_months, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, covered_until, status, note, created_at, billgo_cycle_changes(id, old_cycle, new_cycle, effective_period_start, note, created_at), billgo_status_events(id, event_type, effective_period_start, note, created_at)), payments(id, amount, method, status, paid_at, note)")
-      .eq("worker_id", worker.id)
-      .not("subscription_id", "is", null)
-      .is("deleted_at", null)
-      .gte("collection_month", start)
-      .lt("collection_month", end)
-      .order("due_date", { ascending: true });
-
-    if (error) {
-      setMessage("Không thể tải BillGo: " + error.message);
-      setRows([]);
-    } else {
-      setRows(normalizeRows(data || []));
-    }
-    setLoading(false);
-  }, [monthFilter, supabase]);
+  }, [monthFilter]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchBillGo(), 0);
@@ -764,7 +739,7 @@ export default function WorkerBillGoPage() {
                   <RotateCcw size={16} /> Chuyển hình thức đóng
                 </button>
                 <button type="button" onClick={() => openAction("status", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng"}
+                  <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng thu"}
                 </button>
                 <button type="button" onClick={() => openAction("delete", item)} className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
                   <Trash2 size={16} /> Xóa khách hàng
@@ -1060,7 +1035,7 @@ export default function WorkerBillGoPage() {
               <div>
                 <p className="text-xs font-bold uppercase text-primary">BillGo</p>
                 <h2 className="text-lg font-extrabold">
-                  {actionMode === "edit" ? "Sửa thông tin" : actionMode === "cycle" ? "Chuyển hình thức đóng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng") : actionMode === "delete" ? "Xóa khách hàng" : "Chi tiết khách hàng"}
+                  {actionMode === "edit" ? "Sửa thông tin" : actionMode === "cycle" ? "Chuyển hình thức đóng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng thu") : actionMode === "delete" ? "Xóa khách hàng" : "Chi tiết khách hàng"}
                 </h2>
               </div>
               <button type="button" onClick={() => { setActionTarget(null); setActionMode(null); }} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>

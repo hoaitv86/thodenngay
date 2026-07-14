@@ -113,6 +113,25 @@ const resolveBillGoArea = async (
 
 const todayInputForServer = () => toBillGoDateInput(new Date());
 
+const parseMonthFilter = (value: string) => {
+  const [rawYear, rawMonth] = value.split("-").map(Number);
+  const today = new Date();
+  const year = rawYear || today.getFullYear();
+  const month = rawMonth && rawMonth >= 1 && rawMonth <= 12 ? rawMonth : today.getMonth() + 1;
+  return { year, month };
+};
+
+const monthStartInput = (year: number, month: number) =>
+  toBillGoDateInput(new Date(year, month - 1, 1));
+
+const getBillingParts = (collectionMonth: string) => {
+  const date = new Date(collectionMonth);
+  return {
+    billingMonth: date.getMonth() + 1,
+    billingYear: date.getFullYear(),
+  };
+};
+
 const firstOfMonth = (value: string | Date) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return toBillGoDateInput(new Date());
@@ -144,56 +163,103 @@ const buildCoverageMonths = (periodStart: string, paidMonths: number, bonusMonth
   return [...paid, ...promo];
 };
 
-const createNextReceivable = async (
+const ensureMonthlyReceivables = async (
   admin: SupabaseClient,
-  subscriptionId: string,
+  workerId: string,
   userId: string,
-  startDate: string,
+  monthFilter: string,
 ) => {
-  const { data: subscription, error } = await admin
+  const { year, month } = parseMonthFilter(monthFilter);
+  const collectionMonth = monthStartInput(year, month);
+  const periodStart = firstOfMonth(addMonths(collectionMonth, -1));
+  const billing = getBillGoBillingPeriod(periodStart, "monthly");
+  const billingParts = getBillingParts(collectionMonth);
+
+  const { data: subscriptions, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at")
-    .eq("id", subscriptionId)
-    .single();
+    .select("id, customer_id, worker_id, customer_name, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date")
+    .eq("worker_id", workerId)
+    .eq("status", "active")
+    .is("deleted_at", null);
+  if (subscriptionError) return { error: subscriptionError.message };
 
-  if (error || !subscription || subscription.status !== "active" || subscription.deleted_at) return;
-
-  const cycle = String(subscription.current_cycle || subscription.cycle || "monthly") as BillGoCycle;
-  const monthlyFee = toMoneyNumber(subscription.monthly_fee ?? subscription.amount_per_cycle);
-  const billing = getBillGoBillingPeriod(startDate, cycle);
-  const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
-
-  const { data: existing } = await admin
-    .from("billgo_receivables")
-    .select("id")
-    .eq("subscription_id", subscription.id)
-    .eq("period_start", billing.periodStart)
-    .is("deleted_at", null)
-    .neq("status", "cancelled")
-    .maybeSingle();
-
-  if (existing) return;
-
-  await admin.from("billgo_receivables").insert({
-    customer_id: subscription.customer_id,
-    worker_id: subscription.worker_id,
-    subscription_id: subscription.id,
-    type: "subscription_fee",
-    title: `Thu cước ${subscription.package_name || "Internet"}`,
-    total_amount: totalAmount,
-    due_date: billing.dueDate,
-    period_start: billing.periodStart,
-    period_end: billing.periodEnd,
-    collection_month: billing.collectionMonth,
-    usage_month: billing.usageMonth,
-    billing_months: billing.billingMonths,
-    bonus_months: billing.bonusMonths,
-    monthly_fee_at_collection: monthlyFee,
-    next_period_start: getBillGoNextPeriodStartDate(billing.periodEnd),
-    status: getBillGoStoredStatus(totalAmount, 0, billing.dueDate),
-    created_by: userId,
+  const monthlySubscriptions = (subscriptions || []).filter(subscription => {
+    const cycle = String(subscription.current_cycle || subscription.cycle || "monthly");
+    const startMonth = firstOfMonth(subscription.start_date || periodStart);
+    return cycle === "monthly" && startMonth <= periodStart;
   });
+  if (monthlySubscriptions.length === 0) return { created: 0 };
+
+  const { data: existing, error: existingError } = await admin
+    .from("billgo_receivables")
+    .select("subscription_id")
+    .eq("worker_id", workerId)
+    .eq("billing_month", billingParts.billingMonth)
+    .eq("billing_year", billingParts.billingYear)
+    .is("deleted_at", null)
+    .not("subscription_id", "is", null);
+  if (existingError) return { error: existingError.message };
+
+  const existingSubscriptionIds = new Set((existing || []).map(row => row.subscription_id));
+  const rowsToCreate = monthlySubscriptions
+    .filter(subscription => !existingSubscriptionIds.has(subscription.id))
+    .map(subscription => {
+      const monthlyFee = toMoneyNumber(subscription.monthly_fee ?? subscription.amount_per_cycle);
+      const totalAmount = getBillGoCollectableAmount(monthlyFee, "monthly");
+      return {
+        customer_id: subscription.customer_id,
+        worker_id: subscription.worker_id,
+        subscription_id: subscription.id,
+        type: "subscription_fee",
+        title: `Thu cước ${subscription.package_name || "Internet"}`,
+        total_amount: totalAmount,
+        due_date: billing.dueDate,
+        period_start: billing.periodStart,
+        period_end: billing.periodEnd,
+        collection_month: collectionMonth,
+        usage_month: billing.usageMonth,
+        billing_month: billingParts.billingMonth,
+        billing_year: billingParts.billingYear,
+        billing_months: 1,
+        bonus_months: 0,
+        paid_amount: 0,
+        monthly_fee_at_collection: monthlyFee,
+        next_period_start: getBillGoNextPeriodStartDate(billing.periodEnd),
+        status: "unpaid",
+        created_by: userId,
+      };
+    });
+
+  if (rowsToCreate.length === 0) return { created: 0 };
+  const { error: insertError } = await admin.from("billgo_receivables").insert(rowsToCreate);
+  if (insertError && insertError.code !== "23505") return { error: insertError.message };
+  return { created: insertError?.code === "23505" ? 0 : rowsToCreate.length };
 };
+
+export async function GET(request: Request) {
+  const context = await getWorkerContext();
+  if (context instanceof NextResponse) return context;
+  const { admin, userId, workerId } = context;
+
+  const { searchParams } = new URL(request.url);
+  const monthFilter = searchParams.get("month") || todayInputForServer().slice(0, 7);
+  const { year, month } = parseMonthFilter(monthFilter);
+  const ensured = await ensureMonthlyReceivables(admin, workerId, userId, monthFilter);
+  if (ensured.error) return jsonError(ensured.error);
+
+  const { data, error } = await admin
+    .from("billgo_receivables")
+    .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, billing_months, bonus_months, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, covered_until, status, note, created_at, billgo_cycle_changes(id, old_cycle, new_cycle, effective_period_start, note, created_at), billgo_status_events(id, event_type, effective_period_start, note, created_at)), payments(id, amount, method, status, paid_at, note)")
+    .eq("worker_id", workerId)
+    .eq("billing_month", month)
+    .eq("billing_year", year)
+    .not("subscription_id", "is", null)
+    .is("deleted_at", null)
+    .order("due_date", { ascending: true });
+
+  if (error) return jsonError("Không thể tải BillGo: " + error.message);
+  return NextResponse.json({ rows: data || [], created: ensured.created || 0 });
+}
 
 export async function POST(request: Request) {
   const context = await getWorkerContext();
@@ -236,6 +302,7 @@ export async function POST(request: Request) {
   if (duplicate) return jsonError("Account này đã có trong BillGo.", 409);
 
   const billing = getBillGoBillingPeriod(startDate, cycle);
+  const billingParts = getBillingParts(billing.collectionMonth);
   const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
   const paidAmount = Math.min(Math.max(initialPaidAmount, 0), totalAmount);
   const receivableStatus = getBillGoStoredStatus(totalAmount, paidAmount, dueDate || billing.dueDate);
@@ -288,6 +355,8 @@ export async function POST(request: Request) {
       period_end: billing.periodEnd,
       collection_month: billing.collectionMonth,
       usage_month: billing.usageMonth,
+      billing_month: billingParts.billingMonth,
+      billing_year: billingParts.billingYear,
       billing_months: billing.billingMonths,
       bonus_months: billing.bonusMonths,
       paid_amount: paidAmount,
@@ -338,7 +407,6 @@ export async function POST(request: Request) {
         .from("billgo_subscriptions")
         .update({ covered_until: receivable.period_end, next_period_start: nextStart, next_due_date: dueDate || billing.dueDate })
         .eq("id", subscription.id);
-      await createNextReceivable(admin, subscription.id, userId, nextStart);
     }
   }
 
@@ -369,7 +437,7 @@ export async function PATCH(request: Request) {
 
     const { data: currentSubscription } = await admin
       .from("billgo_subscriptions")
-      .select("id, area_id, sub_area_id, address_detail")
+      .select("id, area_id, sub_area_id, address_detail, current_cycle, cycle")
       .eq("id", subscriptionId)
       .eq("worker_id", workerId)
       .is("deleted_at", null)
@@ -396,6 +464,23 @@ export async function PATCH(request: Request) {
       .eq("worker_id", workerId)
       .is("deleted_at", null);
     if (error) return jsonError(error.message);
+    const currentMonth = monthStartInput(new Date().getFullYear(), new Date().getMonth() + 1);
+    const currentParts = getBillingParts(currentMonth);
+    const currentCycle = String(currentSubscription?.current_cycle || currentSubscription?.cycle || "monthly");
+    const currentUnpaidAmount = getBillGoCollectableAmount(monthlyFee, currentCycle);
+    await admin
+      .from("billgo_receivables")
+      .update({
+        total_amount: currentUnpaidAmount,
+        monthly_fee_at_collection: monthlyFee,
+        status: "unpaid",
+      })
+      .eq("subscription_id", subscriptionId)
+      .eq("billing_month", currentParts.billingMonth)
+      .eq("billing_year", currentParts.billingYear)
+      .eq("worker_id", workerId)
+      .eq("paid_amount", 0)
+      .in("status", ["unpaid", "overdue", "not_due", "due"]);
     if (
       currentSubscription
       && (currentSubscription.area_id !== nextAreaId || currentSubscription.sub_area_id !== nextSubAreaId || (currentSubscription.address_detail || "") !== nextAddressDetail)
@@ -449,7 +534,6 @@ export async function PATCH(request: Request) {
       changed_by: userId,
       note,
     });
-    await createNextReceivable(admin, subscriptionId, userId, effectivePeriodStart);
     return NextResponse.json({ ok: true, effectivePeriodStart });
   }
 
@@ -478,7 +562,10 @@ export async function PATCH(request: Request) {
       performed_by: userId,
       note,
     });
-    if (action === "reactivate") await createNextReceivable(admin, subscriptionId, userId, effectivePeriodStart);
+    if (action === "reactivate") {
+      const monthFilter = effectivePeriodStart.slice(0, 7);
+      await ensureMonthlyReceivables(admin, workerId, userId, monthFilter);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -640,6 +727,8 @@ export async function PATCH(request: Request) {
         period_end: endOfMonth(promoStart),
         collection_month: firstOfMonth(promoStart),
         usage_month: firstOfMonth(promoStart),
+        billing_month: getBillingParts(firstOfMonth(promoStart)).billingMonth,
+        billing_year: getBillingParts(firstOfMonth(promoStart)).billingYear,
         billing_months: 0,
         bonus_months: 1,
         paid_amount: 0,
@@ -647,8 +736,6 @@ export async function PATCH(request: Request) {
         created_by: userId,
       });
     }
-
-    await createNextReceivable(admin, receivable.subscription_id, userId, nextStart);
   }
 
   return NextResponse.json({ ok: true, status: nextStatus });
