@@ -22,6 +22,7 @@ type Area = {
 
 const initialArea = { name: "", sortOrder: "0" };
 const initialSubArea = { areaId: "", name: "", sortOrder: "0" };
+const initialAssignment = { userId: "", areaId: "", subAreaId: "" };
 
 export default function WorkerAreasPage() {
   const [areas, setAreas] = useState<Area[]>([]);
@@ -31,6 +32,7 @@ export default function WorkerAreasPage() {
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [areaForm, setAreaForm] = useState(initialArea);
   const [subAreaForm, setSubAreaForm] = useState(initialSubArea);
+  const [assignmentForm, setAssignmentForm] = useState(initialAssignment);
 
   const fetchAreas = useCallback(async () => {
     setLoading(true);
@@ -124,6 +126,27 @@ export default function WorkerAreasPage() {
     setSaving(false);
   };
 
+  const saveAssignment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/areas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assignment", ...assignmentForm }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể phân công người thu.");
+      setAssignmentForm(initialAssignment);
+      setMessage("Đã phân công người thu.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể phân công người thu.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 lg:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -206,6 +229,22 @@ export default function WorkerAreasPage() {
               </div>
             </section>
           )}
+
+          <form onSubmit={saveAssignment} className="rounded-lg border border-outline-variant/40 bg-white p-4 shadow-sm">
+            <h2 className="font-extrabold">Phân công người thu</h2>
+            <div className="mt-3 grid gap-3">
+              <input required className="input-field" placeholder="User ID người thu" value={assignmentForm.userId} onChange={e => setAssignmentForm(prev => ({ ...prev, userId: e.target.value }))} />
+              <select className="input-field" value={assignmentForm.areaId} onChange={e => setAssignmentForm(prev => ({ ...prev, areaId: e.target.value, subAreaId: "" }))}>
+                <option value="">Chọn xã</option>
+                {areas.map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+              </select>
+              <select className="input-field" value={assignmentForm.subAreaId} onChange={e => setAssignmentForm(prev => ({ ...prev, subAreaId: e.target.value }))} disabled={!assignmentForm.areaId}>
+                <option value="">Cả xã hoặc chọn xóm cụ thể</option>
+                {(areas.find(area => area.id === assignmentForm.areaId)?.sub_areas || []).map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
+              </select>
+              <button disabled={saving} className="btn-primary !w-full">Lưu phân công</button>
+            </div>
+          </form>
         </aside>
       </div>
     </div>

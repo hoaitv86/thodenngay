@@ -195,6 +195,9 @@ export default function WorkerBillGoPage() {
   const [areaStatusFilter, setAreaStatusFilter] = useState("all");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
+  const [selectedSubscriptionIds, setSelectedSubscriptionIds] = useState<string[]>([]);
+  const [bulkAssignAreaId, setBulkAssignAreaId] = useState("");
+  const [bulkAssignSubAreaId, setBulkAssignSubAreaId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
@@ -223,30 +226,33 @@ export default function WorkerBillGoPage() {
   });
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(BILLGO_VIEW_STATE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as Partial<{
-        viewMode: "cycle" | "area";
-        activeTab: BillGoCycle | typeof BILLGO_ALL_TAB;
-        monthFilter: string;
-        statusFilter: string;
-        areaStatusFilter: string;
-        selectedAreaId: string;
-        selectedSubAreaId: string;
-        query: string;
-      }>;
-      if (saved.viewMode) setViewMode(saved.viewMode);
-      if (saved.activeTab) setActiveTab(saved.activeTab);
-      if (saved.monthFilter) setMonthFilter(saved.monthFilter);
-      if (saved.statusFilter) setStatusFilter(saved.statusFilter);
-      if (saved.areaStatusFilter) setAreaStatusFilter(saved.areaStatusFilter);
-      if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
-      if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
-      if (typeof saved.query === "string") setQuery(saved.query);
-    } catch {
-      window.localStorage.removeItem(BILLGO_VIEW_STATE_KEY);
-    }
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(BILLGO_VIEW_STATE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw) as Partial<{
+          viewMode: "cycle" | "area";
+          activeTab: BillGoCycle | typeof BILLGO_ALL_TAB;
+          monthFilter: string;
+          statusFilter: string;
+          areaStatusFilter: string;
+          selectedAreaId: string;
+          selectedSubAreaId: string;
+          query: string;
+        }>;
+        if (saved.viewMode) setViewMode(saved.viewMode);
+        if (saved.activeTab) setActiveTab(saved.activeTab);
+        if (saved.monthFilter) setMonthFilter(saved.monthFilter);
+        if (saved.statusFilter) setStatusFilter(saved.statusFilter);
+        if (saved.areaStatusFilter) setAreaStatusFilter(saved.areaStatusFilter);
+        if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
+        if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
+        if (typeof saved.query === "string") setQuery(saved.query);
+      } catch {
+        window.localStorage.removeItem(BILLGO_VIEW_STATE_KEY);
+      }
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
@@ -420,6 +426,10 @@ export default function WorkerBillGoPage() {
     () => areas.find(area => area.id === editForm.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
     [areas, editForm.areaId],
   );
+  const bulkAssignSubAreas = useMemo(
+    () => areas.find(area => area.id === bulkAssignAreaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
+    [areas, bulkAssignAreaId],
+  );
 
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
@@ -584,6 +594,34 @@ export default function WorkerBillGoPage() {
     }
   };
 
+  const assignSelectedArea = async () => {
+    if (selectedSubscriptionIds.length === 0 || !bulkAssignAreaId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "assign_area_bulk",
+          subscriptionIds: selectedSubscriptionIds,
+          areaId: bulkAssignAreaId,
+          subAreaId: bulkAssignSubAreaId,
+          note: "Gán nhanh từ nhóm chưa phân loại địa bàn",
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể gán địa bàn.");
+      setSelectedSubscriptionIds([]);
+      setMessage(`Đã gán địa bàn cho ${result.updated || selectedSubscriptionIds.length} khách.`);
+      await refreshBillGoKeepingScroll();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể gán địa bàn.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
     const cycle = getBillGoCycleOption(row.cycle);
@@ -593,6 +631,16 @@ export default function WorkerBillGoPage() {
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
         <div className="flex items-start justify-between gap-3 lg:contents">
           <div className="min-w-0">
+            {viewMode === "area" && selectedAreaId === "unclassified" && item.subscription?.id && (
+              <label className="mb-2 flex items-center gap-2 text-xs font-bold text-primary">
+                <input
+                  type="checkbox"
+                  checked={selectedSubscriptionIds.includes(item.subscription.id)}
+                  onChange={event => setSelectedSubscriptionIds(prev => event.target.checked ? [...prev, item.subscription!.id] : prev.filter(id => id !== item.subscription!.id))}
+                />
+                Chọn gán địa bàn
+              </label>
+            )}
             <h3 className="truncate text-base font-extrabold text-on-surface">{row.customerName}</h3>
             <p className="mt-1 text-sm text-on-surface-variant">{row.account}</p>
             <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "Chưa có số điện thoại"}</p>
@@ -793,6 +841,22 @@ export default function WorkerBillGoPage() {
               </div>
             ))}
           </div>
+
+          {selectedAreaId === "unclassified" && (
+            <div className="mt-3 grid gap-2 rounded-lg border border-dashed border-outline-variant bg-surface-container-low p-3 sm:grid-cols-[1fr_1fr_auto]">
+              <select className="input-field" value={bulkAssignAreaId} onChange={e => { setBulkAssignAreaId(e.target.value); setBulkAssignSubAreaId(""); }}>
+                <option value="">Chọn xã để gán</option>
+                {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+              </select>
+              <select className="input-field" value={bulkAssignSubAreaId} onChange={e => setBulkAssignSubAreaId(e.target.value)} disabled={!bulkAssignAreaId}>
+                <option value="">Chọn xóm</option>
+                {bulkAssignSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
+              </select>
+              <button type="button" disabled={saving || selectedSubscriptionIds.length === 0 || !bulkAssignAreaId} onClick={() => void assignSelectedArea()} className="btn-primary !w-full sm:!w-auto">
+                Gán {selectedSubscriptionIds.length} khách
+              </button>
+            </div>
+          )}
         </section>
       )}
 

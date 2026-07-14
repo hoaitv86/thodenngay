@@ -119,6 +119,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ id: data.id }, { status: 201 });
   }
 
+  if (action === "assignment") {
+    const userId = asText(body.userId);
+    const areaId = asText(body.areaId) || null;
+    const subAreaId = asText(body.subAreaId) || null;
+    if (!userId || (!areaId && !subAreaId)) return jsonError("Vui lòng nhập người thu và địa bàn.");
+    const { data, error } = await admin
+      .from("collector_assignments")
+      .insert({
+        user_id: userId,
+        area_id: areaId,
+        sub_area_id: subAreaId,
+        is_active: body.isActive !== false,
+        created_by: context.userId,
+      })
+      .select("id")
+      .single();
+    if (error) return jsonError(error.message);
+    return NextResponse.json({ id: data.id }, { status: 201 });
+  }
+
   return jsonError("Hành động địa bàn không hợp lệ.");
 }
 

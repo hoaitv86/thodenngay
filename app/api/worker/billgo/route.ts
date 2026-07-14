@@ -290,6 +290,17 @@ export async function PATCH(request: Request) {
     const subscriptionId = asText(body.subscriptionId);
     const monthlyFee = toMoneyNumber(body.monthlyFee);
     if (!subscriptionId || monthlyFee < 0) return jsonError("Thông tin khách hàng không hợp lệ.");
+    const nextAreaId = asText(body.areaId) || null;
+    const nextSubAreaId = asText(body.subAreaId) || null;
+    const nextAddressDetail = asText(body.addressDetail);
+
+    const { data: currentSubscription } = await admin
+      .from("billgo_subscriptions")
+      .select("id, area_id, sub_area_id, address_detail")
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .maybeSingle();
 
     const { error } = await admin
       .from("billgo_subscriptions")
@@ -298,9 +309,9 @@ export async function PATCH(request: Request) {
         phone: asText(body.phone),
         internet_account: asText(body.account),
         customer_address: asText(body.address),
-        area_id: asText(body.areaId) || null,
-        sub_area_id: asText(body.subAreaId) || null,
-        address_detail: asText(body.addressDetail),
+        area_id: nextAreaId,
+        sub_area_id: nextSubAreaId,
+        address_detail: nextAddressDetail,
         provider: asText(body.provider) || null,
         package_name: asText(body.packageName) || "Cước Internet",
         monthly_fee: monthlyFee,
@@ -312,6 +323,22 @@ export async function PATCH(request: Request) {
       .eq("worker_id", workerId)
       .is("deleted_at", null);
     if (error) return jsonError(error.message);
+    if (
+      currentSubscription
+      && (currentSubscription.area_id !== nextAreaId || currentSubscription.sub_area_id !== nextSubAreaId || (currentSubscription.address_detail || "") !== nextAddressDetail)
+    ) {
+      await admin.from("billgo_area_changes").insert({
+        subscription_id: subscriptionId,
+        old_area_id: currentSubscription.area_id,
+        old_sub_area_id: currentSubscription.sub_area_id,
+        new_area_id: nextAreaId,
+        new_sub_area_id: nextSubAreaId,
+        old_address_detail: currentSubscription.address_detail,
+        new_address_detail: nextAddressDetail,
+        changed_by: userId,
+        note: "Cập nhật địa bàn khách BillGo",
+      });
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -409,6 +436,44 @@ export async function PATCH(request: Request) {
       note,
     });
     return NextResponse.json({ ok: true });
+  }
+
+  if (action === "assign_area_bulk") {
+    const subscriptionIds = Array.isArray(body.subscriptionIds) ? body.subscriptionIds.map(asText).filter(Boolean) : [];
+    const areaId = asText(body.areaId) || null;
+    const subAreaId = asText(body.subAreaId) || null;
+    const addressDetail = asText(body.addressDetail);
+    const note = asText(body.note);
+    if (subscriptionIds.length === 0 || !areaId) return jsonError("Vui lòng chọn khách và xã cần gán.");
+
+    const { data: subscriptions, error: loadError } = await admin
+      .from("billgo_subscriptions")
+      .select("id, area_id, sub_area_id, address_detail")
+      .eq("worker_id", workerId)
+      .in("id", subscriptionIds)
+      .is("deleted_at", null);
+    if (loadError) return jsonError(loadError.message);
+
+    const { error: updateError } = await admin
+      .from("billgo_subscriptions")
+      .update({ area_id: areaId, sub_area_id: subAreaId, address_detail: addressDetail || undefined, last_changed_by: userId })
+      .eq("worker_id", workerId)
+      .in("id", subscriptionIds);
+    if (updateError) return jsonError(updateError.message);
+
+    const historyRows = (subscriptions || []).map(subscription => ({
+      subscription_id: subscription.id,
+      old_area_id: subscription.area_id,
+      old_sub_area_id: subscription.sub_area_id,
+      new_area_id: areaId,
+      new_sub_area_id: subAreaId,
+      old_address_detail: subscription.address_detail,
+      new_address_detail: addressDetail || subscription.address_detail,
+      changed_by: userId,
+      note,
+    }));
+    if (historyRows.length > 0) await admin.from("billgo_area_changes").insert(historyRows);
+    return NextResponse.json({ ok: true, updated: subscriptionIds.length });
   }
 
   if (action !== "collect") return jsonError("Hành động BillGo không hợp lệ.");
