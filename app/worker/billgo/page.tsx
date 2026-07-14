@@ -112,6 +112,8 @@ const methodLabels: Record<string, string> = {
   other: "Khác",
 };
 
+const providerSuggestions = ["Viettel", "VNPT", "FPT"];
+
 const statusOptions = [
   { value: "all", label: "Tất cả trạng thái" },
   { value: "unpaid", label: "Chưa thu" },
@@ -126,7 +128,7 @@ const initialForm = () => ({
   phone: "",
   account: "",
   address: "",
-  provider: "",
+  provider: "Viettel",
   packageName: "",
   monthlyFee: "",
   cycle: "monthly" as BillGoCycle,
@@ -149,6 +151,11 @@ const normalizeRows = (items: unknown[]): Receivable[] =>
       payments: row.payments || [],
     };
   });
+
+const getNumericPackageAmount = (value: string) => {
+  const normalized = value.replace(/[^\d]/g, "");
+  return normalized ? String(Number(normalized)) : "";
+};
 
 export default function WorkerBillGoPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -274,7 +281,11 @@ export default function WorkerBillGoPage() {
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
 
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
-    setForm(prev => ({ ...prev, [key]: value }));
+    setForm(prev => {
+      if (key !== "packageName") return { ...prev, [key]: value };
+      const packageAmount = getNumericPackageAmount(value);
+      return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
+    });
   };
 
   const submitCustomer = async (event: React.FormEvent) => {
@@ -320,7 +331,7 @@ export default function WorkerBillGoPage() {
       phone: subscription?.phone || "",
       account: subscription?.internet_account || "",
       address: subscription?.customer_address || "",
-      provider: subscription?.provider || "",
+      provider: subscription?.provider || "Viettel",
       packageName: subscription?.package_name || "",
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
       note: subscription?.note || "",
@@ -516,7 +527,10 @@ export default function WorkerBillGoPage() {
             <datalist id="billgo-account-suggestions">
               {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
             </datalist>
-            <input className="input-field" placeholder="Nhà mạng" value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
+            <input list="billgo-provider-suggestions" className="input-field" placeholder="Nhà mạng" value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
+            <datalist id="billgo-provider-suggestions">
+              {providerSuggestions.map(provider => <option key={provider} value={provider} />)}
+            </datalist>
             <input required className="input-field sm:col-span-2" placeholder="Địa chỉ hiện tại" value={form.address} onChange={e => updateForm("address", e.target.value)} />
             <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
             <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
@@ -700,9 +714,12 @@ export default function WorkerBillGoPage() {
                 <input required className="input-field" placeholder="Tên khách hàng" value={editForm.customerName} onChange={e => setEditForm(prev => ({ ...prev, customerName: e.target.value }))} />
                 <input className="input-field" placeholder="Số điện thoại" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} />
                 <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={editForm.account} onChange={e => setEditForm(prev => ({ ...prev, account: e.target.value }))} />
-                <input className="input-field" placeholder="Nhà mạng" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))} />
+                <input list="billgo-provider-suggestions" className="input-field" placeholder="Nhà mạng" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))} />
                 <input required className="input-field sm:col-span-2" placeholder="Địa chỉ" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
-                <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => ({ ...prev, packageName: e.target.value }))} />
+                <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {
+                  const packageAmount = getNumericPackageAmount(e.target.value);
+                  return { ...prev, packageName: e.target.value, monthlyFee: packageAmount || prev.monthlyFee };
+                })} />
                 <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
                 <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
               </div>
