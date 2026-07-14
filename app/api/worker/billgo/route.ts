@@ -142,6 +142,9 @@ export async function POST(request: Request) {
   const phone = asText(body.phone);
   const account = asText(body.account);
   const address = asText(body.address);
+  const areaId = asText(body.areaId) || null;
+  const subAreaId = asText(body.subAreaId) || null;
+  const addressDetail = asText(body.addressDetail);
   const provider = asText(body.provider);
   const packageName = asText(body.packageName) || "Cước Internet";
   const monthlyFee = toMoneyNumber(body.monthlyFee ?? body.amount);
@@ -153,7 +156,7 @@ export async function POST(request: Request) {
   const initialPaidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const initialPaymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
 
-  if (!customerName || !account || !address || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle)) {
+  if (!customerName || !account || (!address && !addressDetail) || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle)) {
     return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
   }
 
@@ -181,6 +184,10 @@ export async function POST(request: Request) {
       phone,
       internet_account: account,
       customer_address: address,
+      area_id: areaId,
+      sub_area_id: subAreaId,
+      address_detail: addressDetail,
+      legacy_address: address || null,
       provider: provider || null,
       package_name: packageName,
       service_type: "internet",
@@ -291,6 +298,9 @@ export async function PATCH(request: Request) {
         phone: asText(body.phone),
         internet_account: asText(body.account),
         customer_address: asText(body.address),
+        area_id: asText(body.areaId) || null,
+        sub_area_id: asText(body.subAreaId) || null,
+        address_detail: asText(body.addressDetail),
         provider: asText(body.provider) || null,
         package_name: asText(body.packageName) || "Cước Internet",
         monthly_fee: monthlyFee,

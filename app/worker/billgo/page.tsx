@@ -64,6 +64,10 @@ type Subscription = {
   phone?: string | null;
   internet_account?: string | null;
   customer_address?: string | null;
+  area_id?: string | null;
+  sub_area_id?: string | null;
+  address_detail?: string | null;
+  legacy_address?: string | null;
   provider?: string | null;
   package_name?: string | null;
   cycle?: string | null;
@@ -90,6 +94,21 @@ type Subscription = {
     note?: string | null;
     created_at?: string | null;
   }> | null;
+};
+
+type AreaOption = {
+  id: string;
+  name: string;
+  is_active?: boolean;
+  sub_areas?: SubAreaOption[] | null;
+};
+
+type SubAreaOption = {
+  id: string;
+  area_id: string;
+  name: string;
+  is_active?: boolean;
+  sort_order?: number | null;
 };
 
 type RowView = {
@@ -128,6 +147,9 @@ const initialForm = () => ({
   phone: "",
   account: "",
   address: "",
+  areaId: "",
+  subAreaId: "",
+  addressDetail: "",
   provider: "Viettel",
   packageName: "",
   monthlyFee: "",
@@ -160,6 +182,7 @@ const getNumericPackageAmount = (value: string) => {
 export default function WorkerBillGoPage() {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
+  const [areas, setAreas] = useState<AreaOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -184,12 +207,25 @@ export default function WorkerBillGoPage() {
     account: "",
     address: "",
     provider: "",
+    areaId: "",
+    subAreaId: "",
+    addressDetail: "",
     packageName: "",
     monthlyFee: "",
     note: "",
     cycle: "monthly" as BillGoCycle,
     effectivePeriodStart: todayInput(),
   });
+
+  const fetchAreas = useCallback(async () => {
+    const response = await fetch("/api/worker/areas");
+    if (!response.ok) {
+      setAreas([]);
+      return;
+    }
+    const result = await response.json();
+    setAreas((result.areas || []) as AreaOption[]);
+  }, []);
 
   const fetchBillGo = useCallback(async () => {
     setLoading(true);
@@ -215,7 +251,7 @@ export default function WorkerBillGoPage() {
 
     const { data, error } = await supabase
       .from("billgo_receivables")
-      .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_months, bonus_months, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, covered_until, status, note, created_at, billgo_cycle_changes(id, old_cycle, new_cycle, effective_period_start, note, created_at), billgo_status_events(id, event_type, effective_period_start, note, created_at)), payments(id, amount, method, status, paid_at, note)")
+      .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_months, bonus_months, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, covered_until, status, note, created_at, billgo_cycle_changes(id, old_cycle, new_cycle, effective_period_start, note, created_at), billgo_status_events(id, event_type, effective_period_start, note, created_at)), payments(id, amount, method, status, paid_at, note)")
       .eq("worker_id", worker.id)
       .not("subscription_id", "is", null)
       .is("deleted_at", null)
@@ -236,6 +272,11 @@ export default function WorkerBillGoPage() {
     const timeoutId = window.setTimeout(() => void fetchBillGo(), 0);
     return () => window.clearTimeout(timeoutId);
   }, [fetchBillGo]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void fetchAreas(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchAreas]);
 
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
     const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
@@ -279,9 +320,18 @@ export default function WorkerBillGoPage() {
   const formBilling = useMemo(() => getBillGoBillingPeriod(form.startDate, form.cycle), [form.cycle, form.startDate]);
   const formTotal = useMemo(() => getBillGoCollectableAmount(form.monthlyFee, form.cycle), [form.cycle, form.monthlyFee]);
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
+  const formSubAreas = useMemo(
+    () => areas.find(area => area.id === form.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
+    [areas, form.areaId],
+  );
+  const editSubAreas = useMemo(
+    () => areas.find(area => area.id === editForm.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
+    [areas, editForm.areaId],
+  );
 
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
+      if (key === "areaId") return { ...prev, areaId: value, subAreaId: "" };
       if (key !== "packageName") return { ...prev, [key]: value };
       const packageAmount = getNumericPackageAmount(value);
       return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
@@ -331,6 +381,9 @@ export default function WorkerBillGoPage() {
       phone: subscription?.phone || "",
       account: subscription?.internet_account || "",
       address: subscription?.customer_address || "",
+      areaId: subscription?.area_id || "",
+      subAreaId: subscription?.sub_area_id || "",
+      addressDetail: subscription?.address_detail || "",
       provider: subscription?.provider || "Viettel",
       packageName: subscription?.package_name || "",
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
@@ -386,6 +439,9 @@ export default function WorkerBillGoPage() {
             phone: editForm.phone,
             account: editForm.account,
             address: editForm.address,
+            areaId: editForm.areaId,
+            subAreaId: editForm.subAreaId,
+            addressDetail: editForm.addressDetail,
             provider: editForm.provider,
             packageName: editForm.packageName,
             monthlyFee: editForm.monthlyFee,
@@ -535,7 +591,16 @@ export default function WorkerBillGoPage() {
             <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
               {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
             </select>
-            <input required className="input-field sm:col-span-2" placeholder="Địa chỉ hiện tại" value={form.address} onChange={e => updateForm("address", e.target.value)} />
+            <select className="input-field" value={form.areaId} onChange={e => updateForm("areaId", e.target.value)}>
+              <option value="">Chưa phân loại xã/phường</option>
+              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+            </select>
+            <select className="input-field" value={form.subAreaId} onChange={e => updateForm("subAreaId", e.target.value)} disabled={!form.areaId}>
+              <option value="">Chọn xóm/thôn/khối</option>
+              {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
+            </select>
+            <input className="input-field" placeholder="Địa chỉ chi tiết" value={form.addressDetail} onChange={e => updateForm("addressDetail", e.target.value)} />
+            <input required className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
             <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
             <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
             <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
@@ -729,7 +794,16 @@ export default function WorkerBillGoPage() {
                 <select className="input-field" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))}>
                   {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
                 </select>
-                <input required className="input-field sm:col-span-2" placeholder="Địa chỉ" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
+                <select className="input-field" value={editForm.areaId} onChange={e => setEditForm(prev => ({ ...prev, areaId: e.target.value, subAreaId: "" }))}>
+                  <option value="">Chưa phân loại xã/phường</option>
+                  {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+                </select>
+                <select className="input-field" value={editForm.subAreaId} onChange={e => setEditForm(prev => ({ ...prev, subAreaId: e.target.value }))} disabled={!editForm.areaId}>
+                  <option value="">Chọn xóm/thôn/khối</option>
+                  {editSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
+                </select>
+                <input className="input-field" placeholder="Địa chỉ chi tiết" value={editForm.addressDetail} onChange={e => setEditForm(prev => ({ ...prev, addressDetail: e.target.value }))} />
+                <input required className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
                 <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {
                   const packageAmount = getNumericPackageAmount(e.target.value);
                   return { ...prev, packageName: e.target.value, monthlyFee: packageAmount || prev.monthlyFee };
