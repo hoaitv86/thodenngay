@@ -66,8 +66,11 @@ export const addBillGoMonths = (value: string | Date, months: number) => {
 
 export const toBillGoDateInput = (value: string | Date) => {
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
-  return date.toISOString().slice(0, 10);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = safeDate.getFullYear();
+  const month = String(safeDate.getMonth() + 1).padStart(2, "0");
+  const day = String(safeDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 export const getBillGoCycleOption = (cycle: string) =>

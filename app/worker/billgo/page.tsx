@@ -123,7 +123,20 @@ type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
 
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
+const previousMonthFirstInput = () => {
+  const today = new Date();
+  return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+};
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const monthLabel = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "tháng cước";
+  return `tháng ${date.getMonth() + 1}/${date.getFullYear()}`;
+};
+const dateLabel = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("vi-VN");
+};
 const BILLGO_VIEW_STATE_KEY = "billgo.collection.view";
 
 const methodLabels: Record<string, string> = {
@@ -157,7 +170,7 @@ const initialForm = () => ({
   packageName: "",
   monthlyFee: "",
   cycle: "monthly" as BillGoCycle,
-  startDate: todayInput(),
+  startDate: previousMonthFirstInput(),
   dueDate: "",
   note: "",
   initialPaidAmount: "",
@@ -472,6 +485,7 @@ export default function WorkerBillGoPage() {
           ?.sub_areas?.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
         return { ...prev, subAreaName: value, subAreaId: subArea?.id || "" };
       }
+      if (key === "cycle" && value === "monthly") return { ...prev, cycle: value as BillGoCycle, startDate: previousMonthFirstInput(), dueDate: "" };
       if (key !== "packageName") return { ...prev, [key]: value };
       const packageAmount = getNumericPackageAmount(value);
       return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
@@ -789,17 +803,26 @@ export default function WorkerBillGoPage() {
               {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
-            <input required type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
-            <input type="date" className="input-field" value={form.dueDate || formBilling.dueDate} onChange={e => updateForm("dueDate", e.target.value)} />
+            <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+              Kỳ cước {monthLabel(form.startDate)}
+              <input required type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
+            </label>
+            <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+              Hạn nộp tiền
+              <input type="date" className="input-field" value={form.dueDate || formBilling.dueDate} onChange={e => updateForm("dueDate", e.target.value)} />
+            </label>
             <input type="number" min="0" inputMode="numeric" className="input-field" placeholder="Tổng tiền đã thu ban đầu" value={form.initialPaidAmount} onChange={e => updateForm("initialPaidAmount", e.target.value)} />
-            <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />
+            <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+              Ngày nhập khách hàng
+              <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />
+            </label>
             <select className="input-field" value={form.initialPaymentMethod} onChange={e => updateForm("initialPaymentMethod", e.target.value)}>
               {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
             <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
           </div>
           <p className="mt-3 text-xs text-on-surface-variant">
-            Kỳ cước: {formBilling.periodStart} - {formBilling.periodEnd}. Hạn mặc định: {formBilling.dueDate}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+            Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(form.dueDate || formBilling.dueDate)}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setShowForm(false)} className="btn-outline !w-auto">Hủy</button>
@@ -949,7 +972,10 @@ export default function WorkerBillGoPage() {
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền thực thu" value={collectForm.amount} onChange={e => setCollectForm(prev => ({ ...prev, amount: e.target.value }))} />
-              <input required type="date" className="input-field" value={collectForm.paidAt} onChange={e => setCollectForm(prev => ({ ...prev, paidAt: e.target.value }))} />
+              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                Ngày thu
+                <input required type="date" className="input-field" value={collectForm.paidAt} onChange={e => setCollectForm(prev => ({ ...prev, paidAt: e.target.value }))} />
+              </label>
               <select className="input-field" value={collectForm.method} onChange={e => setCollectForm(prev => ({ ...prev, method: e.target.value }))}>
                 {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
