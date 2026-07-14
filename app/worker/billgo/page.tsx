@@ -187,9 +187,13 @@ export default function WorkerBillGoPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"cycle" | "area">("cycle");
   const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>("monthly");
   const [monthFilter, setMonthFilter] = useState(monthInput());
   const [statusFilter, setStatusFilter] = useState("all");
+  const [areaStatusFilter, setAreaStatusFilter] = useState("all");
+  const [selectedAreaId, setSelectedAreaId] = useState("");
+  const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
@@ -289,22 +293,65 @@ export default function WorkerBillGoPage() {
     };
   }), [rows]);
 
-  const filteredRows = useMemo(() => {
+  const matchesSearch = useCallback((row: RowView) => {
     const normalizedQuery = query.trim().toLocaleLowerCase("vi");
-    return rowViews.filter(row => {
-      if (activeTab !== BILLGO_ALL_TAB && row.cycle !== activeTab) return false;
-      if (statusFilter !== "all" && row.summary.status !== statusFilter) return false;
-      if (!normalizedQuery) return true;
-      return [
+    if (!normalizedQuery) return true;
+    return [
         row.customerName,
         row.account,
         row.item.subscription?.phone,
+        row.item.subscription?.address_detail,
         row.item.subscription?.customer_address,
         row.item.subscription?.provider,
         row.item.subscription?.package_name,
       ].filter(Boolean).join(" ").toLocaleLowerCase("vi").includes(normalizedQuery);
-    });
-  }, [activeTab, query, rowViews, statusFilter]);
+  }, [query]);
+
+  const filteredRows = useMemo(() => rowViews.filter(row => {
+    if (activeTab !== BILLGO_ALL_TAB && row.cycle !== activeTab) return false;
+    if (statusFilter !== "all" && row.summary.status !== statusFilter) return false;
+    return matchesSearch(row);
+  }), [activeTab, matchesSearch, rowViews, statusFilter]);
+
+  const selectedArea = useMemo(
+    () => areas.find(area => area.id === selectedAreaId),
+    [areas, selectedAreaId],
+  );
+  const selectedAreaSubAreas = useMemo(
+    () => selectedArea?.sub_areas?.filter(subArea => subArea.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name)) || [],
+    [selectedArea],
+  );
+
+  const areaRows = useMemo(() => rowViews.filter(row => {
+    const subscription = row.item.subscription;
+    if (selectedAreaId === "unclassified") {
+      if (subscription?.area_id || subscription?.sub_area_id) return false;
+    } else if (selectedAreaId) {
+      if (subscription?.area_id !== selectedAreaId) return false;
+    }
+    if (selectedSubAreaId && subscription?.sub_area_id !== selectedSubAreaId) return false;
+    if (areaStatusFilter !== "all" && row.summary.status !== areaStatusFilter) return false;
+    return matchesSearch(row);
+  }).sort((a, b) => {
+    const order: Record<string, number> = { unpaid: 0, partial: 1, overdue: 2, paid: 3, promo: 4 };
+    return (order[a.summary.status] ?? 9) - (order[b.summary.status] ?? 9) || a.customerName.localeCompare(b.customerName);
+  }), [areaStatusFilter, matchesSearch, rowViews, selectedAreaId, selectedSubAreaId]);
+
+  const getAreaStats = useCallback((items: RowView[]) => items.reduce((acc, row) => {
+    acc.total += 1;
+    acc.receivable += row.summary.receivable;
+    acc.paidAmount += row.summary.paid;
+    acc.debt += row.summary.debt;
+    if (row.summary.status === "paid") acc.paid += 1;
+    if (row.summary.status === "partial") acc.partial += 1;
+    if (row.summary.status === "overdue") acc.overdue += 1;
+    if (row.summary.status === "unpaid") acc.unpaid += 1;
+    return acc;
+  }, { total: 0, unpaid: 0, paid: 0, partial: 0, overdue: 0, receivable: 0, paidAmount: 0, debt: 0 }), []);
+
+  const areaStats = useMemo(() => getAreaStats(areaRows), [areaRows, getAreaStats]);
+  const processedCount = areaStats.paid;
+  const remainingCount = areaStats.unpaid + areaStats.partial + areaStats.overdue;
 
   const totals = useMemo(() => filteredRows.reduce((acc, row) => {
     acc.totalCustomers += 1;
@@ -316,6 +363,10 @@ export default function WorkerBillGoPage() {
     if (row.summary.status === "unpaid" || row.summary.status === "overdue") acc.unpaid += 1;
     return acc;
   }, { totalCustomers: 0, unpaid: 0, paid: 0, partial: 0, totalReceivable: 0, totalPaid: 0, totalDebt: 0 }), [filteredRows]);
+
+  const selectedSubAreaIndex = selectedAreaSubAreas.findIndex(subArea => subArea.id === selectedSubAreaId);
+  const previousSubArea = selectedSubAreaIndex > 0 ? selectedAreaSubAreas[selectedSubAreaIndex - 1] : null;
+  const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
   const formBilling = useMemo(() => getBillGoBillingPeriod(form.startDate, form.cycle), [form.cycle, form.startDate]);
   const formTotal = useMemo(() => getBillGoCollectableAmount(form.monthlyFee, form.cycle), [form.cycle, form.monthlyFee]);
@@ -578,6 +629,22 @@ export default function WorkerBillGoPage() {
 
       {message && <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">{message}</div>}
 
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        {[
+          { value: "cycle", label: "Thu theo chu kỳ" },
+          { value: "area", label: "Thu theo địa bàn" },
+        ].map(option => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setViewMode(option.value as "cycle" | "area")}
+            className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-bold ${viewMode === option.value ? "border-primary bg-primary text-white" : "border-outline-variant bg-white text-on-surface-variant"}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       {showForm && (
         <form onSubmit={submitCustomer} className="mt-4 rounded-lg border border-outline-variant/50 bg-white p-4 shadow-sm">
           <h2 className="mb-4 text-base font-extrabold">Thêm khách hàng</h2>
@@ -626,18 +693,60 @@ export default function WorkerBillGoPage() {
         </form>
       )}
 
-      <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-        {[...BILLGO_CYCLE_OPTIONS, { value: BILLGO_ALL_TAB, label: "Tất cả khách hàng", shortLabel: "Tất cả", paidMonths: 0, bonusMonths: 0 }].map(option => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => setActiveTab(option.value as BillGoCycle | typeof BILLGO_ALL_TAB)}
-            className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-bold ${activeTab === option.value ? "border-primary bg-primary text-white" : "border-outline-variant bg-white text-on-surface-variant"}`}
-          >
-            {option.shortLabel}
-          </button>
-        ))}
-      </div>
+      {viewMode === "cycle" ? (
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          {[...BILLGO_CYCLE_OPTIONS, { value: BILLGO_ALL_TAB, label: "Tất cả khách hàng", shortLabel: "Tất cả", paidMonths: 0, bonusMonths: 0 }].map(option => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setActiveTab(option.value as BillGoCycle | typeof BILLGO_ALL_TAB)}
+              className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-bold ${activeTab === option.value ? "border-primary bg-primary text-white" : "border-outline-variant bg-white text-on-surface-variant"}`}
+            >
+              {option.shortLabel}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <section className="mt-4 rounded-lg border border-outline-variant/40 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <select className="input-field" value={selectedAreaId} onChange={e => { setSelectedAreaId(e.target.value); setSelectedSubAreaId(""); }}>
+              <option value="">Tất cả xã được phép</option>
+              <option value="unclassified">Chưa phân loại địa bàn</option>
+              {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
+            </select>
+            <select className="input-field" value={selectedSubAreaId} onChange={e => setSelectedSubAreaId(e.target.value)} disabled={!selectedAreaId || selectedAreaId === "unclassified"}>
+              <option value="">Tất cả xóm</option>
+              {selectedAreaSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={!previousSubArea} onClick={() => previousSubArea && setSelectedSubAreaId(previousSubArea.id)} className="btn-outline !w-full !px-3 disabled:opacity-40">Xóm trước</button>
+              <button type="button" disabled={!nextSubArea} onClick={() => nextSubArea && setSelectedSubAreaId(nextSubArea.id)} className={`${remainingCount === 0 && nextSubArea ? "btn-primary" : "btn-outline"} !w-full !px-3 disabled:opacity-40`}>Xóm tiếp</button>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">
+            {remainingCount === 0 && areaStats.total > 0
+              ? "Đã hoàn thành xóm"
+              : `Đã xử lý ${processedCount}/${areaStats.total} khách - còn ${remainingCount} khách chưa xử lý`}
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-6">
+            {[
+              ["Tổng khách", String(areaStats.total)],
+              ["Đã thu", String(areaStats.paid)],
+              ["Chưa thu", String(areaStats.unpaid)],
+              ["Thu thiếu", String(areaStats.partial)],
+              ["Còn lại", formatBillGoCurrency(areaStats.debt)],
+              ["Hoàn thành", `${areaStats.total ? Math.round((areaStats.paid / areaStats.total) * 100) : 0}%`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg bg-surface-container-low p-3">
+                <p className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</p>
+                <p className="mt-1 font-extrabold text-on-surface">{value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <label className="relative block">
@@ -653,7 +762,22 @@ export default function WorkerBillGoPage() {
         </label>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+      {viewMode === "area" && (
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {statusOptions.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setAreaStatusFilter(option.value)}
+              className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-bold ${areaStatusFilter === option.value ? "border-primary bg-primary text-white" : "border-outline-variant bg-white text-on-surface-variant"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {viewMode === "cycle" && <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
         {[
           ["Tổng khách", String(totals.totalCustomers)],
           ["Chưa thu", String(totals.unpaid)],
@@ -667,11 +791,11 @@ export default function WorkerBillGoPage() {
             <p className="mt-1 text-lg font-extrabold text-on-surface">{value}</p>
           </div>
         ))}
-      </div>
+      </div>}
 
       {loading ? (
         <div className="py-16 text-center text-sm text-on-surface-variant">Đang tải BillGo...</div>
-      ) : filteredRows.length === 0 ? (
+      ) : (viewMode === "area" ? areaRows : filteredRows).length === 0 ? (
         <div className="mt-5 rounded-lg border border-dashed border-outline-variant bg-white p-8 text-center text-sm text-on-surface-variant">
           Chưa có khách hàng phù hợp bộ lọc.
         </div>
@@ -685,7 +809,7 @@ export default function WorkerBillGoPage() {
             <span>Còn lại</span>
             <span>Kỳ cước</span>
           </div>
-          {filteredRows.map(renderRow)}
+          {(viewMode === "area" ? areaRows : filteredRows).map(renderRow)}
         </section>
       )}
 
