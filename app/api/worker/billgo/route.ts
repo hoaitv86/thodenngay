@@ -372,6 +372,35 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "soft_delete") {
+    const subscriptionId = asText(body.subscriptionId);
+    const note = asText(body.note);
+    if (!subscriptionId) return jsonError("Thiếu khách hàng BillGo.");
+
+    const deletedAt = new Date().toISOString();
+    const { error } = await admin
+      .from("billgo_subscriptions")
+      .update({ status: "deleted", deleted_at: deletedAt, last_changed_by: userId })
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null);
+    if (error) return jsonError(error.message);
+
+    await admin
+      .from("billgo_receivables")
+      .update({ status: "deleted", deleted_at: deletedAt, deleted_by: userId })
+      .eq("subscription_id", subscriptionId)
+      .in("status", ["unpaid", "partial", "overdue"]);
+
+    await admin.from("billgo_status_events").insert({
+      subscription_id: subscriptionId,
+      event_type: "deleted",
+      performed_by: userId,
+      note,
+    });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action !== "collect") return jsonError("Hành động BillGo không hợp lệ.");
 
   const receivableId = asText(body.receivableId);

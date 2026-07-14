@@ -75,6 +75,21 @@ type Subscription = {
   status?: string | null;
   note?: string | null;
   created_at?: string | null;
+  billgo_cycle_changes?: Array<{
+    id: string;
+    old_cycle?: string | null;
+    new_cycle?: string | null;
+    effective_period_start?: string | null;
+    note?: string | null;
+    created_at?: string | null;
+  }> | null;
+  billgo_status_events?: Array<{
+    id: string;
+    event_type?: string | null;
+    effective_period_start?: string | null;
+    note?: string | null;
+    created_at?: string | null;
+  }> | null;
 };
 
 type RowView = {
@@ -85,7 +100,7 @@ type RowView = {
   account: string;
 };
 
-type ActionMode = "edit" | "cycle" | "status" | "detail";
+type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
 
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
@@ -193,7 +208,7 @@ export default function WorkerBillGoPage() {
 
     const { data, error } = await supabase
       .from("billgo_receivables")
-      .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_months, bonus_months, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, covered_until, status, note, created_at), payments(id, amount, method, status, paid_at, note)")
+      .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_months, bonus_months, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, covered_until, status, note, created_at, billgo_cycle_changes(id, old_cycle, new_cycle, effective_period_start, note, created_at), billgo_status_events(id, event_type, effective_period_start, note, created_at)), payments(id, amount, method, status, paid_at, note)")
       .eq("worker_id", worker.id)
       .not("subscription_id", "is", null)
       .is("deleted_at", null)
@@ -347,9 +362,11 @@ export default function WorkerBillGoPage() {
         ? "update_customer"
         : actionMode === "cycle"
           ? "change_cycle"
-          : actionTarget.subscription.status === "paused"
-            ? "reactivate"
-            : "pause";
+          : actionMode === "delete"
+            ? "soft_delete"
+            : actionTarget.subscription.status === "paused"
+              ? "reactivate"
+              : "pause";
       const payload = actionMode === "edit"
         ? {
             action,
@@ -371,7 +388,13 @@ export default function WorkerBillGoPage() {
               effectivePeriodStart: editForm.effectivePeriodStart,
               note: editForm.note,
             }
-          : {
+          : actionMode === "delete"
+            ? {
+                action,
+                subscriptionId: actionTarget.subscription.id,
+                note: editForm.note,
+              }
+            : {
               action,
               subscriptionId: actionTarget.subscription.id,
               effectivePeriodStart: editForm.effectivePeriodStart,
@@ -433,7 +456,7 @@ export default function WorkerBillGoPage() {
                 <button type="button" onClick={() => openAction("status", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng"}
                 </button>
-                <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
+                <button type="button" onClick={() => openAction("delete", item)} className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
                   <Trash2 size={16} /> Xóa khách hàng
                 </button>
               </div>
@@ -617,7 +640,7 @@ export default function WorkerBillGoPage() {
               <div>
                 <p className="text-xs font-bold uppercase text-primary">BillGo</p>
                 <h2 className="text-lg font-extrabold">
-                  {actionMode === "edit" ? "Sửa thông tin" : actionMode === "cycle" ? "Chuyển hình thức đóng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng") : "Chi tiết khách hàng"}
+                  {actionMode === "edit" ? "Sửa thông tin" : actionMode === "cycle" ? "Chuyển hình thức đóng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng sử dụng") : actionMode === "delete" ? "Xóa khách hàng" : "Chi tiết khách hàng"}
                 </h2>
               </div>
               <button type="button" onClick={() => { setActionTarget(null); setActionMode(null); }} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
@@ -651,6 +674,26 @@ export default function WorkerBillGoPage() {
                     </p>
                   ))}
                 </div>
+                <div className="rounded-lg bg-surface-container-low p-3">
+                  <span className="text-on-surface-variant">Lịch sử thay đổi hình thức đóng</span>
+                  {(actionTarget.subscription?.billgo_cycle_changes || []).length === 0 ? (
+                    <p className="mt-1 font-bold">Chưa có thay đổi</p>
+                  ) : (actionTarget.subscription?.billgo_cycle_changes || []).map(change => (
+                    <p key={change.id} className="mt-1">
+                      <strong>{getBillGoCycleOption(change.old_cycle || "monthly").label}</strong> sang <strong>{getBillGoCycleOption(change.new_cycle || "monthly").label}</strong> từ {change.effective_period_start || "chưa có kỳ"}
+                    </p>
+                  ))}
+                </div>
+                <div className="rounded-lg bg-surface-container-low p-3">
+                  <span className="text-on-surface-variant">Lịch sử ngừng và kích hoạt lại</span>
+                  {(actionTarget.subscription?.billgo_status_events || []).length === 0 ? (
+                    <p className="mt-1 font-bold">Chưa có sự kiện</p>
+                  ) : (actionTarget.subscription?.billgo_status_events || []).map(event => (
+                    <p key={event.id} className="mt-1">
+                      <strong>{event.event_type}</strong> {event.effective_period_start ? `từ ${event.effective_period_start}` : ""} {event.note ? `· ${event.note}` : ""}
+                    </p>
+                  ))}
+                </div>
               </div>
             ) : actionMode === "edit" ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -672,6 +715,13 @@ export default function WorkerBillGoPage() {
                 <textarea className="input-field min-h-20" placeholder="Ghi chú thay đổi" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
                 <p className="text-xs text-on-surface-variant">Hình thức mới chỉ áp dụng từ kỳ đầu tiên chưa được thanh toán hoặc khuyến mại.</p>
               </div>
+            ) : actionMode === "delete" ? (
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-lg bg-error-container/40 p-3 text-sm text-error">
+                  Khách hàng sẽ bị xóa mềm khỏi danh sách thường dùng. Lịch sử giao dịch và báo cáo cũ vẫn được giữ.
+                </div>
+                <textarea className="input-field min-h-20" placeholder="Lý do hoặc ghi chú xóa" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+              </div>
             ) : (
               <div className="mt-4 grid gap-3">
                 <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
@@ -684,7 +734,7 @@ export default function WorkerBillGoPage() {
 
             {actionMode !== "detail" && (
               <button disabled={saving || (actionMode === "edit" && toMoneyNumber(editForm.monthlyFee) < 0)} className="btn-primary mt-4 !w-full">
-                {saving ? "Đang lưu..." : "Lưu thay đổi"}
+                {saving ? "Đang lưu..." : actionMode === "delete" ? "Xác nhận xóa mềm" : "Lưu thay đổi"}
               </button>
             )}
           </form>
