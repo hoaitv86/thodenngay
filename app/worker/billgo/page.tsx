@@ -393,17 +393,15 @@ export default function WorkerBillGoPage() {
   );
   useEffect(() => {
     if (viewMode !== "area") return;
-    if (!selectedAreaId) {
-      if (selectedSubAreaId) setSelectedSubAreaId("");
-      return;
-    }
-    if (selectedAreaSubAreas.length === 0) {
-      if (selectedSubAreaId) setSelectedSubAreaId("");
-      return;
-    }
-    if (!selectedAreaSubAreas.some(subArea => subArea.id === selectedSubAreaId)) {
-      setSelectedSubAreaId(selectedAreaSubAreas[0].id);
-    }
+    const nextSubAreaId =
+      !selectedAreaId || selectedAreaSubAreas.length === 0
+        ? ""
+        : selectedAreaSubAreas.some(subArea => subArea.id === selectedSubAreaId)
+          ? selectedSubAreaId
+          : selectedAreaSubAreas[0].id;
+    if (nextSubAreaId === selectedSubAreaId) return;
+    const timeoutId = window.setTimeout(() => setSelectedSubAreaId(nextSubAreaId), 0);
+    return () => window.clearTimeout(timeoutId);
   }, [selectedAreaId, selectedAreaSubAreas, selectedSubAreaId, viewMode]);
 
   const areaRows = useMemo(() => rowViews.filter(row => {
@@ -690,7 +688,7 @@ export default function WorkerBillGoPage() {
               {summary.statusLabel}
             </span>
             {canCollect && (
-              <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="hidden rounded-lg bg-primary p-2 text-white lg:inline-flex">
+              <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="inline-flex rounded-lg bg-primary p-2 text-white">
                 <CheckCircle2 size={16} />
               </button>
             )}
@@ -737,7 +735,7 @@ export default function WorkerBillGoPage() {
         </div>
 
         {canCollect && (
-          <button type="button" onClick={() => openCollect(item)} className="btn-primary mt-4 !w-full lg:hidden">
+          <button type="button" onClick={() => openCollect(item)} className="btn-primary mt-1 !w-full lg:hidden">
             <CheckCircle2 size={18} /> Xác nhận thu tiền
           </button>
         )}
@@ -958,38 +956,42 @@ export default function WorkerBillGoPage() {
 
       {collecting && selectedSummary && (
         <div className="fixed inset-0 z-40 flex items-end bg-black/35 p-3 sm:items-center sm:justify-center">
-          <form onSubmit={submitCollection} className="modal-panel w-full max-w-lg overflow-y-auto p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase text-primary">Xác nhận thu tiền</p>
-                <h2 className="text-lg font-extrabold">{collecting.subscription?.customer_name || "Khách BillGo"}</h2>
+          <form onSubmit={submitCollection} className="modal-panel flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden p-0">
+            <div className="overflow-y-auto p-4 pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase text-primary">Xác nhận thu tiền</p>
+                  <h2 className="text-lg font-extrabold">{collecting.subscription?.customer_name || "Khách BillGo"}</h2>
+                </div>
+                <button type="button" onClick={() => setCollecting(null)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
               </div>
-              <button type="button" onClick={() => setCollecting(null)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
-            </div>
-            <div className="mt-4 grid gap-2 text-sm">
-              <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
-              <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
-              <div className="rounded-lg bg-surface-container-low p-3">Hình thức đóng: <strong>{getBillGoCycleOption(collecting.subscription?.current_cycle || collecting.subscription?.cycle || "monthly").label}</strong></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Số tháng tặng<br /><strong>{collecting.bonus_months || 0}</strong></div>
+              <div className="mt-4 grid gap-2 text-sm">
+                <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Hình thức đóng: <strong>{getBillGoCycleOption(collecting.subscription?.current_cycle || collecting.subscription?.cycle || "monthly").label}</strong></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
+                  <div className="rounded-lg bg-surface-container-low p-3">Số tháng tặng<br /><strong>{collecting.bonus_months || 0}</strong></div>
+                </div>
+                <div className="rounded-lg bg-surface-container-low p-3">Tổng tiền cần thu: <strong>{formatBillGoCurrency(selectedSummary.receivable)}</strong></div>
               </div>
-              <div className="rounded-lg bg-surface-container-low p-3">Tổng tiền cần thu: <strong>{formatBillGoCurrency(selectedSummary.receivable)}</strong></div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền thực thu" value={collectForm.amount} onChange={e => setCollectForm(prev => ({ ...prev, amount: e.target.value }))} />
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                  Ngày thu
+                  <input required type="date" className="input-field" value={collectForm.paidAt} onChange={e => setCollectForm(prev => ({ ...prev, paidAt: e.target.value }))} />
+                </label>
+                <select className="input-field" value={collectForm.method} onChange={e => setCollectForm(prev => ({ ...prev, method: e.target.value }))}>
+                  {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+                <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={collectForm.note} onChange={e => setCollectForm(prev => ({ ...prev, note: e.target.value }))} />
+              </div>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền thực thu" value={collectForm.amount} onChange={e => setCollectForm(prev => ({ ...prev, amount: e.target.value }))} />
-              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                Ngày thu
-                <input required type="date" className="input-field" value={collectForm.paidAt} onChange={e => setCollectForm(prev => ({ ...prev, paidAt: e.target.value }))} />
-              </label>
-              <select className="input-field" value={collectForm.method} onChange={e => setCollectForm(prev => ({ ...prev, method: e.target.value }))}>
-                {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-              <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={collectForm.note} onChange={e => setCollectForm(prev => ({ ...prev, note: e.target.value }))} />
+            <div className="border-t border-outline-variant/30 bg-white p-4 shadow-[0_-12px_30px_rgba(15,23,42,0.08)]">
+              <button disabled={saving || toMoneyNumber(collectForm.amount) <= 0} className="btn-primary !w-full">
+                {saving ? "Đang xác nhận..." : "Xác nhận thu tiền"}
+              </button>
             </div>
-            <button disabled={saving || toMoneyNumber(collectForm.amount) <= 0} className="btn-primary mt-4 !w-full">
-              {saving ? "Đang xác nhận..." : "Xác nhận thu tiền"}
-            </button>
           </form>
         </div>
       )}

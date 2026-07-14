@@ -286,17 +286,19 @@ export default function WorkerInventoryPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-outline-variant/30 bg-white shadow-sm">
-          <div className="hidden grid-cols-[1.3fr_0.8fr_0.8fr_0.7fr_0.8fr_104px] gap-3 border-b border-outline-variant/30 bg-surface-container-low px-4 py-3 text-xs font-bold uppercase text-on-surface-variant lg:grid">
+          <div className="overflow-x-auto">
+            <div className="min-w-[760px]">
+              <div className="grid grid-cols-[1.3fr_0.8fr_0.8fr_0.7fr_0.8fr_104px] gap-3 border-b border-outline-variant/30 bg-surface-container-low px-4 py-3 text-xs font-bold uppercase text-on-surface-variant">
             <span>Sản phẩm</span>
             <span>Danh mục</span>
             <span>Giá nhập</span>
             <span>Tồn kho</span>
             <span>Giá bán</span>
             <span className="text-right">Thao tác</span>
-          </div>
-          <div className="divide-y divide-outline-variant/20">
+              </div>
+              <div className="divide-y divide-outline-variant/20">
             {filteredProducts.map(product => (
-              <article key={product.id} className="grid gap-3 p-4 lg:grid-cols-[1.3fr_0.8fr_0.8fr_0.7fr_0.8fr_104px] lg:items-center">
+                  <article key={product.id} className="grid grid-cols-[1.3fr_0.8fr_0.8fr_0.7fr_0.8fr_104px] items-center gap-3 p-4">
                 <div className="min-w-0">
                   <h2 className="truncate font-extrabold text-on-surface">{product.name}</h2>
                   <p className="mt-1 font-mono text-xs font-bold text-primary-container">{product.sku}</p>
@@ -304,18 +306,18 @@ export default function WorkerInventoryPage() {
                 </div>
                 <span className="w-fit rounded-full bg-primary-fixed px-2.5 py-1 text-xs font-bold text-primary-container">{product.category}</span>
                 <div>
-                  <p className="text-xs font-bold uppercase text-on-surface-variant lg:hidden">Giá nhập</p>
+                  <p className="hidden text-xs font-bold uppercase text-on-surface-variant">Giá nhập</p>
                   <p className="font-bold text-on-surface">{formatInventoryCurrency(product.purchase_price)}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-bold uppercase text-on-surface-variant lg:hidden">Tồn kho</p>
+                  <p className="hidden text-xs font-bold uppercase text-on-surface-variant">Tồn kho</p>
                   <p className={`font-extrabold ${Number(product.stock_quantity || 0) <= 0 ? "text-error" : "text-success"}`}>
                     {product.stock_quantity} {product.unit}
                   </p>
                   <p className="text-xs text-on-surface-variant">BH {product.warranty_months} tháng</p>
                 </div>
                 <div>
-                  <p className="text-xs font-bold uppercase text-on-surface-variant lg:hidden">Giá bán</p>
+                  <p className="hidden text-xs font-bold uppercase text-on-surface-variant">Giá bán</p>
                   <p className="font-bold text-on-surface">{formatInventoryCurrency(product.default_sale_price)}</p>
                 </div>
                 <div className="flex justify-end gap-2">
@@ -326,8 +328,10 @@ export default function WorkerInventoryPage() {
                     <Trash2 size={17} />
                   </Link>
                 </div>
-              </article>
+                  </article>
             ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
