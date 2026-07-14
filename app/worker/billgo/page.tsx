@@ -688,8 +688,9 @@ export default function WorkerBillGoPage() {
               {summary.statusLabel}
             </span>
             {canCollect && (
-              <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="inline-flex rounded-lg bg-primary p-2 text-white">
+              <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white">
                 <CheckCircle2 size={16} />
+                <span className="lg:hidden">Thu</span>
               </button>
             )}
             <details className="group">
@@ -955,7 +956,7 @@ export default function WorkerBillGoPage() {
       )}
 
       {collecting && selectedSummary && (
-        <div className="fixed inset-0 z-40 flex items-end bg-black/35 p-3 sm:items-center sm:justify-center">
+        <div className="fixed inset-0 z-[70] flex items-end bg-black/35 p-3 sm:items-center sm:justify-center">
           <form onSubmit={submitCollection} className="modal-panel flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden p-0">
             <div className="overflow-y-auto p-4 pb-3">
               <div className="flex items-start justify-between gap-3">
