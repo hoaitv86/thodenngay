@@ -1,19 +1,87 @@
 -- BillGo full lifecycle: customer grouping, billing periods, collections, history, and soft delete.
--- Safe to run after the existing BillGo migrations. Existing rows are kept and backfilled.
+-- Safe to run after the base schema. Existing rows are kept and backfilled.
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE IF NOT EXISTS public.billgo_subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
+  job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL,
+  service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
+  customer_name TEXT,
+  internet_account TEXT,
+  customer_address TEXT,
+  package_name TEXT NOT NULL DEFAULT 'Cước Internet',
+  service_type TEXT NOT NULL DEFAULT 'internet',
+  cycle TEXT NOT NULL DEFAULT 'monthly',
+  amount_per_cycle NUMERIC(12,2) NOT NULL DEFAULT 0,
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  next_due_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  status TEXT NOT NULL DEFAULT 'active',
+  note TEXT,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.billgo_receivables (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
+  job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL,
+  subscription_id UUID REFERENCES public.billgo_subscriptions(id) ON DELETE SET NULL,
+  type TEXT NOT NULL DEFAULT 'subscription_fee',
+  title TEXT NOT NULL DEFAULT 'Thu cước Internet',
+  total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  due_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  period_start DATE,
+  period_end DATE,
+  billing_months INTEGER NOT NULL DEFAULT 0,
+  bonus_months INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'unpaid',
+  note TEXT,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.payments
+ADD COLUMN IF NOT EXISTS receivable_id UUID REFERENCES public.billgo_receivables(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS collected_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS note TEXT,
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE public.payments
+ALTER COLUMN job_id DROP NOT NULL;
+
+ALTER TABLE public.payments
+DROP CONSTRAINT IF EXISTS payments_method_check;
+
+ALTER TABLE public.payments
+ADD CONSTRAINT payments_method_check
+CHECK (method IN ('cash', 'transfer', 'bank_transfer', 'card', 'momo', 'zalopay', 'other')) NOT VALID;
+
+ALTER TABLE public.payments
+DROP CONSTRAINT IF EXISTS payments_status_check;
+
+ALTER TABLE public.payments
+ADD CONSTRAINT payments_status_check
+CHECK (status IN ('pending', 'paid', 'void')) NOT VALID;
 
 ALTER TABLE public.billgo_subscriptions
 DROP CONSTRAINT IF EXISTS billgo_subscriptions_cycle_check;
 
 ALTER TABLE public.billgo_subscriptions
 ADD CONSTRAINT billgo_subscriptions_cycle_check
-CHECK (cycle IN ('monthly', 'two_months', 'three_months', 'six_months', 'yearly'));
+CHECK (cycle IN ('monthly', 'two_months', 'three_months', 'six_months', 'yearly')) NOT VALID;
 
 ALTER TABLE public.billgo_subscriptions
 DROP CONSTRAINT IF EXISTS billgo_subscriptions_status_check;
 
 ALTER TABLE public.billgo_subscriptions
 ADD CONSTRAINT billgo_subscriptions_status_check
-CHECK (status IN ('active', 'paused', 'cancelled', 'deleted'));
+CHECK (status IN ('active', 'paused', 'cancelled', 'deleted')) NOT VALID;
 
 ALTER TABLE public.billgo_subscriptions
 ADD COLUMN IF NOT EXISTS phone TEXT,
@@ -43,7 +111,7 @@ DROP CONSTRAINT IF EXISTS billgo_receivables_status_check;
 
 ALTER TABLE public.billgo_receivables
 ADD CONSTRAINT billgo_receivables_status_check
-CHECK (status IN ('not_due', 'due', 'unpaid', 'partial', 'paid', 'overdue', 'promo', 'cancelled', 'deleted'));
+CHECK (status IN ('not_due', 'due', 'unpaid', 'partial', 'paid', 'overdue', 'promo', 'cancelled', 'deleted')) NOT VALID;
 
 ALTER TABLE public.billgo_receivables
 ADD COLUMN IF NOT EXISTS collection_month DATE,
@@ -62,7 +130,7 @@ SET
   collection_month = COALESCE(collection_month, date_trunc('month', due_date)::date),
   usage_month = COALESCE(usage_month, date_trunc('month', period_start)::date),
   monthly_fee_at_collection = COALESCE(monthly_fee_at_collection, subscription.monthly_fee, subscription.amount_per_cycle, receivable.total_amount),
-  next_period_start = COALESCE(next_period_start, (receivable.period_end + interval '1 day')::date)
+  next_period_start = COALESCE(receivable.next_period_start, (receivable.period_end + interval '1 day')::date)
 FROM public.billgo_subscriptions subscription
 WHERE receivable.subscription_id = subscription.id
   AND (receivable.collection_month IS NULL OR receivable.usage_month IS NULL OR receivable.monthly_fee_at_collection IS NULL OR receivable.next_period_start IS NULL);
@@ -114,14 +182,52 @@ CREATE TABLE IF NOT EXISTS public.billgo_status_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS billgo_receivables_subscription_period_active_idx
-ON public.billgo_receivables(subscription_id, period_start)
-WHERE subscription_id IS NOT NULL AND deleted_at IS NULL AND status <> 'cancelled';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.billgo_receivables
+    WHERE subscription_id IS NOT NULL
+      AND period_start IS NOT NULL
+      AND deleted_at IS NULL
+      AND status <> 'cancelled'
+    GROUP BY subscription_id, period_start
+    HAVING COUNT(*) > 1
+  ) THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS billgo_receivables_subscription_period_active_idx
+    ON public.billgo_receivables(subscription_id, period_start)
+    WHERE subscription_id IS NOT NULL AND period_start IS NOT NULL AND deleted_at IS NULL AND status <> 'cancelled';
+  ELSE
+    RAISE NOTICE 'Skip unique index billgo_receivables_subscription_period_active_idx because duplicate periods exist. Clean duplicates, then create the unique index.';
+    CREATE INDEX IF NOT EXISTS billgo_receivables_subscription_period_active_lookup_idx
+    ON public.billgo_receivables(subscription_id, period_start)
+    WHERE subscription_id IS NOT NULL AND period_start IS NOT NULL AND deleted_at IS NULL AND status <> 'cancelled';
+  END IF;
+END $$;
 
 DROP INDEX IF EXISTS billgo_subscriptions_worker_account_active_idx;
-CREATE UNIQUE INDEX IF NOT EXISTS billgo_subscriptions_worker_account_active_lower_idx
-ON public.billgo_subscriptions(worker_id, lower(internet_account))
-WHERE internet_account IS NOT NULL AND deleted_at IS NULL AND status NOT IN ('cancelled', 'deleted');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.billgo_subscriptions
+    WHERE worker_id IS NOT NULL
+      AND internet_account IS NOT NULL
+      AND deleted_at IS NULL
+      AND status NOT IN ('cancelled', 'deleted')
+    GROUP BY worker_id, lower(internet_account)
+    HAVING COUNT(*) > 1
+  ) THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS billgo_subscriptions_worker_account_active_lower_idx
+    ON public.billgo_subscriptions(worker_id, lower(internet_account))
+    WHERE worker_id IS NOT NULL AND internet_account IS NOT NULL AND deleted_at IS NULL AND status NOT IN ('cancelled', 'deleted');
+  ELSE
+    RAISE NOTICE 'Skip unique index billgo_subscriptions_worker_account_active_lower_idx because duplicate accounts exist. Clean duplicates, then create the unique index.';
+    CREATE INDEX IF NOT EXISTS billgo_subscriptions_worker_account_active_lower_lookup_idx
+    ON public.billgo_subscriptions(worker_id, lower(internet_account))
+    WHERE worker_id IS NOT NULL AND internet_account IS NOT NULL AND deleted_at IS NULL AND status NOT IN ('cancelled', 'deleted');
+  END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS billgo_payment_coverages_subscription_month_idx
 ON public.billgo_payment_coverages(subscription_id, covered_month)

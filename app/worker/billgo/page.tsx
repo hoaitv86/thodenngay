@@ -436,18 +436,23 @@ export default function WorkerBillGoPage() {
     const canCollect = summary.status !== "paid" && summary.status !== "promo";
 
     return (
-      <article key={item.id} className="rounded-lg border border-outline-variant/40 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
+      <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
+        <div className="flex items-start justify-between gap-3 lg:contents">
           <div className="min-w-0">
             <h3 className="truncate text-base font-extrabold text-on-surface">{row.customerName}</h3>
             <p className="mt-1 text-sm text-on-surface-variant">{row.account}</p>
             <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "Chưa có số điện thoại"}</p>
           </div>
-          <div className="relative shrink-0 text-right">
+          <div className="relative flex shrink-0 items-center justify-end gap-2 text-right">
             <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${summary.status === "paid" ? "bg-success-container text-success" : summary.status === "partial" ? "bg-warning-container text-warning" : summary.status === "overdue" ? "bg-error-container text-error" : summary.status === "promo" ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant"}`}>
               {summary.statusLabel}
             </span>
-            <details className="group mt-2">
+            {canCollect && (
+              <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="hidden rounded-lg bg-primary p-2 text-white lg:inline-flex">
+                <CheckCircle2 size={16} />
+              </button>
+            )}
+            <details className="group">
               <summary className="inline-flex cursor-pointer list-none items-center justify-center rounded-lg border border-outline-variant/60 bg-white p-2 text-on-surface-variant">
                 <MoreVertical size={16} />
               </summary>
@@ -475,14 +480,14 @@ export default function WorkerBillGoPage() {
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-lg bg-surface-container-low p-3">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong></div>
+        <div className="grid grid-cols-2 gap-2 text-sm lg:contents">
+          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
         </div>
 
-        <div className="mt-3 grid gap-1 text-xs text-on-surface-variant">
+        <div className="mt-3 grid gap-1 text-xs text-on-surface-variant lg:mt-0">
           <p>Hình thức: {cycle.label}</p>
           <p>Kỳ cước: {item.period_start || "Chưa có"} - {item.period_end || "Chưa có"}</p>
           <p>Hạn thanh toán: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "Chưa có"}</p>
@@ -490,7 +495,7 @@ export default function WorkerBillGoPage() {
         </div>
 
         {canCollect && (
-          <button type="button" onClick={() => openCollect(item)} className="btn-primary mt-4 !w-full">
+          <button type="button" onClick={() => openCollect(item)} className="btn-primary mt-4 !w-full lg:hidden">
             <CheckCircle2 size={18} /> Xác nhận thu tiền
           </button>
         )}
@@ -527,10 +532,9 @@ export default function WorkerBillGoPage() {
             <datalist id="billgo-account-suggestions">
               {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
             </datalist>
-            <input list="billgo-provider-suggestions" className="input-field" placeholder="Nhà mạng" value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
-            <datalist id="billgo-provider-suggestions">
-              {providerSuggestions.map(provider => <option key={provider} value={provider} />)}
-            </datalist>
+            <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
+              {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
+            </select>
             <input required className="input-field sm:col-span-2" placeholder="Địa chỉ hiện tại" value={form.address} onChange={e => updateForm("address", e.target.value)} />
             <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
             <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
@@ -607,7 +611,15 @@ export default function WorkerBillGoPage() {
           Chưa có khách hàng phù hợp bộ lọc.
         </div>
       ) : (
-        <section className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+        <section className="mt-5 space-y-2">
+          <div className="hidden rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-xs font-bold uppercase text-on-surface-variant lg:grid lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px]">
+            <span>Khách hàng</span>
+            <span>Trạng thái</span>
+            <span>Gói tháng</span>
+            <span>Cần thu</span>
+            <span>Còn lại</span>
+            <span>Kỳ cước</span>
+          </div>
           {filteredRows.map(renderRow)}
         </section>
       )}
@@ -714,7 +726,9 @@ export default function WorkerBillGoPage() {
                 <input required className="input-field" placeholder="Tên khách hàng" value={editForm.customerName} onChange={e => setEditForm(prev => ({ ...prev, customerName: e.target.value }))} />
                 <input className="input-field" placeholder="Số điện thoại" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} />
                 <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={editForm.account} onChange={e => setEditForm(prev => ({ ...prev, account: e.target.value }))} />
-                <input list="billgo-provider-suggestions" className="input-field" placeholder="Nhà mạng" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))} />
+                <select className="input-field" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))}>
+                  {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
+                </select>
                 <input required className="input-field sm:col-span-2" placeholder="Địa chỉ" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
                 <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {
                   const packageAmount = getNumericPackageAmount(e.target.value);
