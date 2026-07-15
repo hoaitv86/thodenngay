@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type React from "react";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -13,7 +14,10 @@ import {
   type InventoryProduct,
   type InventoryProductFormValues,
 } from "@/lib/worker-inventory";
-import { InventoryProductForm } from "../../InventoryProductForm";
+
+const InventoryProductForm = dynamic(() =>
+  import("../../InventoryProductForm").then(mod => mod.InventoryProductForm)
+);
 
 export default function EditInventoryProductPage() {
   const { id } = useParams<{ id: string }>();

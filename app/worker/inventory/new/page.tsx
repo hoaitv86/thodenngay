@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -12,7 +13,10 @@ import {
   validateInventoryProduct,
   type InventoryProductFormValues,
 } from "@/lib/worker-inventory";
-import { InventoryProductForm } from "../InventoryProductForm";
+
+const InventoryProductForm = dynamic(() =>
+  import("../InventoryProductForm").then(mod => mod.InventoryProductForm)
+);
 
 export default function NewInventoryProductPage() {
   const router = useRouter();

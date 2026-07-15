@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import {
   BriefcaseIcon,
   ClockIcon,
@@ -38,7 +39,6 @@ import {
 } from "@/lib/billgo";
 import { Worker } from "@/lib/types";
 import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
-import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import PendingApproval from "./pending-approval";
 import { isMissingWorkerInventorySchemaError, type InventoryProduct } from "@/lib/worker-inventory";
 import {
@@ -47,6 +47,10 @@ import {
   type SalesDraftItem,
 } from "@/lib/worker-sales";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
+
+const DynamicServiceWorkflowForm = dynamic(() =>
+  import("@/app/components/DynamicServiceWorkflowForm").then(mod => mod.DynamicServiceWorkflowForm)
+);
 
 interface ServiceOption {
   id: string;
