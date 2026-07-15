@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
@@ -254,9 +255,12 @@ export default function CustomerHome() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-linear-to-br from-primary/12 via-tertiary-container/10 to-secondary-container/14" />
       <div className="relative mx-auto w-full max-w-md space-y-5 px-4 pb-5 pt-4 lg:max-w-6xl lg:px-8 lg:py-8">
         <section className="relative overflow-hidden rounded-xl border border-white/25 bg-linear-to-br from-primary via-primary-container to-tertiary-container text-white shadow-[0_18px_46px_rgba(10,74,146,0.2)] lg:min-h-[330px]">
-          <img
-            src="/hero-technician.png"
+          <Image
+            src="/hero-technician.webp"
             alt=""
+            width={1774}
+            height={887}
+            sizes="(min-width: 1024px) 47vw, 12rem"
             className="absolute bottom-0 right-0 h-40 w-40 object-contain object-bottom opacity-18 sm:h-48 sm:w-48 lg:h-full lg:w-[47%] lg:object-cover lg:object-center lg:opacity-85"
           />
           <div className="absolute inset-y-0 right-0 hidden w-3/5 bg-linear-to-r from-primary via-primary/80 to-transparent lg:block" />

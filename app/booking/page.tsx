@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -412,7 +413,7 @@ export default function BookingPage() {
                   <div className="grid grid-cols-3 gap-2">
                     {previewUrls.map((url, idx) => (
                       <div key={url} className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
-                        <img src={url} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                        <Image src={url} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 30vw, 120px" className="object-cover" unoptimized />
                         <button
                           type="button"
                           onClick={() => removeSelectedFile(idx)}
@@ -505,8 +506,8 @@ export default function BookingPage() {
                       <div className="text-label-sm text-on-surface-variant">Ảnh hiện trạng</div>
                       <div className="mt-2 grid grid-cols-3 gap-2">
                         {previewUrls.map((url, idx) => (
-                          <div key={url} className="aspect-square overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
-                            <img src={url} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                          <div key={url} className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
+                            <Image src={url} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 30vw, 120px" className="object-cover" unoptimized />
                           </div>
                         ))}
                       </div>

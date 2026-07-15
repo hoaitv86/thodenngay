@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import Image from "next/image";
 import {
   BriefcaseIcon,
   ClockIcon,
@@ -2630,7 +2631,7 @@ export default function WorkerDashboard() {
                           rel="noopener noreferrer"
                           className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-low"
                         >
-                          <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                          <Image src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 33vw, 140px" className="object-cover" unoptimized />
                           {idx === 2 && job.images.length > 3 && (
                             <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">
                               +{job.images.length - 3}
@@ -2937,7 +2938,7 @@ export default function WorkerDashboard() {
                         rel="noopener noreferrer"
                         className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-low"
                       >
-                        <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                        <Image src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 33vw, 140px" className="object-cover" unoptimized />
                         {idx === 2 && job.images.length > 3 && (
                           <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">
                             +{job.images.length - 3}
@@ -3396,7 +3397,7 @@ export default function WorkerDashboard() {
                   <div className="grid grid-cols-3 gap-2 mt-3">
                     {previewUrls.map((url, idx) => (
                       <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant group">
-                        <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                        <Image src={url} alt="Preview" fill sizes="(max-width: 640px) 33vw, 140px" className="object-cover" unoptimized />
                         <button
                           type="button"
                           onClick={() => removeSelectedFile(idx)}

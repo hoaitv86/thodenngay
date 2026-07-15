@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { JobWorkflowSummary } from "@/app/components/JobWorkflowSummary";
@@ -382,7 +383,7 @@ export default function JobDetailPage() {
               {job.images.map((imgUrl: string, idx: number) => (
                 <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30 bg-surface-container-low shadow-sm">
                   <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-                    <img src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
+                    <Image src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 50vw, 180px" className="object-cover hover:scale-105 transition-transform duration-200" unoptimized />
                   </a>
                 </div>
               ))}
@@ -424,7 +425,7 @@ export default function JobDetailPage() {
                     <div className="grid grid-cols-3 gap-1.5">
                       {existingRating.images.map((imgUrl: string, idx: number) => (
                         <a key={idx} href={imgUrl} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low">
-                          <img src={imgUrl} alt={`Ảnh đánh giá ${idx + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-200" />
+                          <Image src={imgUrl} alt={`Ảnh đánh giá ${idx + 1}`} fill sizes="(max-width: 640px) 33vw, 120px" className="object-cover hover:scale-105 transition-transform duration-200" unoptimized />
                         </a>
                       ))}
                     </div>
@@ -501,7 +502,7 @@ export default function JobDetailPage() {
                     <div className="grid grid-cols-3 gap-1.5 mt-2 sm:grid-cols-4">
                       {ratingPreviews.map((url, idx) => (
                         <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 group">
-                          <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                          <Image src={url} alt="Preview" fill sizes="(max-width: 640px) 33vw, 120px" className="object-cover" unoptimized />
                           <button
                             type="button"
                             onClick={() => removeRatingFile(idx)}

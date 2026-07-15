@@ -2,6 +2,7 @@
 // Using 2px stroke weight with rounded terminals per brand guidelines
 
 import React from "react";
+import Image from "next/image";
 
 interface IconProps {
   size?: number;
@@ -11,11 +12,12 @@ interface IconProps {
 
 export function LogoIcon({ size = 32, className = "" }: IconProps) {
   return (
-    <img
+    <Image
       src="/logo.svg"
       alt="Thợ đến ngay Logo"
       width={size}
       height={size}
+      sizes={`${size}px`}
       className={className}
       style={{ objectFit: 'contain' }}
     />
@@ -413,4 +415,3 @@ export function ShieldIcon({ size = 24, className = "", strokeWidth = 2 }: IconP
     </svg>
   );
 }
-

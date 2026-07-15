@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getGpsLocationErrorMessage } from "@/lib/location";
@@ -433,10 +434,14 @@ export default function CustomerProfile() {
             {uploadingAvatar ? (
               <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             ) : profile.avatar_url ? (
-              <img
+              <Image
                 src={profile.avatar_url}
                 alt="Avatar"
+                width={80}
+                height={80}
+                sizes="80px"
                 className="w-full h-full object-cover rounded-full"
+                unoptimized
               />
             ) : (
               <span>{avatarChar}</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
@@ -653,10 +654,14 @@ export default function AdminWorkers() {
                       <div className="flex items-center gap-3">
                         <div className="relative shrink-0">
                           {worker.profiles?.avatar_url ? (
-                            <img
+                            <Image
                               src={worker.profiles.avatar_url}
                               alt={worker.profiles.full_name || 'Worker avatar'}
+                              width={48}
+                              height={48}
+                              sizes="48px"
                               className="w-12 h-12 rounded-full object-cover shadow-sm border border-outline-variant/30"
+                              unoptimized
                             />
                           ) : (
                             <div className="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center text-lg font-bold text-primary-container uppercase shadow-sm">

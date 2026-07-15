@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
@@ -524,10 +525,13 @@ export default function WorkerJobDetailPage() {
               {completionImages.map((imgUrl: string, idx: number) => (
                 <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30 bg-surface-container-low shadow-sm group">
                   <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-                    <img 
-                      src={imgUrl} 
-                      alt={`Ảnh nghiệm thu ${idx + 1}`} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" 
+                    <Image
+                      src={imgUrl}
+                      alt={`Ảnh nghiệm thu ${idx + 1}`}
+                      fill
+                      sizes="(max-width: 640px) 50vw, 180px"
+                      className="object-cover group-hover:scale-105 transition-transform duration-200"
+                      unoptimized
                     />
                   </a>
                   <div className="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full font-medium backdrop-blur-sm">
@@ -579,10 +583,13 @@ export default function WorkerJobDetailPage() {
                   <div className="grid grid-cols-3 gap-1.5">
                     {ratingImages.map((imgUrl: string, idx: number) => (
                       <a key={idx} href={imgUrl} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low group">
-                        <img 
-                          src={imgUrl} 
-                          alt={`Ảnh đánh giá ${idx + 1}`} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" 
+                        <Image
+                          src={imgUrl}
+                          alt={`Ảnh đánh giá ${idx + 1}`}
+                          fill
+                          sizes="(max-width: 640px) 33vw, 120px"
+                          className="object-cover group-hover:scale-105 transition-transform duration-200"
+                          unoptimized
                         />
                         <div className="absolute bottom-1 right-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm">
                           {idx + 1}/{ratingImages.length}

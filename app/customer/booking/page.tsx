@@ -1,6 +1,7 @@
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -613,7 +614,7 @@ function CustomerBookingContent() {
                 <div className="grid grid-cols-3 gap-2">
                   {previewUrls.map((url, idx) => (
                     <div key={url} className="relative aspect-square overflow-hidden rounded-lg border border-outline-variant/40 bg-surface-container">
-                      <img src={url} alt={`Ảnh hiện trạng ${idx + 1}`} className="h-full w-full object-cover" />
+                      <Image src={url} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 30vw, 120px" className="object-cover" unoptimized />
                       <button
                         type="button"
                         onClick={() => removeSelectedFile(idx)}

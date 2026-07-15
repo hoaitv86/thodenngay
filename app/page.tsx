@@ -370,7 +370,7 @@ export default async function HomePage() {
       {/* ===== HERO SECTION ===== */}
       <section className="relative min-h-[700px] overflow-hidden bg-primary text-on-primary sm:min-h-[760px]">
         <Image
-          src="/hero-technician.png"
+          src="/hero-technician.webp"
           alt="Kỹ thuật viên Thợ đến ngay kiểm tra sửa chữa tại nhà"
           fill
           priority

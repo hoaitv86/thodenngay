@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -631,10 +632,14 @@ export default function AdminCustomers() {
                         <div className="flex items-center gap-3">
                           <div className="relative shrink-0">
                             {customer.avatar_url ? (
-                              <img
+                              <Image
                                 src={customer.avatar_url}
                                 alt={customer.full_name || 'Customer avatar'}
+                                width={40}
+                                height={40}
+                                sizes="40px"
                                 className="w-10 h-10 rounded-full object-cover shadow-sm border border-outline-variant/30"
+                                unoptimized
                               />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-sm font-bold text-secondary-container uppercase shadow-sm">
@@ -820,10 +825,14 @@ export default function AdminCustomers() {
               <div className="flex items-center gap-3">
                 <div className="relative shrink-0">
                   {selectedCustomer.avatar_url ? (
-                    <img
+                    <Image
                       src={selectedCustomer.avatar_url}
                       alt={selectedCustomer.full_name || 'Customer avatar'}
+                      width={40}
+                      height={40}
+                      sizes="40px"
                       className="w-10 h-10 rounded-full object-cover shadow-sm border border-outline-variant/30"
+                      unoptimized
                     />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-body-lg font-bold text-primary shadow-sm uppercase">
