@@ -122,6 +122,32 @@ export const getBillGoNextPeriodStartDate = (periodEndDate: string | Date) => {
   return toBillGoDateInput(periodEnd);
 };
 
+export const getBillGoFirstOfMonth = (value: string | Date) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return toBillGoDateInput(new Date());
+  return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth(), 1));
+};
+
+export const getBillGoBillingParts = (collectionMonth: string | Date) => {
+  const date = collectionMonth instanceof Date ? new Date(collectionMonth) : new Date(collectionMonth);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return {
+    billingMonth: safeDate.getMonth() + 1,
+    billingYear: safeDate.getFullYear(),
+  };
+};
+
+export const buildBillGoCoverageMonths = (periodStart: string | Date, paidMonths: number, bonusMonths: number) => [
+  ...Array.from({ length: Math.max(paidMonths, 0) }, (_, index) => ({
+    covered_month: getBillGoFirstOfMonth(addBillGoMonths(periodStart, index)),
+    coverage_type: "paid" as const,
+  })),
+  ...Array.from({ length: Math.max(bonusMonths, 0) }, (_, index) => ({
+    covered_month: getBillGoFirstOfMonth(addBillGoMonths(periodStart, paidMonths + index)),
+    coverage_type: "promo" as const,
+  })),
+];
+
 export const getBillGoReceivable = (job: Pick<BillGoJobLike, "quoted_price" | "final_amount">) => {
   const finalAmount = toMoneyNumber(job.final_amount);
   return finalAmount > 0 ? finalAmount : toMoneyNumber(job.quoted_price);

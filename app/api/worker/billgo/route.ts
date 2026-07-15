@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
+  buildBillGoCoverageMonths,
   getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
@@ -157,18 +158,6 @@ const endOfMonth = (value: string | Date) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return toBillGoDateInput(new Date());
   return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth() + 1, 0));
-};
-
-const buildCoverageMonths = (periodStart: string, paidMonths: number, bonusMonths: number) => {
-  const paid = Array.from({ length: paidMonths }, (_, index) => ({
-    covered_month: firstOfMonth(addMonths(periodStart, index)),
-    coverage_type: "paid",
-  }));
-  const promo = Array.from({ length: bonusMonths }, (_, index) => ({
-    covered_month: firstOfMonth(addMonths(periodStart, paidMonths + index)),
-    coverage_type: "promo",
-  }));
-  return [...paid, ...promo];
 };
 
 const buildReceivableDraft = (
@@ -485,7 +474,7 @@ export async function POST(request: Request) {
 
     if (paidAmount >= totalAmount) {
       await admin.from("billgo_payment_coverages").insert(
-        buildCoverageMonths(receivable.period_start, receivable.billing_months, receivable.bonus_months).map(month => ({
+        buildBillGoCoverageMonths(receivable.period_start, receivable.billing_months, receivable.bonus_months).map(month => ({
           ...month,
           payment_id: payment?.id || null,
           receivable_id: receivable.id,
@@ -782,7 +771,7 @@ export async function PATCH(request: Request) {
   if (updateError) return jsonError(updateError.message);
 
   if (nextPaid >= toMoneyNumber(receivable.total_amount) && receivable.subscription_id) {
-    const coverages = buildCoverageMonths(receivable.period_start, receivable.billing_months, receivable.bonus_months).map(month => ({
+    const coverages = buildBillGoCoverageMonths(receivable.period_start, receivable.billing_months, receivable.bonus_months).map(month => ({
       ...month,
       payment_id: payment.id,
       receivable_id: receivable.id,

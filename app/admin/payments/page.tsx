@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
+  buildBillGoCoverageMonths,
   formatBillGoCurrency,
+  getBillGoBillingParts,
   getBillGoBillingPeriod,
   getBillGoCycleOption,
   getBillGoNextDueDate,
@@ -47,8 +49,12 @@ type BillGoSubscription = {
   id: string;
   package_name?: string | null;
   cycle?: string | null;
+  current_cycle?: string | null;
   amount_per_cycle?: number | string | null;
+  monthly_fee?: number | string | null;
   next_due_date?: string | null;
+  next_period_start?: string | null;
+  covered_until?: string | null;
   status?: string | null;
 };
 
@@ -64,8 +70,18 @@ type BillGoReceivable = {
   due_date?: string | null;
   period_start?: string | null;
   period_end?: string | null;
+  collection_month?: string | null;
+  usage_month?: string | null;
+  billing_month?: number | null;
+  billing_year?: number | null;
+  cycle_at_collection?: string | null;
   billing_months?: number | null;
   bonus_months?: number | null;
+  service_months?: number | null;
+  paid_amount?: number | string | null;
+  monthly_fee_at_collection?: number | string | null;
+  next_period_start?: string | null;
+  next_due_date?: string | null;
   status?: string | null;
   note?: string | null;
   customer?: CustomerOption | null;
@@ -155,7 +171,7 @@ export default function AdminPayments() {
     const [receivableRes, customerRes, workerRes, serviceRes] = await Promise.all([
       supabase
         .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, billing_months, bonus_months, status, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions(id, package_name, cycle, amount_per_cycle, next_due_date, status), payments(id, amount, method, status, paid_at, collected_by, note)")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions(id, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_due_date, next_period_start, covered_until, status), payments(id, amount, method, status, paid_at, collected_by, note)")
         .order("due_date", { ascending: true }),
       supabase
         .from("profiles")
@@ -243,6 +259,14 @@ export default function AdminPayments() {
     setNewBill(prev => ({ ...prev, [field]: value }));
   };
 
+  const selectReceivable = (item: BillGoReceivable) => {
+    const selectedCycle = getBillGoCycleOption(
+      item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly",
+    ).value;
+    setSelectedReceivableId(item.id);
+    setPaymentForm(prev => ({ ...prev, cycle: selectedCycle }));
+  };
+
   const handleCreateInternetBill = async (event: React.FormEvent) => {
     event.preventDefault();
     if (saving) return;
@@ -266,9 +290,14 @@ export default function AdminPayments() {
       const { data: { user } } = await supabase.auth.getUser();
       const cycle = getBillGoCycleOption(newBill.cycle);
       const billingPeriod = getBillGoBillingPeriod(newBill.startDate, newBill.cycle);
+      const billingParts = getBillGoBillingParts(billingPeriod.collectionMonth);
+      const nextPeriodStart = getBillGoNextPeriodStartDate(billingPeriod.periodEnd);
+      const nextBillingPeriod = getBillGoBillingPeriod(nextPeriodStart, newBill.cycle);
+      const selectedCustomer = customers.find(customer => customer.id === newBill.customerId);
       const subscriptionAmount = monthlyFee * cycle.paidMonths;
       const totalAmount = setupFee + subscriptionAmount;
-      const status = getBillGoStoredStatus(totalAmount, paidAmount, billingPeriod.dueDate);
+      const initialPaidAmount = Math.min(Math.max(paidAmount, 0), totalAmount);
+      const status = getBillGoStoredStatus(totalAmount, initialPaidAmount, billingPeriod.dueDate);
 
       const { data: subscription, error: subscriptionError } = await supabase
         .from("billgo_subscriptions")
@@ -276,15 +305,24 @@ export default function AdminPayments() {
           customer_id: newBill.customerId,
           worker_id: newBill.workerId || null,
           service_id: newBill.serviceId || null,
+          customer_name: selectedCustomer?.full_name || null,
+          phone: selectedCustomer?.phone || null,
+          internet_account: newBill.internetAccount.trim() || null,
+          customer_address: selectedCustomer?.address || null,
+          provider: newBill.provider.trim() || null,
           package_name: newBill.packageName.trim() || "Cước Internet",
           service_type: "internet",
           cycle: newBill.cycle,
+          current_cycle: newBill.cycle,
           amount_per_cycle: monthlyFee,
+          monthly_fee: monthlyFee,
           start_date: billingPeriod.periodStart,
           next_due_date: billingPeriod.dueDate,
+          next_period_start: billingPeriod.periodStart,
           status: "active",
           note: newBill.note.trim() || null,
           created_by: user?.id || null,
+          last_changed_by: user?.id || null,
         })
         .select("id")
         .single();
@@ -303,8 +341,21 @@ export default function AdminPayments() {
           due_date: billingPeriod.dueDate,
           period_start: billingPeriod.periodStart,
           period_end: billingPeriod.periodEnd,
+          collection_month: billingPeriod.collectionMonth,
+          usage_month: billingPeriod.usageMonth,
+          billing_month: billingParts.billingMonth,
+          billing_year: billingParts.billingYear,
+          cycle_at_collection: newBill.cycle,
           billing_months: billingPeriod.billingMonths,
           bonus_months: billingPeriod.bonusMonths,
+          service_months: billingPeriod.totalServiceMonths,
+          paid_amount: initialPaidAmount,
+          monthly_fee_at_collection: monthlyFee,
+          paid_at: initialPaidAmount > 0 ? new Date().toISOString() : null,
+          payment_method: initialPaidAmount > 0 ? "cash" : null,
+          collected_by: initialPaidAmount > 0 ? user?.id || null : null,
+          next_period_start: nextPeriodStart,
+          next_due_date: nextBillingPeriod.dueDate,
           status,
           note: [
             setupFee > 0 ? `Phí lắp đặt: ${formatBillGoCurrency(setupFee)}` : "",
@@ -318,17 +369,40 @@ export default function AdminPayments() {
 
       if (receivableError) throw receivableError;
 
-      if (paidAmount > 0) {
-        const { error: paymentError } = await supabase.from("payments").insert({
+      if (initialPaidAmount > 0) {
+        const { data: payment, error: paymentError } = await supabase.from("payments").insert({
           receivable_id: receivable.id,
-          amount: paidAmount,
+          amount: initialPaidAmount,
           method: "cash",
           status: "paid",
           paid_at: new Date().toISOString(),
           collected_by: user?.id || null,
           note: "Thanh toán ban đầu khi tạo BillGo",
-        });
+        }).select("id").single();
         if (paymentError) throw paymentError;
+
+        if (initialPaidAmount >= totalAmount) {
+          const { error: coverageError } = await supabase.from("billgo_payment_coverages").insert(
+            buildBillGoCoverageMonths(billingPeriod.periodStart, billingPeriod.billingMonths, billingPeriod.bonusMonths).map(month => ({
+              ...month,
+              payment_id: payment?.id || null,
+              receivable_id: receivable.id,
+              subscription_id: subscription.id,
+            })),
+          );
+          if (coverageError) throw coverageError;
+
+          const { error: subscriptionCoverageError } = await supabase
+            .from("billgo_subscriptions")
+            .update({
+              covered_until: billingPeriod.periodEnd,
+              next_period_start: nextPeriodStart,
+              next_due_date: nextBillingPeriod.dueDate,
+              last_changed_by: user?.id || null,
+            })
+            .eq("id", subscription.id);
+          if (subscriptionCoverageError) throw subscriptionCoverageError;
+        }
       }
 
       setNewBill({
@@ -375,28 +449,28 @@ export default function AdminPayments() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const cycle = getBillGoCycleOption(paymentForm.cycle);
-      const baseDate = selectedReceivable.period_end
-        ? getBillGoNextPeriodStartDate(selectedReceivable.period_end)
-        : selectedReceivable.period_start || getTodayInput();
-      const billingPeriod = getBillGoBillingPeriod(baseDate, paymentForm.cycle);
+      const coveragePeriod = getBillGoBillingPeriod(selectedReceivable.period_start || getTodayInput(), paymentForm.cycle);
+      const nextPeriodStart = getBillGoNextPeriodStartDate(coveragePeriod.periodEnd);
+      const nextBillingPeriod = getBillGoBillingPeriod(nextPeriodStart, paymentForm.cycle);
       const currentPaid = getBillGoReceivableSummary(selectedReceivable).paid;
       const nextPaid = currentPaid + paidAmount;
       const totalAmount = toMoneyNumber(selectedReceivable.total_amount);
       const nextStatus = getBillGoStoredStatus(totalAmount, nextPaid, selectedReceivable.due_date);
+      const paidAt = new Date().toISOString();
 
-      const { error: paymentError } = await supabase.from("payments").insert({
+      const { data: payment, error: paymentError } = await supabase.from("payments").insert({
         receivable_id: selectedReceivable.id,
         job_id: selectedReceivable.job_id || null,
         amount: paidAmount,
         method: paymentForm.method,
         status: "paid",
-        paid_at: new Date().toISOString(),
+        paid_at: paidAt,
         collected_by: user?.id || null,
         note: [
           `Thu ${cycle.label}`,
           paymentForm.note.trim(),
         ].filter(Boolean).join(" · ") || null,
-      });
+      }).select("id").single();
 
       if (paymentError) throw paymentError;
 
@@ -404,19 +478,46 @@ export default function AdminPayments() {
         .from("billgo_receivables")
         .update({
           status: nextStatus,
+          paid_amount: nextPaid,
+          paid_at: paidAt,
+          payment_method: paymentForm.method,
+          collected_by: user?.id || null,
+          cycle_at_collection: paymentForm.cycle,
+          period_end: coveragePeriod.periodEnd,
           billing_months: cycle.paidMonths,
           bonus_months: cycle.bonusMonths,
+          service_months: cycle.paidMonths + cycle.bonusMonths,
+          next_period_start: nextPeriodStart,
+          next_due_date: nextBillingPeriod.dueDate,
         })
         .eq("id", selectedReceivable.id);
 
       if (receivableError) throw receivableError;
 
       if (selectedReceivable.subscription_id) {
+        if (nextPaid >= totalAmount) {
+          const { error: coverageError } = await supabase.from("billgo_payment_coverages").insert(
+            buildBillGoCoverageMonths(coveragePeriod.periodStart, cycle.paidMonths, cycle.bonusMonths).map(month => ({
+              ...month,
+              payment_id: payment?.id || null,
+              receivable_id: selectedReceivable.id,
+              subscription_id: selectedReceivable.subscription_id,
+            })),
+          );
+          if (coverageError) throw coverageError;
+        }
+
         const { error: subscriptionError } = await supabase
           .from("billgo_subscriptions")
           .update({
             cycle: paymentForm.cycle,
-            next_due_date: billingPeriod.dueDate,
+            current_cycle: paymentForm.cycle,
+            ...(nextPaid >= totalAmount ? {
+              covered_until: coveragePeriod.periodEnd,
+              next_period_start: nextPeriodStart,
+              next_due_date: nextBillingPeriod.dueDate,
+            } : {}),
+            last_changed_by: user?.id || null,
           })
           .eq("id", selectedReceivable.subscription_id);
         if (subscriptionError) throw subscriptionError;
@@ -587,7 +688,7 @@ export default function AdminPayments() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setSelectedReceivableId(item.id)}
+                  onClick={() => selectReceivable(item)}
                   className={`block w-full p-4 text-left transition-colors hover:bg-surface-container-lowest ${selectedReceivableId === item.id ? "bg-primary-fixed/50" : ""}`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
