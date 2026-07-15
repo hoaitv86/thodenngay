@@ -255,6 +255,54 @@ type WorkerWithProfile = Worker & {
   } | null;
 };
 
+type WorkerDashboardStats = {
+  jobsDone: number;
+  income: number;
+  rating: number;
+  todayCustomers: number;
+  todayIncome: number;
+  todayRating: number;
+  monthlyCustomers: number;
+  monthlyIncome: number;
+  monthlyRating: number;
+};
+
+type WorkerDashboardData = {
+  worker: Worker | null;
+  newJobs: WorkerJob[];
+  pendingApprovalJobs: WorkerJob[];
+  activeJobs: WorkerJob[];
+  inventoryProducts: InventoryProduct[];
+  workerBillGoReceivables: WorkerBillGoReceivable[];
+  services: ServiceOption[];
+  workerStats: WorkerDashboardStats;
+};
+
+const initialWorkerDashboardStats: WorkerDashboardStats = {
+  jobsDone: 0,
+  income: 0,
+  rating: 0,
+  todayCustomers: 0,
+  todayIncome: 0,
+  todayRating: 0,
+  monthlyCustomers: 0,
+  monthlyIncome: 0,
+  monthlyRating: 0,
+};
+
+const initialWorkerDashboardData: WorkerDashboardData = {
+  worker: null,
+  newJobs: [],
+  pendingApprovalJobs: [],
+  activeJobs: [],
+  inventoryProducts: [],
+  workerBillGoReceivables: [],
+  services: [],
+  workerStats: initialWorkerDashboardStats,
+};
+
+const WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS = 450;
+
 const getDefaultScheduledAt = () => {
   const nextHour = new Date();
   nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
@@ -416,24 +464,53 @@ const getCurrentBrowserLocation = () => {
 export default function WorkerDashboard() {
   const [tab, setTab] = useState<"new" | "pending" | "active" | "billgo">("new");
   const [loading, setLoading] = useState(true);
-  const [worker, setWorker] = useState<Worker | null>(null);
-  const [newJobs, setNewJobs] = useState<WorkerJob[]>([]);
-  const [pendingApprovalJobs, setPendingApprovalJobs] = useState<WorkerJob[]>([]);
-  const [activeJobs, setActiveJobs] = useState<WorkerJob[]>([]);
-  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
-  const [workerBillGoReceivables, setWorkerBillGoReceivables] = useState<WorkerBillGoReceivable[]>([]);
-  const [services, setServices] = useState<ServiceOption[]>([]);
-  const [workerStats, setWorkerStats] = useState({
-    jobsDone: 0,
-    income: 0,
-    rating: 0,
-    todayCustomers: 0,
-    todayIncome: 0,
-    todayRating: 0,
-    monthlyCustomers: 0,
-    monthlyIncome: 0,
-    monthlyRating: 0,
-  });
+  const [dashboardData, setDashboardData] = useState<WorkerDashboardData>(initialWorkerDashboardData);
+  const {
+    worker,
+    newJobs,
+    pendingApprovalJobs,
+    activeJobs,
+    inventoryProducts,
+    workerBillGoReceivables,
+    services,
+    workerStats,
+  } = dashboardData;
+  const setWorker = React.useCallback((updater: React.SetStateAction<Worker | null>) => {
+    setDashboardData(prev => ({
+      ...prev,
+      worker: typeof updater === "function" ? (updater as (current: Worker | null) => Worker | null)(prev.worker) : updater,
+    }));
+  }, []);
+  const setNewJobs = React.useCallback((updater: React.SetStateAction<WorkerJob[]>) => {
+    setDashboardData(prev => ({
+      ...prev,
+      newJobs: typeof updater === "function" ? (updater as (current: WorkerJob[]) => WorkerJob[])(prev.newJobs) : updater,
+    }));
+  }, []);
+  const setPendingApprovalJobs = React.useCallback((updater: React.SetStateAction<WorkerJob[]>) => {
+    setDashboardData(prev => ({
+      ...prev,
+      pendingApprovalJobs: typeof updater === "function" ? (updater as (current: WorkerJob[]) => WorkerJob[])(prev.pendingApprovalJobs) : updater,
+    }));
+  }, []);
+  const setActiveJobs = React.useCallback((updater: React.SetStateAction<WorkerJob[]>) => {
+    setDashboardData(prev => ({
+      ...prev,
+      activeJobs: typeof updater === "function" ? (updater as (current: WorkerJob[]) => WorkerJob[])(prev.activeJobs) : updater,
+    }));
+  }, []);
+  const setWorkerBillGoReceivables = React.useCallback((updater: React.SetStateAction<WorkerBillGoReceivable[]>) => {
+    setDashboardData(prev => ({
+      ...prev,
+      workerBillGoReceivables: typeof updater === "function" ? (updater as (current: WorkerBillGoReceivable[]) => WorkerBillGoReceivable[])(prev.workerBillGoReceivables) : updater,
+    }));
+  }, []);
+  const setWorkerStats = React.useCallback((updater: React.SetStateAction<WorkerDashboardStats>) => {
+    setDashboardData(prev => ({
+      ...prev,
+      workerStats: typeof updater === "function" ? (updater as (current: WorkerDashboardStats) => WorkerDashboardStats)(prev.workerStats) : updater,
+    }));
+  }, []);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerLogin: null, customerPassword: null });
   const [directionsView, setDirectionsView] = useState<{
@@ -460,7 +537,7 @@ export default function WorkerDashboard() {
     description: "",
   });
   const [quickWorkflowData, setQuickWorkflowData] = useState<WorkflowData>({});
-  const supabase = createClient();
+  const supabase = React.useMemo(() => createClient(), []);
   const quickServiceGroups = React.useMemo(() => buildAdminServiceGroups(services), [services]);
   const getTechnicalDetailOptions = React.useCallback((serviceId?: string | null) =>
     services
@@ -710,6 +787,9 @@ export default function WorkerDashboard() {
 
   const newJobsRef = React.useRef<WorkerJob[]>([]);
   const mockActiveJobsRef = React.useRef<WorkerJob[]>([]);
+  const refreshTimerRef = React.useRef<number | null>(null);
+  const refreshInFlightRef = React.useRef(false);
+  const refreshQueuedRef = React.useRef(false);
 
   useEffect(() => {
     newJobsRef.current = newJobs;
@@ -744,10 +824,11 @@ export default function WorkerDashboard() {
 
     if (normalizedWorkerData) {
       const workerData = normalizedWorkerData;
-      setWorker(workerData);
       const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
       const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
+      let nextInventoryProducts: InventoryProduct[] = [];
+      let nextServices: ServiceOption[] = [];
 
       const { data: inventoryData, error: inventoryError } = await supabase
         .from("worker_inventory_products")
@@ -760,9 +841,8 @@ export default function WorkerDashboard() {
         if (!isMissingWorkerInventorySchemaError(inventoryError) && !isBackground) {
           showToast("Không thể tải kho hàng: " + inventoryError.message, "error");
         }
-        setInventoryProducts([]);
       } else {
-        setInventoryProducts((inventoryData || []) as InventoryProduct[]);
+        nextInventoryProducts = (inventoryData || []) as InventoryProduct[];
       }
 
       let { data: serviceOptions, error: servicesError } = await supabase
@@ -792,7 +872,7 @@ export default function WorkerDashboard() {
         servicesForMatching = filterServicesForWorkerSpecialties(servicesWithParents, workerSpecialties)
           .sort(compareServicesByName);
 
-        setServices(servicesForMatching);
+        nextServices = servicesForMatching;
       }
 
       // 3. Get New Jobs (Pending)
@@ -837,8 +917,6 @@ export default function WorkerDashboard() {
         }
       }
 
-      setNewJobs(mappedNew);
-
       // 4. Get Worker Submitted Jobs (Waiting for Admin Approval)
       const { data: workerPendingJobs } = await supabase
         .from('jobs')
@@ -861,8 +939,6 @@ export default function WorkerDashboard() {
           hasGpsEstimate: route.hasGps,
         };
       }));
-      setPendingApprovalJobs(mappedPendingApproval);
-
       // 5. Get Active Jobs (Assigned to this worker)
       let assignedJobsResult = await supabase
         .from('jobs')
@@ -901,10 +977,10 @@ export default function WorkerDashboard() {
         };
       }));
       const mockActiveJobs = mockActiveJobsRef.current;
-      setActiveJobs(sortJobsNewestFirst([
+      const mappedActiveWithMocks = sortJobsNewestFirst([
         ...mockActiveJobs,
         ...mappedActive.filter(job => !mockActiveJobs.some(mockJob => mockJob.id === job.id)),
-      ]));
+      ]);
 
       // 6. Calculate Real Stats
       const now = new Date();
@@ -999,31 +1075,72 @@ export default function WorkerDashboard() {
         ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
         : 0;
 
-      setWorkerStats({
-        jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
-        income: income,
-        rating: workerData.avg_rating || 0,
-        todayCustomers: todayCustomerIds.size,
-        todayIncome,
-        todayRating,
-        monthlyCustomers: monthlyCustomerIds.size,
-        monthlyIncome,
-        monthlyRating,
-      });
+      setDashboardData(prev => ({
+        ...prev,
+        worker: workerData,
+        newJobs: mappedNew,
+        pendingApprovalJobs: mappedPendingApproval,
+        activeJobs: mappedActiveWithMocks,
+        inventoryProducts: nextInventoryProducts,
+        services: nextServices,
+        workerStats: {
+          jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
+          income: income,
+          rating: workerData.avg_rating || 0,
+          todayCustomers: todayCustomerIds.size,
+          todayIncome,
+          todayRating,
+          monthlyCustomers: monthlyCustomerIds.size,
+          monthlyIncome,
+          monthlyRating,
+        },
+      }));
+    } else {
+      setDashboardData(initialWorkerDashboardData);
     }
 
     if (!isBackground) setLoading(false);
   };
 
-  useEffect(() => {
-    const initialFetch = window.setTimeout(() => {
-      fetchData();
-    }, 0);
+  const fetchDataRef = React.useRef(fetchData);
 
-    // Auto-refresh every 8 seconds to update new job listings and trigger notifications
-    const interval = setInterval(() => {
-      fetchData(true);
-    }, 8000);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  });
+
+  useEffect(() => {
+    const refreshDashboard = async (isBackground = true) => {
+      if (refreshInFlightRef.current) {
+        refreshQueuedRef.current = true;
+        return;
+      }
+
+      refreshInFlightRef.current = true;
+      try {
+        await fetchDataRef.current(isBackground);
+      } finally {
+        refreshInFlightRef.current = false;
+        if (refreshQueuedRef.current) {
+          refreshQueuedRef.current = false;
+          void refreshDashboard(true);
+        }
+      }
+    };
+
+    const scheduleRealtimeRefresh = () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshTimerRef.current = null;
+        void refreshDashboard(true);
+      }, WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS);
+    };
+
+    const initialFetch = window.setTimeout(() => {
+      void refreshDashboard(false);
+    }, 0);
 
     const jobsChannel = supabase
       .channel("worker-jobs-realtime")
@@ -1031,20 +1148,65 @@ export default function WorkerDashboard() {
         "postgres_changes",
         { event: "*", schema: "public", table: "jobs" },
         () => {
-          fetchData(true);
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments" },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ratings" },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "workers" },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "services" },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "job_services" },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "worker_inventory_products" },
+        () => {
+          scheduleRealtimeRefresh();
         }
       )
       .subscribe();
 
     return () => {
       window.clearTimeout(initialFetch);
-      clearInterval(interval);
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
       supabase.removeChannel(jobsChannel);
       if (toastTimeoutRef.current) {
         window.clearTimeout(toastTimeoutRef.current);
       }
     };
-  }, []);
+  }, [supabase]);
 
   const handleAcceptJob = async (jobId: string) => {
     if (!worker) return;
@@ -1774,7 +1936,7 @@ export default function WorkerDashboard() {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${i}.${fileExt}`;
+        const fileName = `${file.lastModified}_${file.size}_${i}.${fileExt}`;
         const filePath = `jobs/${job.id}/${fileName}`;
 
         const { data, error: uploadError } = await supabase.storage
