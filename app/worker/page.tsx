@@ -74,6 +74,10 @@ type QuickServiceGroup = {
 
 const QUICK_FREQUENT_SERVICE_NAMES = ["Sửa mất mạng", "Lắp camera", "Cài Windows", "Sửa máy in"];
 
+const WORKER_DASHBOARD_JOB_LIMIT = 100;
+const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
+const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
+
 interface WorkerJob {
   id: string;
   service_id?: string | null;
@@ -98,7 +102,7 @@ interface WorkerJob {
   warranty_days?: number | null;
   warranty_note?: string | null;
   workflow_data?: WorkflowData | null;
-  service?: JobWithWorkflow["service"];
+  service?: ServiceOption | null;
   job_services?: JobWithWorkflow["job_services"];
   payments?: Array<{
     id: string;
@@ -115,7 +119,10 @@ interface WorkerJob {
   eta?: string;
   hasGpsEstimate?: boolean;
   customer?: {
+    full_name?: string | null;
     phone?: string | null;
+    address?: string | null;
+    gps_location?: GpsLocation | null;
   } | null;
   [key: string]: unknown;
 }
@@ -724,11 +731,19 @@ export default function WorkerDashboard() {
     // 2. Get worker profile
     const { data: workerData } = await supabase
       .from('workers')
-      .select('*, user:profiles(*)')
+      .select('id, user_id, specialties, status, is_available, avg_rating, total_jobs, certificates, approved_at, created_at, user:profiles(id, full_name, phone, address, gps_location, latitude, longitude)')
       .eq('user_id', user.id)
       .single();
 
-    if (workerData) {
+    const normalizedWorkerData = workerData
+      ? {
+        ...workerData,
+        user: Array.isArray(workerData.user) ? workerData.user[0] || null : workerData.user,
+      } as unknown as WorkerWithProfile
+      : null;
+
+    if (normalizedWorkerData) {
+      const workerData = normalizedWorkerData;
       setWorker(workerData);
       const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
@@ -736,7 +751,7 @@ export default function WorkerDashboard() {
 
       const { data: inventoryData, error: inventoryError } = await supabase
         .from("worker_inventory_products")
-        .select("*")
+        .select("id, worker_id, name, sku, category, purchase_price, default_sale_price, stock_quantity, unit, warranty_months, is_recurring_billgo, recurring_cycle, note, created_at, updated_at")
         .eq("worker_id", workerData.id)
         .gt("stock_quantity", 0)
         .order("name", { ascending: true });
@@ -783,13 +798,13 @@ export default function WorkerDashboard() {
       // 3. Get New Jobs (Pending)
       const { data: pendingJobs } = await supabase
         .from('jobs')
-        .select('*, service:services!jobs_service_id_fkey(*)')
+        .select(WORKER_DASHBOARD_JOB_SELECT)
         .eq('status', 'pending')
         .is('worker_id', null)
         .order('created_at', { ascending: false });
 
       // Filter pending jobs matching worker specialties
-      const filteredPending = (pendingJobs || []).filter(j => {
+      const filteredPending = ((pendingJobs || []) as unknown as WorkerJob[]).filter(j => {
         const matchedService = servicesForMatching.find(service => service.id === j.service_id);
         return j.service && serviceMatchesSpecialties({
           ...j.service,
@@ -804,10 +819,10 @@ export default function WorkerDashboard() {
 
         return {
           ...j,
-          serviceName: j.service?.name,
+          serviceName: j.service?.name || undefined,
           icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
           price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
-          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          time: new Date(j.scheduled_at || j.created_at || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           distance: route.distance,
           eta: route.eta,
           hasGpsEstimate: route.hasGps,
@@ -827,19 +842,20 @@ export default function WorkerDashboard() {
       // 4. Get Worker Submitted Jobs (Waiting for Admin Approval)
       const { data: workerPendingJobs } = await supabase
         .from('jobs')
-        .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)')
+        .select(WORKER_DASHBOARD_JOB_SELECT)
         .eq('worker_id', workerData.id)
         .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1);
 
-      const mappedPendingApproval = sortJobsNewestFirst((workerPendingJobs || []).map(j => {
+      const mappedPendingApproval = sortJobsNewestFirst(((workerPendingJobs || []) as unknown as WorkerJob[]).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
         const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
         return {
           ...j,
           customerName: custName || 'Khách hàng',
-          serviceName: j.service?.name,
-          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          serviceName: j.service?.name || undefined,
+          time: new Date(j.scheduled_at || j.created_at || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           distance: route.distance,
           eta: route.eta,
           hasGpsEstimate: route.hasGps,
@@ -850,21 +866,23 @@ export default function WorkerDashboard() {
       // 5. Get Active Jobs (Assigned to this worker)
       let assignedJobsResult = await supabase
         .from('jobs')
-        .select('*, service:services!jobs_service_id_fkey(*), job_services(service:services(*)), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
+        .select(WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT)
         .eq('worker_id', workerData.id)
         .in('status', ['assigned', 'in_progress'])
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
 
       if (assignedJobsResult.error && isMissingWorkflowColumn(assignedJobsResult.error.message)) {
         assignedJobsResult = await supabase
           .from('jobs')
-          .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*), payments(id, amount, method, status, paid_at, note)')
+          .select(WORKER_DASHBOARD_JOB_SELECT + ", payments(id, amount, method, status, paid_at, note)")
           .eq('worker_id', workerData.id)
           .in('status', ['assigned', 'in_progress'])
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
       }
 
-      const assignedJobs = assignedJobsResult.data || [];
+      const assignedJobs = (assignedJobsResult.data || []) as WorkerJob[];
       
       const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
@@ -875,8 +893,8 @@ export default function WorkerDashboard() {
         return {
           ...j,
           customerName: custName || 'Khách vãng lai',
-          serviceName: j.service?.name,
-          time: new Date(j.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          serviceName: j.service?.name || undefined,
+          time: new Date(j.scheduled_at || j.created_at || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           distance: route.distance,
           eta: route.eta,
           hasGpsEstimate: route.hasGps,

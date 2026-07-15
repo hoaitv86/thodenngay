@@ -93,24 +93,47 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     try {
       // 1. Fetch Stats counts
-      const { count: totalJobs } = await supabase
-        .from("jobs")
-        .select("*", { count: "exact", head: true });
-
-      const { count: pendingJobs } = await supabase
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending");
-
-      const { count: completedJobs } = await supabase
-        .from("jobs")
-        .select("*", { count: "exact", head: true })
-        .in("status", ["completed", "done"]);
-
-      const { count: activeWorkers } = await supabase
-        .from("workers")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "active");
+      const [
+        { count: totalJobs },
+        { count: pendingJobs },
+        { count: completedJobs },
+        { count: activeWorkers },
+        { data: jobsData },
+        { data: workersData },
+      ] = await Promise.all([
+        supabase
+          .from("jobs")
+          .select("id", { count: "exact", head: true }),
+        supabase
+          .from("jobs")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending"),
+        supabase
+          .from("jobs")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["completed", "done"]),
+        supabase
+          .from("workers")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "active"),
+        supabase
+          .from("jobs")
+          .select(`
+            id,
+            job_code,
+            status,
+            created_at,
+            customer:profiles!customer_id(full_name),
+            service:services!jobs_service_id_fkey(name)
+          `)
+          .order("created_at", { ascending: false })
+          .limit(5),
+        supabase
+          .from("workers")
+          .select("id, specialties, profiles(full_name)")
+          .eq("status", "pending")
+          .limit(2),
+      ]);
 
       setStats([
         {
@@ -143,20 +166,6 @@ export default function AdminDashboard() {
         },
       ]);
 
-      // 2. Fetch Recent Jobs (5)
-      const { data: jobsData } = await supabase
-        .from("jobs")
-        .select(`
-          id,
-          job_code,
-          status,
-          created_at,
-          customer:profiles!customer_id(full_name),
-          service:services!jobs_service_id_fkey(name)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
       if (jobsData) {
         const formattedJobs = (jobsData as DashboardJobRow[]).map((job) => {
           const createdAt = job.created_at ? new Date(job.created_at).getTime() : Date.now();
@@ -181,15 +190,8 @@ export default function AdminDashboard() {
         setRecentJobs(formattedJobs);
       }
 
-      // 3. Fetch Pending Workers (2)
-      const { data: workersData } = await supabase
-        .from("workers")
-        .select("*, profiles(full_name)")
-        .eq("status", "pending")
-        .limit(2);
-
       if (workersData) {
-        setPendingWorkers(workersData);
+        setPendingWorkers(workersData as unknown as PendingWorker[]);
       }
     } catch (err: unknown) {
       console.error(err);

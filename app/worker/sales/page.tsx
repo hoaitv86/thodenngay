@@ -14,6 +14,8 @@ import {
   type WorkerSalesOrder,
 } from "@/lib/worker-sales";
 
+const WORKER_SALES_ORDER_LIMIT = 100;
+
 export default function WorkerSalesPage() {
   const supabase = useMemo(() => createClient(), []);
   const [orders, setOrders] = useState<WorkerSalesOrder[]>([]);
@@ -61,7 +63,8 @@ export default function WorkerSalesPage() {
         warranties:worker_product_warranties(id, product_name, product_sku, warranty_end, status)
       `)
       .eq("worker_id", worker.id)
-      .order("sold_at", { ascending: false });
+      .order("sold_at", { ascending: false })
+      .range(0, WORKER_SALES_ORDER_LIMIT - 1);
 
     if (error) {
       setMessage(isMissingWorkerInventorySchemaError(error)

@@ -252,7 +252,7 @@ export default function AdminServices() {
 
     const { data } = await supabase
       .from('services')
-      .select('*')
+      .select('id, name, description, base_price, icon, is_active, parent_service_id, created_at, updated_at')
       .order('name', { ascending: true });
     
     if (data) {
@@ -389,8 +389,8 @@ export default function AdminServices() {
 
     setIsSubmitting(true);
     const { data: savedService, error } = editingService
-      ? await supabase.from('services').update(dbPayload).eq('id', editingService.id).select('*').maybeSingle()
-      : await supabase.from('services').insert(dbPayload).select().single();
+      ? await supabase.from('services').update(dbPayload).eq('id', editingService.id).select('id, name, description, base_price, icon, is_active, parent_service_id, created_at, updated_at').maybeSingle()
+      : await supabase.from('services').insert(dbPayload).select('id, name, description, base_price, icon, is_active, parent_service_id, created_at, updated_at').single();
 
     setIsSubmitting(false);
 

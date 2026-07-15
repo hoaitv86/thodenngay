@@ -27,6 +27,7 @@ type BacklogJob = {
 };
 
 const pendingStatuses = ["pending", "assigned", "in_progress", "cancel_requested"];
+const WORKER_BACKLOG_LIMIT = 100;
 
 const currencyFormatter = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -149,7 +150,8 @@ export default function WorkerJobs() {
       .eq("worker_id", worker.id)
       .in("status", pendingStatuses)
       .order("scheduled_at", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .range(0, WORKER_BACKLOG_LIMIT - 1);
 
     if (error) {
       setMessage("Không thể tải danh sách tồn việc: " + error.message);

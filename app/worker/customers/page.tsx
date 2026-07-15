@@ -58,6 +58,8 @@ const getCustomerProfile = (customer: RawWorkerCustomerJob["customer"]) => {
   return customer || null;
 };
 
+const WORKER_CUSTOMERS_JOB_LIMIT = 200;
+
 export default function WorkerCustomersPage() {
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
@@ -104,7 +106,8 @@ export default function WorkerCustomersPage() {
         customer:profiles!customer_id(id, full_name, phone, address, created_at)
       `)
       .eq("worker_id", workerData.id)
-      .order("updated_at", { ascending: false });
+      .order("updated_at", { ascending: false })
+      .range(0, WORKER_CUSTOMERS_JOB_LIMIT - 1);
 
     if (jobsError) {
       setError("Không thể tải danh sách khách hàng: " + jobsError.message);

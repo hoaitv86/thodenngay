@@ -86,7 +86,7 @@ export default function BookingPage() {
       // Fetch real services
       const { data: svcs } = await supabase
         .from('services')
-        .select('*')
+        .select('id, name, description, base_price, icon, parent_service_id, is_active')
         .eq('is_active', true);
       
       if (svcs) {

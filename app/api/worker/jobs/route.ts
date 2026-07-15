@@ -21,6 +21,7 @@ type CreateWorkerJobRequest = {
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
+const WORKER_JOB_RESPONSE_SELECT = "id, customer_id, worker_id, service_id, job_code, created_at, address, status, quoted_price, description, workflow_data, service:services!jobs_service_id_fkey(id, name, icon, base_price, parent_service_id), customer:profiles!customer_id(id, full_name, phone, email, address)";
 const canReturnMockQuickJob = () =>
   process.env.NODE_ENV !== "production" || process.env.ENABLE_MOCK_QUICK_JOB === "true";
 
@@ -386,7 +387,7 @@ export async function POST(request: Request) {
       let insertResult = await workerCheck.supabase
         .from("jobs")
         .insert(insertPayload)
-        .select("*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)")
+        .select(WORKER_JOB_RESPONSE_SELECT)
         .single();
 
       if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
@@ -395,7 +396,7 @@ export async function POST(request: Request) {
         insertResult = await workerCheck.supabase
           .from("jobs")
           .insert(legacyPayload)
-          .select("*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)")
+          .select(WORKER_JOB_RESPONSE_SELECT)
           .single();
       }
 
@@ -434,6 +435,10 @@ export async function POST(request: Request) {
           },
           { status: 500 }
         );
+      }
+
+      if (!insertedJob) {
+        return NextResponse.json({ error: "KhÃ´ng thá»ƒ láº¥y thÃ´ng tin job vá»«a táº¡o." }, { status: 500 });
       }
 
       await logQuickJobLifecycle(workerCheck.supabase as SupabaseClient, {
@@ -564,7 +569,7 @@ export async function POST(request: Request) {
     let insertResult = await supabaseAdmin
       .from("jobs")
       .insert(insertPayload)
-      .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
+      .select(`${WORKER_JOB_RESPONSE_SELECT}, worker:workers(profiles(full_name))`)
       .single();
 
     if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
@@ -573,7 +578,7 @@ export async function POST(request: Request) {
       insertResult = await supabaseAdmin
         .from("jobs")
         .insert(legacyPayload)
-        .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
+        .select(`${WORKER_JOB_RESPONSE_SELECT}, worker:workers(profiles(full_name))`)
         .single();
     }
 
@@ -589,6 +594,10 @@ export async function POST(request: Request) {
         { error: "Lỗi tạo job: " + insertError.message },
         { status: 500 }
       );
+    }
+
+    if (!insertedJob) {
+      return NextResponse.json({ error: "KhÃ´ng thá»ƒ láº¥y thÃ´ng tin job vá»«a táº¡o." }, { status: 500 });
     }
 
     await logQuickJobLifecycle(supabaseAdmin as SupabaseClient, {

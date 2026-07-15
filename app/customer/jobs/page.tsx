@@ -30,6 +30,7 @@ const statusFilters = [
 const activeStatuses = ["pending", "confirmed", "assigned", "in_progress", "cancel_requested"];
 const completedStatuses = ["completed", "done"];
 const cancelledStatuses = ["cancelled"];
+const CUSTOMER_JOBS_PAGE_SIZE = 50;
 
 type CustomerJob = {
   id: string;
@@ -66,24 +67,44 @@ export default function CustomerJobs() {
       let result = await supabase
         .from('jobs')
         .select(`
-          *,
-          service:services!jobs_service_id_fkey(*),
-          job_services(service:services(*)),
-          ratings(*)
+          id,
+          job_code,
+          service_id,
+          address,
+          description,
+          scheduled_at,
+          created_at,
+          quoted_price,
+          status,
+          images,
+          service:services!jobs_service_id_fkey(id, name),
+          job_services(service:services(id, name)),
+          ratings(id)
         `)
         .eq('customer_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, CUSTOMER_JOBS_PAGE_SIZE - 1) as unknown as { data: CustomerJob[] | null; error: { message: string } | null };
 
       if (result.error && isMissingWorkflowColumn(result.error.message)) {
         result = await supabase
           .from('jobs')
           .select(`
-            *,
-            service:services!jobs_service_id_fkey(*),
-            ratings(*)
+            id,
+            job_code,
+            service_id,
+            address,
+            description,
+            scheduled_at,
+            created_at,
+            quoted_price,
+            status,
+            images,
+            service:services!jobs_service_id_fkey(id, name),
+            ratings(id)
           `)
           .eq('customer_id', user.id)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .range(0, CUSTOMER_JOBS_PAGE_SIZE - 1) as unknown as { data: CustomerJob[] | null; error: { message: string } | null };
       }
 
       if (!result.error && result.data) {

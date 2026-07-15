@@ -75,14 +75,25 @@ export default function JobDetailPage() {
       let result = await supabase
         .from('jobs')
         .select(`
-          *,
-          service:services!jobs_service_id_fkey(*),
-          job_services(service:services(*)),
+          id,
+          job_code,
+          customer_id,
+          worker_id,
+          status,
+          quoted_price,
+          address,
+          scheduled_at,
+          description,
+          images,
+          workflow_data,
+          service:services!jobs_service_id_fkey(id, name, description),
+          job_services(service:services(id, name, description)),
           worker:workers(
-            *,
-            user:profiles(*)
+            avg_rating,
+            total_jobs,
+            user:profiles(full_name, phone)
           ),
-          ratings(*)
+          ratings(score, comment, images, created_at)
         `)
         .eq('id', id)
         .single();
@@ -91,13 +102,24 @@ export default function JobDetailPage() {
         result = await supabase
           .from('jobs')
           .select(`
-            *,
-            service:services!jobs_service_id_fkey(*),
+            id,
+            job_code,
+            customer_id,
+            worker_id,
+            status,
+            quoted_price,
+            address,
+            scheduled_at,
+            description,
+            images,
+            workflow_data,
+            service:services!jobs_service_id_fkey(id, name, description),
             worker:workers(
-              *,
-              user:profiles(*)
+              avg_rating,
+              total_jobs,
+              user:profiles(full_name, phone)
             ),
-            ratings(*)
+            ratings(score, comment, images, created_at)
           `)
           .eq('id', id)
           .single();
@@ -107,7 +129,7 @@ export default function JobDetailPage() {
         console.error("Error fetching job:", result.error);
         router.push("/customer/jobs");
       } else {
-        setJob(result.data);
+        setJob(result.data as unknown as CustomerJobDetail);
       }
       setLoading(false);
     };
@@ -128,8 +150,12 @@ export default function JobDetailPage() {
     } else {
       router.refresh();
       // Refetch job locally
-      const { data } = await supabase.from('jobs').select('*, service:services!jobs_service_id_fkey(*)').eq('id', id).single();
-      setJob(data);
+      const { data } = await supabase
+        .from('jobs')
+        .select('id, job_code, customer_id, worker_id, status, quoted_price, address, scheduled_at, description, images, workflow_data, service:services!jobs_service_id_fkey(id, name, description)')
+        .eq('id', id)
+        .single();
+      setJob(data as unknown as CustomerJobDetail);
     }
   };
 

@@ -75,19 +75,19 @@ export default function CustomerDashboard() {
         // Fetch recent jobs
         const { data: jobs } = await supabase
           .from('jobs')
-          .select('*, service:services!jobs_service_id_fkey(*), worker:workers(user:profiles(full_name))')
+          .select('id, job_code, status, scheduled_at, address, quoted_price, service:services!jobs_service_id_fkey(name), worker:workers(user:profiles(full_name))')
           .eq('customer_id', user.id)
           .order('created_at', { ascending: false })
           .limit(3);
         
-        if (jobs) setRecentJobs(jobs);
+        if (jobs) setRecentJobs(jobs as unknown as RecentJob[]);
       }
 
       // Fetch active services dynamically
       try {
         const { data: svcs } = await supabase
           .from('services')
-          .select('*')
+          .select('id, name, icon')
           .eq('is_active', true)
           .order('name');
         

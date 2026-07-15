@@ -150,6 +150,7 @@ const dateLabel = (value: string) => {
   return `${String(date.day).padStart(2, "0")}/${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const BILLGO_VIEW_STATE_KEY = "billgo.collection.view";
+const BILLGO_PAGE_SIZE = 200;
 
 const methodLabels: Record<string, string> = {
   cash: "Tiền mặt",
@@ -331,7 +332,7 @@ export default function WorkerBillGoPage() {
     setLoading(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/worker/billgo?month=${encodeURIComponent(monthFilter)}`);
+      const response = await fetch(`/api/worker/billgo?month=${encodeURIComponent(monthFilter)}&limit=${BILLGO_PAGE_SIZE}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
       setRows(normalizeRows(result.rows || []));

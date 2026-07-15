@@ -15,6 +15,8 @@ import {
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
+const DEFAULT_BILLGO_PAGE_SIZE = 200;
+const MAX_BILLGO_PAGE_SIZE = 300;
 
 type WorkerContext = {
   admin: SupabaseClient;
@@ -268,22 +270,77 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const monthFilter = searchParams.get("month") || todayInputForServer().slice(0, 7);
+  const page = Math.max(Number(searchParams.get("page") || "1") || 1, 1);
+  const limit = Math.min(Math.max(Number(searchParams.get("limit") || DEFAULT_BILLGO_PAGE_SIZE) || DEFAULT_BILLGO_PAGE_SIZE, 1), MAX_BILLGO_PAGE_SIZE);
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
   const { year, month } = parseMonthFilter(monthFilter);
   const ensured = await ensureDueReceivables(admin, workerId, userId, monthFilter);
   if (ensured.error) return jsonError(ensured.error);
 
   const { data, error } = await admin
     .from("billgo_receivables")
-    .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, billgo_cycle_changes(id, old_cycle, new_cycle, effective_period_start, note, created_at), billgo_status_events(id, event_type, effective_period_start, note, created_at)), payments(id, amount, method, status, paid_at, note)")
+    .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at), payments(id, amount, method, status, paid_at, note)")
     .eq("worker_id", workerId)
     .eq("billing_month", month)
     .eq("billing_year", year)
     .not("subscription_id", "is", null)
     .is("deleted_at", null)
-    .order("due_date", { ascending: true });
+    .order("due_date", { ascending: true })
+    .range(from, to);
 
   if (error) return jsonError("Không thể tải BillGo: " + error.message);
-  return NextResponse.json({ rows: data || [], created: ensured.created || 0 });
+  const rows = data || [];
+  const subscriptionIds = Array.from(new Set(rows.map(row => row.subscription_id).filter((id): id is string => Boolean(id))));
+  const [cycleChangesResult, statusEventsResult] = subscriptionIds.length > 0
+    ? await Promise.all([
+        admin
+          .from("billgo_cycle_changes")
+          .select("id, subscription_id, old_cycle, new_cycle, effective_period_start, note, created_at")
+          .in("subscription_id", subscriptionIds)
+          .order("created_at", { ascending: false })
+          .limit(subscriptionIds.length * 5),
+        admin
+          .from("billgo_status_events")
+          .select("id, subscription_id, event_type, effective_period_start, note, created_at")
+          .in("subscription_id", subscriptionIds)
+          .order("created_at", { ascending: false })
+          .limit(subscriptionIds.length * 5),
+      ])
+    : [{ data: [] }, { data: [] }];
+
+  const cycleChangesBySubscription = new Map<string, unknown[]>();
+  for (const change of cycleChangesResult.data || []) {
+    const key = String(change.subscription_id || "");
+    if (!key) continue;
+    const items = cycleChangesBySubscription.get(key) || [];
+    if (items.length < 5) items.push(change);
+    cycleChangesBySubscription.set(key, items);
+  }
+
+  const statusEventsBySubscription = new Map<string, unknown[]>();
+  for (const event of statusEventsResult.data || []) {
+    const key = String(event.subscription_id || "");
+    if (!key) continue;
+    const items = statusEventsBySubscription.get(key) || [];
+    if (items.length < 5) items.push(event);
+    statusEventsBySubscription.set(key, items);
+  }
+
+  const hydratedRows = rows.map(row => {
+    const subscription = Array.isArray(row.subscription) ? row.subscription[0] : row.subscription;
+    if (!subscription || !row.subscription_id) return row;
+    return {
+      ...row,
+      subscription: {
+        ...subscription,
+        billgo_cycle_changes: cycleChangesBySubscription.get(row.subscription_id) || [],
+        billgo_status_events: statusEventsBySubscription.get(row.subscription_id) || [],
+      },
+    };
+  });
+
+  return NextResponse.json({ rows: hydratedRows, created: ensured.created || 0, page, limit });
 }
 
 export async function POST(request: Request) {

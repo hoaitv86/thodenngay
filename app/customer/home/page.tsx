@@ -137,7 +137,7 @@ export default function CustomerHome() {
 
       const { data, error } = await supabase
         .from("workers")
-        .select("*, profiles(*)")
+        .select("id, specialties, avg_rating, total_jobs, profiles(full_name, gps_location)")
         .eq("status", "active")
         .order("avg_rating", { ascending: false })
         .order("total_jobs", { ascending: false })
@@ -145,12 +145,13 @@ export default function CustomerHome() {
 
       if (data && !error && data.length > 0) {
         const formattedWorkers = data.map((worker, index) => {
+          const workerProfile = Array.isArray(worker.profiles) ? worker.profiles[0] : worker.profiles;
           const specialty = worker.specialties?.[0] || "Sửa chữa";
           const rating = worker.avg_rating && Number(worker.avg_rating) > 0 ? Number(worker.avg_rating) : 5;
-          const name = worker.profiles?.full_name || `Anh thợ ${specialty}`;
+          const name = workerProfile?.full_name || `Anh thợ ${specialty}`;
           const specialtyLower = specialty.toLowerCase();
           const dispatchMeta = mockDispatchMeta[index % mockDispatchMeta.length];
-          const route = getRouteEstimate(customerGps, worker.profiles?.gps_location);
+          const route = getRouteEstimate(customerGps, workerProfile?.gps_location);
           let color = "bg-rose-100 text-rose-700";
 
           if (specialtyLower.includes("điện") || specialtyLower.includes("dien")) color = "bg-amber-100 text-amber-700";

@@ -78,6 +78,9 @@ type CustomerBillGoRow = {
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Lỗi không xác định";
 
+const ADMIN_CUSTOMERS_PAGE_SIZE = 50;
+const CUSTOMER_DETAIL_LIMIT = 50;
+
 export default function AdminCustomers() {
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -395,9 +398,10 @@ export default function AdminCustomers() {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("*, jobs!customer_id(id, quoted_price, status)")
+      .select("id, full_name, email, phone, address, status, created_at, avatar_url, jobs!customer_id(id, quoted_price, status)")
       .eq("role", "customer")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(0, ADMIN_CUSTOMERS_PAGE_SIZE - 1);
     
     if (error) {
       showToast("Lỗi tải danh sách khách hàng: " + error.message, "error");
@@ -417,12 +421,14 @@ export default function AdminCustomers() {
         address,
         scheduled_at,
         quoted_price,
+        final_amount,
         status,
         service:services!jobs_service_id_fkey(name, icon),
         payments(id, amount, method, status, paid_at, note)
       `)
       .eq("customer_id", customerId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(0, CUSTOMER_DETAIL_LIMIT - 1);
 
     if (error) {
       showToast("Lỗi tải lịch sử công việc: " + error.message, "error");
@@ -438,7 +444,8 @@ export default function AdminCustomers() {
       .select("id, title, type, total_amount, due_date, status, note, subscription:billgo_subscriptions(package_name, next_due_date), payments(id, amount, method, status, paid_at, note)")
       .eq("customer_id", customerId)
       .neq("status", "cancelled")
-      .order("due_date", { ascending: true });
+      .order("due_date", { ascending: true })
+      .range(0, CUSTOMER_DETAIL_LIMIT - 1);
 
     if (billGoError) {
       setCustomerBillGoRows([]);

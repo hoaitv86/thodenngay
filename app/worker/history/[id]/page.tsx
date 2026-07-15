@@ -88,11 +88,24 @@ export default function WorkerJobDetailPage() {
       let result = await supabase
         .from('jobs')
         .select(`
-          *,
-          service:services!jobs_service_id_fkey(*),
-          job_services(service:services(*)),
-          customer:profiles!customer_id(*),
-          ratings(*)
+          id,
+          job_code,
+          status,
+          address,
+          scheduled_at,
+          updated_at,
+          description,
+          quoted_price,
+          images,
+          completion_items,
+          final_amount,
+          warranty_days,
+          warranty_note,
+          workflow_data,
+          service:services!jobs_service_id_fkey(id, name, description),
+          job_services(service:services(id, name, description)),
+          customer:profiles!customer_id(full_name, phone),
+          ratings(score, comment, created_at, images)
         `)
         .eq('id', id)
         .single();
@@ -101,10 +114,23 @@ export default function WorkerJobDetailPage() {
         result = await supabase
           .from('jobs')
           .select(`
-            *,
-            service:services!jobs_service_id_fkey(*),
-            customer:profiles!customer_id(*),
-            ratings(*)
+            id,
+            job_code,
+            status,
+            address,
+            scheduled_at,
+            updated_at,
+            description,
+            quoted_price,
+            images,
+            completion_items,
+            final_amount,
+            warranty_days,
+            warranty_note,
+            workflow_data,
+            service:services!jobs_service_id_fkey(id, name, description),
+            customer:profiles!customer_id(full_name, phone),
+            ratings(score, comment, created_at, images)
           `)
           .eq('id', id)
           .single();
@@ -114,7 +140,7 @@ export default function WorkerJobDetailPage() {
         console.error("Error fetching job:", result.error);
         router.push("/worker/history");
       } else {
-        setJob(result.data);
+        setJob(result.data as unknown as WorkerJobDetail);
       }
       setLoading(false);
     };

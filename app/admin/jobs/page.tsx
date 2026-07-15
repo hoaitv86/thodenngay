@@ -64,6 +64,8 @@ interface JobRow {
   address?: string | null;
   status?: string | null;
   total_price?: number | null;
+  quoted_price?: number | string | null;
+  final_amount?: number | string | null;
   cancellation_reason?: string | null;
   cancellation_requested_at?: string | null;
   cancellation_reviewed_at?: string | null;
@@ -102,6 +104,7 @@ function getJobStatusLabel(status?: string | null) {
 }
 
 const JOB_STATUS_FILTERS = ["all", "pending", "assigned", "in_progress", "completed", "cancel_requested", "cancelled"] as const;
+const ADMIN_JOBS_PAGE_SIZE = 50;
 
 function matchesJobStatusFilter(jobStatus: string | null | undefined, statusFilter: string) {
   if (statusFilter === "all") return true;
@@ -122,7 +125,7 @@ export default function AdminJobs() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   // Create Job Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -157,20 +160,42 @@ export default function AdminJobs() {
 
   async function fetchJobs() {
     setLoading(true);
-    const query = supabase
+    const { data } = await supabase
       .from('jobs')
-      .select('*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), job_services(service:services(*)), worker:workers(profiles(full_name))')
-      .order('created_at', { ascending: false });
+      .select(`
+        id,
+        customer_id,
+        worker_id,
+        service_id,
+        service_detail_id,
+        job_code,
+        created_at,
+        address,
+        status,
+        quoted_price,
+        final_amount,
+        cancellation_reason,
+        cancellation_requested_at,
+        cancellation_reviewed_at,
+        customer_gps_location,
+        worker_gps_location,
+        customer:profiles!customer_id(id, full_name, phone, email, gps_location),
+        service:services!jobs_service_id_fkey(id, name, icon, base_price, parent_service_id),
+        job_services(service:services(id, name, icon, base_price, parent_service_id)),
+        worker:workers(id, profiles(full_name))
+      `)
+      .order('created_at', { ascending: false })
+      .range(0, ADMIN_JOBS_PAGE_SIZE - 1);
 
-    const { data } = await query;
-    if (data) setJobs(data as JobRow[]);
+    if (data) setJobs(data as unknown as JobRow[]);
     setLoading(false);
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchJobs();
-    void fetchServices();
+    const timeoutId = window.setTimeout(() => {
+      void Promise.all([fetchJobs(), fetchServices()]);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -200,7 +225,8 @@ export default function AdminJobs() {
       .from('profiles')
       .select('id, full_name, phone')
       .eq('role', 'customer')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(100);
     if (cData) setCustomers(cData);
     if (services.length === 0) {
       await fetchServices();
@@ -339,7 +365,8 @@ export default function AdminJobs() {
         .from('workers')
         .select('id, is_available, profiles(full_name, phone)')
         .eq('status', 'active')
-        .eq('is_available', true);
+        .eq('is_available', true)
+        .limit(100);
       if (data) setWorkersList(data as WorkerOption[]);
     }
   };

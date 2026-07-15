@@ -37,7 +37,7 @@ export default function AdminSettings() {
     try {
       const { data, error } = await supabase
         .from('system_settings')
-        .select('*')
+        .select('app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url')
         .eq('id', 'default')
         .single();
         

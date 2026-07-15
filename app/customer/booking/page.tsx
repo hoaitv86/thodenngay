@@ -153,7 +153,7 @@ function CustomerBookingContent() {
       // Fetch active services
       const { data: servicesData } = await supabase
         .from('services')
-        .select('*')
+        .select('id, name, icon, base_price, parent_service_id')
         .eq('is_active', true)
         .order('name');
 

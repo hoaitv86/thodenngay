@@ -22,6 +22,7 @@ type CreateJobRequest = {
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
 const makeDefaultPassword = () => "123@123456";
+const ADMIN_JOB_RESPONSE_SELECT = "id, customer_id, worker_id, service_id, service_detail_id, job_code, created_at, address, status, quoted_price, final_amount, cancellation_reason, cancellation_requested_at, cancellation_reviewed_at, customer_gps_location, worker_gps_location, customer:profiles!customer_id(id, full_name, phone, email, gps_location), service:services!jobs_service_id_fkey(id, name, icon, base_price, parent_service_id), worker:workers(profiles(full_name))";
 
 async function getAdminUser() {
   const cookieStore = await cookies();
@@ -188,7 +189,7 @@ export async function POST(request: Request) {
     let insertResult = await supabaseAdmin
       .from("jobs")
       .insert(insertPayload)
-      .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
+      .select(ADMIN_JOB_RESPONSE_SELECT)
       .single();
 
     if (insertResult.error && isMissingWorkflowColumn(insertResult.error.message)) {
@@ -197,7 +198,7 @@ export async function POST(request: Request) {
       insertResult = await supabaseAdmin
         .from("jobs")
         .insert(legacyPayload)
-        .select("*, customer:profiles!customer_id(*), service:services!jobs_service_id_fkey(*), worker:workers(profiles(full_name))")
+        .select(ADMIN_JOB_RESPONSE_SELECT)
         .single();
     }
 

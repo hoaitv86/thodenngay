@@ -50,6 +50,7 @@ const getErrorMessage = (error: unknown) =>
 
 const normalizeWorkerStatus = (status?: string | null): "active" | "pending" | "blocked" =>
   status === "pending" || status === "blocked" ? status : "active";
+const ADMIN_WORKERS_PAGE_SIZE = 100;
 
 export default function AdminWorkers() {
   const [workers, setWorkers] = useState<WorkerRecord[]>([]);
@@ -248,8 +249,9 @@ export default function AdminWorkers() {
     setLoading(true);
     const query = supabase
       .from('workers')
-      .select('*, profiles(*)')
-      .order('created_at', { ascending: false });
+      .select('id, user_id, specialties, status, approved_at, created_at, avg_rating, total_jobs, rejection_reason, profiles(full_name, phone, address, status, avatar_url, email)')
+      .order('created_at', { ascending: false })
+      .range(0, ADMIN_WORKERS_PAGE_SIZE - 1);
 
     const { data } = await query;
     if (data) setWorkers(data as WorkerRecord[]);
@@ -269,8 +271,7 @@ export default function AdminWorkers() {
 
   /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
   useEffect(() => {
-    fetchWorkers();
-    fetchServices();
+    void Promise.all([fetchWorkers(), fetchServices()]);
   }, []);
   /* eslint-enable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 

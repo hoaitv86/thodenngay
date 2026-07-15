@@ -94,14 +94,14 @@ export default function WorkerProfile() {
         // Get base profile
         const { data: userProfile } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, email, phone, full_name, address, gps_location, created_at, avatar_url')
           .eq('id', user.id)
           .single();
           
         // Get worker details
         const { data: workerData } = await supabase
           .from('workers')
-          .select('*')
+          .select('id, user_id, specialties, status, avg_rating, total_jobs, certificates, approved_at, created_at')
           .eq('user_id', user.id)
           .single();
 
@@ -125,7 +125,7 @@ export default function WorkerProfile() {
           ...userProfile,
           worker: workerData || null,
           email: user.email
-        });
+        } as WorkerProfileData);
         setSelectedSpecialties(workerData?.specialties || []);
         setSelectedParentIds(inferWorkerSpecialtyParentIds(workerData?.specialties || []));
         setSelectedChildValues(inferWorkerSpecialtyChildValues(workerData?.specialties || []));

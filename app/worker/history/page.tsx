@@ -40,6 +40,8 @@ type HistoryJob = RawHistoryJob & {
   timeStr: string;
 };
 
+const WORKER_HISTORY_PAGE_SIZE = 50;
+
 export default function WorkerHistory() {
   const [loading, setLoading] = useState(true);
   const [historyJobs, setHistoryJobs] = useState<HistoryJob[]>([]);
@@ -65,10 +67,20 @@ export default function WorkerHistory() {
       if (workerData) {
         const { data: jobs } = await supabase
           .from('jobs')
-          .select('*, service:services!jobs_service_id_fkey(*), customer:profiles!customer_id(*)')
+          .select(`
+            id,
+            status,
+            address,
+            quoted_price,
+            updated_at,
+            scheduled_at,
+            service:services!jobs_service_id_fkey(name, icon),
+            customer:profiles!customer_id(full_name)
+          `)
           .eq('worker_id', workerData.id)
           .in('status', ['completed', 'done', 'cancelled'])
-          .order('updated_at', { ascending: false });
+          .order('updated_at', { ascending: false })
+          .range(0, WORKER_HISTORY_PAGE_SIZE - 1);
           
         if (jobs) {
           const iconMap: Record<string, IconComponent> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
