@@ -584,6 +584,7 @@ export default function WorkerBillGoPage() {
 
   const submitCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
+    const addedCycle = form.cycle;
     setSaving(true);
     setMessage("");
     try {
@@ -597,6 +598,10 @@ export default function WorkerBillGoPage() {
       if (typeof result.collectionMonth === "string" && result.collectionMonth.length >= 7) {
         setMonthFilter(result.collectionMonth.slice(0, 7));
       }
+      setViewMode("cycle");
+      setActiveTab(addedCycle);
+      setStatusFilter("all");
+      setDueFilter("all");
       setForm(initialForm());
       setShowForm(false);
       setMessage("Đã thêm khách hàng BillGo.");
