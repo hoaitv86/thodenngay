@@ -81,9 +81,18 @@ export default async function BillGoReceiptPage({ params, searchParams }: Receip
     <main className="min-h-dvh bg-surface px-4 py-6 text-on-surface">
       <style>{`
         @media print {
-          body { background: #fff !important; }
+          @page { margin: 12mm; size: A4; }
+          html, body { width: 100% !important; min-height: 100% !important; background: #fff !important; color: #111827 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          main { min-height: auto !important; background: #fff !important; padding: 0 !important; color: #111827 !important; }
+          * { color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .receipt-actions, .receipt-search-link { display: none !important; }
-          .receipt-sheet { box-shadow: none !important; border: 0 !important; max-width: 100% !important; }
+          .receipt-sheet { display: block !important; width: 100% !important; max-width: 100% !important; min-height: auto !important; box-shadow: none !important; border: 0 !important; background: #fff !important; color: #111827 !important; }
+          .receipt-sheet * { color: inherit; }
+          .receipt-sheet .text-primary { color: #0f766e !important; }
+          .receipt-sheet .text-success { color: #15803d !important; }
+          .receipt-sheet .text-error { color: #b91c1c !important; }
+          .receipt-sheet .text-on-surface-variant { color: #4b5563 !important; }
+          .receipt-sheet img { display: block !important; }
         }
       `}</style>
       <section className="receipt-sheet mx-auto max-w-3xl rounded-lg border border-outline-variant/40 bg-white p-5 shadow-sm">
