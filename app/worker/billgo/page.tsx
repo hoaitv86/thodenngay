@@ -594,6 +594,7 @@ export default function WorkerBillGoPage() {
   const [areaStatusFilter, setAreaStatusFilter] = useState("all");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
+  const [viewStateHydrated, setViewStateHydrated] = useState(false);
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
@@ -661,12 +662,15 @@ export default function WorkerBillGoPage() {
         if (typeof saved.query === "string") setQuery(saved.query);
       } catch {
         window.localStorage.removeItem(BILLGO_VIEW_STATE_KEY);
+      } finally {
+        setViewStateHydrated(true);
       }
     }, 0);
     return () => window.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
+    if (!viewStateHydrated) return;
     window.localStorage.setItem(BILLGO_VIEW_STATE_KEY, JSON.stringify({
       viewMode,
       activeTab,
@@ -678,7 +682,7 @@ export default function WorkerBillGoPage() {
       selectedSubAreaId,
       query,
     }));
-  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const fetchAreas = useCallback(async () => {
     const response = await fetch("/api/worker/areas");
@@ -725,9 +729,10 @@ export default function WorkerBillGoPage() {
   }, [activeTab, areaStatusFilter, dueFilter, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
 
   useEffect(() => {
+    if (!viewStateHydrated) return;
     const timeoutId = window.setTimeout(() => void fetchBillGo(), 0);
     return () => window.clearTimeout(timeoutId);
-  }, [fetchBillGo]);
+  }, [fetchBillGo, viewStateHydrated]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchAreas(), 0);
@@ -735,9 +740,10 @@ export default function WorkerBillGoPage() {
   }, [fetchAreas]);
 
   useEffect(() => {
+    if (!viewStateHydrated) return;
     const timeoutId = window.setTimeout(() => setPage(1), 0);
     return () => window.clearTimeout(timeoutId);
-  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
     const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly") as BillGoCycle;

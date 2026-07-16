@@ -522,6 +522,7 @@ const ensureDueReceivables = async (
     .eq("status", "active")
     .is("deleted_at", null);
   if (subscriptionError) return { error: subscriptionError.message };
+  if (!subscriptions || subscriptions.length === 0) return { created: 0 };
 
   const { data: existing, error: existingError } = await admin
     .from("billgo_receivables")
