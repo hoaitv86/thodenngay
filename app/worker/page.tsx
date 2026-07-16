@@ -270,6 +270,8 @@ type CompletionPaymentStatus = "paid" | "partial" | "unpaid";
 type WorkerWithProfile = Worker & {
   user?: {
     full_name?: string | null;
+    phone?: string | null;
+    email?: string | null;
   } | null;
 };
 
@@ -886,7 +888,7 @@ export default function WorkerDashboard() {
     // 2. Get worker profile
     const { data: workerData } = await supabase
       .from('workers')
-      .select('id, user_id, specialties, status, is_available, avg_rating, total_jobs, certificates, approved_at, created_at, user:profiles(id, full_name, phone, address, gps_location, latitude, longitude)')
+      .select('id, user_id, specialties, status, is_available, avg_rating, total_jobs, certificates, approved_at, created_at, user:profiles(id, full_name, phone, email, address, gps_location, latitude, longitude)')
       .eq('user_id', user.id)
       .single();
 

@@ -12,6 +12,7 @@ import {
   type WorkerRole,
 } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
+import { isDemoAccount } from "@/lib/demo-accounts";
 import {
   BellIcon,
   BriefcaseIcon,
@@ -223,7 +224,7 @@ export default function WorkerLayout({
       const [{ data: profile }, { data: worker }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("full_name, role")
+          .select("full_name, role, phone, email")
           .eq("id", user.id)
           .single(),
         supabase
@@ -247,7 +248,9 @@ export default function WorkerLayout({
       const specialties = workerSpecialties.length > 0
         ? workerSpecialties.filter((item): item is string => typeof item === "string")
         : [];
+      const isDemoWorker = isDemoAccount(profile);
       const billgoHistory = worker?.id ? await hasBillGoData(worker.id) : false;
+      const billgoAccess = isDemoWorker || billgoHistory;
       const role = typeof profile?.role === "string" ? profile.role : "worker";
 
       if (!isMounted) return;
@@ -257,7 +260,7 @@ export default function WorkerLayout({
         specialties,
         data: {
           billgoHistory,
-          billgoAccess: billgoHistory,
+          billgoAccess,
         },
       });
     };
