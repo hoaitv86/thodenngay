@@ -43,6 +43,10 @@ type BillGoReceipt = {
   receipt_code: string;
   lookup_code: string;
   qr_payload: string;
+  paid_at?: string | null;
+  paid_amount?: number | string | null;
+  payment_method?: string | null;
+  note?: string | null;
 };
 
 type Receivable = {
@@ -106,6 +110,7 @@ type Subscription = {
     note?: string | null;
     created_at?: string | null;
   }> | null;
+  billgo_receipts?: BillGoReceipt[] | null;
 };
 
 type AreaOption = {
@@ -129,6 +134,11 @@ type RowView = {
   cycle: BillGoCycle;
   customerName: string;
   account: string;
+};
+
+type BillGoReceiptEntry = {
+  payment?: Payment;
+  receipt: BillGoReceipt;
 };
 
 type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
@@ -260,13 +270,35 @@ const isFutureDate = (dateValue: string | null | undefined) => {
   return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
 };
 
+const getPaymentReceipts = (payment: Payment): BillGoReceipt[] => {
+  const receipts = payment.billgo_receipts;
+  if (!receipts) return [];
+  return Array.isArray(receipts) ? receipts : [receipts];
+};
+
+const getReceiptEntries = (item: Receivable): BillGoReceiptEntry[] =>
+  (item.subscription?.billgo_receipts || []).length > 0
+    ? (item.subscription?.billgo_receipts || [])
+      .map(receipt => ({ receipt }))
+      .sort((a, b) => {
+        const paidCompare = new Date(b.receipt.paid_at || 0).getTime() - new Date(a.receipt.paid_at || 0).getTime();
+        if (paidCompare !== 0) return paidCompare;
+        return b.receipt.receipt_code.localeCompare(a.receipt.receipt_code);
+      })
+    : (item.payments || [])
+      .flatMap(payment => getPaymentReceipts(payment).map(receipt => ({ payment, receipt })))
+    .sort((a, b) => {
+      const paidCompare = new Date(b.payment?.paid_at || 0).getTime() - new Date(a.payment?.paid_at || 0).getTime();
+      if (paidCompare !== 0) return paidCompare;
+      return b.receipt.receipt_code.localeCompare(a.receipt.receipt_code);
+    });
+
 export default function WorkerBillGoPage() {
   const [rows, setRows] = useState<Receivable[]>([]);
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [lastReceipt, setLastReceipt] = useState<BillGoReceipt | null>(null);
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<"cycle" | "area">("cycle");
   const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>(BILLGO_ALL_TAB);
@@ -285,6 +317,7 @@ export default function WorkerBillGoPage() {
   const [collecting, setCollecting] = useState<Receivable | null>(null);
   const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
+  const [receiptTarget, setReceiptTarget] = useState<Receivable | null>(null);
   const [collectForm, setCollectForm] = useState({
     amount: "",
     paidAt: todayInput(),
@@ -710,7 +743,6 @@ export default function WorkerBillGoPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể xác nhận thu tiền.");
       setCollecting(null);
-      setLastReceipt(result.receipt || null);
       setMessage("Đã xác nhận thu tiền.");
       await refreshBillGoKeepingScroll();
     } catch (error) {
@@ -797,10 +829,21 @@ export default function WorkerBillGoPage() {
     }
   };
 
+  const shareReceipt = async (receipt: BillGoReceipt) => {
+    const url = receipt.qr_payload || `${window.location.origin}/billgo/receipt/${receipt.lookup_code}`;
+    if (navigator.share) {
+      await navigator.share({ title: `Phiếu thu ${receipt.receipt_code}`, url });
+      return;
+    }
+    await navigator.clipboard?.writeText(url);
+    setMessage("Đã sao chép liên kết phiếu thu.");
+  };
+
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
     const cycle = getBillGoCycleOption(row.cycle);
     const canCollect = summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
+    const receiptEntries = getReceiptEntries(item);
 
     return (
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
@@ -818,6 +861,11 @@ export default function WorkerBillGoPage() {
               <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white">
                 <CheckCircle2 size={16} />
                 <span className="lg:hidden">Thu</span>
+              </button>
+            )}
+            {receiptEntries.length > 0 && (
+              <button type="button" onClick={() => setReceiptTarget(item)} className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/60 bg-white px-3 py-2 text-xs font-extrabold text-primary">
+                Phiếu thu
               </button>
             )}
             <details className="group">
@@ -891,29 +939,6 @@ export default function WorkerBillGoPage() {
       </header>
 
       {message && <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">{message}</div>}
-      {lastReceipt && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-outline-variant/40 bg-white p-3 text-sm">
-          <span className="font-bold text-on-surface">Phiếu thu {lastReceipt.receipt_code}</span>
-          <a href={`/billgo/receipt/${lastReceipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2">Xem</a>
-          <a href={`/billgo/receipt/${lastReceipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2">Tải PDF / In</a>
-          <button
-            type="button"
-            className="btn-outline !w-auto !px-3 !py-2"
-            onClick={() => {
-              const url = lastReceipt.qr_payload || `${window.location.origin}/billgo/receipt/${lastReceipt.lookup_code}`;
-              if (navigator.share) {
-                void navigator.share({ title: `Phiếu thu ${lastReceipt.receipt_code}`, url });
-              } else {
-                void navigator.clipboard?.writeText(url);
-                setMessage("Đã sao chép liên kết phiếu thu.");
-              }
-            }}
-          >
-            Chia sẻ
-          </button>
-        </div>
-      )}
-
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[
           { value: "cycle", label: "Thu theo chu kỳ" },
@@ -1128,6 +1153,46 @@ export default function WorkerBillGoPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {receiptTarget && (
+        <div className="fixed inset-0 z-[70] flex items-end bg-black/35 p-3 sm:items-center sm:justify-center">
+          <div className="modal-panel flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden p-0">
+            <div className="flex items-start justify-between gap-3 border-b border-outline-variant/30 p-4">
+              <div>
+                <p className="text-xs font-bold uppercase text-primary">Phiếu thu</p>
+                <h2 className="text-lg font-extrabold">{receiptTarget.subscription?.customer_name || "Khách BillGo"}</h2>
+              </div>
+              <button type="button" onClick={() => setReceiptTarget(null)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {getReceiptEntries(receiptTarget).length === 0 ? (
+                <p className="text-sm text-on-surface-variant">Chưa có phiếu thu đã lưu.</p>
+              ) : (
+                <div className="space-y-2">
+                  {getReceiptEntries(receiptTarget).map(({ payment, receipt }) => (
+                    <div key={`${payment?.id || "receipt"}-${receipt.lookup_code}`} className="rounded-lg border border-outline-variant/40 bg-white p-3 text-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-extrabold text-on-surface">{receipt.receipt_code}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            {(receipt.paid_at || payment?.paid_at) ? new Date(receipt.paid_at || payment?.paid_at || "").toLocaleString("vi-VN") : "Chưa có ngày"} · {formatBillGoCurrency(receipt.paid_amount ?? payment?.amount)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <a href={`/billgo/receipt/${receipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2 text-xs">Xem</a>
+                          <a href={`/billgo/receipt/${receipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2 text-xs">PDF/In</a>
+                          <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-auto !px-3 !py-2 text-xs">Chia sẻ</button>
+                        </div>
+                      </div>
+                      {(receipt.note || payment?.note) && <p className="mt-2 text-xs text-on-surface-variant">{receipt.note || payment?.note}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {collecting && selectedSummary && (

@@ -478,7 +478,7 @@ export async function GET(request: Request) {
   const pageSubscriptionIds = Array.from(
     new Set(pageRows.map(row => row.subscription?.id).filter((id): id is string => Boolean(id))),
   );
-  const [paymentResult, cycleHistoryResult, statusHistoryResult] = await Promise.all([
+  const [paymentResult, cycleHistoryResult, statusHistoryResult, receiptHistoryResult] = await Promise.all([
     receivableIds.length > 0
       ? admin
           .from("payments")
@@ -501,11 +501,19 @@ export async function GET(request: Request) {
           .in("subscription_id", pageSubscriptionIds)
           .order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
+    pageSubscriptionIds.length > 0
+      ? admin
+          .from("billgo_receipts")
+          .select("receipt_code, lookup_code, qr_payload, subscription_id, paid_at, paid_amount, payment_method, note")
+          .in("subscription_id", pageSubscriptionIds)
+          .order("paid_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
   const { data: payments, error: paymentError } = paymentResult;
   if (paymentError) return jsonError("Không thể tải thanh toán BillGo: " + paymentError.message);
   if (cycleHistoryResult.error) return jsonError("Không thể tải lịch sử chu kỳ BillGo: " + cycleHistoryResult.error.message);
   if (statusHistoryResult.error) return jsonError("Không thể tải lịch sử trạng thái BillGo: " + statusHistoryResult.error.message);
+  if (receiptHistoryResult.error) return jsonError("Không thể tải phiếu thu BillGo: " + receiptHistoryResult.error.message);
 
   const paymentsByReceivable = new Map<string, unknown[]>();
   for (const payment of payments || []) {
@@ -528,6 +536,13 @@ export async function GET(request: Request) {
     items.push(event);
     statusHistoryBySubscription.set(key, items);
   }
+  const receiptHistoryBySubscription = new Map<string, unknown[]>();
+  for (const receipt of receiptHistoryResult.data || []) {
+    const key = String(receipt.subscription_id || "");
+    const items = receiptHistoryBySubscription.get(key) || [];
+    items.push(receipt);
+    receiptHistoryBySubscription.set(key, items);
+  }
   const hydratedRows = pageRows.map(row => ({
     ...row,
     payments: paymentsByReceivable.get(row.id) || [],
@@ -535,6 +550,7 @@ export async function GET(request: Request) {
       ...row.subscription,
       billgo_cycle_changes: cycleHistoryBySubscription.get(row.subscription.id) || [],
       billgo_status_events: statusHistoryBySubscription.get(row.subscription.id) || [],
+      billgo_receipts: receiptHistoryBySubscription.get(row.subscription.id) || [],
     } : null,
   }));
 
