@@ -5,7 +5,9 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  Download,
   Eye,
+  FileSpreadsheet,
   MoreVertical,
   PauseCircle,
   Pencil,
@@ -14,6 +16,7 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  Upload,
 } from "lucide-react";
 import {
   BILLGO_ACCOUNT_SUGGESTIONS,
@@ -144,6 +147,38 @@ type BillGoReceiptEntry = {
 };
 
 type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
+type BillGoImportRow = {
+  rowNumber: number;
+  customerName: string;
+  phone: string;
+  account: string;
+  address: string;
+  areaName: string;
+  subAreaName: string;
+  addressDetail: string;
+  provider: string;
+  packageName: string;
+  monthlyFee: string;
+  cycle: string;
+  startDate: string;
+  dueDate: string;
+  note: string;
+};
+
+type BillGoImportPreviewItem = {
+  row: BillGoImportRow;
+  status: "new" | "update" | "skip" | "error";
+  reasons: string[];
+  changes: string[];
+  subscriptionId?: string | null;
+};
+
+type BillGoImportPreview = {
+  items: BillGoImportPreviewItem[];
+  summary: { created: number; updated: number; skipped: number; errors: number };
+  missingFromFile: Array<{ subscriptionId: string; customerName?: string | null; account?: string | null; phone?: string | null }>;
+};
+
 type BillGoListTotals = {
   totalCustomers: number;
   unpaid: number;
@@ -203,6 +238,25 @@ const methodLabels: Record<string, string> = {
 
 const providerSuggestions = ["Viettel", "VNPT", "FPT"];
 
+const billGoImportHeaders = [
+  "Tên khách hàng",
+  "SĐT",
+  "Account",
+  "Địa chỉ",
+  "Xã/phường",
+  "Xóm/thôn/khối",
+  "Địa chỉ chi tiết",
+  "Nhà mạng",
+  "Gói cước",
+  "Số tiền tháng",
+  "Chu kỳ",
+  "Kỳ bắt đầu",
+  "Hạn nộp",
+  "Ghi chú",
+];
+
+const emptyImportSummary = { created: 0, updated: 0, skipped: 0, errors: 0 };
+
 const statusOptions = [
   { value: "not_due", label: "Chưa đến kỳ" },
   { value: "all", label: "Tất cả trạng thái" },
@@ -218,6 +272,236 @@ const dueFilterOptions = [
   { value: "due_this_month", label: "Đến hạn tháng này" },
   { value: "not_due", label: "Chưa đến hạn" },
 ];
+
+const normalizeImportHeader = (value: string) =>
+  value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const billGoImportHeaderMap: Record<string, keyof Omit<BillGoImportRow, "rowNumber">> = {
+  tenkhachhang: "customerName",
+  khachhang: "customerName",
+  customername: "customerName",
+  name: "customerName",
+  sdt: "phone",
+  sodienthoai: "phone",
+  phone: "phone",
+  account: "account",
+  taikhoan: "account",
+  diachi: "address",
+  address: "address",
+  xaphuong: "areaName",
+  xa: "areaName",
+  phuong: "areaName",
+  areaname: "areaName",
+  xomthonkhoi: "subAreaName",
+  thonxom: "subAreaName",
+  subareaname: "subAreaName",
+  diachichitiet: "addressDetail",
+  addressdetail: "addressDetail",
+  khuvuc: "addressDetail",
+  nhamang: "provider",
+  provider: "provider",
+  goicuoc: "packageName",
+  packagename: "packageName",
+  sotienthang: "monthlyFee",
+  cuocthang: "monthlyFee",
+  monthlyfee: "monthlyFee",
+  amount: "monthlyFee",
+  sotien: "monthlyFee",
+  chuky: "cycle",
+  cycle: "cycle",
+  hinhthucdong: "cycle",
+  kybatdau: "startDate",
+  startdate: "startDate",
+  ngaybatdau: "startDate",
+  hannop: "dueDate",
+  handong: "dueDate",
+  duedate: "dueDate",
+  ghichu: "note",
+  note: "note",
+};
+
+const normalizeImportCycle = (value: string) => {
+  const normalized = normalizeImportHeader(value);
+  if (!normalized) return "monthly";
+  if (["monthly", "hangthang", "thang", "1thang"].includes(normalized)) return "monthly";
+  if (["twomonths", "2thang", "haithang"].includes(normalized)) return "two_months";
+  if (["threemonths", "3thang", "bathang"].includes(normalized)) return "three_months";
+  if (["sixmonths", "6thang", "sauthang"].includes(normalized)) return "six_months";
+  if (["yearly", "12thang", "nam", "1nam"].includes(normalized)) return "yearly";
+  return value;
+};
+
+const normalizeImportDateValue = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const slash = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (slash) return `${slash[3]}-${slash[2].padStart(2, "0")}-${slash[1].padStart(2, "0")}`;
+  const serial = Number(trimmed);
+  if (Number.isFinite(serial) && serial > 20000 && serial < 80000) {
+    return toBillGoDateInput(new Date(Date.UTC(1899, 11, 30 + serial)));
+  }
+  return trimmed;
+};
+
+const normalizeImportMoneyValue = (value: string) => {
+  const normalized = String(value || "").replace(/[^\d.-]/g, "");
+  return normalized ? String(Number(normalized)) : "";
+};
+
+const buildImportRowsFromTable = (table: string[][]): BillGoImportRow[] => {
+  const [headerRow, ...bodyRows] = table.filter(row => row.some(cell => String(cell || "").trim()));
+  if (!headerRow) return [];
+  const fieldByColumn = headerRow.map(header => billGoImportHeaderMap[normalizeImportHeader(header)]);
+  return bodyRows
+    .map((cells, index) => {
+      const row: BillGoImportRow = {
+        rowNumber: index + 2,
+        customerName: "",
+        phone: "",
+        account: "",
+        address: "",
+        areaName: "",
+        subAreaName: "",
+        addressDetail: "",
+        provider: "",
+        packageName: "",
+        monthlyFee: "",
+        cycle: "monthly",
+        startDate: "",
+        dueDate: "",
+        note: "",
+      };
+      cells.forEach((cell, columnIndex) => {
+        const field = fieldByColumn[columnIndex];
+        if (field) row[field] = String(cell || "").trim();
+      });
+      row.monthlyFee = normalizeImportMoneyValue(row.monthlyFee);
+      row.cycle = normalizeImportCycle(row.cycle);
+      row.startDate = normalizeImportDateValue(row.startDate);
+      row.dueDate = normalizeImportDateValue(row.dueDate);
+      return row;
+    })
+    .filter(row => row.customerName || row.phone || row.account);
+};
+
+const parseCsvTable = (text: string) => {
+  const rows: string[][] = [];
+  let current = "";
+  let row: string[] = [];
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === "\"" && quoted && next === "\"") {
+      current += "\"";
+      index += 1;
+    } else if (char === "\"") {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(current);
+      current = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(current);
+      rows.push(row);
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  row.push(current);
+  rows.push(row);
+  return rows;
+};
+
+const inflateRaw = async (data: Uint8Array) => {
+  const source = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+  const stream = new Blob([source]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+};
+
+const unzipXlsxEntries = async (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  let eocd = -1;
+  for (let index = bytes.length - 22; index >= 0; index -= 1) {
+    if (view.getUint32(index, true) === 0x06054b50) {
+      eocd = index;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("File Excel không hợp lệ.");
+  const entryCount = view.getUint16(eocd + 10, true);
+  let cursor = view.getUint32(eocd + 16, true);
+  const entries = new Map<string, string>();
+  const decoder = new TextDecoder();
+
+  for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+    if (view.getUint32(cursor, true) !== 0x02014b50) break;
+    const method = view.getUint16(cursor + 10, true);
+    const compressedSize = view.getUint32(cursor + 20, true);
+    const fileNameLength = view.getUint16(cursor + 28, true);
+    const extraLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const localOffset = view.getUint32(cursor + 42, true);
+    const name = decoder.decode(bytes.slice(cursor + 46, cursor + 46 + fileNameLength));
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+    const content = method === 0 ? compressed : method === 8 ? await inflateRaw(compressed) : null;
+    if (content) entries.set(name, decoder.decode(content));
+    cursor += 46 + fileNameLength + extraLength + commentLength;
+  }
+  return entries;
+};
+
+const getXmlText = (node: Element, tagName: string) =>
+  node.getElementsByTagName(tagName)[0]?.textContent || "";
+
+const columnIndexFromRef = (ref: string) =>
+  ref.replace(/\d/g, "").split("").reduce((sum, char) => sum * 26 + char.charCodeAt(0) - 64, 0) - 1;
+
+const parseXlsxTable = async (file: File) => {
+  const entries = await unzipXlsxEntries(await file.arrayBuffer());
+  const parser = new DOMParser();
+  const sharedXml = entries.get("xl/sharedStrings.xml");
+  const sharedStrings = sharedXml
+    ? Array.from(parser.parseFromString(sharedXml, "application/xml").getElementsByTagName("si")).map(item => item.textContent || "")
+    : [];
+  const sheetXml = entries.get("xl/worksheets/sheet1.xml")
+    || Array.from(entries.entries()).find(([name]) => name.startsWith("xl/worksheets/sheet"))?.[1];
+  if (!sheetXml) throw new Error("Không tìm thấy sheet dữ liệu trong file Excel.");
+  const documentXml = parser.parseFromString(sheetXml, "application/xml");
+  return Array.from(documentXml.getElementsByTagName("row")).map(rowNode => {
+    const cells: string[] = [];
+    Array.from(rowNode.getElementsByTagName("c")).forEach(cellNode => {
+      const ref = cellNode.getAttribute("r") || "";
+      const columnIndex = ref ? columnIndexFromRef(ref) : cells.length;
+      const type = cellNode.getAttribute("t");
+      const rawValue = type === "inlineStr" ? getXmlText(cellNode, "t") : getXmlText(cellNode, "v");
+      cells[columnIndex] = type === "s" ? sharedStrings[Number(rawValue)] || "" : rawValue;
+    });
+    return cells;
+  });
+};
+
+const parseBillGoImportFile = async (file: File) => {
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith(".xlsx")) return buildImportRowsFromTable(await parseXlsxTable(file));
+  const text = await file.text();
+  if (lowerName.endsWith(".xls") && text.includes("<table")) {
+    const rows = Array.from(text.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)).map(rowMatch =>
+      Array.from(rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map(cellMatch =>
+        cellMatch[1].replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim(),
+      ),
+    );
+    return buildImportRowsFromTable(rows);
+  }
+  return buildImportRowsFromTable(parseCsvTable(text));
+};
 
 const initialForm = () => ({
   customerName: "",
@@ -315,6 +599,12 @@ export default function WorkerBillGoPage() {
   const [totalRows, setTotalRows] = useState(0);
   const [serverTotals, setServerTotals] = useState<BillGoListTotals>(emptyBillGoTotals);
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importRows, setImportRows] = useState<BillGoImportRow[]>([]);
+  const [importPreview, setImportPreview] = useState<BillGoImportPreview | null>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState("");
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
   const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
@@ -665,6 +955,84 @@ export default function WorkerBillGoPage() {
     window.requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
   };
 
+  const downloadImportTemplate = () => {
+    const sample = [
+      billGoImportHeaders,
+      ["Nguyễn Văn A", "0912345678", "n350_gftth_001", "Xóm 1", "Xã Mẫu", "Xóm 1", "Nhà số 12", "Viettel", "Internet 165000", "165000", "monthly", monthFilter ? `${monthFilter}-01` : previousMonthFirstInput(), "", ""],
+    ];
+    const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${sample.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")}</table></body></html>`;
+    const url = URL.createObjectURL(new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "mau-nhap-billgo.xls";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const previewImportRows = async (nextRows: BillGoImportRow[], fileName: string) => {
+    setImportLoading(true);
+    setImportError("");
+    setImportPreview(null);
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import_preview", rows: nextRows, monthFilter }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể xem trước dữ liệu Excel.");
+      setImportRows(nextRows);
+      setImportPreview(result as BillGoImportPreview);
+      setImportFileName(fileName);
+      setShowImport(true);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Không thể xem trước dữ liệu Excel.");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleImportFile = async (file: File | null) => {
+    if (!file) return;
+    setImportLoading(true);
+    setImportError("");
+    try {
+      const parsedRows = await parseBillGoImportFile(file);
+      if (parsedRows.length === 0) throw new Error("File không có dòng khách hàng hợp lệ.");
+      await previewImportRows(parsedRows, file.name);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Không thể đọc file Excel.");
+      setImportPreview(null);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const confirmImportSync = async () => {
+    if (importRows.length === 0 || !importPreview) return;
+    setImportLoading(true);
+    setImportError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import_apply", rows: importRows, monthFilter }),
+      });
+      const result = await response.json();
+      if (!response.ok && response.status !== 207) throw new Error(result.error || "Không thể đồng bộ dữ liệu Excel.");
+      const summary = result.summary || emptyImportSummary;
+      setImportPreview(prev => prev ? { ...prev, summary, items: prev.items } : prev);
+      setMessage(`Đã đồng bộ Excel: thêm mới ${summary.created}, cập nhật ${summary.updated}, bỏ qua ${summary.skipped}, lỗi ${summary.errors}.`);
+      await fetchAreas();
+      await refreshBillGoKeepingScroll();
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Không thể đồng bộ dữ liệu Excel.");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const submitCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
     const addedCycle = form.cycle;
@@ -930,10 +1298,27 @@ export default function WorkerBillGoPage() {
           <p className="text-xs font-bold uppercase text-primary">Thu cước định kỳ</p>
           <h1 className="text-2xl font-extrabold text-on-surface">BillGo</h1>
         </div>
-        <div className="flex w-full gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <button type="button" title="Tải lại" onClick={() => void fetchBillGo()} className="btn-outline !w-auto !p-3">
             <RefreshCw size={18} />
           </button>
+          <button type="button" onClick={downloadImportTemplate} className="btn-outline !w-auto flex-1 sm:flex-none">
+            <Download size={18} /> Tải file mẫu
+          </button>
+          <label className="btn-outline !w-auto flex-1 cursor-pointer sm:flex-none">
+            <Upload size={18} /> Nhập/Đồng bộ Excel
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="sr-only"
+              disabled={importLoading}
+              onChange={event => {
+                const file = event.target.files?.[0] || null;
+                event.currentTarget.value = "";
+                void handleImportFile(file);
+              }}
+            />
+          </label>
           <button type="button" onClick={() => setShowForm(value => !value)} className="btn-primary !w-auto flex-1 sm:flex-none">
             <Plus size={18} /> Thêm khách hàng
           </button>
@@ -941,6 +1326,7 @@ export default function WorkerBillGoPage() {
       </header>
 
       {message && <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">{message}</div>}
+      {importError && <div className="mt-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">{importError}</div>}
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[
           { value: "cycle", label: "Thu theo chu kỳ" },
@@ -1155,6 +1541,94 @@ export default function WorkerBillGoPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {showImport && (
+        <div className="fixed inset-0 z-[70] flex items-end bg-black/35 p-3 sm:items-center sm:justify-center">
+          <div className="modal-panel flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden p-0">
+            <div className="flex items-start justify-between gap-3 border-b border-outline-variant/30 p-4">
+              <div>
+                <p className="flex items-center gap-2 text-xs font-bold uppercase text-primary"><FileSpreadsheet size={16} /> Nhập/Đồng bộ Excel</p>
+                <h2 className="text-lg font-extrabold">{importFileName || "Dữ liệu BillGo"}</h2>
+              </div>
+              <button type="button" onClick={() => setShowImport(false)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {importLoading && <div className="rounded-lg bg-surface-container-low p-3 text-sm font-bold text-on-surface-variant">Đang xử lý file Excel...</div>}
+              {importPreview && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {[
+                      ["Thêm mới", importPreview.summary.created, "text-success"],
+                      ["Cập nhật", importPreview.summary.updated, "text-primary"],
+                      ["Bỏ qua", importPreview.summary.skipped, "text-on-surface"],
+                      ["Lỗi", importPreview.summary.errors, "text-error"],
+                    ].map(([label, value, className]) => (
+                      <div key={String(label)} className="rounded-lg border border-outline-variant/40 bg-white p-3">
+                        <p className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</p>
+                        <p className={`mt-1 text-xl font-extrabold ${className}`}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-outline-variant/40">
+                    <div className="hidden bg-surface-container-low px-3 py-2 text-xs font-bold uppercase text-on-surface-variant sm:grid sm:grid-cols-[70px_1.2fr_1fr_1fr_120px_1.4fr]">
+                      <span>Dòng</span>
+                      <span>Khách hàng</span>
+                      <span>Account</span>
+                      <span>SĐT</span>
+                      <span>Trạng thái</span>
+                      <span>Ghi chú</span>
+                    </div>
+                    <div className="max-h-[42dvh] divide-y divide-outline-variant/30 overflow-y-auto bg-white">
+                      {importPreview.items.map(item => {
+                        const statusLabel = item.status === "new" ? "Thêm mới" : item.status === "update" ? "Cập nhật" : item.status === "skip" ? "Bỏ qua" : "Lỗi";
+                        const statusClass = item.status === "error" ? "bg-error-container text-error" : item.status === "new" ? "bg-success-container text-success" : item.status === "update" ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant";
+                        return (
+                          <div key={`${item.row.rowNumber}-${item.row.account || item.row.phone}`} className="grid gap-2 p-3 text-sm sm:grid-cols-[70px_1.2fr_1fr_1fr_120px_1.4fr] sm:items-center">
+                            <span className="text-xs font-bold text-on-surface-variant">#{item.row.rowNumber}</span>
+                            <span className="font-bold text-on-surface">{item.row.customerName || "Chưa có tên"}</span>
+                            <span className="text-on-surface-variant">{item.row.account || "Không có"}</span>
+                            <span className="text-on-surface-variant">{item.row.phone || "Không có"}</span>
+                            <span className={`w-max rounded-full px-2 py-1 text-[11px] font-extrabold ${statusClass}`}>{statusLabel}</span>
+                            <span className={item.status === "error" ? "text-error" : "text-on-surface-variant"}>
+                              {item.reasons.length > 0 ? item.reasons.join(", ") : item.changes.join(", ") || "Không thay đổi"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {importPreview.missingFromFile.length > 0 && (
+                    <details className="rounded-lg border border-outline-variant/40 bg-white p-3 text-sm">
+                      <summary className="cursor-pointer font-extrabold text-on-surface">Khách BillGo không có trong file ({importPreview.missingFromFile.length})</summary>
+                      <div className="mt-3 grid gap-2">
+                        {importPreview.missingFromFile.slice(0, 50).map(item => (
+                          <div key={item.subscriptionId} className="rounded-lg bg-surface-container-low p-2 text-on-surface-variant">
+                            <strong className="text-on-surface">{item.customerName || "Khách BillGo"}</strong> · {item.account || item.phone || "Chưa có khóa đối chiếu"}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-on-surface-variant">Hệ thống không tự xóa khách không có trong file. Hãy mở từng khách để chọn ngừng thu nếu cần.</p>
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="sticky bottom-0 flex flex-col gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setShowImport(false)} className="btn-outline !w-full sm:!w-auto">Hủy</button>
+              <button
+                type="button"
+                disabled={importLoading || !importPreview || importPreview.summary.errors > 0}
+                onClick={() => void confirmImportSync()}
+                className="btn-primary !w-full disabled:opacity-45 sm:!w-auto"
+              >
+                {importLoading ? "Đang đồng bộ..." : "Xác nhận đồng bộ"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {receiptTarget && (

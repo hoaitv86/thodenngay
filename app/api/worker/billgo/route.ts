@@ -264,6 +264,187 @@ const buildReceivableDraft = (
   };
 };
 
+type BillGoImportRow = {
+  rowNumber?: number;
+  customerName?: string;
+  phone?: string;
+  account?: string;
+  address?: string;
+  areaName?: string;
+  subAreaName?: string;
+  addressDetail?: string;
+  provider?: string;
+  packageName?: string;
+  monthlyFee?: number | string | null;
+  cycle?: string;
+  startDate?: string;
+  dueDate?: string;
+  note?: string;
+};
+
+type BillGoImportSubscription = {
+  id: string;
+  customer_name?: string | null;
+  phone?: string | null;
+  internet_account?: string | null;
+  customer_address?: string | null;
+  area_id?: string | null;
+  sub_area_id?: string | null;
+  address_detail?: string | null;
+  provider?: string | null;
+  package_name?: string | null;
+  current_cycle?: string | null;
+  cycle?: string | null;
+  monthly_fee?: number | string | null;
+  amount_per_cycle?: number | string | null;
+  covered_until?: string | null;
+  next_period_start?: string | null;
+};
+
+const normalizeImportText = (value: unknown) => String(value || "").trim();
+const normalizeImportKey = (value: unknown) => normalizeImportText(value).toLocaleLowerCase("vi");
+const normalizeImportPhone = (value: unknown) => normalizeImportText(value).replace(/\D/g, "");
+
+const isSameImportValue = (left: unknown, right: unknown) =>
+  normalizeImportText(left) === normalizeImportText(right);
+
+const buildImportRowKey = (row: BillGoImportRow) => {
+  const account = normalizeImportKey(row.account);
+  if (account) return `account:${account}`;
+  const phone = normalizeImportPhone(row.phone);
+  return phone ? `phone:${phone}` : "";
+};
+
+const getDefaultImportStartDate = (monthFilter: string) => {
+  if (/^\d{4}-\d{2}$/.test(monthFilter)) return `${monthFilter}-01`;
+  const today = new Date();
+  return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth(), 1));
+};
+
+const buildBillGoImportPlan = async (
+  admin: SupabaseClient,
+  workerId: string,
+  rows: BillGoImportRow[],
+) => {
+  const { data: subscriptions, error } = await admin
+    .from("billgo_subscriptions")
+    .select("id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, provider, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, covered_until, next_period_start")
+    .eq("worker_id", workerId)
+    .is("deleted_at", null)
+    .not("status", "in", "(cancelled,deleted)")
+    .limit(10000);
+  if (error) return { error: error.message };
+
+  const existingByAccount = new Map<string, BillGoImportSubscription>();
+  const existingByPhone = new Map<string, BillGoImportSubscription>();
+  const { data: areas } = await admin
+    .from("areas")
+    .select("id, name, sub_areas(id, name)")
+    .limit(10000);
+  const areaNameById = new Map<string, string>();
+  const subAreaNameById = new Map<string, string>();
+  for (const area of areas || []) {
+    areaNameById.set(area.id, normalizeImportText(area.name));
+    for (const subArea of area.sub_areas || []) subAreaNameById.set(subArea.id, normalizeImportText(subArea.name));
+  }
+  for (const subscription of (subscriptions || []) as BillGoImportSubscription[]) {
+    const accountKey = normalizeImportKey(subscription.internet_account);
+    const phoneKey = normalizeImportPhone(subscription.phone);
+    if (accountKey) existingByAccount.set(accountKey, subscription);
+    if (phoneKey) existingByPhone.set(phoneKey, subscription);
+  }
+
+  const seenKeys = new Set<string>();
+  const importedKeys = new Set<string>();
+  const items = rows.map((rawRow, index) => {
+    const row: BillGoImportRow = {
+      ...rawRow,
+      rowNumber: Number(rawRow.rowNumber || index + 2),
+      customerName: normalizeImportText(rawRow.customerName),
+      phone: normalizeImportText(rawRow.phone),
+      account: normalizeImportText(rawRow.account),
+      address: normalizeImportText(rawRow.address),
+      areaName: normalizeImportText(rawRow.areaName),
+      subAreaName: normalizeImportText(rawRow.subAreaName),
+      addressDetail: normalizeImportText(rawRow.addressDetail),
+      provider: normalizeImportText(rawRow.provider),
+      packageName: normalizeImportText(rawRow.packageName) || "Cước Internet",
+      cycle: normalizeImportText(rawRow.cycle) || "monthly",
+      startDate: normalizeImportText(rawRow.startDate),
+      dueDate: normalizeImportText(rawRow.dueDate),
+      note: normalizeImportText(rawRow.note),
+    };
+    const rowKey = buildImportRowKey(row);
+    const accountKey = normalizeImportKey(row.account);
+    const phoneKey = normalizeImportPhone(row.phone);
+    const monthlyFee = toMoneyNumber(rawRow.monthlyFee);
+    const reasons: string[] = [];
+    const changes: string[] = [];
+
+    if (!row.customerName) reasons.push("Thiếu tên khách hàng");
+    if (!row.account && !row.phone) reasons.push("Thiếu Account và SĐT");
+    if (row.cycle && !allowedCycles.has(row.cycle as BillGoCycle)) reasons.push("Chu kỳ không hợp lệ");
+    if (monthlyFee < 0) reasons.push("Số tiền cước không hợp lệ");
+    if (rowKey && seenKeys.has(rowKey)) reasons.push("Trùng Account/SĐT trong file");
+    if (rowKey) seenKeys.add(rowKey);
+    if (rowKey) importedKeys.add(rowKey);
+
+    const existing = accountKey ? existingByAccount.get(accountKey) : phoneKey ? existingByPhone.get(phoneKey) : null;
+    if (reasons.length > 0) return { row, status: "error", reasons, changes, subscriptionId: existing?.id || null };
+
+    if (!existing) return { row: { ...row, monthlyFee }, status: "new", reasons, changes: ["Thêm mới khách BillGo"], subscriptionId: null };
+
+    if (!isSameImportValue(existing.customer_name, row.customerName)) changes.push("Tên khách hàng");
+    if (!isSameImportValue(existing.phone, row.phone)) changes.push("SĐT");
+    if (!isSameImportValue(existing.internet_account, row.account)) changes.push("Account");
+    if (!isSameImportValue(existing.customer_address, row.address)) changes.push("Địa chỉ");
+    if (row.areaName && !isSameImportValue(areaNameById.get(existing.area_id || ""), row.areaName)) changes.push("Xã/phường");
+    if (row.subAreaName && !isSameImportValue(subAreaNameById.get(existing.sub_area_id || ""), row.subAreaName)) changes.push("Xóm/thôn/khối");
+    if (!isSameImportValue(existing.address_detail, row.addressDetail)) changes.push("Địa chỉ chi tiết");
+    if (!isSameImportValue(existing.provider, row.provider)) changes.push("Nhà mạng");
+    if (!isSameImportValue(existing.package_name, row.packageName)) changes.push("Gói cước");
+    if (toMoneyNumber(existing.monthly_fee ?? existing.amount_per_cycle) !== monthlyFee) changes.push("Số tiền cước");
+    if (String(existing.current_cycle || existing.cycle || "monthly") !== row.cycle) changes.push("Chu kỳ");
+
+    return {
+      row: { ...row, monthlyFee },
+      status: changes.length > 0 ? "update" : "skip",
+      reasons,
+      changes,
+      subscriptionId: existing.id,
+      existing,
+    };
+  });
+
+  const fileKeys = new Set(items.map(item => buildImportRowKey(item.row)).filter(Boolean));
+  const missingFromFile = ((subscriptions || []) as BillGoImportSubscription[])
+    .filter(subscription => {
+      const key = subscription.internet_account
+        ? `account:${normalizeImportKey(subscription.internet_account)}`
+        : subscription.phone
+          ? `phone:${normalizeImportPhone(subscription.phone)}`
+          : "";
+      return key && !fileKeys.has(key);
+    })
+    .slice(0, 200)
+    .map(subscription => ({
+      subscriptionId: subscription.id,
+      customerName: subscription.customer_name,
+      account: subscription.internet_account,
+      phone: subscription.phone,
+    }));
+
+  const summary = items.reduce((acc, item) => {
+    if (item.status === "new") acc.created += 1;
+    if (item.status === "update") acc.updated += 1;
+    if (item.status === "skip") acc.skipped += 1;
+    if (item.status === "error") acc.errors += 1;
+    return acc;
+  }, { created: 0, updated: 0, skipped: 0, errors: 0 });
+
+  return { items, summary, missingFromFile, importedKeys: Array.from(importedKeys) };
+};
+
 const buildNotDueRow = (
   subscription: {
     id: string;
@@ -722,6 +903,207 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
   const action = asText(body.action);
+
+  if (action === "import_preview" || action === "import_apply") {
+    const rows = Array.isArray(body.rows) ? body.rows as BillGoImportRow[] : [];
+    if (rows.length === 0) return jsonError("Chưa có dữ liệu Excel để đồng bộ.");
+    if (rows.length > 1000) return jsonError("Mỗi lần chỉ nhập tối đa 1000 dòng.");
+
+    const monthFilter = asText(body.monthFilter) || todayInputForServer().slice(0, 7);
+    const defaultStartDate = getDefaultImportStartDate(monthFilter);
+    const plan = await buildBillGoImportPlan(admin, workerId, rows);
+    if ("error" in plan) return jsonError(plan.error || "Không thể xem trước dữ liệu nhập.");
+    if (action === "import_preview") return NextResponse.json(plan);
+    if (plan.summary.errors > 0) return jsonError("Vui lòng sửa các dòng lỗi trước khi đồng bộ.");
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: Array<{ rowNumber?: number; reason: string }> = [];
+
+    for (const item of plan.items) {
+      if (item.status === "skip") {
+        skipped += 1;
+        continue;
+      }
+      if (item.status === "error") {
+        errors.push({ rowNumber: item.row.rowNumber, reason: item.reasons.join(", ") });
+        continue;
+      }
+
+      const row = item.row;
+      const cycle = (row.cycle || "monthly") as BillGoCycle;
+      const monthlyFee = toMoneyNumber(row.monthlyFee);
+      const packageName = row.packageName || "Cước Internet";
+      const location = await resolveBillGoArea(
+        admin,
+        userId,
+        null,
+        row.areaName || "",
+        null,
+        row.subAreaName || "",
+      );
+      if ("error" in location) {
+        errors.push({ rowNumber: row.rowNumber, reason: location.error || "Không thể tạo khu vực" });
+        continue;
+      }
+
+      if (item.status === "new") {
+        const startDate = row.startDate || defaultStartDate;
+        const billing = getBillGoBillingPeriod(startDate, cycle);
+        const effectiveDueDate = row.dueDate || billing.dueDate;
+        const collectionMonth = getCollectionMonthFromDueDate(effectiveDueDate);
+        const billingParts = getBillingParts(collectionMonth);
+        const option = getBillGoCycleOption(cycle);
+        const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
+        const nextBilling = getBillGoBillingPeriod(nextPeriodStart, cycle);
+        const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
+
+        const { data: subscription, error: subscriptionError } = await admin
+          .from("billgo_subscriptions")
+          .insert({
+            customer_id: null,
+            worker_id: workerId,
+            customer_name: row.customerName,
+            phone: row.phone || null,
+            internet_account: row.account || null,
+            customer_address: row.address || row.addressDetail || null,
+            area_id: location.areaId,
+            sub_area_id: location.subAreaId,
+            address_detail: row.addressDetail || null,
+            legacy_address: row.address || null,
+            provider: row.provider || null,
+            package_name: packageName,
+            service_type: "internet",
+            cycle,
+            current_cycle: cycle,
+            amount_per_cycle: monthlyFee,
+            monthly_fee: monthlyFee,
+            start_date: billing.periodStart,
+            next_due_date: effectiveDueDate,
+            next_period_start: billing.periodStart,
+            status: "active",
+            note: row.note || null,
+            created_by: userId,
+            last_changed_by: userId,
+          })
+          .select("id")
+          .single();
+        if (subscriptionError || !subscription) {
+          errors.push({ rowNumber: row.rowNumber, reason: subscriptionError?.message || "Không thể thêm khách" });
+          continue;
+        }
+
+        const { error: receivableError } = await admin.from("billgo_receivables").insert({
+          customer_id: null,
+          worker_id: workerId,
+          subscription_id: subscription.id,
+          type: "subscription_fee",
+          title: `Thu cước ${packageName}`,
+          total_amount: totalAmount,
+          due_date: effectiveDueDate,
+          period_start: billing.periodStart,
+          period_end: billing.periodEnd,
+          collection_month: collectionMonth,
+          usage_month: billing.usageMonth,
+          billing_month: billingParts.billingMonth,
+          billing_year: billingParts.billingYear,
+          cycle_at_collection: cycle,
+          billing_months: billing.billingMonths,
+          bonus_months: billing.bonusMonths,
+          service_months: option.paidMonths + option.bonusMonths,
+          paid_amount: 0,
+          monthly_fee_at_collection: monthlyFee,
+          next_period_start: nextPeriodStart,
+          next_due_date: nextBilling.dueDate,
+          status: getBillGoStoredStatus(totalAmount, 0, effectiveDueDate),
+          note: row.note || null,
+          created_by: userId,
+        });
+        if (receivableError) {
+          await admin.from("billgo_subscriptions").delete().eq("id", subscription.id);
+          errors.push({ rowNumber: row.rowNumber, reason: receivableError.message });
+          continue;
+        }
+        created += 1;
+        continue;
+      }
+
+      if (item.status === "update" && item.subscriptionId) {
+        const oldCycle = String(item.existing?.current_cycle || item.existing?.cycle || "monthly");
+        const effectivePeriodStart = item.existing?.covered_until
+          ? getBillGoNextPeriodStartDate(item.existing.covered_until)
+          : item.existing?.next_period_start || row.startDate || defaultStartDate;
+        const { error: updateError } = await admin
+          .from("billgo_subscriptions")
+          .update({
+            customer_name: row.customerName,
+            phone: row.phone || null,
+            internet_account: row.account || null,
+            customer_address: row.address || row.addressDetail || null,
+            area_id: location.areaId,
+            sub_area_id: location.subAreaId,
+            address_detail: row.addressDetail || null,
+            provider: row.provider || null,
+            package_name: packageName,
+            current_cycle: cycle,
+            cycle,
+            amount_per_cycle: monthlyFee,
+            monthly_fee: monthlyFee,
+            note: row.note || null,
+            last_changed_by: userId,
+          })
+          .eq("id", item.subscriptionId)
+          .eq("worker_id", workerId)
+          .is("deleted_at", null);
+        if (updateError) {
+          errors.push({ rowNumber: row.rowNumber, reason: updateError.message });
+          continue;
+        }
+
+        const option = getBillGoCycleOption(cycle);
+        const currentMonth = getDefaultImportStartDate(monthFilter);
+        const currentParts = getBillingParts(currentMonth);
+        await admin
+          .from("billgo_receivables")
+          .update({
+            title: `Thu cước ${packageName}`,
+            total_amount: getBillGoCollectableAmount(monthlyFee, cycle),
+            monthly_fee_at_collection: monthlyFee,
+            cycle_at_collection: cycle,
+            billing_months: option.paidMonths,
+            bonus_months: option.bonusMonths,
+            service_months: option.paidMonths + option.bonusMonths,
+            status: "unpaid",
+          })
+          .eq("subscription_id", item.subscriptionId)
+          .eq("billing_month", currentParts.billingMonth)
+          .eq("billing_year", currentParts.billingYear)
+          .eq("worker_id", workerId)
+          .eq("paid_amount", 0)
+          .in("status", ["unpaid", "overdue", "not_due", "due"]);
+
+        if (oldCycle !== cycle) {
+          await admin.from("billgo_cycle_changes").insert({
+            subscription_id: item.subscriptionId,
+            old_cycle: oldCycle,
+            new_cycle: cycle,
+            effective_period_start: effectivePeriodStart,
+            changed_by: userId,
+            note: "Đồng bộ từ Excel",
+          });
+        }
+        updated += 1;
+      }
+    }
+
+    return NextResponse.json({
+      ok: errors.length === 0,
+      summary: { created, updated, skipped, errors: errors.length },
+      errors,
+      missingFromFile: plan.missingFromFile,
+    }, { status: errors.length > 0 ? 207 : 200 });
+  }
 
   if (action === "update_customer") {
     const subscriptionId = asText(body.subscriptionId);
