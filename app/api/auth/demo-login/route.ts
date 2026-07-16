@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const { role } = await request.json();
 
     if (!isDemoRole(role)) {
-      return NextResponse.json({ error: "Tai khoan demo khong hop le." }, { status: 400 });
+      return NextResponse.json({ error: "Tài khoản demo không hợp lệ." }, { status: 400 });
     }
 
     const demoAccount = DEMO_ACCOUNTS[role];
@@ -46,8 +46,8 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "Khong the dang nhap demo local. Hay tao tai khoan " +
-              `${demoEmail} voi mat khau demo hoac cau hinh SUPABASE_SERVICE_ROLE_KEY.`,
+              "Không thể đăng nhập demo local. Hãy tạo tài khoản " +
+              `${demoEmail} với mật khẩu demo hoặc cấu hình SUPABASE_SERVICE_ROLE_KEY.`,
           },
           { status: 500 }
         );
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
       if (profileError || profile?.role !== role) {
         return NextResponse.json(
-          { error: `Tai khoan ${demoEmail} khong dung vai tro demo ${demoAccount.label}.` },
+          { error: `Tài khoản ${demoEmail} không đúng vai trò demo ${demoAccount.label}.` },
           { status: 403 }
         );
       }
@@ -89,12 +89,12 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (profileError) {
-      return NextResponse.json({ error: "Loi tim tai khoan demo: " + profileError.message }, { status: 500 });
+      return NextResponse.json({ error: "Lỗi tìm tài khoản demo: " + profileError.message }, { status: 500 });
     }
 
     if (!profile?.email) {
       return NextResponse.json(
-        { error: `Chua co tai khoan demo ${demoAccount.phone} cho vai tro ${demoAccount.label}.` },
+        { error: `Chưa có tài khoản demo ${demoAccount.phone} cho vai trò ${demoAccount.label}.` },
         { status: 404 }
       );
     }
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
 
     if (error || !data.properties?.hashed_token) {
       return NextResponse.json(
-        { error: "Khong the tao phien dang nhap demo: " + (error?.message || "Khong xac dinh") },
+        { error: "Không thể tạo phiên đăng nhập demo: " + (error?.message || "Không xác định") },
         { status: 500 }
       );
     }
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
     });
   } catch (error: unknown) {
     return NextResponse.json(
-      { error: "Loi he thong: " + (error instanceof Error ? error.message : "Khong xac dinh") },
+      { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
       { status: 500 }
     );
   }

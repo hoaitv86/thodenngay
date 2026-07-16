@@ -313,7 +313,7 @@ export default function LoginPage() {
             <div className="mt-6 grid gap-3">
               <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
                 <span className="h-px flex-1 bg-outline-variant" />
-                Trai nghiem nhanh
+                Trải nghiệm nhanh
                 <span className="h-px flex-1 bg-outline-variant" />
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -323,7 +323,7 @@ export default function LoginPage() {
                   disabled={loading}
                   onClick={() => handleDemoLogin("customer")}
                 >
-                  {demoLoadingRole === "customer" ? "Dang vao..." : "Trải nghiệm với Khách hàng"}
+                  {demoLoadingRole === "customer" ? "Đang vào..." : "Trải nghiệm với Khách hàng"}
                 </button>
                 <button
                   type="button"
@@ -331,7 +331,7 @@ export default function LoginPage() {
                   disabled={loading}
                   onClick={() => handleDemoLogin("worker")}
                 >
-                  {demoLoadingRole === "worker" ? "Dang vao..." : "Trải nghiệm với Thợ"}
+                  {demoLoadingRole === "worker" ? "Đang vào..." : "Trải nghiệm với Thợ"}
                 </button>
               </div>
               <p className="text-xs leading-relaxed text-on-surface-variant">

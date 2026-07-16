@@ -5,7 +5,7 @@ export const DEMO_LOCAL_WORKER_EMAIL = "worker@alotho.local";
 export const DEMO_ACCOUNT_PASSWORD = "123456";
 export const DEMO_SESSION_STORAGE_KEY = "alo-tho-demo-session";
 export const DEMO_ACTION_BLOCK_MESSAGE =
-  "Tai khoan demo chi dung de trai nghiem, khong the doi mat khau, xoa du lieu hoac thuc hien thao tac anh huong du lieu that.";
+  "Tài khoản demo chỉ dùng để trải nghiệm, không thể đổi mật khẩu, xoá dữ liệu hoặc thực hiện thao tác ảnh hưởng dữ liệu thật.";
 
 export type DemoRole = "customer" | "worker";
 
@@ -13,12 +13,12 @@ export const DEMO_ACCOUNTS: Record<DemoRole, { phone: string; email: string; lab
   customer: {
     phone: DEMO_CUSTOMER_PHONE,
     email: `${DEMO_CUSTOMER_PHONE}@thodenngay.vn`,
-    label: "Khach hang",
+    label: "Khách hàng",
   },
   worker: {
     phone: DEMO_WORKER_PHONE,
     email: `${DEMO_WORKER_PHONE}@thodenngay.vn`,
-    label: "Tho",
+    label: "Thợ",
   },
 };
 
