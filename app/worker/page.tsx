@@ -47,6 +47,7 @@ import {
   type SalesDraftItem,
 } from "@/lib/worker-sales";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
+import { isDemoAccount } from "@/lib/demo-accounts";
 
 const DynamicServiceWorkflowForm = dynamic(() =>
   import("@/app/components/DynamicServiceWorkflowForm").then(mod => mod.DynamicServiceWorkflowForm)
@@ -900,6 +901,7 @@ export default function WorkerDashboard() {
       const workerData = normalizedWorkerData;
       const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
+      const isDemoWorker = isDemoAccount(workerData.user);
       const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
       let nextInventoryProducts: InventoryProduct[] = [];
       let nextServices: ServiceOption[] = [];
@@ -943,8 +945,10 @@ export default function WorkerDashboard() {
         }
       } else {
         const servicesWithParents = filterStandardServiceCatalog(applyDefaultServiceParents(serviceOptions || []));
-        servicesForMatching = filterServicesForWorkerSpecialties(servicesWithParents, workerSpecialties)
-          .sort(compareServicesByName);
+        servicesForMatching = (isDemoWorker
+          ? servicesWithParents
+          : filterServicesForWorkerSpecialties(servicesWithParents, workerSpecialties))
+            .sort(compareServicesByName);
 
         nextServices = servicesForMatching;
       }
@@ -959,6 +963,7 @@ export default function WorkerDashboard() {
 
       // Filter pending jobs matching worker specialties
       const filteredPending = ((pendingJobs || []) as unknown as WorkerJob[]).filter(j => {
+        if (isDemoWorker) return true;
         const matchedService = servicesForMatching.find(service => service.id === j.service_id);
         return j.service && serviceMatchesSpecialties({
           ...j.service,
