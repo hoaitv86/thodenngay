@@ -125,6 +125,18 @@ type RowView = {
 };
 
 type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
+type BillGoListTotals = {
+  totalCustomers: number;
+  unpaid: number;
+  paid: number;
+  partial: number;
+  overdue: number;
+  promo: number;
+  notDue: number;
+  totalReceivable: number;
+  totalPaid: number;
+  totalDebt: number;
+};
 
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
@@ -150,7 +162,19 @@ const dateLabel = (value: string) => {
   return `${String(date.day).padStart(2, "0")}/${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const BILLGO_VIEW_STATE_KEY = "billgo.collection.view";
-const BILLGO_PAGE_SIZE = 200;
+const BILLGO_PAGE_SIZE = 10;
+const emptyBillGoTotals: BillGoListTotals = {
+  totalCustomers: 0,
+  unpaid: 0,
+  paid: 0,
+  partial: 0,
+  overdue: 0,
+  promo: 0,
+  notDue: 0,
+  totalReceivable: 0,
+  totalPaid: 0,
+  totalDebt: 0,
+};
 
 const methodLabels: Record<string, string> = {
   cash: "Tiền mặt",
@@ -244,6 +268,10 @@ export default function WorkerBillGoPage() {
   const [areaStatusFilter, setAreaStatusFilter] = useState("all");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const [serverTotals, setServerTotals] = useState<BillGoListTotals>(emptyBillGoTotals);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
@@ -333,17 +361,35 @@ export default function WorkerBillGoPage() {
     setLoading(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/worker/billgo?month=${encodeURIComponent(monthFilter)}&limit=${BILLGO_PAGE_SIZE}`);
+      const params = new URLSearchParams({
+        month: monthFilter,
+        page: String(page),
+        limit: String(BILLGO_PAGE_SIZE),
+        due: dueFilter,
+        q: query.trim(),
+      });
+      if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
+      params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
+      if (selectedAreaId) params.set("areaId", selectedAreaId);
+      if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
+      const response = await fetch(`/api/worker/billgo?${params.toString()}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
       setRows(normalizeRows(result.rows || []));
+      setPage(Number(result.page || 1));
+      setPageCount(Number(result.pageCount || 1));
+      setTotalRows(Number(result.total || 0));
+      setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể tải BillGo.");
       setRows([]);
+      setPageCount(1);
+      setTotalRows(0);
+      setServerTotals(emptyBillGoTotals);
     } finally {
       setLoading(false);
     }
-  }, [monthFilter]);
+  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchBillGo(), 0);
@@ -355,8 +401,13 @@ export default function WorkerBillGoPage() {
     return () => window.clearTimeout(timeoutId);
   }, [fetchAreas]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setPage(1), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
-    const cycle = (item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
+    const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly") as BillGoCycle;
     return {
       item,
       cycle,
@@ -383,7 +434,7 @@ export default function WorkerBillGoPage() {
   const matchesDueFilter = useCallback((row: RowView) => {
     if (dueFilter === "due_this_month") return isSameMonth(row.item.due_date, monthFilter);
     if (dueFilter === "not_due") {
-      return row.summary.status !== "paid" && row.summary.status !== "promo" && isFutureDate(row.item.due_date);
+      return row.summary.status === "not_due" || (row.summary.status !== "paid" && row.summary.status !== "promo" && isFutureDate(row.item.due_date));
     }
     return true;
   }, [dueFilter, monthFilter]);
@@ -444,32 +495,20 @@ export default function WorkerBillGoPage() {
     return (order[a.summary.status] ?? 9) - (order[b.summary.status] ?? 9) || a.customerName.localeCompare(b.customerName);
   }), [areaStatusFilter, matchesDueFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedAreaSubAreas, selectedSubAreaId]);
 
-  const getAreaStats = useCallback((items: RowView[]) => items.reduce((acc, row) => {
-    acc.total += 1;
-    acc.receivable += row.summary.receivable;
-    acc.paidAmount += row.summary.paid;
-    acc.debt += row.summary.debt;
-    if (row.summary.status === "paid") acc.paid += 1;
-    if (row.summary.status === "partial") acc.partial += 1;
-    if (row.summary.status === "overdue") acc.overdue += 1;
-    if (row.summary.status === "unpaid") acc.unpaid += 1;
-    return acc;
-  }, { total: 0, unpaid: 0, paid: 0, partial: 0, overdue: 0, receivable: 0, paidAmount: 0, debt: 0 }), []);
-
-  const areaStats = useMemo(() => getAreaStats(areaRows), [areaRows, getAreaStats]);
+  const areaStats = useMemo(() => ({
+    total: serverTotals.totalCustomers,
+    unpaid: serverTotals.unpaid,
+    paid: serverTotals.paid,
+    partial: serverTotals.partial,
+    overdue: serverTotals.overdue,
+    receivable: serverTotals.totalReceivable,
+    paidAmount: serverTotals.totalPaid,
+    debt: serverTotals.totalDebt,
+  }), [serverTotals]);
   const processedCount = areaStats.paid;
   const remainingCount = areaStats.unpaid + areaStats.partial + areaStats.overdue;
 
-  const totals = useMemo(() => filteredRows.reduce((acc, row) => {
-    acc.totalCustomers += 1;
-    acc.totalReceivable += row.summary.receivable;
-    acc.totalPaid += row.summary.paid;
-    acc.totalDebt += row.summary.debt;
-    if (row.summary.status === "paid") acc.paid += 1;
-    if (row.summary.status === "partial") acc.partial += 1;
-    if (row.summary.status === "unpaid" || row.summary.status === "overdue") acc.unpaid += 1;
-    return acc;
-  }, { totalCustomers: 0, unpaid: 0, paid: 0, partial: 0, totalReceivable: 0, totalPaid: 0, totalDebt: 0 }), [filteredRows]);
+  const totals = serverTotals;
 
   const selectedSubAreaIndex = selectedAreaSubAreas.findIndex(subArea => subArea.id === selectedSubAreaId);
   const previousSubArea = selectedSubAreaIndex > 0 ? selectedAreaSubAreas[selectedSubAreaIndex - 1] : null;
@@ -737,6 +776,10 @@ export default function WorkerBillGoPage() {
       setActionMode(null);
       setMessage("Đã lưu thay đổi BillGo.");
       if (actionMode === "edit") await fetchAreas();
+      if (actionMode === "cycle") {
+        setViewMode("cycle");
+        setActiveTab(editForm.cycle);
+      }
       await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể lưu thay đổi BillGo.");
@@ -1042,6 +1085,17 @@ export default function WorkerBillGoPage() {
             <span>Kỳ cước</span>
           </div>
           {(viewMode === "area" ? areaRows : filteredRows).map(renderRow)}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 text-sm text-on-surface-variant">
+            <span>Trang {page}/{pageCount} · {totalRows} khách</span>
+            <div className="flex gap-2">
+              <button type="button" className="btn-outline !w-auto !px-3 !py-2" disabled={loading || page <= 1} onClick={() => setPage(current => Math.max(current - 1, 1))}>
+                Trước
+              </button>
+              <button type="button" className="btn-outline !w-auto !px-3 !py-2" disabled={loading || page >= pageCount} onClick={() => setPage(current => Math.min(current + 1, pageCount))}>
+                Sau
+              </button>
+            </div>
+          </div>
         </section>
       )}
 
@@ -1059,7 +1113,7 @@ export default function WorkerBillGoPage() {
               <div className="mt-4 grid gap-2 text-sm">
                 <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
                 <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(collecting.cycle_at_collection || collecting.subscription?.current_cycle || collecting.subscription?.cycle || "monthly").label}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(collecting.subscription?.current_cycle || collecting.subscription?.cycle || collecting.cycle_at_collection || "monthly").label}</strong></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
                   <div className="rounded-lg bg-surface-container-low p-3">Số tháng sử dụng<br /><strong>{collecting.service_months || ((collecting.billing_months || 0) + (collecting.bonus_months || 0))}</strong></div>

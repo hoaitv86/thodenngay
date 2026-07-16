@@ -83,9 +83,10 @@ export const getBillGoCollectableAmount = (monthlyFee?: number | string | null, 
 
 export const getBillGoPeriodEndDate = (startDate: string | Date, cycle: string) => {
   const option = getBillGoCycleOption(cycle);
-  const periodEnd = addBillGoMonths(startDate, option.paidMonths + option.bonusMonths);
-  periodEnd.setDate(periodEnd.getDate() - 1);
-  return toBillGoDateInput(periodEnd);
+  const periodStart = startDate instanceof Date ? new Date(startDate) : new Date(startDate);
+  const safeStart = Number.isNaN(periodStart.getTime()) ? new Date() : periodStart;
+  const serviceMonths = option.paidMonths + option.bonusMonths;
+  return toBillGoDateInput(new Date(safeStart.getFullYear(), safeStart.getMonth() + serviceMonths, 0));
 };
 
 export const getBillGoPostpaidDueDate = (periodEndDate: string | Date) => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import {
+  BILLGO_ALL_TAB,
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
   buildBillGoCoverageMonths,
@@ -16,8 +17,10 @@ import {
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
-const DEFAULT_BILLGO_PAGE_SIZE = 200;
-const MAX_BILLGO_PAGE_SIZE = 300;
+const DEFAULT_BILLGO_PAGE_SIZE = 10;
+const MAX_BILLGO_PAGE_SIZE = 50;
+const allowedListStatuses = new Set(["all", "not_due", "unpaid", "paid", "partial", "overdue", "promo"]);
+const allowedDueFilters = new Set(["all", "due_this_month", "not_due"]);
 
 type WorkerContext = {
   admin: SupabaseClient;
@@ -160,6 +163,56 @@ const endOfMonth = (value: string | Date) => {
   return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth() + 1, 0));
 };
 
+const getComputedListStatus = (row: {
+  total_amount?: number | string | null;
+  paid_amount?: number | string | null;
+  due_date?: string | null;
+  status?: string | null;
+}) => {
+  if (row.status === "not_due" || row.status === "promo") return row.status;
+  const total = toMoneyNumber(row.total_amount);
+  const paid = toMoneyNumber(row.paid_amount);
+  const debt = Math.max(total - paid, 0);
+  const dueTime = row.due_date ? new Date(row.due_date).getTime() : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (total > 0 && debt <= 0) return "paid";
+  if (paid > 0 && debt > 0) return "partial";
+  if (dueTime !== null && dueTime < today.getTime() && debt > 0) return "overdue";
+  return "unpaid";
+};
+
+const getRowSearchText = (row: {
+  subscription?: {
+    customer_name?: string | null;
+    phone?: string | null;
+    internet_account?: string | null;
+    customer_address?: string | null;
+    address_detail?: string | null;
+    legacy_address?: string | null;
+    provider?: string | null;
+    package_name?: string | null;
+  } | null;
+}) => [
+  row.subscription?.customer_name,
+  row.subscription?.phone,
+  row.subscription?.internet_account,
+  row.subscription?.customer_address,
+  row.subscription?.address_detail,
+  row.subscription?.legacy_address,
+  row.subscription?.provider,
+  row.subscription?.package_name,
+].filter(Boolean).join(" ").toLocaleLowerCase("vi");
+
+const isFutureBillGoDate = (value?: string | null) => {
+  if (!value) return false;
+  const date = new Date(value);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
+};
+
 const buildReceivableDraft = (
   subscription: {
     id: string;
@@ -214,6 +267,16 @@ const buildNotDueRow = (
     id: string;
     customer_id?: string | null;
     worker_id?: string | null;
+    customer_name?: string | null;
+    phone?: string | null;
+    internet_account?: string | null;
+    customer_address?: string | null;
+    area_id?: string | null;
+    sub_area_id?: string | null;
+    address_detail?: string | null;
+    legacy_address?: string | null;
+    provider?: string | null;
+    package_name?: string | null;
     current_cycle?: string | null;
     cycle?: string | null;
     monthly_fee?: number | string | null;
@@ -306,100 +369,175 @@ export async function GET(request: Request) {
   const monthFilter = searchParams.get("month") || todayInputForServer().slice(0, 7);
   const page = Math.max(Number(searchParams.get("page") || "1") || 1, 1);
   const limit = Math.min(Math.max(Number(searchParams.get("limit") || DEFAULT_BILLGO_PAGE_SIZE) || DEFAULT_BILLGO_PAGE_SIZE, 1), MAX_BILLGO_PAGE_SIZE);
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
+  const requestedCycle = asText(searchParams.get("cycle"));
+  const requestedStatus = asText(searchParams.get("status")) || "all";
+  const requestedDue = asText(searchParams.get("due")) || "all";
+  const areaId = asText(searchParams.get("areaId"));
+  const subAreaId = asText(searchParams.get("subAreaId"));
+  const searchQuery = asText(searchParams.get("q")).toLocaleLowerCase("vi");
+  const cycleFilter = allowedCycles.has(requestedCycle as BillGoCycle) ? requestedCycle : BILLGO_ALL_TAB;
+  const statusFilter = allowedListStatuses.has(requestedStatus) ? requestedStatus : "all";
+  const dueFilter = allowedDueFilters.has(requestedDue) ? requestedDue : "all";
   const { year, month } = parseMonthFilter(monthFilter);
   const ensured = await ensureDueReceivables(admin, workerId, userId, monthFilter);
   if (ensured.error) return jsonError(ensured.error);
 
-  const { data, error } = await admin
-    .from("billgo_receivables")
-    .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id, subscription:billgo_subscriptions(id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at), payments(id, amount, method, status, paid_at, note)")
-    .eq("worker_id", workerId)
-    .eq("billing_month", month)
-    .eq("billing_year", year)
-    .not("subscription_id", "is", null)
-    .is("deleted_at", null)
-    .order("due_date", { ascending: true })
-    .range(from, to);
-
-  if (error) return jsonError("Không thể tải BillGo: " + error.message);
-  const currentRows = data || [];
-  const { data: currentReceivableIds, error: currentReceivableIdsError } = await admin
-    .from("billgo_receivables")
-    .select("subscription_id")
-    .eq("worker_id", workerId)
-    .eq("billing_month", month)
-    .eq("billing_year", year)
-    .not("subscription_id", "is", null)
-    .is("deleted_at", null);
-  if (currentReceivableIdsError) return jsonError("KhÃ´ng thá»ƒ táº£i ká»³ thu BillGo: " + currentReceivableIdsError.message);
-
-  const currentSubscriptionIds = new Set((currentReceivableIds || []).map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
-  const { data: activeSubscriptions, error: activeSubscriptionError } = await admin
+  let subscriptionQuery = admin
     .from("billgo_subscriptions")
     .select("id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
     .eq("worker_id", workerId)
-    .eq("status", "active")
+    .not("status", "in", "(cancelled,deleted)")
     .is("deleted_at", null);
-  if (activeSubscriptionError) return jsonError("KhÃ´ng thá»ƒ táº£i khÃ¡ch BillGo: " + activeSubscriptionError.message);
+  if (areaId) subscriptionQuery = subscriptionQuery.eq("area_id", areaId);
+  if (subAreaId) subscriptionQuery = subscriptionQuery.eq("sub_area_id", subAreaId);
+  if (cycleFilter !== BILLGO_ALL_TAB) {
+    subscriptionQuery = subscriptionQuery.or(`current_cycle.eq.${cycleFilter},and(current_cycle.is.null,cycle.eq.${cycleFilter})`);
+  }
+  if (searchQuery) {
+    const escapedQuery = searchQuery.replace(/[%_]/g, "\\$&");
+    subscriptionQuery = subscriptionQuery.or([
+      `customer_name.ilike.%${escapedQuery}%`,
+      `phone.ilike.%${escapedQuery}%`,
+      `internet_account.ilike.%${escapedQuery}%`,
+      `customer_address.ilike.%${escapedQuery}%`,
+      `address_detail.ilike.%${escapedQuery}%`,
+      `legacy_address.ilike.%${escapedQuery}%`,
+      `provider.ilike.%${escapedQuery}%`,
+      `package_name.ilike.%${escapedQuery}%`,
+    ].join(","));
+  }
 
-  const notDueRows = (activeSubscriptions || [])
-    .filter(subscription => !currentSubscriptionIds.has(subscription.id))
+  const { data: subscriptions, error: subscriptionError } = await subscriptionQuery.order("customer_name", { ascending: true });
+  if (subscriptionError) return jsonError("Không thể tải khách BillGo: " + subscriptionError.message);
+
+  const subscriptionIds = (subscriptions || []).map(subscription => subscription.id);
+  const { data: currentRowsData, error: receivableError } = subscriptionIds.length > 0
+    ? await admin
+        .from("billgo_receivables")
+        .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id")
+        .eq("worker_id", workerId)
+        .eq("billing_month", month)
+        .eq("billing_year", year)
+        .in("subscription_id", subscriptionIds)
+        .is("deleted_at", null)
+    : { data: [], error: null };
+  if (receivableError) return jsonError("Không thể tải kỳ thu BillGo: " + receivableError.message);
+
+  const subscriptionsById = new Map((subscriptions || []).map(subscription => [subscription.id, subscription]));
+  const currentRows = (currentRowsData || []).map(row => ({
+    ...row,
+    subscription: subscriptionsById.get(row.subscription_id || "") || null,
+    payments: [],
+  }));
+  const currentSubscriptionIds = new Set(currentRows.map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
+  const notDueRows = (subscriptions || [])
+    .filter(subscription => subscription.status === "active" && !currentSubscriptionIds.has(subscription.id))
     .map(subscription => buildNotDueRow(subscription));
-  const rows = [...currentRows, ...notDueRows];
-  const subscriptionIds = Array.from(new Set(rows.map(row => row.subscription_id).filter((id): id is string => Boolean(id))));
-  const [cycleChangesResult, statusEventsResult] = subscriptionIds.length > 0
-    ? await Promise.all([
-        admin
+
+  const filteredRows = [...currentRows, ...notDueRows]
+    .filter(row => {
+      const status = getComputedListStatus(row);
+      if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (dueFilter === "due_this_month" && row.due_date?.slice(0, 7) !== monthFilter) return false;
+      if (dueFilter === "not_due" && status !== "not_due" && !isFutureBillGoDate(row.due_date)) return false;
+      if (searchQuery && !getRowSearchText(row).includes(searchQuery)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const dueCompare = String(a.due_date || "9999-12-31").localeCompare(String(b.due_date || "9999-12-31"));
+      if (dueCompare !== 0) return dueCompare;
+      return String(a.subscription?.customer_name || "").localeCompare(String(b.subscription?.customer_name || ""), "vi");
+    });
+
+  const totals = filteredRows.reduce((acc, row) => {
+    const status = getComputedListStatus(row);
+    const receivable = toMoneyNumber(row.total_amount);
+    const paid = toMoneyNumber(row.paid_amount);
+    const debt = Math.max(receivable - paid, 0);
+    acc.totalCustomers += 1;
+    acc.totalReceivable += receivable;
+    acc.totalPaid += paid;
+    acc.totalDebt += debt;
+    if (status === "not_due") acc.notDue += 1;
+    if (status === "paid") acc.paid += 1;
+    if (status === "partial") acc.partial += 1;
+    if (status === "overdue") acc.overdue += 1;
+    if (status === "promo") acc.promo += 1;
+    if (status === "unpaid") acc.unpaid += 1;
+    return acc;
+  }, { totalCustomers: 0, unpaid: 0, paid: 0, partial: 0, overdue: 0, promo: 0, notDue: 0, totalReceivable: 0, totalPaid: 0, totalDebt: 0 });
+
+  const total = filteredRows.length;
+  const pageCount = Math.max(Math.ceil(total / limit), 1);
+  const safePage = Math.min(page, pageCount);
+  const from = (safePage - 1) * limit;
+  const pageRows = filteredRows.slice(from, from + limit);
+  const receivableIds = pageRows.map(row => row.id).filter(id => !String(id).startsWith("not_due_"));
+  const pageSubscriptionIds = Array.from(
+    new Set(pageRows.map(row => row.subscription?.id).filter((id): id is string => Boolean(id))),
+  );
+  const [paymentResult, cycleHistoryResult, statusHistoryResult] = await Promise.all([
+    receivableIds.length > 0
+      ? admin
+          .from("payments")
+          .select("id, receivable_id, amount, method, status, paid_at, note")
+          .in("receivable_id", receivableIds)
+          .eq("status", "paid")
+          .order("paid_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    pageSubscriptionIds.length > 0
+      ? admin
           .from("billgo_cycle_changes")
           .select("id, subscription_id, old_cycle, new_cycle, effective_period_start, note, created_at")
-          .in("subscription_id", subscriptionIds)
+          .in("subscription_id", pageSubscriptionIds)
           .order("created_at", { ascending: false })
-          .limit(subscriptionIds.length * 5),
-        admin
+      : Promise.resolve({ data: [], error: null }),
+    pageSubscriptionIds.length > 0
+      ? admin
           .from("billgo_status_events")
           .select("id, subscription_id, event_type, effective_period_start, note, created_at")
-          .in("subscription_id", subscriptionIds)
+          .in("subscription_id", pageSubscriptionIds)
           .order("created_at", { ascending: false })
-          .limit(subscriptionIds.length * 5),
-      ])
-    : [{ data: [] }, { data: [] }];
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const { data: payments, error: paymentError } = paymentResult;
+  if (paymentError) return jsonError("Không thể tải thanh toán BillGo: " + paymentError.message);
+  if (cycleHistoryResult.error) return jsonError("Không thể tải lịch sử chu kỳ BillGo: " + cycleHistoryResult.error.message);
+  if (statusHistoryResult.error) return jsonError("Không thể tải lịch sử trạng thái BillGo: " + statusHistoryResult.error.message);
 
-  const cycleChangesBySubscription = new Map<string, unknown[]>();
-  for (const change of cycleChangesResult.data || []) {
+  const paymentsByReceivable = new Map<string, unknown[]>();
+  for (const payment of payments || []) {
+    const key = String(payment.receivable_id || "");
+    const items = paymentsByReceivable.get(key) || [];
+    items.push(payment);
+    paymentsByReceivable.set(key, items);
+  }
+  const cycleHistoryBySubscription = new Map<string, unknown[]>();
+  for (const change of cycleHistoryResult.data || []) {
     const key = String(change.subscription_id || "");
-    if (!key) continue;
-    const items = cycleChangesBySubscription.get(key) || [];
-    if (items.length < 5) items.push(change);
-    cycleChangesBySubscription.set(key, items);
+    const items = cycleHistoryBySubscription.get(key) || [];
+    items.push(change);
+    cycleHistoryBySubscription.set(key, items);
   }
-
-  const statusEventsBySubscription = new Map<string, unknown[]>();
-  for (const event of statusEventsResult.data || []) {
+  const statusHistoryBySubscription = new Map<string, unknown[]>();
+  for (const event of statusHistoryResult.data || []) {
     const key = String(event.subscription_id || "");
-    if (!key) continue;
-    const items = statusEventsBySubscription.get(key) || [];
-    if (items.length < 5) items.push(event);
-    statusEventsBySubscription.set(key, items);
+    const items = statusHistoryBySubscription.get(key) || [];
+    items.push(event);
+    statusHistoryBySubscription.set(key, items);
   }
+  const hydratedRows = pageRows.map(row => ({
+    ...row,
+    payments: paymentsByReceivable.get(row.id) || [],
+    subscription: row.subscription ? {
+      ...row.subscription,
+      billgo_cycle_changes: cycleHistoryBySubscription.get(row.subscription.id) || [],
+      billgo_status_events: statusHistoryBySubscription.get(row.subscription.id) || [],
+    } : null,
+  }));
 
-  const hydratedRows = rows.map(row => {
-    const subscription = Array.isArray(row.subscription) ? row.subscription[0] : row.subscription;
-    if (!subscription || !row.subscription_id) return row;
-    return {
-      ...row,
-      subscription: {
-        ...subscription,
-        billgo_cycle_changes: cycleChangesBySubscription.get(row.subscription_id) || [],
-        billgo_status_events: statusEventsBySubscription.get(row.subscription_id) || [],
-      },
-    };
-  });
-
-  return NextResponse.json({ rows: hydratedRows, created: ensured.created || 0, page, limit });
+  return NextResponse.json({ rows: hydratedRows, created: ensured.created || 0, page: safePage, limit, total, pageCount, totals });
 }
-
 export async function POST(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;

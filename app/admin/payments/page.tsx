@@ -293,7 +293,7 @@ export default function AdminPayments() {
 
   const selectReceivable = (item: BillGoReceivable) => {
     const selectedCycle = getBillGoCycleOption(
-      item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly",
+      item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly",
     ).value;
     setSelectedReceivableId(item.id);
     setPaymentForm(prev => ({ ...prev, cycle: selectedCycle }));
