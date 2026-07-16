@@ -37,31 +37,31 @@ type DashboardWidgetsProps = {
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   pending: {
-    label: "Chá» xá»­ lÃ½",
+    label: "Chờ xử lý",
     className: "bg-warning/10 text-warning",
   },
   assigned: {
-    label: "ÄÃ£ gÃ¡n thá»£",
+    label: "Đã gán thợ",
     className: "bg-info/10 text-info",
   },
   in_progress: {
-    label: "Äang lÃ m",
+    label: "Đang làm",
     className: "bg-primary-fixed text-primary",
   },
   done: {
-    label: "HoÃ n thÃ nh",
+    label: "Hoàn thành",
     className: "bg-success/10 text-success",
   },
   completed: {
-    label: "HoÃ n thÃ nh",
+    label: "Hoàn thành",
     className: "bg-success/10 text-success",
   },
   cancel_requested: {
-    label: "Chá» duyá»‡t huá»·",
+    label: "Chờ duyệt huỷ",
     className: "bg-warning/10 text-warning",
   },
   cancelled: {
-    label: "ÄÃ£ há»§y",
+    label: "Đã huỷ",
     className: "bg-error-container text-error",
   },
 };
@@ -76,61 +76,61 @@ export default function DashboardWidgets({
 }: DashboardWidgetsProps) {
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20"
+            className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-5"
           >
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3 flex items-center justify-between">
               <div
-                className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.color}`}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg ${stat.color}`}
               >
-                <stat.icon className="w-5 h-5" />
+                <stat.icon className="h-5 w-5" />
               </div>
               {stat.change && (
-                <span className="flex items-center gap-0.5 text-label-sm text-success font-medium">
-                  <TrendingUp className="w-3.5 h-3.5" />
+                <span className="flex items-center gap-0.5 text-label-sm font-medium text-success">
+                  <TrendingUp className="h-3.5 w-3.5" />
                   {stat.change}
                 </span>
               )}
             </div>
-            <p className="text-headline-md text-on-surface font-bold">
+            <p className="text-headline-md font-bold text-on-surface">
               {stat.value}
             </p>
-            <p className="text-label-sm text-on-surface-variant mt-0.5">
+            <p className="mt-0.5 text-label-sm text-on-surface-variant">
               {stat.label}
             </p>
           </div>
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant/20">
-          <div className="flex items-center justify-between p-5 border-b border-outline-variant/20">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-outline-variant/20 p-5">
             <h2 className="text-body-lg font-semibold text-on-surface">
-              Job gáº§n Ä‘Ã¢y
+              Job gần đây
             </h2>
             <Link
               href="/admin/jobs"
-              className="text-body-sm text-primary font-medium hover:underline flex items-center gap-1"
+              className="flex items-center gap-1 text-body-sm font-medium text-primary hover:underline"
             >
-              Xem táº¥t cáº£
-              <ArrowUpRight className="w-4 h-4" />
+              Xem tất cả
+              <ArrowUpRight className="h-4 w-4" />
             </Link>
           </div>
           <div className="divide-y divide-outline-variant/20">
             {recentJobs.length === 0 ? (
-              <div className="p-8 text-center text-on-surface-variant text-body-sm italic">
-                ChÆ°a cÃ³ yÃªu cáº§u cÃ´ng viá»‡c nÃ o trÃªn há»‡ thá»‘ng
+              <div className="p-8 text-center text-body-sm italic text-on-surface-variant">
+                Chưa có yêu cầu công việc nào trên hệ thống
               </div>
             ) : recentJobs.map((job) => (
               <div
                 key={job.id}
-                className="flex items-center justify-between px-5 py-3.5 hover:bg-surface-container-low/50 transition-colors"
+                className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-surface-container-low/50"
               >
                 <div className="flex items-center gap-4">
-                  <span className="text-label-sm text-on-surface-variant font-mono">
+                  <span className="font-mono text-label-sm text-on-surface-variant">
                     {job.id}
                   </span>
                   <div>
@@ -144,13 +144,13 @@ export default function DashboardWidgets({
                 </div>
                 <div className="flex items-center gap-3">
                   <span
-                    className={`px-2.5 py-1 rounded-full text-label-sm font-bold uppercase text-[9px] ${
+                    className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase text-label-sm ${
                       statusConfig[job.status]?.className || "bg-slate-100 text-slate-700"
                     }`}
                   >
                     {statusConfig[job.status]?.label || job.status}
                   </span>
-                  <span className="text-label-sm text-on-surface-variant hidden sm:block">
+                  <span className="hidden text-label-sm text-on-surface-variant sm:block">
                     {job.time}
                   </span>
                 </div>
@@ -159,28 +159,28 @@ export default function DashboardWidgets({
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20">
-          <div className="flex items-center justify-between p-5 border-b border-outline-variant/20">
-            <h2 className="text-body-lg font-semibold text-on-surface flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-warning" />
-              Thá»£ chá» duyá»‡t
+        <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
+          <div className="flex items-center justify-between border-b border-outline-variant/20 p-5">
+            <h2 className="flex items-center gap-2 text-body-lg font-semibold text-on-surface">
+              <AlertCircle className="h-5 w-5 text-warning" />
+              Thợ chờ duyệt
             </h2>
-            <span className="px-2 py-0.5 rounded-full bg-warning/10 text-warning text-label-sm font-bold animate-pulse">
+            <span className="animate-pulse rounded-full bg-warning/10 px-2 py-0.5 text-label-sm font-bold text-warning">
               {pendingWorkers.length}
             </span>
           </div>
-          <div className="p-5 space-y-4">
+          <div className="space-y-4 p-5">
             {pendingWorkers.length === 0 ? (
-              <div className="text-center text-on-surface-variant text-body-sm italic py-4">
-                KhÃ´ng cÃ³ thá»£ má»›i chá» duyá»‡t
+              <div className="py-4 text-center text-body-sm italic text-on-surface-variant">
+                Không có thợ mới chờ duyệt
               </div>
             ) : pendingWorkers.map((worker) => (
               <div
                 key={worker.id}
-                className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20"
+                className="rounded-lg border border-outline-variant/20 bg-surface-container-low p-4"
               >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-label-md font-bold text-primary uppercase">
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-fixed text-label-md font-bold uppercase text-primary">
                     {worker.profiles?.full_name ? worker.profiles.full_name.charAt(0) : "W"}
                   </div>
                   <div>
@@ -188,7 +188,7 @@ export default function DashboardWidgets({
                       {worker.profiles?.full_name}
                     </p>
                     <p className="text-label-sm text-on-surface-variant">
-                      {worker.specialties?.join(" â€¢ ") || "Thá»£ má»›i"}
+                      {worker.specialties?.join(" • ") || "Thợ mới"}
                     </p>
                   </div>
                 </div>
@@ -196,25 +196,25 @@ export default function DashboardWidgets({
                   <button
                     disabled={processingId !== null}
                     onClick={() => onApproveWorker(worker)}
-                    className="flex-1 py-2 bg-[#2e7d32] text-white hover:bg-[#1b5e20] text-label-sm font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-[#2e7d32] py-2 text-label-sm font-semibold text-white transition-opacity hover:bg-[#1b5e20] hover:opacity-90 disabled:opacity-50"
                   >
-                    {processingId === worker.id ? "..." : "Duyá»‡t"}
+                    {processingId === worker.id ? "..." : "Duyệt"}
                   </button>
                   <button
                     disabled={processingId !== null}
                     onClick={() => onRejectWorker(worker)}
-                    className="flex-1 py-2 bg-surface text-on-surface-variant text-label-sm font-semibold rounded-lg border border-outline-variant hover:bg-surface-container transition-colors disabled:opacity-50"
+                    className="flex-1 rounded-lg border border-outline-variant bg-surface py-2 text-label-sm font-semibold text-on-surface-variant transition-colors hover:bg-surface-container disabled:opacity-50"
                   >
-                    Tá»« chá»‘i
+                    Từ chối
                   </button>
                 </div>
               </div>
             ))}
             <Link
               href="/admin/workers?status=pending"
-              className="block text-center text-body-sm text-primary font-medium hover:underline"
+              className="block text-center text-body-sm font-medium text-primary hover:underline"
             >
-              Xem táº¥t cáº£ thá»£ chá» duyá»‡t â†’
+              Xem tất cả thợ chờ duyệt →
             </Link>
           </div>
         </div>
