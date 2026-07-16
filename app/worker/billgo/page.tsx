@@ -161,6 +161,7 @@ const methodLabels: Record<string, string> = {
 const providerSuggestions = ["Viettel", "VNPT", "FPT"];
 
 const statusOptions = [
+  { value: "not_due", label: "Chưa đến kỳ" },
   { value: "all", label: "Tất cả trạng thái" },
   { value: "unpaid", label: "Chưa thu" },
   { value: "paid", label: "Đã thu" },
@@ -747,7 +748,7 @@ export default function WorkerBillGoPage() {
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
     const cycle = getBillGoCycleOption(row.cycle);
-    const canCollect = summary.status !== "paid" && summary.status !== "promo";
+    const canCollect = summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
 
     return (
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">

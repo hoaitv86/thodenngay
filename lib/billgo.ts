@@ -19,7 +19,7 @@ export type BillGoReceivableLike = {
 };
 
 export type BillGoCycle = "monthly" | "two_months" | "three_months" | "six_months" | "yearly";
-export type BillGoComputedStatus = "unpaid" | "partial" | "overdue" | "paid" | "promo";
+export type BillGoComputedStatus = "not_due" | "unpaid" | "partial" | "overdue" | "paid" | "promo";
 export type BillGoStoredStatus = BillGoComputedStatus | "not_due" | "due" | "cancelled" | "deleted";
 
 export type BillGoSummary = {
@@ -159,6 +159,7 @@ export const getBillGoPaid = (payments: BillGoPayment[] = []) =>
     .reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0);
 
 export const getBillGoStatusLabel = (status: BillGoComputedStatus) => {
+  if (status === "not_due") return "Chưa đến kỳ";
   if (status === "paid") return "Đã thu";
   if (status === "partial") return "Thu thiếu";
   if (status === "overdue") return "Quá hạn";
@@ -189,7 +190,11 @@ export const getBillGoReceivableSummary = (receivable: BillGoReceivableLike): Bi
   const storedPaid = toMoneyNumber(receivable.paid_amount);
   const paid = storedPaid > 0 ? storedPaid : getBillGoPaid(receivable.payments || []);
   const debt = Math.max(total - paid, 0);
-  const status = receivable.status === "promo" ? "promo" : getBillGoComputedStatus(total, paid, receivable.due_date);
+  const status = receivable.status === "not_due"
+    ? "not_due"
+    : receivable.status === "promo"
+      ? "promo"
+      : getBillGoComputedStatus(total, paid, receivable.due_date);
 
   return { receivable: total, paid, debt, status, statusLabel: getBillGoStatusLabel(status) };
 };

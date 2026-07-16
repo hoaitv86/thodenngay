@@ -47,6 +47,11 @@ type ServiceOption = {
 
 type BillGoSubscription = {
   id: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  phone?: string | null;
+  internet_account?: string | null;
+  customer_address?: string | null;
   package_name?: string | null;
   cycle?: string | null;
   current_cycle?: string | null;
@@ -56,6 +61,10 @@ type BillGoSubscription = {
   next_period_start?: string | null;
   covered_until?: string | null;
   status?: string | null;
+};
+
+type BillGoCustomerSource = BillGoSubscription & {
+  customer?: CustomerOption | CustomerOption[] | null;
 };
 
 type BillGoReceivable = {
@@ -129,6 +138,28 @@ const normalizeReceivableRows = (rows: unknown[]): BillGoReceivable[] =>
     };
   });
 
+const normalizeBillGoCustomerOptions = (rows: BillGoCustomerSource[]): CustomerOption[] => {
+  const customerMap = new Map<string, CustomerOption>();
+  rows.forEach((row) => {
+    const profile = firstRelation(row.customer);
+    const id = row.customer_id;
+    if (!id || customerMap.has(id)) return;
+    customerMap.set(id, {
+      id,
+      full_name: row.customer_name || profile?.full_name || row.internet_account || row.package_name || "Khách BillGo",
+      phone: row.phone || profile?.phone || null,
+      address: row.customer_address || profile?.address || null,
+    });
+  });
+  return [...customerMap.values()].sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "", "vi"));
+};
+
+const getBillGoCustomerName = (item: BillGoReceivable) =>
+  item.subscription?.customer_name || item.customer?.full_name || item.subscription?.internet_account || "Khách BillGo";
+
+const getBillGoCustomerPhone = (item: BillGoReceivable) =>
+  item.subscription?.phone || item.customer?.phone || "Chưa có SĐT";
+
 export default function AdminPayments() {
   const supabase = useMemo(() => createClient(), []);
   const [receivables, setReceivables] = useState<BillGoReceivable[]>([]);
@@ -168,16 +199,17 @@ export default function AdminPayments() {
     setLoading(true);
     setMessage("");
 
-    const [receivableRes, customerRes, workerRes, serviceRes] = await Promise.all([
+    const [receivableRes, billGoCustomerRes, workerRes, serviceRes] = await Promise.all([
       supabase
         .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions(id, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_due_date, next_period_start, covered_until, status), payments(id, amount, method, status, paid_at, collected_by, note)")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions(id, customer_id, customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_due_date, next_period_start, covered_until, status), payments(id, amount, method, status, paid_at, collected_by, note)")
         .order("due_date", { ascending: true }),
       supabase
-        .from("profiles")
-        .select("id, full_name, phone, address")
-        .eq("role", "customer")
-        .order("full_name", { ascending: true }),
+        .from("billgo_subscriptions")
+        .select("id, customer_id, customer_name, phone, internet_account, customer_address, package_name, customer:profiles!customer_id(id, full_name, phone, address)")
+        .is("deleted_at", null)
+        .not("status", "in", "(cancelled,deleted)")
+        .order("created_at", { ascending: false }),
       supabase
         .from("workers")
         .select("id, profiles(full_name)")
@@ -197,7 +229,7 @@ export default function AdminPayments() {
       setReceivables(normalizeReceivableRows(receivableRes.data || []));
     }
 
-    if (!customerRes.error) setCustomers((customerRes.data || []) as CustomerOption[]);
+    if (!billGoCustomerRes.error) setCustomers(normalizeBillGoCustomerOptions((billGoCustomerRes.data || []) as BillGoCustomerSource[]));
     if (!workerRes.error) setWorkers((workerRes.data || []) as WorkerOption[]);
     if (!serviceRes.error) setServices((serviceRes.data || []) as ServiceOption[]);
     setLoading(false);
@@ -693,8 +725,8 @@ export default function AdminPayments() {
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-extrabold text-on-surface">{item.customer?.full_name || "Khách hàng"} · {item.title || "Khoản thu"}</p>
-                      <p className="mt-1 text-xs text-on-surface-variant">{item.customer?.phone || "Chưa có SĐT"} · {typeLabels[item.type || "other"] || "Khoản thu"}</p>
+                      <p className="truncate text-sm font-extrabold text-on-surface">{getBillGoCustomerName(item)} · {item.title || "Khoản thu"}</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">{getBillGoCustomerPhone(item)} · {typeLabels[item.type || "other"] || "Khoản thu"}</p>
                       <p className="mt-1 text-xs text-on-surface-variant">Ky su dung: {item.period_start || "Chua co"} - {item.period_end || "Chua co"}</p>
                       <p className="mt-1 text-xs text-on-surface-variant">Han thanh toan: {item.due_date || item.subscription?.next_due_date || "Chua co"}</p>
                     </div>
@@ -722,7 +754,7 @@ export default function AdminPayments() {
             <h2 className="text-lg font-extrabold text-on-surface">Ghi nhận thanh toán</h2>
             {selectedReceivable && selectedSummary ? (
               <div className="mt-3 rounded-lg bg-surface-container-low p-3 text-xs">
-                <p className="font-bold text-on-surface">{selectedReceivable.customer?.full_name || "Khách hàng"}</p>
+                <p className="font-bold text-on-surface">{getBillGoCustomerName(selectedReceivable)}</p>
                 <p className="mt-1 text-on-surface-variant">Còn lại: <strong className="text-error">{formatBillGoCurrency(selectedSummary.debt)}</strong></p>
                 <p className="mt-1 text-on-surface-variant">Han thanh toan: {selectedReceivable.due_date || "Chua co"}</p>
               </div>

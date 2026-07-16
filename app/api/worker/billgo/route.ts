@@ -209,6 +209,51 @@ const buildReceivableDraft = (
   };
 };
 
+const buildNotDueRow = (
+  subscription: {
+    id: string;
+    customer_id?: string | null;
+    worker_id?: string | null;
+    current_cycle?: string | null;
+    cycle?: string | null;
+    monthly_fee?: number | string | null;
+    amount_per_cycle?: number | string | null;
+    next_period_start?: string | null;
+    next_due_date?: string | null;
+    start_date?: string | null;
+  },
+) => {
+  const cycle = String(subscription.current_cycle || subscription.cycle || "monthly") as BillGoCycle;
+  const option = getBillGoCycleOption(cycle);
+
+  return {
+    id: `not_due_${subscription.id}`,
+    customer_id: subscription.customer_id,
+    worker_id: subscription.worker_id,
+    subscription_id: subscription.id,
+    total_amount: 0,
+    due_date: subscription.next_due_date,
+    period_start: subscription.next_period_start || subscription.start_date,
+    period_end: null,
+    collection_month: null,
+    usage_month: null,
+    billing_month: null,
+    billing_year: null,
+    cycle_at_collection: cycle,
+    billing_months: option.paidMonths,
+    bonus_months: option.bonusMonths,
+    service_months: option.paidMonths + option.bonusMonths,
+    next_due_date: subscription.next_due_date,
+    paid_amount: 0,
+    paid_at: null,
+    payment_method: null,
+    status: "not_due",
+    note: null,
+    subscription,
+    payments: [],
+  };
+};
+
 const ensureDueReceivables = async (
   admin: SupabaseClient,
   workerId: string,
@@ -279,7 +324,30 @@ export async function GET(request: Request) {
     .range(from, to);
 
   if (error) return jsonError("Không thể tải BillGo: " + error.message);
-  const rows = data || [];
+  const currentRows = data || [];
+  const { data: currentReceivableIds, error: currentReceivableIdsError } = await admin
+    .from("billgo_receivables")
+    .select("subscription_id")
+    .eq("worker_id", workerId)
+    .eq("billing_month", month)
+    .eq("billing_year", year)
+    .not("subscription_id", "is", null)
+    .is("deleted_at", null);
+  if (currentReceivableIdsError) return jsonError("KhÃ´ng thá»ƒ táº£i ká»³ thu BillGo: " + currentReceivableIdsError.message);
+
+  const currentSubscriptionIds = new Set((currentReceivableIds || []).map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
+  const { data: activeSubscriptions, error: activeSubscriptionError } = await admin
+    .from("billgo_subscriptions")
+    .select("id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
+    .eq("worker_id", workerId)
+    .eq("status", "active")
+    .is("deleted_at", null);
+  if (activeSubscriptionError) return jsonError("KhÃ´ng thá»ƒ táº£i khÃ¡ch BillGo: " + activeSubscriptionError.message);
+
+  const notDueRows = (activeSubscriptions || [])
+    .filter(subscription => !currentSubscriptionIds.has(subscription.id))
+    .map(subscription => buildNotDueRow(subscription));
+  const rows = [...currentRows, ...notDueRows];
   const subscriptionIds = Array.from(new Set(rows.map(row => row.subscription_id).filter((id): id is string => Boolean(id))));
   const [cycleChangesResult, statusEventsResult] = subscriptionIds.length > 0
     ? await Promise.all([
