@@ -8,6 +8,7 @@ import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normal
 import type { WorkflowData } from "@/config/serviceWorkflows";
 
 type CreateWorkerJobRequest = {
+  customerId?: string | null;
   customerName?: string;
   customerPhone?: string;
   serviceId?: string;
@@ -225,13 +226,14 @@ export async function POST(request: Request) {
     if (workerCheck.error) return workerCheck.error;
 
     const body = (await request.json()) as CreateWorkerJobRequest;
+    const requestedCustomerId = (body.customerId || "").trim() || null;
     const customerName = (body.customerName || "").trim().replace(/\s+/g, " ");
     const customerPhone = normalizePhone(body.customerPhone || "");
     const address = (body.address || "").trim();
     const serviceIds = normalizeServiceIds(body.serviceId, body.serviceIds);
     const primaryServiceId = getPrimaryServiceId(body.serviceId, body.serviceIds);
 
-    if (!customerName || customerPhone.length < 8 || !primaryServiceId || !address) {
+    if ((!requestedCustomerId && (!customerName || customerPhone.length < 8)) || !primaryServiceId || !address) {
       return NextResponse.json(
         { error: "Vui lòng nhập tên khách, SĐT, dịch vụ và địa chỉ hợp lệ." },
         { status: 400 }
@@ -261,6 +263,7 @@ export async function POST(request: Request) {
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
+      if (!requestedCustomerId) {
       const { data: quickJob, error: quickJobError } = await workerCheck.supabase.rpc(
         "worker_create_quick_job",
         {
@@ -309,6 +312,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+      }
 
       const { data: service } = await workerCheck.supabase
         .from("services")
@@ -321,14 +325,22 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Dịch vụ không hợp lệ hoặc đã bị tắt." }, { status: 400 });
       }
 
-      const { data: existingCustomer } = await workerCheck.supabase
+      const existingCustomerQuery = workerCheck.supabase
         .from("profiles")
         .select("id, full_name, phone")
-        .eq("role", "customer")
-        .eq("phone", customerPhone)
-        .maybeSingle();
+        .eq("role", "customer");
+      const { data: existingCustomer } = requestedCustomerId
+        ? await existingCustomerQuery.eq("id", requestedCustomerId).maybeSingle()
+        : await existingCustomerQuery.eq("phone", customerPhone).maybeSingle();
 
       if (!existingCustomer) {
+        if (requestedCustomerId) {
+          return NextResponse.json(
+            { error: "Không tìm thấy khách hàng đã chọn." },
+            { status: 400 }
+          );
+        }
+
         if (canReturnMockQuickJob()) {
           const mockCustomerId = `mock-customer-${customerPhone}`;
           const defaultPassword = makeDefaultPassword(customerName);
@@ -420,7 +432,7 @@ export async function POST(request: Request) {
             }),
             createdCustomer: null,
             customerAlreadyExists: true,
-            loginPhone: customerPhone,
+            loginPhone: existingCustomer.phone || customerPhone,
             defaultPassword: null,
             mock: true,
             approvalRequired: false,
@@ -456,7 +468,7 @@ export async function POST(request: Request) {
         job: insertedJob,
         createdCustomer: null,
         customerAlreadyExists: true,
-        loginPhone: customerPhone,
+        loginPhone: existingCustomer.phone || customerPhone,
         defaultPassword: null,
         approvalRequired: false,
       });
@@ -490,16 +502,22 @@ export async function POST(request: Request) {
     let createdAuthUserId: string | null = null;
     let customerAlreadyExists = false;
 
-    const { data: existingCustomer } = await supabaseAdmin
+    const existingCustomerQuery = supabaseAdmin
       .from("profiles")
       .select("id, full_name, phone, email")
-      .eq("role", "customer")
-      .eq("phone", customerPhone)
-      .maybeSingle();
+      .eq("role", "customer");
+    const { data: existingCustomer } = requestedCustomerId
+      ? await existingCustomerQuery.eq("id", requestedCustomerId).maybeSingle()
+      : await existingCustomerQuery.eq("phone", customerPhone).maybeSingle();
 
     if (existingCustomer) {
       customerId = existingCustomer.id;
       customerAlreadyExists = true;
+    } else if (requestedCustomerId) {
+      return NextResponse.json(
+        { error: "Không tìm thấy khách hàng đã chọn." },
+        { status: 400 }
+      );
     } else {
       defaultPassword = makeDefaultPassword(customerName);
 
@@ -615,7 +633,7 @@ export async function POST(request: Request) {
       job: insertedJob,
       createdCustomer,
       customerAlreadyExists,
-      loginPhone: customerPhone,
+      loginPhone: existingCustomer?.phone || customerPhone,
       defaultPassword,
       approvalRequired: false,
     });

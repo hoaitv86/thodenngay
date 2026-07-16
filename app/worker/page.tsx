@@ -79,6 +79,14 @@ type QuickServiceGroup = {
 
 const QUICK_FREQUENT_SERVICE_NAMES = ["Sửa mất mạng", "Lắp camera", "Cài Windows", "Sửa máy in"];
 
+type QuickCustomerOption = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  account?: string | null;
+  address?: string | null;
+};
+
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
 const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
 const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
@@ -154,6 +162,10 @@ type WorkerBillGoReceivable = {
     address?: string | null;
   } | null;
   subscription?: {
+    customer_name?: string | null;
+    phone?: string | null;
+    internet_account?: string | null;
+    customer_address?: string | null;
     package_name?: string | null;
     cycle?: string | null;
     next_due_date?: string | null;
@@ -531,7 +543,9 @@ export default function WorkerDashboard() {
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [expandedQuickServiceGroup, setExpandedQuickServiceGroup] = useState("internet");
   const [quickServiceSearch, setQuickServiceSearch] = useState("");
+  const [quickCustomerQuery, setQuickCustomerQuery] = useState("");
   const [quickJob, setQuickJob] = useState({
+    customerId: "",
     customerName: "",
     customerPhone: "",
     serviceId: "",
@@ -610,6 +624,61 @@ export default function WorkerDashboard() {
       .slice(0, 8)
       .map(({ service }) => service);
   }, [quickServiceGroups, quickServiceSearch, services]);
+
+  const quickCustomerOptions = React.useMemo<QuickCustomerOption[]>(() => {
+    const customerMap = new Map<string, QuickCustomerOption>();
+    const addCustomer = (customer: QuickCustomerOption) => {
+      if (!customer.id) return;
+      const current = customerMap.get(customer.id);
+      customerMap.set(customer.id, {
+        id: customer.id,
+        name: customer.name || current?.name || "Khách hàng",
+        phone: customer.phone || current?.phone || null,
+        account: customer.account || current?.account || null,
+        address: customer.address || current?.address || null,
+      });
+    };
+
+    [...activeJobs, ...pendingApprovalJobs, ...newJobs].forEach(job => {
+      const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
+      addCustomer({
+        id: job.customer_id || "",
+        name: customer?.full_name || job.customerName || "Khách hàng",
+        phone: customer?.phone || null,
+        address: customer?.address || job.address || null,
+      });
+    });
+
+    workerBillGoReceivables.forEach(receivable => {
+      const subscription = receivable.subscription;
+      addCustomer({
+        id: receivable.customer_id,
+        name: subscription?.customer_name || receivable.customer?.full_name || "Khách BillGo",
+        phone: subscription?.phone || receivable.customer?.phone || null,
+        account: subscription?.internet_account || null,
+        address: subscription?.customer_address || receivable.customer?.address || null,
+      });
+    });
+
+    return [...customerMap.values()].sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  }, [activeJobs, newJobs, pendingApprovalJobs, workerBillGoReceivables]);
+
+  const quickCustomerResults = React.useMemo(() => {
+    const query = normalizeServiceText(quickCustomerQuery);
+    if (!query) return quickCustomerOptions.slice(0, 6);
+    const queryParts: string[] = query.split(/\s+/).filter(Boolean);
+    return quickCustomerOptions
+      .filter(customer => {
+        const searchText = normalizeServiceText([
+          customer.name,
+          customer.phone,
+          customer.account,
+          customer.address,
+        ].filter(Boolean).join(" "));
+        return queryParts.every(part => searchText.includes(part));
+      })
+      .slice(0, 8);
+  }, [quickCustomerOptions, quickCustomerQuery]);
 
   // Completion modal states
   const [activeJobToComplete, setActiveJobToComplete] = useState<WorkerJob | null>(null);
@@ -1386,6 +1455,21 @@ export default function WorkerDashboard() {
     setQuickServiceSearch(getQuickServicePathLabel(service, services));
   };
 
+  const selectQuickCustomer = (customer: QuickCustomerOption) => {
+    setQuickJob(prev => ({
+      ...prev,
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone || prev.customerPhone,
+      address: customer.address || prev.address,
+    }));
+    setQuickCustomerQuery([
+      customer.name,
+      customer.phone,
+      customer.account ? `Account ${customer.account}` : "",
+    ].filter(Boolean).join(" - "));
+  };
+
   const handleUpdateServiceDetail = async (job: WorkerJob, serviceDetailId: string) => {
     const nextDetailId = serviceDetailId || null;
     const { error } = await supabase
@@ -1494,8 +1578,8 @@ export default function WorkerDashboard() {
     e.preventDefault();
     if (!worker || creatingQuickJob) return;
 
-    if (!quickJob.customerName.trim() || !quickJob.customerPhone.trim() || !quickJob.serviceId || !quickJob.address.trim()) {
-      showToast("Vui lòng nhập tên, SĐT khách, dịch vụ và địa chỉ.", "error");
+    if ((!quickJob.customerId && (!quickJob.customerName.trim() || !quickJob.customerPhone.trim())) || !quickJob.serviceId || !quickJob.address.trim()) {
+      showToast("Vui lòng chọn khách đã có hoặc nhập tên, SĐT khách mới, dịch vụ và địa chỉ.", "error");
       return;
     }
 
@@ -1517,6 +1601,7 @@ export default function WorkerDashboard() {
         },
         signal: controller.signal,
         body: JSON.stringify({
+          customerId: quickJob.customerId || null,
           customerName: quickJob.customerName,
           customerPhone: quickJob.customerPhone,
           serviceId: quickJob.serviceId,
@@ -1535,6 +1620,7 @@ export default function WorkerDashboard() {
       }
 
       setQuickJob(prev => ({
+        customerId: "",
         customerName: "",
         customerPhone: "",
         serviceId: prev.serviceId,
@@ -1544,6 +1630,7 @@ export default function WorkerDashboard() {
         quotedPrice: prev.quotedPrice,
         description: "",
       }));
+      setQuickCustomerQuery("");
       setQuickWorkflowData({});
       setQuickFormOpen(false);
       const createdJob = data.job;
@@ -2043,7 +2130,6 @@ export default function WorkerDashboard() {
         monthlyCustomers: prev.monthlyCustomers + 1,
         monthlyIncome: prev.monthlyIncome + amountToRecord,
       }));
-
       showToast("Đã hoàn thành công việc thành công!", "success");
       setActiveJobToComplete(null);
       setSelectedFiles([]);
@@ -2219,11 +2305,48 @@ export default function WorkerDashboard() {
             <form onSubmit={handleCreateQuickJob} className="mt-4 space-y-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Tìm khách đã có
+                </label>
+                <input
+                  value={quickCustomerQuery}
+                  onChange={(e) => {
+                    setQuickCustomerQuery(e.target.value);
+                    if (quickJob.customerId) setQuickJob(prev => ({ ...prev, customerId: "" }));
+                  }}
+                  placeholder="Tìm theo tên, SĐT hoặc account"
+                  className="input-field !py-2.5"
+                />
+                {quickCustomerQuery.trim() && quickCustomerResults.length > 0 && (
+                  <div className="max-h-56 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white shadow-sm">
+                    {quickCustomerResults.map(customer => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => selectQuickCustomer(customer)}
+                        className="block w-full border-b border-outline-variant/20 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-low"
+                      >
+                        <span className="font-bold text-on-surface">{customer.name}</span>
+                        <span className="mt-0.5 block text-xs text-on-surface-variant">
+                          {[customer.phone, customer.account ? `Account ${customer.account}` : "", customer.address].filter(Boolean).join(" • ")}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {quickJob.customerId && (
+                  <div className="rounded-lg bg-success-container px-3 py-2 text-xs font-bold text-success">
+                    Đang dùng khách đã có: {quickJob.customerName}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
                   Tên khách hàng
                 </label>
                 <input
                   value={quickJob.customerName}
-                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerName: e.target.value }))}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerId: "", customerName: e.target.value }))}
                   placeholder="VD: Nguyễn Văn A"
                   className="input-field !py-2.5"
                 />
@@ -2236,7 +2359,7 @@ export default function WorkerDashboard() {
                 <input
                   type="tel"
                   value={quickJob.customerPhone}
-                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerPhone: e.target.value }))}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerId: "", customerPhone: e.target.value }))}
                   placeholder="VD: 0912345678"
                   className="input-field !py-2.5"
                 />
