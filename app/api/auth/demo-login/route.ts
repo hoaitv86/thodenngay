@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { DEMO_ACCOUNTS, type DemoRole } from "@/lib/demo-accounts";
+import {
+  DEMO_ACCOUNTS,
+  DEMO_ACCOUNT_PASSWORD,
+  DEMO_LOCAL_CUSTOMER_EMAIL,
+  DEMO_LOCAL_WORKER_EMAIL,
+  type DemoRole,
+} from "@/lib/demo-accounts";
 
 const isDemoRole = (role: unknown): role is DemoRole => role === "customer" || role === "worker";
 
@@ -12,12 +18,60 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Tai khoan demo khong hop le." }, { status: 400 });
     }
 
+    const demoAccount = DEMO_ACCOUNTS[role];
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
     if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Vui long cau hinh SUPABASE_SERVICE_ROLE_KEY trong file .env.local." },
-        { status: 500 }
+      const demoEmail =
+        role === "customer"
+          ? process.env.DEMO_CUSTOMER_EMAIL || DEMO_LOCAL_CUSTOMER_EMAIL
+          : process.env.DEMO_WORKER_EMAIL || DEMO_LOCAL_WORKER_EMAIL;
+      const demoPassword = process.env.DEMO_ACCOUNT_PASSWORD || DEMO_ACCOUNT_PASSWORD;
+      const supabaseAuth = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        }
       );
+      const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({
+        email: demoEmail,
+        password: demoPassword,
+      });
+
+      if (authError || !authData.session || !authData.user) {
+        return NextResponse.json(
+          {
+            error:
+              "Khong the dang nhap demo local. Hay tao tai khoan " +
+              `${demoEmail} voi mat khau demo hoac cau hinh SUPABASE_SERVICE_ROLE_KEY.`,
+          },
+          { status: 500 }
+        );
+      }
+
+      const { data: profile, error: profileError } = await supabaseAuth
+        .from("profiles")
+        .select("role, phone, email")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+
+      if (profileError || profile?.role !== role) {
+        return NextResponse.json(
+          { error: `Tai khoan ${demoEmail} khong dung vai tro demo ${demoAccount.label}.` },
+          { status: 403 }
+        );
+      }
+
+      return NextResponse.json({
+        email: demoEmail,
+        accessToken: authData.session.access_token,
+        refreshToken: authData.session.refresh_token,
+        type: "password",
+      });
     }
 
     const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
@@ -27,7 +81,6 @@ export async function POST(request: Request) {
       },
     });
 
-    const demoAccount = DEMO_ACCOUNTS[role];
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("email, role")

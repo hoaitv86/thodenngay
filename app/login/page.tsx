@@ -90,10 +90,16 @@ export default function LoginPage() {
       return;
     }
 
-    const { data, error: authError } = await supabase.auth.verifyOtp({
-      type: "magiclink",
-      token_hash: demoData.tokenHash,
-    });
+    const { data, error: authError } =
+      demoData.accessToken && demoData.refreshToken
+        ? await supabase.auth.setSession({
+            access_token: demoData.accessToken,
+            refresh_token: demoData.refreshToken,
+          })
+        : await supabase.auth.verifyOtp({
+            type: "magiclink",
+            token_hash: demoData.tokenHash,
+          });
 
     if (authError || !data.user) {
       setError(authError?.message || "KhÃ´ng thá»ƒ táº¡o phiÃªn Ä‘Äƒng nháº­p demo.");
