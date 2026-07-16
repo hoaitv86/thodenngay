@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { DEMO_ACTION_BLOCK_MESSAGE, isDemoAccount } from "@/lib/demo-accounts";
 
 type WorkerContext = {
   db: SupabaseClient;
   userId: string;
   workerId: string;
   isAdmin: boolean;
+  isDemo: boolean;
 };
 
 const jsonError = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -30,13 +32,19 @@ const getContext = async (): Promise<WorkerContext | NextResponse> => {
   if (!user) return jsonError("Bạn chưa đăng nhập.", 401);
 
   const [{ data: profile }, { data: worker }] = await Promise.all([
-    supabase.from("profiles").select("role").eq("id", user.id).single(),
+    supabase.from("profiles").select("role, phone, email").eq("id", user.id).single(),
     supabase.from("workers").select("id").eq("user_id", user.id).maybeSingle(),
   ]);
 
   if (!worker && profile?.role !== "admin") return jsonError("Không tìm thấy hồ sơ thợ.", 403);
 
-  return { db: getAdmin() || supabase, userId: user.id, workerId: worker?.id || "", isAdmin: profile?.role === "admin" };
+  return {
+    db: getAdmin() || supabase,
+    userId: user.id,
+    workerId: worker?.id || "",
+    isAdmin: profile?.role === "admin",
+    isDemo: isDemoAccount(profile),
+  };
 };
 
 export async function GET() {
@@ -70,6 +78,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const context = await getContext();
   if (context instanceof NextResponse) return context;
+  if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
   const { db, userId } = context;
   const body = await request.json();
   const action = asText(body.action);
@@ -139,6 +148,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const context = await getContext();
   if (context instanceof NextResponse) return context;
+  if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
   const { db } = context;
   const body = await request.json();
   const action = asText(body.action);

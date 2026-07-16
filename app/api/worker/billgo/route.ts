@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { DEMO_ACTION_BLOCK_MESSAGE, isDemoAccount } from "@/lib/demo-accounts";
 import {
   BILLGO_ALL_TAB,
   BILLGO_CYCLE_OPTIONS,
@@ -28,6 +29,7 @@ type WorkerContext = {
   admin: SupabaseClient;
   userId: string;
   workerId: string;
+  isDemo: boolean;
 };
 
 const jsonError = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -45,10 +47,13 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return jsonError("Bạn chưa đăng nhập.", 401);
 
-  const { data: worker } = await supabase.from("workers").select("id").eq("user_id", user.id).single();
+  const [{ data: profile }, { data: worker }] = await Promise.all([
+    supabase.from("profiles").select("phone, email").eq("id", user.id).single(),
+    supabase.from("workers").select("id").eq("user_id", user.id).single(),
+  ]);
   if (!worker) return jsonError("Không tìm thấy hồ sơ thợ.", 403);
 
-  return { admin: getAdmin() || supabase, userId: user.id, workerId: worker.id };
+  return { admin: getAdmin() || supabase, userId: user.id, workerId: worker.id, isDemo: isDemoAccount(profile) };
 };
 
 const asText = (value: unknown) => String(value || "").trim();
@@ -740,6 +745,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
+  if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
   const { admin, userId, workerId } = context;
 
   const body = await request.json();
@@ -899,6 +905,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
+  if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
   const { admin, userId, workerId } = context;
 
   const body = await request.json();

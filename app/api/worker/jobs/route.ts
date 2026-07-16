@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { isLegacyServiceId } from "@/lib/standard-service-catalog";
 import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
 import type { WorkflowData } from "@/config/serviceWorkflows";
+import { DEMO_ACTION_BLOCK_MESSAGE, isDemoAccount } from "@/lib/demo-accounts";
 
 type CreateWorkerJobRequest = {
   customerId?: string | null;
@@ -119,7 +120,7 @@ async function getActiveWorker() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, phone, email")
     .eq("id", user.id)
     .single();
 
@@ -137,7 +138,7 @@ async function getActiveWorker() {
     return { error: NextResponse.json({ error: "Chỉ thợ đang hoạt động mới có thể tạo job." }, { status: 403 }) };
   }
 
-  return { supabase, user, worker };
+  return { supabase, user, worker, isDemo: isDemoAccount(profile) };
 }
 
 async function makeJobCode(supabaseAdmin: SupabaseClient) {
@@ -224,6 +225,9 @@ export async function POST(request: Request) {
   try {
     const workerCheck = await getActiveWorker();
     if (workerCheck.error) return workerCheck.error;
+    if (workerCheck.isDemo) {
+      return NextResponse.json({ error: DEMO_ACTION_BLOCK_MESSAGE }, { status: 403 });
+    }
 
     const body = (await request.json()) as CreateWorkerJobRequest;
     const requestedCustomerId = (body.customerId || "").trim() || null;

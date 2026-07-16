@@ -8,6 +8,12 @@ import { useSettings } from "@/lib/settings";
 import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 import { MapPinCheck } from "lucide-react";
 import { saveLoginLocation } from "@/services/locationService";
+import {
+  DEMO_ACTION_BLOCK_MESSAGE,
+  DEMO_SESSION_STORAGE_KEY,
+  type DemoRole,
+  isDemoAccount,
+} from "@/lib/demo-accounts";
 
 export default function LoginPage() {
   const [loginId, setLoginId] = useState("");
@@ -15,10 +21,89 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [locationUpdated, setLocationUpdated] = useState(false);
+  const [demoLoadingRole, setDemoLoadingRole] = useState<DemoRole | null>(null);
   const router = useRouter();
   const supabase = createClient();
   const { settings } = useSettings();
   const showDemoAccounts = process.env.NODE_ENV !== "production";
+
+  const finishLogin = async (userId: string, forceDemoSession = false) => {
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role, phone, email")
+      .eq("id", userId)
+      .single();
+
+    if (profileError || !profile) {
+      console.error("Profile fetch error:", profileError);
+      setError("KhÃ´ng tÃ¬m tháº¥y há»“ sÆ¡ ngÆ°á»i dÃ¹ng. Vui lÃ²ng kiá»ƒm tra láº¡i database.");
+      setLoading(false);
+      setDemoLoadingRole(null);
+      return;
+    }
+
+    const demoSession = forceDemoSession || isDemoAccount(profile);
+    if (demoSession) {
+      window.localStorage.setItem(DEMO_SESSION_STORAGE_KEY, "true");
+    } else {
+      window.localStorage.removeItem(DEMO_SESSION_STORAGE_KEY);
+    }
+
+    const destination =
+      profile.role === "admin"
+        ? "/admin/dashboard"
+        : profile.role === "worker"
+          ? "/worker"
+          : "/customer/home";
+
+    if (profile.role === "worker" || profile.role === "customer") {
+      const locationResult = await saveLoginLocation(supabase, userId);
+      if (locationResult.status === "updated") {
+        setLocationUpdated(true);
+        window.setTimeout(() => router.replace(destination), 700);
+        return;
+      }
+    }
+
+    router.replace(destination);
+  };
+
+  const handleDemoLogin = async (role: DemoRole) => {
+    setLoading(true);
+    setDemoLoadingRole(role);
+    setError("");
+    setLocationUpdated(false);
+
+    const res = await fetch("/api/auth/demo-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role }),
+    });
+    const demoData = await res.json();
+
+    if (!res.ok) {
+      setError(demoData.error || "KhÃ´ng thá»ƒ Ä‘Äƒng nháº­p demo.");
+      setLoading(false);
+      setDemoLoadingRole(null);
+      return;
+    }
+
+    const { data, error: authError } = await supabase.auth.verifyOtp({
+      type: "magiclink",
+      token_hash: demoData.tokenHash,
+    });
+
+    if (authError || !data.user) {
+      setError(authError?.message || "KhÃ´ng thá»ƒ táº¡o phiÃªn Ä‘Äƒng nháº­p demo.");
+      setLoading(false);
+      setDemoLoadingRole(null);
+      return;
+    }
+
+    await finishLogin(data.user.id, true);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,6 +303,35 @@ export default function LoginPage() {
                 )}
               </button>
             </form>
+
+            <div className="mt-6 grid gap-3">
+              <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                <span className="h-px flex-1 bg-outline-variant" />
+                Trai nghiem nhanh
+                <span className="h-px flex-1 bg-outline-variant" />
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  className="btn-outline !w-full !justify-center !py-3 text-sm"
+                  disabled={loading}
+                  onClick={() => handleDemoLogin("customer")}
+                >
+                  {demoLoadingRole === "customer" ? "Dang vao..." : "Trải nghiệm với Khách hàng"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline !w-full !justify-center !py-3 text-sm"
+                  disabled={loading}
+                  onClick={() => handleDemoLogin("worker")}
+                >
+                  {demoLoadingRole === "worker" ? "Dang vao..." : "Trải nghiệm với Thợ"}
+                </button>
+              </div>
+              <p className="text-xs leading-relaxed text-on-surface-variant">
+                {DEMO_ACTION_BLOCK_MESSAGE}
+              </p>
+            </div>
 
             <div className="mt-8 text-center">
               <p className="text-sm text-on-surface-variant">
