@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
+import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { formatBillGoCurrency, getBillGoCycleOption } from "@/lib/billgo";
 import ReceiptActions from "./ReceiptActions";
 
@@ -51,6 +53,37 @@ const getAdmin = () => {
   });
 };
 
+const receiptSelect = "receipt_code, lookup_code, qr_payload, customer_name, customer_phone, internet_account, customer_address, package_name, cycle_at_collection, period_start, period_end, total_amount, paid_amount, remaining_amount, payment_method, paid_at, collector_name, note, created_at";
+
+const normalizeReceiptCode = (code: string) => decodeURIComponent(code || "").trim().toUpperCase();
+
+const loadReceipt = async (code: string) => {
+  const admin = getAdmin();
+  if (!admin) return null;
+  const normalizedCode = normalizeReceiptCode(code);
+  const { data } = await admin
+    .from("billgo_receipts")
+    .select(receiptSelect)
+    .or(`lookup_code.eq.${normalizedCode},receipt_code.eq.${normalizedCode}`)
+    .maybeSingle();
+  return data as BillGoReceiptRow | null;
+};
+
+const getPublicBaseUrl = async () => {
+  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
+  const headerStore = await headers();
+  const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
+  const protocol = headerStore.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  return host ? `${protocol}://${host}` : "";
+};
+
+const buildReceiptUrl = async (receipt: BillGoReceiptRow) => {
+  if (receipt.qr_payload?.startsWith("http")) return receipt.qr_payload;
+  const baseUrl = await getPublicBaseUrl();
+  return `${baseUrl}/billgo/receipt/${encodeURIComponent(receipt.lookup_code)}`;
+};
+
 const dateLabel = (value?: string | null) => {
   if (!value) return "Chưa có";
   const date = new Date(value);
@@ -58,23 +91,42 @@ const dateLabel = (value?: string | null) => {
   return date.toLocaleDateString("vi-VN");
 };
 
+export async function generateMetadata({ params }: Pick<ReceiptPageProps, "params">): Promise<Metadata> {
+  const { code } = await params;
+  const receipt = await loadReceipt(code);
+  if (!receipt) return { title: "Phiếu thu BillGo" };
+
+  const baseUrl = await getPublicBaseUrl();
+  const title = `Phiếu thu ${receipt.receipt_code}`;
+  const description = `${receipt.customer_name || "Khách BillGo"} đã thu ${formatBillGoCurrency(receipt.paid_amount)}${receipt.period_start ? `, kỳ ${dateLabel(receipt.period_start)} - ${dateLabel(receipt.period_end)}` : ""}.`;
+  const imageUrl = `${baseUrl}/billgo/receipt/${encodeURIComponent(receipt.lookup_code)}/opengraph-image`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      url: baseUrl ? `${baseUrl}/billgo/receipt/${encodeURIComponent(receipt.lookup_code)}` : undefined,
+      images: [{ url: imageUrl, width: 1200, height: 630, alt: title }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [imageUrl],
+    },
+  };
+}
+
 export default async function BillGoReceiptPage({ params, searchParams }: ReceiptPageProps) {
   const { code } = await params;
   const { print } = await searchParams;
-  const admin = getAdmin();
-  if (!admin) notFound();
-
-  const normalizedCode = decodeURIComponent(code || "").trim().toUpperCase();
-  const { data } = await admin
-    .from("billgo_receipts")
-    .select("receipt_code, lookup_code, qr_payload, customer_name, customer_phone, internet_account, customer_address, package_name, cycle_at_collection, period_start, period_end, total_amount, paid_amount, remaining_amount, payment_method, paid_at, collector_name, note, created_at")
-    .or(`lookup_code.eq.${normalizedCode},receipt_code.eq.${normalizedCode}`)
-    .maybeSingle();
-
-  const receipt = data as BillGoReceiptRow | null;
+  const receipt = await loadReceipt(code);
   if (!receipt) notFound();
 
-  const receiptUrl = receipt.qr_payload || `/billgo/receipt/${receipt.lookup_code}`;
+  const receiptUrl = await buildReceiptUrl(receipt);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=10&data=${encodeURIComponent(receiptUrl)}`;
 
   return (
