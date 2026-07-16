@@ -43,6 +43,8 @@ type BillGoReceipt = {
   receipt_code: string;
   lookup_code: string;
   qr_payload: string;
+  period_start?: string | null;
+  period_end?: string | null;
   paid_at?: string | null;
   paid_amount?: number | string | null;
   payment_method?: string | null;
@@ -1165,28 +1167,44 @@ export default function WorkerBillGoPage() {
               </div>
               <button type="button" onClick={() => setReceiptTarget(null)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
             </div>
-            <div className="overflow-y-auto p-4">
+            <div className="overflow-y-auto p-3 sm:p-4">
               {getReceiptEntries(receiptTarget).length === 0 ? (
                 <p className="text-sm text-on-surface-variant">Chưa có phiếu thu đã lưu.</p>
               ) : (
                 <div className="space-y-2">
                   {getReceiptEntries(receiptTarget).map(({ payment, receipt }) => (
-                    <div key={`${payment?.id || "receipt"}-${receipt.lookup_code}`} className="rounded-lg border border-outline-variant/40 bg-white p-3 text-sm">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                    <details key={`${payment?.id || "receipt"}-${receipt.lookup_code}`} className="group rounded-lg border border-outline-variant/40 bg-white text-sm">
+                      <summary className="grid cursor-pointer list-none gap-2 p-3 sm:grid-cols-[minmax(0,1.4fr)_110px_120px_110px] sm:items-center">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Kỳ cước</p>
+                          <p className="truncate font-extrabold text-on-surface">{receipt.period_start || "Chưa có"} - {receipt.period_end || "Chưa có"}</p>
+                        </div>
                         <div>
-                          <p className="font-extrabold text-on-surface">{receipt.receipt_code}</p>
-                          <p className="mt-1 text-xs text-on-surface-variant">
-                            {(receipt.paid_at || payment?.paid_at) ? new Date(receipt.paid_at || payment?.paid_at || "").toLocaleString("vi-VN") : "Chưa có ngày"} · {formatBillGoCurrency(receipt.paid_amount ?? payment?.amount)}
-                          </p>
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Số tiền</p>
+                          <p className="font-extrabold text-primary">{formatBillGoCurrency(receipt.paid_amount ?? payment?.amount)}</p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <a href={`/billgo/receipt/${receipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2 text-xs">Xem</a>
-                          <a href={`/billgo/receipt/${receipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2 text-xs">PDF/In</a>
-                          <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-auto !px-3 !py-2 text-xs">Chia sẻ</button>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Ngày thu</p>
+                          <p className="font-bold text-on-surface">{(receipt.paid_at || payment?.paid_at) ? new Date(receipt.paid_at || payment?.paid_at || "").toLocaleDateString("vi-VN") : "Chưa có"}</p>
                         </div>
+                        <div className="flex items-end justify-between gap-2 sm:block">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase text-on-surface-variant">Mã phiếu</p>
+                            <p className="font-bold text-on-surface">{receipt.receipt_code}</p>
+                          </div>
+                          <span className="text-xs font-bold text-primary group-open:hidden">Mở</span>
+                          <span className="hidden text-xs font-bold text-primary group-open:inline">Đóng</span>
+                        </div>
+                      </summary>
+                      <div className="border-t border-outline-variant/30 p-3 pt-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          <a href={`/billgo/receipt/${receipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">Xem</a>
+                          <a href={`/billgo/receipt/${receipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">PDF/In</a>
+                          <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Chia sẻ</button>
+                        </div>
+                        {(receipt.note || payment?.note) && <p className="mt-2 text-xs text-on-surface-variant">{receipt.note || payment?.note}</p>}
                       </div>
-                      {(receipt.note || payment?.note) && <p className="mt-2 text-xs text-on-surface-variant">{receipt.note || payment?.note}</p>}
-                    </div>
+                    </details>
                   ))}
                 </div>
               )}

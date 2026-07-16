@@ -504,7 +504,7 @@ export async function GET(request: Request) {
     pageSubscriptionIds.length > 0
       ? admin
           .from("billgo_receipts")
-          .select("receipt_code, lookup_code, qr_payload, subscription_id, paid_at, paid_amount, payment_method, note")
+          .select("receipt_code, lookup_code, qr_payload, subscription_id, period_start, period_end, paid_at, paid_amount, payment_method, note")
           .in("subscription_id", pageSubscriptionIds)
           .order("paid_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
