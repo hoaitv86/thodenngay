@@ -147,7 +147,7 @@ export default async function BillGoReceiptPage({ params, searchParams }: Receip
           .receipt-sheet img { display: block !important; }
         }
       `}</style>
-      <section className="receipt-sheet mx-auto max-w-3xl rounded-lg border border-outline-variant/40 bg-white p-5 shadow-sm">
+      <section className="receipt-sheet invoice-print-area mx-auto max-w-3xl rounded-lg border border-outline-variant/40 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-outline-variant/30 pb-4">
           <div>
             <p className="text-xs font-bold uppercase text-primary">BillGo</p>
