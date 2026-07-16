@@ -6,6 +6,8 @@ import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
   buildBillGoCoverageMonths,
+  buildBillGoReceiptCode,
+  buildBillGoReceiptLookupCode,
   getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
@@ -480,7 +482,7 @@ export async function GET(request: Request) {
     receivableIds.length > 0
       ? admin
           .from("payments")
-          .select("id, receivable_id, amount, method, status, paid_at, note")
+          .select("id, receivable_id, amount, method, status, paid_at, note, billgo_receipts(receipt_code, lookup_code, qr_payload)")
           .in("receivable_id", receivableIds)
           .eq("status", "paid")
           .order("paid_at", { ascending: false })
@@ -932,7 +934,7 @@ export async function PATCH(request: Request) {
 
   const { data: receivable, error: receivableError } = await admin
     .from("billgo_receivables")
-    .select("id, worker_id, subscription_id, total_amount, due_date, period_start, period_end, cycle_at_collection, billing_months, bonus_months, paid_amount, status, monthly_fee_at_collection, subscription:billgo_subscriptions(current_cycle, cycle)")
+    .select("id, worker_id, subscription_id, total_amount, due_date, period_start, period_end, cycle_at_collection, billing_months, bonus_months, paid_amount, status, monthly_fee_at_collection, subscription:billgo_subscriptions(current_cycle, cycle, customer_name, phone, internet_account, customer_address, address_detail, legacy_address, package_name)")
     .eq("id", receivableId)
     .eq("worker_id", workerId)
     .is("deleted_at", null)
@@ -976,6 +978,46 @@ export async function PATCH(request: Request) {
     .eq("id", receivable.id);
   if (updateError) return jsonError(updateError.message);
 
+  const subscriptionRelation = Array.isArray(receivable.subscription) ? receivable.subscription[0] : receivable.subscription;
+  const { data: collector } = await admin
+    .from("profiles")
+    .select("full_name, phone")
+    .eq("id", userId)
+    .maybeSingle();
+  const receiptCode = buildBillGoReceiptCode(payment.id, paidAt);
+  const lookupCode = buildBillGoReceiptLookupCode(receiptCode);
+  const receiptUrl = new URL(`/billgo/receipt/${lookupCode}`, request.url).toString();
+  const { data: receipt, error: receiptError } = await admin
+    .from("billgo_receipts")
+    .insert({
+      receipt_code: receiptCode,
+      lookup_code: lookupCode,
+      qr_payload: receiptUrl,
+      payment_id: payment.id,
+      receivable_id: receivable.id,
+      subscription_id: receivable.subscription_id,
+      worker_id: workerId,
+      collected_by: userId,
+      customer_name: subscriptionRelation?.customer_name || null,
+      customer_phone: subscriptionRelation?.phone || null,
+      internet_account: subscriptionRelation?.internet_account || null,
+      customer_address: subscriptionRelation?.address_detail || subscriptionRelation?.customer_address || subscriptionRelation?.legacy_address || null,
+      package_name: subscriptionRelation?.package_name || null,
+      cycle_at_collection: subscriptionRelation?.current_cycle || subscriptionRelation?.cycle || receivable.cycle_at_collection || "monthly",
+      period_start: receivable.period_start,
+      period_end: receivable.period_end,
+      total_amount: receivable.total_amount,
+      paid_amount: paidAmount,
+      remaining_amount: Math.max(toMoneyNumber(receivable.total_amount) - nextPaid, 0),
+      payment_method: method,
+      paid_at: paidAt,
+      collector_name: collector?.full_name || collector?.phone || null,
+      note,
+    })
+    .select("receipt_code, lookup_code, qr_payload")
+    .single();
+  if (receiptError) return jsonError("Không thể tạo phiếu thu BillGo: " + receiptError.message);
+
   if (nextPaid >= toMoneyNumber(receivable.total_amount) && receivable.subscription_id) {
     const coverages = buildBillGoCoverageMonths(receivable.period_start, receivable.billing_months, receivable.bonus_months).map(month => ({
       ...month,
@@ -987,7 +1029,6 @@ export async function PATCH(request: Request) {
     if (coverageError) return jsonError("Không thể lưu tháng bao phủ hoặc kỳ này đã được thu: " + coverageError.message, 409);
 
     const nextStart = getBillGoNextPeriodStartDate(receivable.period_end);
-    const subscriptionRelation = Array.isArray(receivable.subscription) ? receivable.subscription[0] : receivable.subscription;
     const nextCycle = String(subscriptionRelation?.current_cycle || subscriptionRelation?.cycle || receivable.cycle_at_collection || "monthly");
     const nextBilling = getBillGoBillingPeriod(nextStart, nextCycle);
     await admin
@@ -1028,5 +1069,5 @@ export async function PATCH(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, status: nextStatus });
+  return NextResponse.json({ ok: true, status: nextStatus, receipt });
 }

@@ -36,6 +36,13 @@ type Payment = {
   status: string;
   paid_at?: string | null;
   note?: string | null;
+  billgo_receipts?: BillGoReceipt | BillGoReceipt[] | null;
+};
+
+type BillGoReceipt = {
+  receipt_code: string;
+  lookup_code: string;
+  qr_payload: string;
 };
 
 type Receivable = {
@@ -259,6 +266,7 @@ export default function WorkerBillGoPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [lastReceipt, setLastReceipt] = useState<BillGoReceipt | null>(null);
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<"cycle" | "area">("cycle");
   const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>(BILLGO_ALL_TAB);
@@ -702,6 +710,7 @@ export default function WorkerBillGoPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể xác nhận thu tiền.");
       setCollecting(null);
+      setLastReceipt(result.receipt || null);
       setMessage("Đã xác nhận thu tiền.");
       await refreshBillGoKeepingScroll();
     } catch (error) {
@@ -882,6 +891,28 @@ export default function WorkerBillGoPage() {
       </header>
 
       {message && <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">{message}</div>}
+      {lastReceipt && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-outline-variant/40 bg-white p-3 text-sm">
+          <span className="font-bold text-on-surface">Phiếu thu {lastReceipt.receipt_code}</span>
+          <a href={`/billgo/receipt/${lastReceipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2">Xem</a>
+          <a href={`/billgo/receipt/${lastReceipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-auto !px-3 !py-2">Tải PDF / In</a>
+          <button
+            type="button"
+            className="btn-outline !w-auto !px-3 !py-2"
+            onClick={() => {
+              const url = lastReceipt.qr_payload || `${window.location.origin}/billgo/receipt/${lastReceipt.lookup_code}`;
+              if (navigator.share) {
+                void navigator.share({ title: `Phiếu thu ${lastReceipt.receipt_code}`, url });
+              } else {
+                void navigator.clipboard?.writeText(url);
+                setMessage("Đã sao chép liên kết phiếu thu.");
+              }
+            }}
+          >
+            Chia sẻ
+          </button>
+        </div>
+      )}
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[

@@ -47,6 +47,17 @@ export const BILLGO_CYCLE_OPTIONS: Array<{
 export const BILLGO_ALL_TAB = "all";
 export const BILLGO_ACCOUNT_SUGGESTIONS = ["n350_gftth_", "nbh_gftth_"];
 
+export const buildBillGoReceiptCode = (paymentId: string, paidAt: string | Date = new Date()) => {
+  const date = paidAt instanceof Date ? paidAt : new Date(paidAt);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const datePart = `${safeDate.getFullYear()}${String(safeDate.getMonth() + 1).padStart(2, "0")}${String(safeDate.getDate()).padStart(2, "0")}`;
+  const suffix = paymentId.replace(/-/g, "").slice(0, 8).toUpperCase();
+  return `BG-${datePart}-${suffix}`;
+};
+
+export const buildBillGoReceiptLookupCode = (receiptCode: string) =>
+  receiptCode.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+
 export const toMoneyNumber = (value?: number | string | null) => {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
