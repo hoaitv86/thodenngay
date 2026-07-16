@@ -48,6 +48,7 @@ type ServiceOption = {
 type BillGoSubscription = {
   id: string;
   customer_id?: string | null;
+  deleted_at?: string | null;
   customer_name?: string | null;
   phone?: string | null;
   internet_account?: string | null;
@@ -69,7 +70,7 @@ type BillGoCustomerSource = BillGoSubscription & {
 
 type BillGoReceivable = {
   id: string;
-  customer_id: string;
+  customer_id?: string | null;
   worker_id?: string | null;
   job_id?: string | null;
   subscription_id?: string | null;
@@ -92,6 +93,7 @@ type BillGoReceivable = {
   next_period_start?: string | null;
   next_due_date?: string | null;
   status?: string | null;
+  deleted_at?: string | null;
   note?: string | null;
   customer?: CustomerOption | null;
   worker?: WorkerOption | null;
@@ -160,6 +162,18 @@ const getBillGoCustomerName = (item: BillGoReceivable) =>
 const getBillGoCustomerPhone = (item: BillGoReceivable) =>
   item.subscription?.phone || item.customer?.phone || "Chưa có SĐT";
 
+const isPausedBillGoCustomer = (item: BillGoReceivable) => item.subscription?.status === "paused";
+
+const getBillGoDisplayStatus = (item: BillGoReceivable, summary: ReturnType<typeof getBillGoReceivableSummary>) =>
+  isPausedBillGoCustomer(item) ? "Ngừng thu" : summary.statusLabel;
+
+const getBillGoStatusClassName = (item: BillGoReceivable, summary: ReturnType<typeof getBillGoReceivableSummary>) => {
+  if (isPausedBillGoCustomer(item)) return "bg-surface-container-high text-on-surface-variant";
+  if (summary.status === "overdue") return "bg-error-container text-error";
+  if (summary.status === "paid") return "bg-success-container text-success";
+  return "bg-warning-container text-warning";
+};
+
 export default function AdminPayments() {
   const supabase = useMemo(() => createClient(), []);
   const [receivables, setReceivables] = useState<BillGoReceivable[]>([]);
@@ -202,7 +216,12 @@ export default function AdminPayments() {
     const [receivableRes, billGoCustomerRes, workerRes, serviceRes] = await Promise.all([
       supabase
         .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions(id, customer_id, customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_due_date, next_period_start, covered_until, status), payments(id, amount, method, status, paid_at, collected_by, note)")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, next_period_start, next_due_date, status, deleted_at, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions!inner(id, customer_id, customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_due_date, next_period_start, covered_until, status, deleted_at), payments(id, amount, method, status, paid_at, collected_by, note)")
+        .not("subscription_id", "is", null)
+        .is("deleted_at", null)
+        .is("subscription.deleted_at", null)
+        .not("subscription.status", "in", "(cancelled,deleted)")
+        .not("status", "in", "(cancelled,deleted)")
         .order("due_date", { ascending: true }),
       supabase
         .from("billgo_subscriptions")
@@ -229,7 +248,12 @@ export default function AdminPayments() {
       setReceivables(normalizeReceivableRows(receivableRes.data || []));
     }
 
-    if (!billGoCustomerRes.error) setCustomers(normalizeBillGoCustomerOptions((billGoCustomerRes.data || []) as BillGoCustomerSource[]));
+    if (billGoCustomerRes.error) {
+      setCustomers([]);
+      setMessage((current) => current || "Không thể tải danh sách khách BillGo: " + billGoCustomerRes.error.message);
+    } else {
+      setCustomers(normalizeBillGoCustomerOptions((billGoCustomerRes.data || []) as BillGoCustomerSource[]));
+    }
     if (!workerRes.error) setWorkers((workerRes.data || []) as WorkerOption[]);
     if (!serviceRes.error) setServices((serviceRes.data || []) as ServiceOption[]);
     setLoading(false);
@@ -253,20 +277,14 @@ export default function AdminPayments() {
       acc.receivable += row.summary.receivable;
       acc.paid += row.summary.paid;
       acc.debt += row.summary.debt;
-      if (row.summary.debt > 0) acc.customerIds.add(row.item.customer_id);
+      if (row.item.subscription_id) acc.subscriptionIds.add(row.item.subscription_id);
+      if (row.item.customer_id) acc.customerIds.add(row.item.customer_id);
       if (row.summary.status === "overdue") acc.overdue += 1;
-
-      const dueTime = row.item.due_date ? new Date(row.item.due_date).getTime() : null;
-      if (row.summary.debt > 0 && dueTime !== null) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const sevenDays = today.getTime() + 7 * 24 * 60 * 60 * 1000;
-        if (dueTime >= today.getTime() && dueTime <= sevenDays) acc.upcoming += 1;
-      }
+      if (row.summary.debt > 0) acc.uncollected += 1;
 
       return acc;
     },
-    { receivable: 0, paid: 0, debt: 0, overdue: 0, upcoming: 0, customerIds: new Set<string>() }
+    { receivable: 0, paid: 0, debt: 0, overdue: 0, uncollected: 0, customerIds: new Set<string>(), subscriptionIds: new Set<string>() }
   ), [receivableRows]);
 
   const filteredRows = useMemo(() => {
@@ -279,6 +297,7 @@ export default function AdminPayments() {
       if (statusFilter === "overdue") return row.summary.status === "overdue";
       if (statusFilter === "upcoming") return row.summary.debt > 0 && dueTime !== null && dueTime >= today.getTime() && dueTime <= sevenDays;
       if (statusFilter === "paid") return row.summary.status === "paid";
+      if (statusFilter === "paused") return isPausedBillGoCustomer(row.item);
       if (statusFilter === "debt") return row.summary.debt > 0;
       return true;
     });
@@ -588,8 +607,8 @@ export default function AdminPayments() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-lg border border-outline-variant/30 bg-white p-4">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Khách cần thu</p>
-          <p className="mt-2 text-xl font-extrabold text-on-surface">{totals.customerIds.size}</p>
+          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng khách BillGo</p>
+          <p className="mt-2 text-xl font-extrabold text-on-surface">{totals.subscriptionIds.size}</p>
         </div>
         <div className="rounded-lg border border-outline-variant/30 bg-white p-4">
           <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng cần thu</p>
@@ -600,7 +619,7 @@ export default function AdminPayments() {
           <p className="mt-2 text-lg font-extrabold text-success">{formatBillGoCurrency(totals.paid)}</p>
         </div>
         <div className="rounded-lg border border-outline-variant/30 bg-white p-4">
-          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Còn lại</p>
+          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Công nợ</p>
           <p className="mt-2 text-lg font-extrabold text-error">{formatBillGoCurrency(totals.debt)}</p>
         </div>
         <div className="rounded-lg border border-error/20 bg-error-container p-4">
@@ -608,8 +627,8 @@ export default function AdminPayments() {
           <p className="mt-2 text-xl font-extrabold text-error">{totals.overdue}</p>
         </div>
         <div className="rounded-lg border border-warning/20 bg-warning-container p-4">
-          <p className="text-[10px] font-bold uppercase text-warning/75">Sắp đến hạn</p>
-          <p className="mt-2 text-xl font-extrabold text-warning">{totals.upcoming}</p>
+          <p className="text-[10px] font-bold uppercase text-warning/75">Chưa thu</p>
+          <p className="mt-2 text-xl font-extrabold text-warning">{totals.uncollected}</p>
         </div>
       </div>
 
@@ -694,7 +713,7 @@ export default function AdminPayments() {
               <div className="flex flex-wrap gap-1 rounded-lg bg-surface-container-low p-1 text-xs font-bold">
                 {[
                   ["debt", "Còn nợ"],
-                  ["upcoming", "Sắp đến hạn"],
+                  ["paused", "Ngừng thu"],
                   ["overdue", "Quá hạn"],
                   ["paid", "Đã thu đủ"],
                   ["all", "Tất cả"],
@@ -731,8 +750,8 @@ export default function AdminPayments() {
                       <p className="mt-1 text-xs text-on-surface-variant">Han thanh toan: {item.due_date || item.subscription?.next_due_date || "Chua co"}</p>
                     </div>
                     <div className="text-right">
-                      <span className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase ${summary.status === "overdue" ? "bg-error-container text-error" : summary.status === "paid" ? "bg-success-container text-success" : "bg-warning-container text-warning"}`}>
-                        {summary.statusLabel}
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase ${getBillGoStatusClassName(item, summary)}`}>
+                        {getBillGoDisplayStatus(item, summary)}
                       </span>
                       <p className="mt-2 text-sm font-bold text-on-surface">Còn: {formatBillGoCurrency(summary.debt)}</p>
                     </div>
