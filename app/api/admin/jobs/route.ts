@@ -50,7 +50,7 @@ async function getAdminUser() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { error: NextResponse.json({ error: "Khong duoc phep truy cap." }, { status: 401 }) };
+    return { error: NextResponse.json({ error: "Không được phép truy cập." }, { status: 401 }) };
   }
 
   const { data: profile } = await supabase
@@ -60,7 +60,7 @@ async function getAdminUser() {
     .single();
 
   if (profile?.role !== "admin") {
-    return { error: NextResponse.json({ error: "Khong co quyen quan tri vien." }, { status: 403 }) };
+    return { error: NextResponse.json({ error: "Không có quyền quản trị viên." }, { status: 403 }) };
   }
 
   return { user };
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
       return NextResponse.json(
-        { error: "Vui long cau hinh SUPABASE_SERVICE_ROLE_KEY trong .env.local." },
+        { error: "Vui lòng cấu hình SUPABASE_SERVICE_ROLE_KEY trong .env.local." },
         { status: 500 },
       );
     }
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     const primaryServiceId = getPrimaryServiceId(body.serviceId, body.serviceIds);
 
     if (!primaryServiceId || !body.address || !body.scheduledAt) {
-      return NextResponse.json({ error: "Thieu thong tin job bat buoc." }, { status: 400 });
+      return NextResponse.json({ error: "Thiếu thông tin job bắt buộc." }, { status: 400 });
     }
 
     const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
       const customerPhone = normalizePhone(body.customerPhone || "");
 
       if (!customerName || customerPhone.length < 8) {
-        return NextResponse.json({ error: "Vui long nhap ten khach hang va SDT hop le." }, { status: 400 });
+        return NextResponse.json({ error: "Vui lòng nhập tên khách hàng và SĐT hợp lệ." }, { status: 400 });
       }
 
       const { data: existingCustomer } = await supabaseAdmin
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
 
         if (createUserError || !authData.user) {
           return NextResponse.json(
-            { error: "Loi tao tai khoan khach hang: " + (createUserError?.message || "Khong co user.") },
+            { error: "Lỗi tạo tài khoản khách hàng: " + (createUserError?.message || "Không có user.") },
             { status: 500 },
           );
         }
@@ -155,7 +155,7 @@ export async function POST(request: Request) {
           .single();
 
         if (profileError) {
-          return NextResponse.json({ error: "Loi cap nhat ho so khach hang: " + profileError.message }, { status: 500 });
+          return NextResponse.json({ error: "Lỗi cập nhật hồ sơ khách hàng: " + profileError.message }, { status: 500 });
         }
 
         createdCustomer = profile;
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
     }
 
     if (!customerId) {
-      return NextResponse.json({ error: "Vui long chon hoac tao khach hang." }, { status: 400 });
+      return NextResponse.json({ error: "Vui lòng chọn hoặc tạo khách hàng." }, { status: 400 });
     }
 
     const jobCode = "JOB" + Math.floor(10000 + Math.random() * 90000);
@@ -203,7 +203,7 @@ export async function POST(request: Request) {
     }
 
     if (insertResult.error) {
-      return NextResponse.json({ error: "Khong the tao job: " + insertResult.error.message }, { status: 500 });
+      return NextResponse.json({ error: "Không thể tạo job: " + insertResult.error.message }, { status: 500 });
     }
 
     if (insertResult.data?.id) {
@@ -219,7 +219,7 @@ export async function POST(request: Request) {
     });
   } catch (error: unknown) {
     return NextResponse.json(
-      { error: "Loi he thong: " + (error instanceof Error ? error.message : "Khong xac dinh") },
+      { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
       { status: 500 },
     );
   }

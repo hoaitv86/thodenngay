@@ -36,7 +36,7 @@ export default function LoginPage() {
 
     if (profileError || !profile) {
       console.error("Profile fetch error:", profileError);
-      setError("KhÃ´ng tÃ¬m tháº¥y há»“ sÆ¡ ngÆ°á»i dÃ¹ng. Vui lÃ²ng kiá»ƒm tra láº¡i database.");
+      setError("Không tìm thấy hồ sơ người dùng. Vui lòng kiểm tra lại database.");
       setLoading(false);
       setDemoLoadingRole(null);
       return;
@@ -84,7 +84,7 @@ export default function LoginPage() {
     const demoData = await res.json();
 
     if (!res.ok) {
-      setError(demoData.error || "KhÃ´ng thá»ƒ Ä‘Äƒng nháº­p demo.");
+      setError(demoData.error || "Không thể đăng nhập demo.");
       setLoading(false);
       setDemoLoadingRole(null);
       return;
@@ -102,7 +102,7 @@ export default function LoginPage() {
           });
 
     if (authError || !data.user) {
-      setError(authError?.message || "KhÃ´ng thá»ƒ táº¡o phiÃªn Ä‘Äƒng nháº­p demo.");
+      setError(authError?.message || "Không thể tạo phiên đăng nhập demo.");
       setLoading(false);
       setDemoLoadingRole(null);
       return;

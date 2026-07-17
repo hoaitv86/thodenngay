@@ -41,7 +41,7 @@ const makeDefaultPassword = (customerName: string) => {
     .toLowerCase();
   const passwordPrefix = cleanNamePart
     ? `${cleanNamePart.charAt(0).toUpperCase()}${cleanNamePart.slice(1)}`
-    : "Khach";
+    : "Khách";
 
   return `${passwordPrefix}@123456`;
 };
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
 
     if (isLegacyServiceId(primaryServiceId)) {
       return NextResponse.json(
-        { error: "Dich vu cu da duoc an, vui long chon danh muc chuan moi." },
+        { error: "Dịch vụ cũ đã được ẩn, vui lòng chọn danh mục chuẩn mới." },
         { status: 400 }
       );
     }
@@ -454,7 +454,7 @@ export async function POST(request: Request) {
       }
 
       if (!insertedJob) {
-        return NextResponse.json({ error: "KhÃ´ng thá»ƒ láº¥y thÃ´ng tin job vá»«a táº¡o." }, { status: 500 });
+        return NextResponse.json({ error: "Không thể lấy thông tin job vừa tạo." }, { status: 500 });
       }
 
       await logQuickJobLifecycle(workerCheck.supabase as SupabaseClient, {
@@ -619,7 +619,7 @@ export async function POST(request: Request) {
     }
 
     if (!insertedJob) {
-      return NextResponse.json({ error: "KhÃ´ng thá»ƒ láº¥y thÃ´ng tin job vá»«a táº¡o." }, { status: 500 });
+      return NextResponse.json({ error: "Không thể lấy thông tin job vừa tạo." }, { status: 500 });
     }
 
     await logQuickJobLifecycle(supabaseAdmin as SupabaseClient, {

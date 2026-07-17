@@ -160,7 +160,7 @@ export const groupServicesByDatabaseHierarchy = <T extends ServiceHierarchyLike>
       return {
         category: {
           id: root.id,
-          name: root.name || "Danh muc",
+          name: root.name || "Danh mục",
           emoji: "",
           icon: root.icon || "BriefcaseIcon",
         },
@@ -198,7 +198,7 @@ export const getSelectableServices = <T extends ServiceHierarchyLike>(services: 
 
 export const getServicePathLabel = <T extends ServiceHierarchyLike>(service: T, services: T[]) => {
   const serviceById = new Map(services.map(item => [item.id, item]));
-  const names = [service.name || "Dich vu"];
+  const names = [service.name || "Dịch vụ"];
   const visited = new Set<string>([service.id]);
   let parentId = service.parent_service_id || null;
 
@@ -206,7 +206,7 @@ export const getServicePathLabel = <T extends ServiceHierarchyLike>(service: T, 
     visited.add(parentId);
     const parent = serviceById.get(parentId);
     if (!parent) break;
-    names.unshift(parent.name || "Danh muc");
+    names.unshift(parent.name || "Danh mục");
     parentId = parent.parent_service_id || null;
   }
 

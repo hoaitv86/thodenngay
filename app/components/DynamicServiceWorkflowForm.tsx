@@ -60,7 +60,7 @@ function WorkflowInput({
   if (field.type === "select") {
     return (
       <select className={commonClass} value={stringValue} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
-        <option value="">-- Chon --</option>
+        <option value="">-- Chọn --</option>
         {(field.options || []).map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
@@ -116,18 +116,18 @@ function CameraDevicesEditor({
               onClick={() => removeDevice(index)}
               disabled={disabled || normalizedDevices.length === 1}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-error hover:bg-error-container disabled:opacity-40"
-              aria-label="Xoa camera"
+              aria-label="Xóa camera"
             >
               <Trash2 size={15} />
             </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="input-field !rounded-lg text-sm" placeholder="Ten camera" value={device.name || ""} onChange={(event) => updateDevice(index, { name: event.target.value })} disabled={disabled} />
-            <input className="input-field !rounded-lg text-sm" placeholder="Vi tri" value={device.location || ""} onChange={(event) => updateDevice(index, { location: event.target.value })} disabled={disabled} />
+            <input className="input-field !rounded-lg text-sm" placeholder="Tên camera" value={device.name || ""} onChange={(event) => updateDevice(index, { name: event.target.value })} disabled={disabled} />
+            <input className="input-field !rounded-lg text-sm" placeholder="Vị trí" value={device.location || ""} onChange={(event) => updateDevice(index, { location: event.target.value })} disabled={disabled} />
             <input className="input-field !rounded-lg text-sm" placeholder="Serial" value={device.serial || ""} onChange={(event) => updateDevice(index, { serial: event.target.value })} disabled={disabled} />
-            <input className="input-field !rounded-lg text-sm" placeholder="UID neu co" value={device.uid || ""} onChange={(event) => updateDevice(index, { uid: event.target.value })} disabled={disabled} />
+            <input className="input-field !rounded-lg text-sm" placeholder="UID nếu có" value={device.uid || ""} onChange={(event) => updateDevice(index, { uid: event.target.value })} disabled={disabled} />
             <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="QR Text" value={device.qrText || ""} onChange={(event) => updateDevice(index, { qrText: event.target.value })} disabled={disabled} />
-            <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="Ghi chu" value={device.note || ""} onChange={(event) => updateDevice(index, { note: event.target.value })} disabled={disabled} />
+            <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="Ghi chú" value={device.note || ""} onChange={(event) => updateDevice(index, { note: event.target.value })} disabled={disabled} />
           </div>
         </div>
       ))}
@@ -138,7 +138,7 @@ function CameraDevicesEditor({
         disabled={disabled}
       >
         <Plus size={14} />
-        Them camera
+        Thêm camera
       </button>
     </div>
   );
@@ -210,8 +210,8 @@ export function DynamicServiceWorkflowForm({ services, value, onChange, includeS
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-sm font-extrabold text-primary-container">Thong tin nghiep vu theo dich vu</p>
-        <p className="mt-1 text-xs text-on-surface-variant">Chi hien cac section phu hop voi dich vu da chon.</p>
+        <p className="text-sm font-extrabold text-primary-container">Thông tin nghiệp vụ theo dịch vụ</p>
+        <p className="mt-1 text-xs text-on-surface-variant">Chỉ hiện các mục phù hợp với dịch vụ đã chọn.</p>
       </div>
       {sections.map((section) => (
         <WorkflowSection key={section.key} section={section} value={value} onChange={onChange} disabled={disabled} />
