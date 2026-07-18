@@ -1859,6 +1859,7 @@ export default function WorkerDashboard() {
     const unitPrice = Number(item.unitPrice) || 0;
     return sum + quantity * unitPrice;
   }, 0);
+  const completionAllInTotal = completionTotal + completionAddOnGrandTotal;
   const completionPaidAmount =
     completionPaymentStatus === "paid"
       ? completionTotal
@@ -3742,6 +3743,17 @@ export default function WorkerDashboard() {
                     <span className="text-sm font-bold text-on-success-container">Tổng tiền hóa đơn</span>
                     <span className="text-xl font-extrabold text-success">{formatCurrency(completionTotal)}</span>
                   </div>
+                  {selectedCompletionAddOnPackage && (
+                    <div className="mt-3 rounded-lg bg-white/80 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-bold text-on-surface">Tổng gồm gói cước</span>
+                        <span className="text-xl font-extrabold text-primary-container">{formatCurrency(completionAllInTotal)}</span>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-on-surface-variant">
+                        Bằng chữ: {readVietnameseMoney(completionAllInTotal)}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-4">
