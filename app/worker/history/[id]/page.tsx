@@ -26,6 +26,21 @@ interface CompletionItem {
   warrantyDays: number;
 }
 
+type ReceiptEditEntry = {
+  editedAt: string;
+  editedBy?: string | null;
+  reason: string;
+  previousAmount: number;
+  nextAmount: number;
+  previousItems: CompletionItem[];
+  nextItems: CompletionItem[];
+};
+
+type JobWorkflowData = Record<string, unknown> & {
+  receiptEditHistory?: ReceiptEditEntry[];
+  receiptRevision?: number;
+};
+
 interface WorkerJobDetail {
   id: string;
   job_code?: string | null;
@@ -40,6 +55,7 @@ interface WorkerJobDetail {
   final_amount?: number | null;
   warranty_days?: number | null;
   warranty_note?: string | null;
+  workflow_data?: JobWorkflowData | null;
   service?: {
     id?: string | null;
     name?: string | null;
@@ -64,6 +80,16 @@ interface WorkerJobDetail {
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 
+const makeEditItem = (): CompletionItem => ({
+  name: "",
+  quantity: 1,
+  unitPrice: 0,
+  warrantyDays: 0,
+});
+
+const calculateItemsTotal = (items: CompletionItem[]) =>
+  items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+
 export default function WorkerJobDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -72,6 +98,11 @@ export default function WorkerJobDetailPage() {
   const [workerName, setWorkerName] = useState("Thợ thực hiện");
   const [workerPhone, setWorkerPhone] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editItems, setEditItems] = useState<CompletionItem[]>([]);
+  const [editReason, setEditReason] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
 
   useEffect(() => {
     const fetchJob = async () => {
@@ -149,6 +180,111 @@ export default function WorkerJobDetailPage() {
     if (id) fetchJob();
   }, [id, router, supabase]);
 
+  const openEditReceipt = () => {
+    if (!job) return;
+    const currentItems = Array.isArray(job.completion_items) && job.completion_items.length > 0
+      ? job.completion_items
+      : [makeEditItem()];
+    setEditItems(currentItems.map(item => ({
+      name: item.name || "",
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      warrantyDays: Number(item.warrantyDays || 0),
+    })));
+    setEditReason("");
+    setEditError("");
+    setEditModalOpen(true);
+  };
+
+  const updateEditItem = (index: number, patch: Partial<CompletionItem>) => {
+    setEditItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+
+  const removeEditItem = (index: number) => {
+    setEditItems(current => current.length > 1 ? current.filter((_, itemIndex) => itemIndex !== index) : current);
+  };
+
+  const saveReceiptEdit = async () => {
+    if (!job || savingEdit) return;
+
+    const cleanedItems = editItems
+      .map(item => ({
+        name: item.name.trim(),
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        warrantyDays: Number(item.warrantyDays) || 0,
+      }))
+      .filter(item => item.name && item.quantity > 0);
+
+    if (cleanedItems.length === 0) {
+      setEditError("Vui lòng nhập ít nhất một hạng mục hợp lệ.");
+      return;
+    }
+
+    if (cleanedItems.some(item => item.unitPrice < 0 || item.warrantyDays < 0)) {
+      setEditError("Đơn giá và bảo hành không được âm.");
+      return;
+    }
+
+    if (!editReason.trim()) {
+      setEditError("Vui lòng nhập lý do sửa phiếu.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError("");
+
+    const previousItems = Array.isArray(job.completion_items) ? job.completion_items : [];
+    const previousAmount = Number(job.final_amount || calculateItemsTotal(previousItems));
+    const nextAmount = calculateItemsTotal(cleanedItems);
+    const nextWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
+    const previousWorkflow = job.workflow_data || {};
+    const nextHistory: ReceiptEditEntry[] = [
+      ...(Array.isArray(previousWorkflow.receiptEditHistory) ? previousWorkflow.receiptEditHistory : []),
+      {
+        editedAt: new Date().toISOString(),
+        editedBy: workerName,
+        reason: editReason.trim(),
+        previousAmount,
+        nextAmount,
+        previousItems,
+        nextItems: cleanedItems,
+      },
+    ];
+
+    const nextWorkflow: JobWorkflowData = {
+      ...previousWorkflow,
+      receiptRevision: Number(previousWorkflow.receiptRevision || 0) + 1,
+      receiptEditHistory: nextHistory,
+    };
+
+    const { error } = await supabase
+      .from("jobs")
+      .update({
+        completion_items: cleanedItems,
+        final_amount: nextAmount,
+        warranty_days: nextWarrantyDays,
+        workflow_data: nextWorkflow,
+      })
+      .eq("id", job.id);
+
+    setSavingEdit(false);
+
+    if (error) {
+      setEditError("Không thể lưu sửa phiếu: " + error.message);
+      return;
+    }
+
+    setJob({
+      ...job,
+      completion_items: cleanedItems,
+      final_amount: nextAmount,
+      warranty_days: nextWarrantyDays,
+      workflow_data: nextWorkflow,
+    });
+    setEditModalOpen(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -174,12 +310,17 @@ export default function WorkerJobDetailPage() {
       }];
   const finalAmount = Number(job.final_amount || completionItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
   const serviceName = job.service?.name || completionItems[0]?.name || "Công dịch vụ";
+  const jobServices = getJobServices({ service: job.service, job_services: job.job_services });
   const warrantyDays = Number(job.warranty_days || completionItems.reduce((max, item) => Math.max(max, Number(item.warrantyDays || 0)), 0));
   const warrantyUntil = new Date(completedDate);
   warrantyUntil.setDate(warrantyUntil.getDate() + warrantyDays);
   const completionImages = job.images || [];
   const firstRating = job.ratings?.[0];
   const ratingImages = firstRating?.images || [];
+  const receiptEditHistory = Array.isArray(job.workflow_data?.receiptEditHistory)
+    ? job.workflow_data.receiptEditHistory
+    : [];
+  const editTotal = calculateItemsTotal(editItems);
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface animate-fade-in">
@@ -267,11 +408,11 @@ export default function WorkerJobDetailPage() {
               )}
             </div>
           </div>
-          {getJobServices(job).length > 1 && (
+          {jobServices.length > 1 && (
             <div className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
               <p className="text-xs font-bold uppercase text-on-surface-variant">Các dịch vụ đã chọn</p>
               <ul className="mt-2 space-y-2">
-                {getJobServices(job).map(service => (
+                {jobServices.map(service => (
                   <li key={service.id} className="flex items-start gap-2 text-sm font-bold text-on-surface">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-container" />
                     {service.name || "Dịch vụ"}
@@ -376,13 +517,22 @@ export default function WorkerJobDetailPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-label-sm font-bold text-on-surface-variant uppercase tracking-widest">Hóa đơn & bảo hành</h3>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="no-print rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container"
-              >
-                In / Xuất hóa đơn
-              </button>
+              <div className="no-print flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openEditReceipt}
+                  className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                >
+                  Sửa phiếu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container"
+                >
+                  In / Xuất hóa đơn
+                </button>
+              </div>
             </div>
 
             <div className="invoice-print-area space-y-4 rounded-xl border border-outline-variant/20 bg-white p-4 shadow-sm">
@@ -468,6 +618,28 @@ export default function WorkerJobDetailPage() {
                 </div>
               </div>
 
+              {receiptEditHistory.length > 0 && (
+                <div className="no-print rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-xs font-bold uppercase text-amber-800">Lịch sử sửa phiếu</p>
+                  <div className="mt-3 space-y-2">
+                    {receiptEditHistory.slice().reverse().map((entry, index) => (
+                      <div key={`${entry.editedAt}-${index}`} className="rounded-lg bg-white/75 p-3 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-bold text-on-surface">{entry.editedBy || "Thợ thực hiện"}</span>
+                          <span className="text-xs font-medium text-on-surface-variant">
+                            {new Date(entry.editedAt).toLocaleString("vi-VN")}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-on-surface-variant">{entry.reason}</p>
+                        <p className="mt-1 text-xs font-bold text-amber-800">
+                          {formatCurrency(Number(entry.previousAmount || 0))} → {formatCurrency(Number(entry.nextAmount || 0))}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="rounded-xl border border-success/20 bg-success-container/35 p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success-container text-success">
@@ -498,6 +670,146 @@ export default function WorkerJobDetailPage() {
               <p className="text-center text-[11px] font-semibold text-on-surface-variant">
                 Phiếu được tạo từ hệ thống Thợ đến ngay. Vui lòng đối chiếu mã đơn khi cần hỗ trợ.
               </p>
+            </div>
+          </div>
+        )}
+
+        {editModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
+            <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:max-w-3xl sm:rounded-2xl sm:p-5">
+              <div className="flex items-start justify-between gap-3 border-b border-outline-variant/20 pb-3">
+                <div>
+                  <h3 className="text-lg font-extrabold text-on-surface">Sửa phiếu thu</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant">
+                    Cập nhật lại vật tư, gói cước hoặc chi phí bị thiếu. Hệ thống sẽ lưu lịch sử sửa phiếu.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-outline-variant/30 text-on-surface-variant"
+                  aria-label="Đóng"
+                  disabled={savingEdit}
+                >
+                  <XIcon size={18} />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {editItems.map((item, index) => (
+                  <div key={index} className="rounded-xl border border-outline-variant/25 bg-surface-container-low p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-bold uppercase text-on-surface-variant">Hạng mục {index + 1}</p>
+                      <button
+                        type="button"
+                        onClick={() => removeEditItem(index)}
+                        className="text-xs font-bold text-error disabled:opacity-40"
+                        disabled={editItems.length <= 1 || savingEdit}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-12">
+                      <label className="sm:col-span-5">
+                        <span className="text-xs font-bold text-on-surface-variant">Tên hạng mục</span>
+                        <input
+                          value={item.name}
+                          onChange={(event) => updateEditItem(index, { name: event.target.value })}
+                          className="mt-1 w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                          placeholder="Ví dụ: Phí lắp đặt Internet"
+                          disabled={savingEdit}
+                        />
+                      </label>
+                      <label className="sm:col-span-2">
+                        <span className="text-xs font-bold text-on-surface-variant">SL</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={item.quantity}
+                          onChange={(event) => updateEditItem(index, { quantity: Number(event.target.value) })}
+                          className="mt-1 w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                          disabled={savingEdit}
+                        />
+                      </label>
+                      <label className="sm:col-span-3">
+                        <span className="text-xs font-bold text-on-surface-variant">Đơn giá</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={item.unitPrice}
+                          onChange={(event) => updateEditItem(index, { unitPrice: Number(event.target.value) })}
+                          className="mt-1 w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                          disabled={savingEdit}
+                        />
+                      </label>
+                      <label className="sm:col-span-2">
+                        <span className="text-xs font-bold text-on-surface-variant">BH ngày</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={item.warrantyDays}
+                          onChange={(event) => updateEditItem(index, { warrantyDays: Number(event.target.value) })}
+                          className="mt-1 w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                          disabled={savingEdit}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setEditItems(current => [...current, makeEditItem()])}
+                  className="w-full rounded-xl border border-dashed border-primary-container/40 bg-primary-fixed/40 px-4 py-3 text-sm font-bold text-primary-container"
+                  disabled={savingEdit}
+                >
+                  Thêm hạng mục
+                </button>
+
+                <label className="block">
+                  <span className="text-xs font-bold text-on-surface-variant">Lý do sửa phiếu</span>
+                  <textarea
+                    value={editReason}
+                    onChange={(event) => setEditReason(event.target.value)}
+                    className="mt-1 min-h-24 w-full rounded-xl border border-outline-variant/35 bg-white px-3 py-2 text-sm text-on-surface outline-none focus:border-primary-container"
+                    placeholder="Ví dụ: Bổ sung vật tư phát sinh hoặc chọn lại gói cước đúng"
+                    disabled={savingEdit}
+                  />
+                </label>
+
+                {editError && (
+                  <div className="rounded-xl border border-error/20 bg-error-container/60 p-3 text-sm font-semibold text-on-error-container">
+                    {editError}
+                  </div>
+                )}
+
+                <div className="rounded-xl bg-success-container px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-on-success-container">Tổng mới</span>
+                    <span className="text-xl font-extrabold text-success">{formatCurrency(editTotal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="rounded-xl border border-outline-variant/35 bg-white px-4 py-3 text-sm font-bold text-on-surface"
+                  disabled={savingEdit}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={saveReceiptEdit}
+                  className="rounded-xl bg-primary-container px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                  disabled={savingEdit}
+                >
+                  {savingEdit ? "Đang lưu..." : "Lưu phiếu"}
+                </button>
+              </div>
             </div>
           </div>
         )}
