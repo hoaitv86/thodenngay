@@ -155,7 +155,7 @@ export function getServiceWorkflowKey(service: ServiceLikeForWorkflow): ServiceW
   const isInstall = /lap|cai|install|setup|moi/.test(text);
   const isRepairLike = /sua|ve sinh|bao tri|repair|maintenance|windows|pc|laptop|may/.test(text);
 
-  if (/internet|wifi|mang|router|pppoe/.test(text) && isInstall) return "internet_install";
+  if (isBillGoInternetInstallService(service)) return "internet_install";
   if (/camera|cctv|dau ghi/.test(text) && isInstall) return "camera_install";
   if (/may tinh|computer|laptop|pc|windows/.test(text) && isRepairLike) return "computer_repair";
   if (/may in|printer|driver/.test(text) && (isInstall || isRepairLike)) return "printer_install";
