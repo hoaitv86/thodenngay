@@ -57,6 +57,7 @@ import {
 } from "@/lib/worker-sales";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import { isDemoAccount } from "@/lib/demo-accounts";
+import { readVietnameseMoney } from "@/lib/vietnamese-money";
 
 const DynamicServiceWorkflowForm = dynamic(() =>
   import("@/app/components/DynamicServiceWorkflowForm").then(mod => mod.DynamicServiceWorkflowForm)
@@ -333,6 +334,7 @@ const initialWorkerDashboardData: WorkerDashboardData = {
 };
 
 const WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS = 450;
+const BILLGO_COMPLETION_INSTALL_FEE = 300000;
 
 const getDefaultScheduledAt = () => {
   const nextHour = new Date();
@@ -765,6 +767,8 @@ export default function WorkerDashboard() {
   const completionAddOnTotal = selectedCompletionAddOnPackage
     ? getBillGoCollectableAmount(completionAddOnMonthlyFee, completionAddOnCycle)
     : 0;
+  const completionAddOnInstallFee = selectedCompletionAddOnPackage ? BILLGO_COMPLETION_INSTALL_FEE : 0;
+  const completionAddOnGrandTotal = completionAddOnTotal + completionAddOnInstallFee;
   const isInternetCompletionJob = React.useMemo(() => {
     if (!activeJobToComplete) return false;
     const serviceText = normalizeServiceText([
@@ -2094,7 +2098,8 @@ export default function WorkerDashboard() {
       throw new Error("Không thể tạo thuê bao gói phát sinh: " + subscriptionError.message);
     }
 
-    const { error: receivableError } = await supabase.from("billgo_receivables").insert({
+    const usageBillingParts = getBillGoBillingParts(billingPeriod.usageMonth);
+    const { error: receivableError } = await supabase.from("billgo_receivables").insert([{
       customer_id: job.customer_id,
       worker_id: worker.id,
       job_id: job.id,
@@ -2122,7 +2127,35 @@ export default function WorkerDashboard() {
       status: getBillGoStoredStatus(totalAmount, 0, billingPeriod.dueDate),
       note: note || null,
       created_by: worker.user_id,
-    });
+    }, {
+      customer_id: job.customer_id,
+      worker_id: worker.id,
+      job_id: job.id,
+      subscription_id: subscription.id,
+      type: "installation_fee",
+      package_id: selectedCompletionAddOnPackage.id,
+      package_name_at_collection: selectedCompletionAddOnPackage.name,
+      title: `Phí lắp đặt ${selectedCompletionAddOnPackage.name}`,
+      total_amount: BILLGO_COMPLETION_INSTALL_FEE,
+      due_date: startDate,
+      period_start: billingPeriod.periodStart,
+      period_end: billingPeriod.periodStart,
+      collection_month: billingPeriod.usageMonth,
+      usage_month: billingPeriod.usageMonth,
+      billing_month: usageBillingParts.billingMonth,
+      billing_year: usageBillingParts.billingYear,
+      cycle_at_collection: completionAddOnCycle,
+      billing_months: 0,
+      bonus_months: 0,
+      service_months: 0,
+      paid_amount: 0,
+      monthly_fee_at_collection: 0,
+      next_period_start: nextPeriodStart,
+      next_due_date: nextBilling.dueDate,
+      status: getBillGoStoredStatus(BILLGO_COMPLETION_INSTALL_FEE, 0, startDate),
+      note: note || null,
+      created_by: worker.user_id,
+    }]);
 
     if (receivableError) {
       await supabase.from("billgo_subscriptions").delete().eq("id", subscription.id);
@@ -2293,7 +2326,10 @@ export default function WorkerDashboard() {
               packageType: selectedCompletionAddOnPackage.type,
               monthlyFee: completionAddOnMonthlyFee,
               cycle: completionAddOnCycle,
-              totalAmount: completionAddOnTotal,
+              subscriptionAmount: completionAddOnTotal,
+              installFee: completionAddOnInstallFee,
+              totalAmount: completionAddOnGrandTotal,
+              totalAmountInWords: readVietnameseMoney(completionAddOnGrandTotal),
               note: completionAddOnNote.trim() || null,
               selectedAt: new Date().toISOString(),
             } : undefined,
@@ -3550,10 +3586,27 @@ export default function WorkerDashboard() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng cước kỳ đầu</label>
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Cước kỳ đầu</label>
                       <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-primary-container">
                         {formatBillGoCurrency(completionAddOnTotal)}
                       </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Phí lắp đặt</label>
+                      <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-on-surface">
+                        {formatBillGoCurrency(completionAddOnInstallFee)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng thanh toán</label>
+                      <div className="rounded-lg border border-primary-container/30 bg-white px-3 py-2 text-base font-extrabold text-primary-container">
+                        {formatBillGoCurrency(completionAddOnGrandTotal)}
+                      </div>
+                      <p className="text-xs font-semibold text-on-surface-variant">
+                        Bằng chữ: {readVietnameseMoney(completionAddOnGrandTotal)}
+                      </p>
                     </div>
 
                     <div className="space-y-1 sm:col-span-2">
