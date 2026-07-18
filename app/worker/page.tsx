@@ -335,6 +335,7 @@ const initialWorkerDashboardData: WorkerDashboardData = {
 
 const WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS = 450;
 const BILLGO_COMPLETION_INSTALL_FEE = 300000;
+const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "three_months", "six_months", "yearly"];
 
 const getDefaultScheduledAt = () => {
   const nextHour = new Date();
@@ -717,6 +718,8 @@ export default function WorkerDashboard() {
   const [completionPaymentMethod, setCompletionPaymentMethod] = useState("cash");
   const [completionPaymentNote, setCompletionPaymentNote] = useState("");
   const [completionHandoverData, setCompletionHandoverData] = useState<WorkflowData>({});
+  const [completionInternetCycle, setCompletionInternetCycle] = useState<BillGoCycle>("monthly");
+  const [completionInternetMonthlyFee, setCompletionInternetMonthlyFee] = useState("");
   const [completionAddOnPackageId, setCompletionAddOnPackageId] = useState("");
   const [completionAddOnCycle, setCompletionAddOnCycle] = useState<BillGoCycle>("monthly");
   const [completionAddOnNote, setCompletionAddOnNote] = useState("");
@@ -1779,12 +1782,15 @@ export default function WorkerDashboard() {
   };
 
   const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
+    const workflowBillGo = job.workflow_data?.billgo as { cycle?: BillGoCycle; amount?: number | string } | undefined;
     setActiveJobToComplete(job);
     setAddToBillGo(false);
     setCompletionPaymentStatus("paid");
     setCompletionPaymentAmount("");
     setCompletionPaymentMethod("cash");
     setCompletionPaymentNote("");
+    setCompletionInternetCycle(workflowBillGo?.cycle || "monthly");
+    setCompletionInternetMonthlyFee(workflowBillGo?.amount ? String(workflowBillGo.amount) : "");
     setCompletionAddOnPackageId("");
     setCompletionAddOnCycle("monthly");
     setCompletionAddOnNote("");
@@ -1859,7 +1865,11 @@ export default function WorkerDashboard() {
     return sum + quantity * unitPrice;
   }, 0);
   const completionInternetInstallFee = isInternetCompletionJob ? BILLGO_COMPLETION_INSTALL_FEE : 0;
-  const completionTotal = completionItemsTotal + completionInternetInstallFee;
+  const completionInternetMonthlyFeeNumber = isInternetCompletionJob ? toMoneyNumber(completionInternetMonthlyFee) : 0;
+  const completionInternetCycleTotal = completionInternetMonthlyFeeNumber > 0
+    ? getBillGoCollectableAmount(completionInternetMonthlyFeeNumber, completionInternetCycle)
+    : 0;
+  const completionTotal = completionItemsTotal + completionInternetInstallFee + completionInternetCycleTotal;
   const completionAllInTotal = completionTotal + completionAddOnGrandTotal;
   const completionPaidAmount =
     completionPaymentStatus === "paid"
@@ -1947,8 +1957,16 @@ export default function WorkerDashboard() {
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
   };
 
-  const ensureBillGoFromWorkflow = async (job: WorkerJob) => {
-    const billgo = job.workflow_data?.billgo;
+  const ensureBillGoFromWorkflow = async (
+    job: WorkerJob,
+    billgoOverride?: {
+      cycle?: BillGoCycle;
+      startDate?: string;
+      amount?: number | string;
+      note?: string;
+    }
+  ) => {
+    const billgo = billgoOverride || job.workflow_data?.billgo;
     if (!billgo || typeof billgo !== "object" || !worker?.id || !job.customer_id) return;
 
     const billgoData = billgo as {
@@ -1962,6 +1980,7 @@ export default function WorkerDashboard() {
     const cycleKey = billgoData.cycle || "monthly";
     const cycle = getBillGoCycleOption(cycleKey);
     const billingPeriod = getBillGoBillingPeriod(startDate, cycleKey);
+    const totalAmount = getBillGoCollectableAmount(amount, cycleKey);
 
     if (amount <= 0) return;
 
@@ -1983,9 +2002,12 @@ export default function WorkerDashboard() {
           package_name: job.serviceName || "Cước dịch vụ",
           service_type: "internet",
           cycle: cycleKey,
+          current_cycle: cycleKey,
           amount_per_cycle: amount,
+          monthly_fee: amount,
           start_date: billingPeriod.periodStart,
           next_due_date: billingPeriod.dueDate,
+          next_period_start: billingPeriod.periodStart,
           note: billgoData.note || null,
           created_by: worker.user_id,
         })
@@ -2015,13 +2037,17 @@ export default function WorkerDashboard() {
       subscription_id: subscriptionId,
       type: "subscription_fee",
       title: `Thu cước ${job.serviceName || "Internet"}`,
-      total_amount: amount,
+      total_amount: totalAmount,
       due_date: billingPeriod.dueDate,
       period_start: billingPeriod.periodStart,
       period_end: billingPeriod.periodEnd,
       billing_months: cycle.paidMonths,
       bonus_months: cycle.bonusMonths,
-      status: getBillGoStoredStatus(amount, 0, billingPeriod.dueDate),
+      cycle_at_collection: cycleKey,
+      service_months: cycle.paidMonths + cycle.bonusMonths,
+      paid_amount: 0,
+      monthly_fee_at_collection: amount,
+      status: getBillGoStoredStatus(totalAmount, 0, billingPeriod.dueDate),
       note: billgoData.note || null,
       created_by: worker.user_id,
     });
@@ -2166,7 +2192,7 @@ export default function WorkerDashboard() {
     setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
-    const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) + completionInternetInstallFee;
+    const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) + completionInternetInstallFee + completionInternetCycleTotal;
     const paidAmount =
       completionPaymentStatus === "paid"
         ? finalAmount
@@ -2199,6 +2225,18 @@ export default function WorkerDashboard() {
 
     if (paidAmount > finalAmount) {
       showToast("Số tiền đã thu không được lớn hơn tổng tiền hóa đơn.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (isInternetCompletionJob && completionInternetMonthlyFeeNumber < 0) {
+      showToast("Cước Internet/tháng không được âm.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (isInternetCompletionJob && !INTERNET_COMPLETION_CYCLES.includes(completionInternetCycle)) {
+      showToast("Chu kỳ đóng cước Internet không hợp lệ.", "error");
       setUploadingImages(false);
       return;
     }
@@ -2293,6 +2331,14 @@ export default function WorkerDashboard() {
               note: completionPaymentNote.trim() || null,
               recordedAt: new Date().toISOString(),
             },
+            billgo: isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0 ? {
+              ...(job.workflow_data?.billgo || {}),
+              cycle: completionInternetCycle,
+              amount: completionInternetMonthlyFeeNumber,
+              startDate: new Date().toISOString().slice(0, 10),
+              totalAmount: completionInternetCycleTotal,
+              note: "Cước Internet lắp mới",
+            } : job.workflow_data?.billgo,
             billgoAddOn: selectedCompletionAddOnPackage ? {
               packageId: selectedCompletionAddOnPackage.id,
               packageName: selectedCompletionAddOnPackage.name,
@@ -2318,8 +2364,13 @@ export default function WorkerDashboard() {
         throw new Error("Cập nhật thất bại. Vui lòng kiểm tra chính sách bảo mật RLS hoặc cấu trúc bảng của dữ liệu.");
       }
 
-      if (addToBillGo) {
-        await ensureBillGoFromWorkflow(job);
+      if (addToBillGo || (isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0)) {
+        await ensureBillGoFromWorkflow(job, isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0 ? {
+          cycle: completionInternetCycle,
+          amount: completionInternetMonthlyFeeNumber,
+          startDate: new Date().toISOString().slice(0, 10),
+          note: "Cước Internet lắp mới",
+        } : undefined);
       }
 
       if (selectedCompletionAddOnPackage) {
@@ -2362,6 +2413,8 @@ export default function WorkerDashboard() {
       setCompletionHandoverData({});
       setCompletionPaymentAmount("");
       setCompletionPaymentNote("");
+      setCompletionInternetCycle("monthly");
+      setCompletionInternetMonthlyFee("");
       setCompletionAddOnPackageId("");
       setCompletionAddOnCycle("monthly");
       setCompletionAddOnNote("");
@@ -3474,6 +3527,8 @@ export default function WorkerDashboard() {
                     setPreviewUrls([]);
                     setCompletionItems([]);
                     setCompletionHandoverData({});
+                    setCompletionInternetCycle("monthly");
+                    setCompletionInternetMonthlyFee("");
                     setCompletionAddOnPackageId("");
                     setCompletionAddOnCycle("monthly");
                     setCompletionAddOnNote("");
@@ -3509,6 +3564,55 @@ export default function WorkerDashboard() {
                 includeSectionKeys={handoverWorkflowSectionKeys}
                 disabled={uploadingImages}
               />
+
+              {isInternetCompletionJob && (
+                <div className="rounded-xl border border-success/20 bg-success-container/60 p-4">
+                  <div className="mb-3">
+                    <label className="block text-sm font-bold text-on-surface">Cước Internet lắp mới</label>
+                    <p className="text-xs text-on-surface-variant">Chọn chu kỳ khách đóng để tính tổng tiền xuất phiếu thu.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Cước Internet/tháng</label>
+                      <input
+                        className="input-field !py-2 text-sm"
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={completionInternetMonthlyFee}
+                        onChange={event => setCompletionInternetMonthlyFee(event.target.value)}
+                        placeholder="Nhập cước tháng"
+                        disabled={uploadingImages}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Chu kỳ đóng</label>
+                      <select
+                        className="input-field !py-2 text-sm"
+                        value={completionInternetCycle}
+                        onChange={event => setCompletionInternetCycle(event.target.value as BillGoCycle)}
+                        disabled={uploadingImages}
+                      >
+                        {BILLGO_CYCLE_OPTIONS.filter(option => INTERNET_COMPLETION_CYCLES.includes(option.value)).map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Cước theo chu kỳ</label>
+                      <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-primary-container">
+                        {formatBillGoCurrency(completionInternetCycleTotal)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Phí lắp đặt</label>
+                      <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-on-surface">
+                        {formatBillGoCurrency(completionInternetInstallFee)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {isInternetCompletionJob && (
                 <div className="rounded-xl border border-primary-container/20 bg-primary-fixed/40 p-4">
@@ -3710,6 +3814,12 @@ export default function WorkerDashboard() {
                   <p className="mt-1 text-xs font-semibold text-on-success-container">
                     Bằng chữ: {readVietnameseMoney(completionTotal)}
                   </p>
+                  {completionInternetCycleTotal > 0 && (
+                    <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2 text-xs">
+                      <span className="font-semibold text-on-surface-variant">Đã cộng cước Internet {getBillGoCycleOption(completionInternetCycle).label}</span>
+                      <span className="font-extrabold text-on-surface">{formatCurrency(completionInternetCycleTotal)}</span>
+                    </div>
+                  )}
                   {completionInternetInstallFee > 0 && (
                     <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2 text-xs">
                       <span className="font-semibold text-on-surface-variant">Đã cộng phí lắp đặt Internet</span>
