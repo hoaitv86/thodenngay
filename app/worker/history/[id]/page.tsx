@@ -122,6 +122,35 @@ const getNumberValue = (value: unknown) => {
   return Number.isFinite(amount) ? amount : 0;
 };
 
+const normalizeText = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const isInternetInstallReceiptForJob = (job: WorkerJobDetail) => {
+  const services = getJobServices({ service: job.service, job_services: job.job_services });
+  const serviceName = job.service?.name || "";
+  const serviceText = normalizeText(`${serviceName} ${services.map(service => service.name || "").join(" ")}`);
+  return Boolean(job.workflow_data?.billgo || job.workflow_data?.internetInstall)
+    || ((/internet|wifi|wi-fi|mang|cap quang/.test(serviceText)) && (/lap|moi|hoa mang|install/.test(serviceText)));
+};
+
+const isInitialInternetServiceItem = (job: WorkerJobDetail, item: CompletionItem, index: number) => {
+  if (!isInternetInstallReceiptForJob(job) || index !== 0 || item.generatedKey) return false;
+
+  const quotedPrice = getNumberValue(job.quoted_price);
+  const unitPrice = getNumberValue(item.unitPrice);
+  const itemName = normalizeText(item.name || "");
+  const serviceName = normalizeText(job.service?.name || "");
+
+  return (
+    (quotedPrice > 0 && unitPrice === quotedPrice)
+    || (Boolean(serviceName) && itemName === serviceName)
+    || /cong dich vu|lap moi internet|lap dat internet|internet/.test(itemName)
+  );
+};
+
 export default function WorkerJobDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -242,9 +271,10 @@ export default function WorkerJobDetailPage() {
     const workflowInternetInstall = job.workflow_data?.internetInstall || {};
     const workflowAddOn = job.workflow_data?.billgoAddOn || {};
     const currentItems = Array.isArray(job.completion_items) && job.completion_items.length > 0
-      ? job.completion_items.filter(item => !item.generatedKey)
+      ? job.completion_items.filter((item, index) => !item.generatedKey && !isInitialInternetServiceItem(job, item, index))
       : [makeEditItem()];
-    setEditItems(currentItems.map(item => ({
+    const nextEditItems = currentItems.length > 0 ? currentItems : [makeEditItem()];
+    setEditItems(nextEditItems.map(item => ({
       name: item.name || "",
       quantity: Number(item.quantity || 0),
       unitPrice: Number(item.unitPrice || 0),
@@ -290,7 +320,7 @@ export default function WorkerJobDetailPage() {
         unitPrice: Number(item.unitPrice) || 0,
         warrantyDays: Number(item.warrantyDays) || 0,
       }))
-      .filter(item => item.name && item.quantity > 0);
+      .filter((item, index) => item.name && item.quantity > 0 && !isInitialInternetServiceItem(job, item, index));
 
     const cleanedItems = [...cleanedManualItems, ...editGeneratedItems];
 
@@ -450,9 +480,7 @@ export default function WorkerJobDetailPage() {
   const finalAmount = Number(job.final_amount || completionItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
   const serviceName = job.service?.name || completionItems[0]?.name || "Công dịch vụ";
   const jobServices = getJobServices({ service: job.service, job_services: job.job_services });
-  const serviceText = `${serviceName} ${jobServices.map(service => service.name || "").join(" ")}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const isInternetInstallReceipt = Boolean(job.workflow_data?.billgo || job.workflow_data?.internetInstall)
-    || ((/internet|wifi|wi-fi|mang|cap quang/.test(serviceText)) && (/lap|moi|hoa mang|install/.test(serviceText)));
+  const isInternetInstallReceipt = isInternetInstallReceiptForJob(job);
   const warrantyDays = Number(job.warranty_days || completionItems.reduce((max, item) => Math.max(max, Number(item.warrantyDays || 0)), 0));
   const warrantyUntil = new Date(completedDate);
   warrantyUntil.setDate(warrantyUntil.getDate() + warrantyDays);
@@ -518,7 +546,8 @@ export default function WorkerJobDetailPage() {
       generatedKey: "viettel-gift-camera",
     } : null,
   ] as Array<CompletionItem | null>).filter((item): item is CompletionItem => Boolean(item));
-  const editTotal = calculateItemsTotal(editItems) + calculateItemsTotal(editGeneratedItems);
+  const editChargeableManualItems = editItems.filter((item, index) => !isInitialInternetServiceItem(job, item, index));
+  const editTotal = calculateItemsTotal(editChargeableManualItems) + calculateItemsTotal(editGeneratedItems);
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface animate-fade-in">
