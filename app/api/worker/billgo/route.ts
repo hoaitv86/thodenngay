@@ -891,8 +891,10 @@ export async function POST(request: Request) {
     return jsonError(receivableError.message);
   }
 
+  let initialReceipt: { receipt_code: string; lookup_code: string; qr_payload: string } | null = null;
+
   if (paidAmount > 0) {
-    const { data: payment } = await admin
+    const { data: payment, error: paymentError } = await admin
       .from("payments")
       .insert({
         job_id: null,
@@ -906,6 +908,47 @@ export async function POST(request: Request) {
       })
       .select("id")
       .single();
+    if (paymentError) return jsonError(paymentError.message);
+
+    const { data: collector } = await admin
+      .from("profiles")
+      .select("full_name, phone")
+      .eq("id", userId)
+      .maybeSingle();
+    const receiptCode = buildBillGoReceiptCode(payment.id, initialPaidAt);
+    const lookupCode = buildBillGoReceiptLookupCode(receiptCode);
+    const receiptUrl = new URL(`/billgo/receipt/${lookupCode}`, request.url).toString();
+    const { data: receipt, error: receiptError } = await admin
+      .from("billgo_receipts")
+      .insert({
+        receipt_code: receiptCode,
+        lookup_code: lookupCode,
+        qr_payload: receiptUrl,
+        payment_id: payment.id,
+        receivable_id: receivable.id,
+        subscription_id: subscription.id,
+        worker_id: workerId,
+        collected_by: userId,
+        customer_name: customerName,
+        customer_phone: phone || null,
+        internet_account: account,
+        customer_address: addressDetail || address || null,
+        package_name: packageName,
+        cycle_at_collection: cycle,
+        period_start: receivable.period_start,
+        period_end: receivable.period_end,
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
+        remaining_amount: Math.max(totalAmount - paidAmount, 0),
+        payment_method: initialPaymentMethod,
+        paid_at: initialPaidAt,
+        collector_name: collector?.full_name || collector?.phone || null,
+        note: "Phiếu thu lắp mới Internet",
+      })
+      .select("receipt_code, lookup_code, qr_payload")
+      .single();
+    if (receiptError) return jsonError("Không thể tạo phiếu thu lắp mới: " + receiptError.message);
+    initialReceipt = receipt;
 
     if (paidAmount >= totalAmount) {
       await admin.from("billgo_payment_coverages").insert(
@@ -923,7 +966,7 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivable.id, collectionMonth }, { status: 201 });
+  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivable.id, collectionMonth, receipt: initialReceipt }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {

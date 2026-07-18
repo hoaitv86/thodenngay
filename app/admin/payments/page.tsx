@@ -6,6 +6,8 @@ import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
   buildBillGoCoverageMonths,
+  buildBillGoReceiptCode,
+  buildBillGoReceiptLookupCode,
   formatBillGoCurrency,
   getBillGoBillingParts,
   getBillGoBillingPeriod,
@@ -529,16 +531,50 @@ export default function AdminPayments() {
       if (receivableError) throw receivableError;
 
       if (initialPaidAmount > 0) {
+        const paidAt = new Date().toISOString();
         const { data: payment, error: paymentError } = await supabase.from("payments").insert({
           receivable_id: receivable.id,
           amount: initialPaidAmount,
           method: "cash",
           status: "paid",
-          paid_at: new Date().toISOString(),
+          paid_at: paidAt,
           collected_by: user?.id || null,
           note: "Thanh toán ban đầu khi tạo BillGo",
         }).select("id").single();
         if (paymentError) throw paymentError;
+
+        const { data: collector } = user?.id
+          ? await supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle()
+          : { data: null };
+        const receiptCode = buildBillGoReceiptCode(payment.id, paidAt);
+        const lookupCode = buildBillGoReceiptLookupCode(receiptCode);
+        const receiptUrl = `${window.location.origin}/billgo/receipt/${lookupCode}`;
+        const { error: receiptError } = await supabase.from("billgo_receipts").insert({
+          receipt_code: receiptCode,
+          lookup_code: lookupCode,
+          qr_payload: receiptUrl,
+          payment_id: payment.id,
+          receivable_id: receivable.id,
+          subscription_id: subscription.id,
+          worker_id: newBill.workerId || null,
+          collected_by: user?.id || null,
+          customer_name: selectedCustomer?.full_name || null,
+          customer_phone: selectedCustomer?.phone || null,
+          internet_account: newBill.internetAccount.trim() || null,
+          customer_address: selectedCustomer?.address || null,
+          package_name: packageName,
+          cycle_at_collection: newBill.cycle,
+          period_start: billingPeriod.periodStart,
+          period_end: billingPeriod.periodEnd,
+          total_amount: totalAmount,
+          paid_amount: initialPaidAmount,
+          remaining_amount: Math.max(totalAmount - initialPaidAmount, 0),
+          payment_method: "cash",
+          paid_at: paidAt,
+          collector_name: collector?.full_name || collector?.phone || null,
+          note: "Phiếu thu lắp mới Internet",
+        });
+        if (receiptError) throw receiptError;
 
         if (initialPaidAmount >= totalAmount) {
           const { error: coverageError } = await supabase.from("billgo_payment_coverages").insert(

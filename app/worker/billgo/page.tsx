@@ -1731,10 +1731,11 @@ export default function WorkerBillGoPage() {
                         </div>
                       </summary>
                       <div className="border-t border-outline-variant/30 p-3 pt-2">
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-4 gap-2">
                           <a href={`/billgo/receipt/${receipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">Xem</a>
                           <a href={`/billgo/receipt/${receipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">PDF/In</a>
                           <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Chia sẻ</button>
+                          <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Zalo</button>
                         </div>
                         {(receipt.note || payment?.note) && <p className="mt-2 text-xs text-on-surface-variant">{receipt.note || payment?.note}</p>}
                       </div>

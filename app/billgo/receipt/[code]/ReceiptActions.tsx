@@ -37,6 +37,15 @@ export default function ReceiptActions({ receiptCode, receiptUrl, autoPrint }: R
     window.alert("Đã sao chép liên kết phiếu thu.");
   };
 
+  const shareToZalo = async () => {
+    if (navigator.share) {
+      await navigator.share({ title: `Phiếu thu ${receiptCode}`, text: `Phiếu thu ${receiptCode}`, url: receiptUrl });
+      return;
+    }
+    await navigator.clipboard?.writeText(receiptUrl);
+    window.alert("Đã sao chép liên kết phiếu thu. Mở Zalo và dán để gửi cho khách.");
+  };
+
   return (
     <div className="receipt-actions flex flex-wrap gap-2">
       <button type="button" onClick={() => void printReceipt()} className="btn-primary !w-auto !px-4 !py-2">
@@ -44,6 +53,9 @@ export default function ReceiptActions({ receiptCode, receiptUrl, autoPrint }: R
       </button>
       <button type="button" onClick={() => void shareReceipt()} className="btn-outline !w-auto !px-4 !py-2">
         Chia sẻ
+      </button>
+      <button type="button" onClick={() => void shareToZalo()} className="btn-outline !w-auto !px-4 !py-2">
+        Gửi Zalo
       </button>
     </div>
   );

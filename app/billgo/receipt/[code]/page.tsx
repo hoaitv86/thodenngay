@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { formatBillGoCurrency, getBillGoCycleOption } from "@/lib/billgo";
+import { readVietnameseMoney } from "@/lib/vietnamese-money";
 import ReceiptActions from "./ReceiptActions";
 
 export const dynamic = "force-dynamic";
@@ -128,6 +129,7 @@ export default async function BillGoReceiptPage({ params, searchParams }: Receip
 
   const receiptUrl = await buildReceiptUrl(receipt);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=10&data=${encodeURIComponent(receiptUrl)}`;
+  const paidAmountText = readVietnameseMoney(receipt.paid_amount);
 
   return (
     <main className="min-h-dvh bg-surface px-4 py-6 text-on-surface">
@@ -192,6 +194,11 @@ export default async function BillGoReceiptPage({ params, searchParams }: Receip
             <p className="text-xs font-bold uppercase text-error">Còn lại</p>
             <p className="mt-2 text-xl font-extrabold text-error">{formatBillGoCurrency(receipt.remaining_amount)}</p>
           </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-outline-variant/30 bg-white p-4 text-sm">
+          <p className="text-xs font-bold uppercase text-on-surface-variant">Số tiền bằng chữ</p>
+          <p className="mt-1 text-base font-extrabold text-on-surface">{paidAmountText}</p>
         </div>
 
         {receipt.note && (
