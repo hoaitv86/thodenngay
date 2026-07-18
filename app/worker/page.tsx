@@ -159,12 +159,20 @@ type WorkerBillGoReceivable = {
   subscription_id?: string | null;
   type?: string | null;
   title?: string | null;
+  package_id?: string | null;
+  package_name_at_collection?: string | null;
   total_amount?: number | string | null;
   due_date?: string | null;
   period_start?: string | null;
   period_end?: string | null;
   billing_months?: number | null;
   bonus_months?: number | null;
+  service_months?: number | null;
+  paid_amount?: number | string | null;
+  monthly_fee_at_collection?: number | string | null;
+  cycle_at_collection?: BillGoCycle | string | null;
+  next_period_start?: string | null;
+  next_due_date?: string | null;
   status?: string | null;
   note?: string | null;
   customer?: {
@@ -179,6 +187,7 @@ type WorkerBillGoReceivable = {
     customer_address?: string | null;
     package_name?: string | null;
     cycle?: string | null;
+    current_cycle?: string | null;
     next_due_date?: string | null;
   } | null;
   payments?: Array<{
@@ -716,6 +725,7 @@ export default function WorkerDashboard() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentCycle, setPaymentCycle] = useState<BillGoCycle>("monthly");
+  const [paymentCyclesByReceivable, setPaymentCyclesByReceivable] = useState<Record<string, BillGoCycle>>({});
   const [paymentNote, setPaymentNote] = useState("");
   const [completionPaymentStatus, setCompletionPaymentStatus] = useState<CompletionPaymentStatus>("paid");
   const [completionPaymentAmount, setCompletionPaymentAmount] = useState("");
@@ -730,10 +740,34 @@ export default function WorkerDashboard() {
   const [completionAddOnPackageId, setCompletionAddOnPackageId] = useState("");
   const [completionAddOnCycle, setCompletionAddOnCycle] = useState<BillGoCycle>("monthly");
   const [completionAddOnNote, setCompletionAddOnNote] = useState("");
-  const billGoRows = useMemo(
-    () => workerBillGoReceivables.map(item => ({ item, summary: getBillGoReceivableSummary(item) })),
-    [workerBillGoReceivables]
-  );
+  const billGoRows = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    const grouped = new Map<string, { item: WorkerBillGoReceivable; summary: ReturnType<typeof getBillGoReceivableSummary> }>();
+
+    workerBillGoReceivables.forEach(item => {
+      if (item.status === "deleted" || item.status === "cancelled") return;
+      const summary = getBillGoReceivableSummary(item);
+      if (summary.debt <= 0) return;
+
+      const dueDate = item.due_date || item.next_due_date || item.subscription?.next_due_date || null;
+      const dueTime = dueDate ? new Date(dueDate).getTime() : null;
+      if (dueTime && dueTime > monthEnd.getTime()) return;
+
+      const key = item.subscription_id || item.id;
+      const current = grouped.get(key);
+      const currentDue = current?.item.due_date ? new Date(current.item.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      const nextDue = dueTime || Number.MAX_SAFE_INTEGER;
+      if (!current || nextDue < currentDue) grouped.set(key, { item, summary });
+    });
+
+    return [...grouped.values()].sort((a, b) => {
+      const aDue = a.item.due_date ? new Date(a.item.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      const bDue = b.item.due_date ? new Date(b.item.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      return aDue - bDue;
+    });
+  }, [workerBillGoReceivables]);
   const selectedQuickServices = React.useMemo(
     () => quickJob.serviceIds
       .map(serviceId => services.find(service => service.id === serviceId))
@@ -1239,7 +1273,7 @@ export default function WorkerDashboard() {
 
       const { data: billGoReceivablesData, error: billGoReceivablesError } = await supabase
         .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, billing_months, bonus_months, paid_amount, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
         .eq("worker_id", workerData.id)
         .order("due_date", { ascending: true })
         .range(0, 9999);
@@ -1607,11 +1641,16 @@ export default function WorkerDashboard() {
 
     setCollectingPaymentJobId(receivable.id);
     const { data: { user } } = await supabase.auth.getUser();
-    const cycle = getBillGoCycleOption(paymentCycle);
+    const effectivePaymentCycle = paymentCyclesByReceivable[receivable.id]
+      || receivable.cycle_at_collection as BillGoCycle
+      || receivable.subscription?.current_cycle as BillGoCycle
+      || receivable.subscription?.cycle as BillGoCycle
+      || paymentCycle;
+    const cycle = getBillGoCycleOption(effectivePaymentCycle);
     const baseDate = receivable.period_end
       ? getBillGoNextPeriodStartDate(receivable.period_end)
       : receivable.period_start || new Date().toISOString().slice(0, 10);
-    const nextBillingPeriod = getBillGoBillingPeriod(baseDate, paymentCycle);
+    const nextBillingPeriod = getBillGoBillingPeriod(baseDate, effectivePaymentCycle);
 
     const { data, error } = await supabase
       .from("payments")
@@ -1638,6 +1677,14 @@ export default function WorkerDashboard() {
     const nextPaid = currentSummary.paid + parsedAmount;
     const totalAmount = toMoneyNumber(receivable.total_amount);
     const nextStatus = getBillGoStoredStatus(totalAmount, nextPaid, receivable.due_date);
+    const isFullyPaid = totalAmount > 0 && nextPaid >= totalAmount;
+    const nextPeriodStart = receivable.period_end
+      ? getBillGoNextPeriodStartDate(receivable.period_end)
+      : nextBillingPeriod.periodStart;
+    const nextCycleBilling = getBillGoBillingPeriod(nextPeriodStart, effectivePaymentCycle);
+    const monthlyFee = toMoneyNumber(receivable.monthly_fee_at_collection)
+      || (cycle.paidMonths > 0 ? Math.round(totalAmount / cycle.paidMonths) : totalAmount);
+    const nextTotalAmount = getBillGoCollectableAmount(monthlyFee, effectivePaymentCycle);
 
     const { error: updateError } = await supabase
       .from("billgo_receivables")
@@ -1645,6 +1692,7 @@ export default function WorkerDashboard() {
         status: nextStatus,
         billing_months: cycle.paidMonths,
         bonus_months: cycle.bonusMonths,
+        paid_amount: nextPaid,
       })
       .eq("id", receivable.id);
 
@@ -1657,22 +1705,86 @@ export default function WorkerDashboard() {
     if (receivable.subscription_id) {
       await supabase
         .from("billgo_subscriptions")
-        .update({ cycle: paymentCycle, next_due_date: nextBillingPeriod.dueDate })
+        .update({
+          cycle: effectivePaymentCycle,
+          current_cycle: effectivePaymentCycle,
+          next_due_date: nextCycleBilling.dueDate,
+          next_period_start: nextPeriodStart,
+          covered_until: receivable.period_end || null,
+        })
         .eq("id", receivable.subscription_id);
     }
 
-    setWorkerBillGoReceivables(prev => prev.map(item =>
-      item.id === receivable.id
-        ? {
-            ...item,
-            status: nextStatus,
+    let nextReceivable: WorkerBillGoReceivable | null = null;
+    if (isFullyPaid && receivable.subscription_id && nextTotalAmount > 0) {
+      const billingParts = getBillGoBillingParts(nextCycleBilling.collectionMonth);
+      const { data: existingNextReceivable } = await supabase
+        .from("billgo_receivables")
+        .select("id")
+        .eq("subscription_id", receivable.subscription_id)
+        .eq("period_start", nextCycleBilling.periodStart)
+          .eq("type", receivable.type || "subscription_fee")
+        .maybeSingle();
+
+      if (!existingNextReceivable) {
+        const { data: createdNextReceivable, error: nextReceivableError } = await supabase
+          .from("billgo_receivables")
+          .insert({
+            customer_id: receivable.customer_id,
+            worker_id: receivable.worker_id || worker?.id || null,
+            job_id: receivable.job_id || null,
+            subscription_id: receivable.subscription_id,
+            type: receivable.type || "subscription_fee",
+            package_id: receivable.package_id || null,
+            package_name_at_collection: receivable.package_name_at_collection || receivable.subscription?.package_name || null,
+            title: receivable.title || `Thu cước ${receivable.subscription?.package_name || "BillGo"}`,
+            total_amount: nextTotalAmount,
+            due_date: nextCycleBilling.dueDate,
+            period_start: nextCycleBilling.periodStart,
+            period_end: nextCycleBilling.periodEnd,
+            collection_month: nextCycleBilling.collectionMonth,
+            usage_month: nextCycleBilling.usageMonth,
+            billing_month: billingParts.billingMonth,
+            billing_year: billingParts.billingYear,
             billing_months: cycle.paidMonths,
             bonus_months: cycle.bonusMonths,
-            payments: [...(item.payments || []), data],
-            subscription: item.subscription ? { ...item.subscription, cycle: paymentCycle, next_due_date: nextBillingPeriod.dueDate } : item.subscription,
-          }
-        : item
-    ));
+            cycle_at_collection: effectivePaymentCycle,
+            service_months: cycle.paidMonths + cycle.bonusMonths,
+            paid_amount: 0,
+            monthly_fee_at_collection: monthlyFee,
+            next_period_start: getBillGoNextPeriodStartDate(nextCycleBilling.periodEnd),
+            next_due_date: getBillGoNextDueDate(getBillGoNextPeriodStartDate(nextCycleBilling.periodEnd), effectivePaymentCycle),
+            status: getBillGoStoredStatus(nextTotalAmount, 0, nextCycleBilling.dueDate),
+            note: receivable.note || null,
+            created_by: user?.id || null,
+          })
+          .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
+          .single();
+
+        if (nextReceivableError) {
+          showToast("Đã thu tiền nhưng chưa tạo được kỳ thu tiếp theo: " + nextReceivableError.message, "error");
+        } else {
+          nextReceivable = createdNextReceivable as unknown as WorkerBillGoReceivable;
+        }
+      }
+    }
+
+    setWorkerBillGoReceivables(prev => {
+      const updated = prev.map(item =>
+        item.id === receivable.id
+          ? {
+              ...item,
+              status: nextStatus,
+              billing_months: cycle.paidMonths,
+              bonus_months: cycle.bonusMonths,
+              paid_amount: nextPaid,
+              payments: [...(item.payments || []), data],
+              subscription: item.subscription ? { ...item.subscription, cycle: effectivePaymentCycle, current_cycle: effectivePaymentCycle, next_due_date: nextCycleBilling.dueDate } : item.subscription,
+            }
+          : item
+      );
+      return nextReceivable ? [...updated, nextReceivable] : updated;
+    });
     setPaymentAmount("");
     setPaymentNote("");
     showToast("Đã ghi nhận thu cước BillGo.", "success");
@@ -3229,7 +3341,7 @@ export default function WorkerDashboard() {
               <p className="text-body-sm text-on-surface-variant">Chưa có job nào đang chờ admin duyệt.</p>
             </div>
           )
-        ) : false ? (
+        ) : tab === "billgo" ? (
           <>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-outline-variant/25 bg-white p-4 shadow-sm">
@@ -3249,6 +3361,11 @@ export default function WorkerDashboard() {
             {billGoRows.length > 0 ? (
               billGoRows.map(({ item, summary }) => {
                 const paidCount = item.payments?.filter(payment => payment.status === "paid").length || 0;
+                const rowCycle = paymentCyclesByReceivable[item.id]
+                  || (item.cycle_at_collection as BillGoCycle | undefined)
+                  || (item.subscription?.current_cycle as BillGoCycle | undefined)
+                  || (item.subscription?.cycle as BillGoCycle | undefined)
+                  || "monthly";
 
                 return (
                   <div key={item.id} className="overflow-hidden rounded-xl border border-outline-variant/25 bg-white shadow-sm">
@@ -3265,9 +3382,9 @@ export default function WorkerDashboard() {
                     <div className="space-y-4 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{item.customer?.full_name || "Khách hàng"}</h3>
-                          <p className="text-body-sm text-on-surface-variant">{item.customer?.phone || "Chưa có SĐT"}</p>
-                          <p className="mt-1 text-xs text-on-surface-variant">{item.customer?.address || "Chưa có địa chỉ"}</p>
+                          <h3 className="truncate text-base font-extrabold text-on-surface sm:text-lg">{item.subscription?.customer_name || item.customer?.full_name || "Khách hàng"}</h3>
+                          <p className="text-body-sm text-on-surface-variant">{item.subscription?.phone || item.customer?.phone || "Chưa có SĐT"}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant">{item.subscription?.customer_address || item.customer?.address || "Chưa có địa chỉ"}</p>
                         </div>
                         <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
                           Hạn: {item.due_date || item.subscription?.next_due_date || "Chưa có"}
@@ -3288,8 +3405,12 @@ export default function WorkerDashboard() {
                         <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
                           <select
                             className="input-field !py-2 text-sm sm:col-span-2"
-                            value={paymentCycle}
-                            onChange={event => setPaymentCycle(event.target.value as BillGoCycle)}
+                            value={rowCycle}
+                            onChange={event => {
+                              const nextCycle = event.target.value as BillGoCycle;
+                              setPaymentCycle(nextCycle);
+                              setPaymentCyclesByReceivable(current => ({ ...current, [item.id]: nextCycle }));
+                            }}
                             disabled={collectingPaymentJobId === item.id}
                           >
                             {BILLGO_CYCLE_OPTIONS.map(option => (
@@ -3329,7 +3450,10 @@ export default function WorkerDashboard() {
                             {summary.debt > 0 && (
                               <button
                                 type="button"
-                                onClick={() => setPaymentAmount(String(summary.debt))}
+                                onClick={() => {
+                                  setPaymentAmount(String(summary.debt));
+                                  setPaymentCyclesByReceivable(current => ({ ...current, [item.id]: rowCycle }));
+                                }}
                                 className="rounded-lg border border-primary-container/25 px-4 py-3 text-sm font-extrabold text-primary-container"
                                 disabled={collectingPaymentJobId === item.id}
                               >
@@ -3342,18 +3466,18 @@ export default function WorkerDashboard() {
                               disabled={collectingPaymentJobId === item.id}
                               className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60"
                             >
-                              {collectingPaymentJobId === item.id ? "Đang lưu..." : "Ghi nhận thu cước"}
+                              {collectingPaymentJobId === item.id ? "Đang lưu..." : "Tích đóng kỳ này"}
                             </button>
                           </div>
                           <p className="text-xs text-on-surface-variant sm:col-span-2">
-                            Han thanh toan ky tiep theo: <strong>{getBillGoNextDueDate(item.period_end ? getBillGoNextPeriodStartDate(item.period_end) : item.period_start || new Date().toISOString().slice(0, 10), paymentCycle)}</strong>
+                            Hạn thanh toán kỳ tiếp theo: <strong>{getBillGoNextDueDate(item.period_end ? getBillGoNextPeriodStartDate(item.period_end) : item.period_start || new Date().toISOString().slice(0, 10), rowCycle)}</strong>
                           </p>
                         </div>
                       </div>
 
-                      {item.customer?.phone && (
+                      {(item.subscription?.phone || item.customer?.phone) && (
                         <a
-                          href={`tel:${item.customer.phone}`}
+                          href={`tel:${item.subscription?.phone || item.customer?.phone}`}
                           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-success px-4 py-3 text-sm font-extrabold text-white"
                         >
                           <PhoneIcon size={18} />
