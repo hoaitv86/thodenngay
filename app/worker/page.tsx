@@ -970,6 +970,7 @@ export default function WorkerDashboard() {
       let nextInventoryProducts: InventoryProduct[] = [];
       let nextServices: ServiceOption[] = [];
       let nextBillGoPackages: BillGoPackage[] = [];
+      let nextWorkerBillGoReceivables: WorkerBillGoReceivable[] = [];
 
       const { data: inventoryData, error: inventoryError } = await supabase
         .from("worker_inventory_products")
@@ -1236,6 +1237,21 @@ export default function WorkerDashboard() {
         ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
         : 0;
 
+      const { data: billGoReceivablesData, error: billGoReceivablesError } = await supabase
+        .from("billgo_receivables")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, billing_months, bonus_months, paid_amount, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
+        .eq("worker_id", workerData.id)
+        .order("due_date", { ascending: true })
+        .range(0, 9999);
+
+      if (billGoReceivablesError) {
+        if (!isBackground) {
+          showToast("Không thể tải danh sách khách BillGo: " + billGoReceivablesError.message, "error");
+        }
+      } else {
+        nextWorkerBillGoReceivables = (billGoReceivablesData || []) as unknown as WorkerBillGoReceivable[];
+      }
+
       setDashboardData(prev => ({
         ...prev,
         worker: workerData,
@@ -1243,6 +1259,7 @@ export default function WorkerDashboard() {
         pendingApprovalJobs: mappedPendingApproval,
         activeJobs: mappedActiveWithMocks,
         inventoryProducts: nextInventoryProducts,
+        workerBillGoReceivables: nextWorkerBillGoReceivables,
         billGoPackages: nextBillGoPackages,
         services: nextServices,
         workerStats: {
@@ -1986,16 +2003,24 @@ export default function WorkerDashboard() {
       startDate?: string;
       amount?: number | string;
       note?: string;
+      packageId?: string | null;
+      packageName?: string | null;
+      packageType?: string | null;
+      provider?: string | null;
     }
   ) => {
     const billgo = billgoOverride || job.workflow_data?.billgo;
-    if (!billgo || typeof billgo !== "object" || !worker?.id || !job.customer_id) return;
+    if (!billgo || typeof billgo !== "object" || !worker?.id || !job.customer_id) return false;
 
     const billgoData = billgo as {
       cycle?: BillGoCycle;
       startDate?: string;
       amount?: number | string;
       note?: string;
+      packageId?: string | null;
+      packageName?: string | null;
+      packageType?: string | null;
+      provider?: string | null;
     };
     const amount = toMoneyNumber(billgoData.amount);
     const startDate = billgoData.startDate || new Date().toISOString().slice(0, 10);
@@ -2004,7 +2029,7 @@ export default function WorkerDashboard() {
     const billingPeriod = getBillGoBillingPeriod(startDate, cycleKey);
     const totalAmount = getBillGoCollectableAmount(amount, cycleKey);
 
-    if (amount <= 0) return;
+    if (amount <= 0) return false;
 
     const { data: existingSubscription } = await supabase
       .from("billgo_subscriptions")
@@ -2021,8 +2046,13 @@ export default function WorkerDashboard() {
           worker_id: worker.id,
           job_id: job.id,
           service_id: job.service_id || null,
-          package_name: job.serviceName || "Cước dịch vụ",
-          service_type: "internet",
+          customer_name: job.customerName || job.customer?.full_name || null,
+          phone: job.customer?.phone || null,
+          customer_address: job.address || job.customer?.address || null,
+          provider: billgoData.provider || null,
+          package_id: billgoData.packageId || null,
+          package_name: billgoData.packageName || job.serviceName || "Cước Internet",
+          service_type: billgoData.packageType || "internet",
           cycle: cycleKey,
           current_cycle: cycleKey,
           amount_per_cycle: amount,
@@ -2038,7 +2068,7 @@ export default function WorkerDashboard() {
 
       if (subscriptionError) {
         console.warn("[workflow] Cannot create BillGo subscription", subscriptionError.message);
-        return;
+        return false;
       }
       subscriptionId = subscription.id;
     }
@@ -2050,7 +2080,7 @@ export default function WorkerDashboard() {
       .eq("type", "subscription_fee")
       .maybeSingle();
 
-    if (existingReceivable) return;
+    if (existingReceivable) return false;
 
     const { error: receivableError } = await supabase.from("billgo_receivables").insert({
       customer_id: job.customer_id,
@@ -2058,7 +2088,9 @@ export default function WorkerDashboard() {
       job_id: job.id,
       subscription_id: subscriptionId,
       type: "subscription_fee",
-      title: `Thu cước ${job.serviceName || "Internet"}`,
+      package_id: billgoData.packageId || null,
+      package_name_at_collection: billgoData.packageName || null,
+      title: `Thu cước ${billgoData.packageName || job.serviceName || "Internet"}`,
       total_amount: totalAmount,
       due_date: billingPeriod.dueDate,
       period_start: billingPeriod.periodStart,
@@ -2076,7 +2108,10 @@ export default function WorkerDashboard() {
 
     if (receivableError) {
       console.warn("[workflow] Cannot create BillGo receivable", receivableError.message);
+      return false;
     }
+
+    return true;
   };
 
   const ensureBillGoAddOnFromCompletion = async (job: WorkerJob) => {
@@ -2420,17 +2455,22 @@ export default function WorkerDashboard() {
         throw new Error("Cập nhật thất bại. Vui lòng kiểm tra chính sách bảo mật RLS hoặc cấu trúc bảng của dữ liệu.");
       }
 
+      let billGoChanged = false;
       if (addToBillGo || (isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0)) {
-        await ensureBillGoFromWorkflow(job, isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0 ? {
+        const createdBillGo = await ensureBillGoFromWorkflow(job, isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0 ? {
           cycle: completionInternetCycle,
           amount: completionInternetMonthlyFeeNumber,
           startDate: new Date().toISOString().slice(0, 10),
+          packageName: job.serviceName || "Cước Internet",
+          packageType: "internet",
           note: "Cước Internet lắp mới",
         } : undefined);
+        billGoChanged = Boolean(createdBillGo);
       }
 
       if (selectedCompletionAddOnPackage) {
         await ensureBillGoAddOnFromCompletion(job);
+        billGoChanged = true;
       }
 
       if (amountToRecord > 0) {
@@ -2461,6 +2501,9 @@ export default function WorkerDashboard() {
         monthlyCustomers: prev.monthlyCustomers + 1,
         monthlyIncome: prev.monthlyIncome + amountToRecord,
       }));
+      if (billGoChanged) {
+        void fetchDataRef.current(true);
+      }
       showToast("Đã hoàn thành công việc thành công!", "success");
       setActiveJobToComplete(null);
       setSelectedFiles([]);

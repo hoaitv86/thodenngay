@@ -7,8 +7,10 @@ import { createClient } from "@/lib/supabase/client";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import {
   BILLGO_CYCLE_OPTIONS,
+  getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
+  getBillGoStoredStatus,
   type BillGoCycle,
 } from "@/lib/billgo";
 import {
@@ -67,6 +69,9 @@ type JobWorkflowData = Record<string, unknown> & {
 
 interface WorkerJobDetail {
   id: string;
+  worker_id?: string | null;
+  customer_id?: string | null;
+  service_id?: string | null;
   job_code?: string | null;
   status?: string | null;
   address?: string | null;
@@ -89,9 +94,11 @@ interface WorkerJobDetail {
   customer?: {
     full_name?: string | null;
     phone?: string | null;
+    address?: string | null;
   } | Array<{
     full_name?: string | null;
     phone?: string | null;
+    address?: string | null;
   }> | null;
   ratings?: Array<{
     score: number;
@@ -157,6 +164,8 @@ export default function WorkerJobDetailPage() {
   const supabase = useMemo(() => createClient(), []);
   const [job, setJob] = useState<WorkerJobDetail | null>(null);
   const [billGoPackages, setBillGoPackages] = useState<BillGoPackage[]>([]);
+  const [currentWorkerId, setCurrentWorkerId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [workerName, setWorkerName] = useState("Thợ thực hiện");
   const [workerPhone, setWorkerPhone] = useState("");
   const [loading, setLoading] = useState(true);
@@ -179,6 +188,7 @@ export default function WorkerJobDetailPage() {
     const fetchJob = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        setCurrentUserId(user.id);
         const { data: profile } = await supabase
           .from("profiles")
           .select("full_name, phone")
@@ -186,12 +196,22 @@ export default function WorkerJobDetailPage() {
           .single();
         if (profile?.full_name) setWorkerName(profile.full_name);
         if (profile?.phone) setWorkerPhone(profile.phone);
+
+        const { data: workerRow } = await supabase
+          .from("workers")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (workerRow?.id) setCurrentWorkerId(workerRow.id);
       }
 
       let result = await supabase
         .from('jobs')
         .select(`
           id,
+          worker_id,
+          customer_id,
+          service_id,
           job_code,
           status,
           address,
@@ -207,7 +227,7 @@ export default function WorkerJobDetailPage() {
           workflow_data,
           service:services!jobs_service_id_fkey(id, name, description),
           job_services(service:services(id, name, description)),
-          customer:profiles!customer_id(full_name, phone),
+          customer:profiles!customer_id(full_name, phone, address),
           ratings(score, comment, created_at, images)
         `)
         .eq('id', id)
@@ -218,6 +238,9 @@ export default function WorkerJobDetailPage() {
           .from('jobs')
           .select(`
             id,
+            worker_id,
+            customer_id,
+            service_id,
             job_code,
             status,
             address,
@@ -232,7 +255,7 @@ export default function WorkerJobDetailPage() {
             warranty_note,
             workflow_data,
             service:services!jobs_service_id_fkey(id, name, description),
-            customer:profiles!customer_id(full_name, phone),
+            customer:profiles!customer_id(full_name, phone, address),
             ratings(score, comment, created_at, images)
           `)
           .eq('id', id)
@@ -442,6 +465,249 @@ export default function WorkerJobDetailPage() {
     if (error) {
       setEditError("Không thể lưu sửa phiếu: " + error.message);
       return;
+    }
+
+    if (isInternetInstallReceipt && editInternetMonthlyFeeNumber > 0 && job.customer_id && (currentWorkerId || job.worker_id)) {
+      const startDate = getStringValue(nextWorkflow.billgo?.startDate) || new Date().toISOString().slice(0, 10);
+      const billingPeriod = getBillGoBillingPeriod(startDate, editInternetCycle);
+      const cycle = getBillGoCycleOption(editInternetCycle);
+      const billGoWorkerId = currentWorkerId || job.worker_id || null;
+      const billGoCustomerName = customerName || null;
+      const billGoPhone = customerPhone || null;
+      const billGoAddress = job.address || (Array.isArray(job.customer) ? job.customer[0]?.address : job.customer?.address) || null;
+      const packageName = selectedEditInternetPackage?.name || serviceName || "Cước Internet";
+
+      const { data: existingSubscription, error: existingSubscriptionError } = await supabase
+        .from("billgo_subscriptions")
+        .select("id")
+        .eq("job_id", job.id)
+        .eq("service_type", "internet")
+        .maybeSingle();
+
+      if (existingSubscriptionError) {
+        setEditError("Phiếu đã lưu nhưng chưa đồng bộ được BillGo: " + existingSubscriptionError.message);
+        setSavingEdit(false);
+        return;
+      }
+
+      let subscriptionId = existingSubscription?.id || null;
+      const subscriptionPayload = {
+        customer_id: job.customer_id,
+        worker_id: billGoWorkerId,
+        job_id: job.id,
+        service_id: job.service_id || null,
+        customer_name: billGoCustomerName,
+        phone: billGoPhone,
+        customer_address: billGoAddress,
+        provider: selectedEditInternetPackage?.provider || null,
+        package_id: selectedEditInternetPackage?.id || null,
+        package_name: packageName,
+        service_type: "internet",
+        cycle: editInternetCycle,
+        current_cycle: editInternetCycle,
+        amount_per_cycle: editInternetMonthlyFeeNumber,
+        monthly_fee: editInternetMonthlyFeeNumber,
+        start_date: billingPeriod.periodStart,
+        next_due_date: billingPeriod.dueDate,
+        next_period_start: billingPeriod.periodStart,
+        status: "active",
+        note: getStringValue(nextWorkflow.billgo?.note) || null,
+        created_by: currentUserId,
+      };
+
+      if (subscriptionId) {
+        const { error: subscriptionUpdateError } = await supabase
+          .from("billgo_subscriptions")
+          .update(subscriptionPayload)
+          .eq("id", subscriptionId);
+        if (subscriptionUpdateError) {
+          setEditError("Phiếu đã lưu nhưng chưa cập nhật được khách BillGo: " + subscriptionUpdateError.message);
+          setSavingEdit(false);
+          return;
+        }
+      } else {
+        const { data: subscription, error: subscriptionInsertError } = await supabase
+          .from("billgo_subscriptions")
+          .insert(subscriptionPayload)
+          .select("id")
+          .single();
+        if (subscriptionInsertError) {
+          setEditError("Phiếu đã lưu nhưng chưa tạo được khách BillGo: " + subscriptionInsertError.message);
+          setSavingEdit(false);
+          return;
+        }
+        subscriptionId = subscription.id;
+      }
+
+      const totalAmount = getBillGoCollectableAmount(editInternetMonthlyFeeNumber, editInternetCycle);
+      const { data: existingReceivable, error: existingReceivableError } = await supabase
+        .from("billgo_receivables")
+        .select("id")
+        .eq("job_id", job.id)
+        .eq("subscription_id", subscriptionId)
+        .eq("type", "subscription_fee")
+        .maybeSingle();
+
+      if (existingReceivableError) {
+        setEditError("Phiếu đã lưu nhưng chưa kiểm tra được khoản thu BillGo: " + existingReceivableError.message);
+        setSavingEdit(false);
+        return;
+      }
+
+      const receivablePayload = {
+        customer_id: job.customer_id,
+        worker_id: billGoWorkerId,
+        job_id: job.id,
+        subscription_id: subscriptionId,
+        type: "subscription_fee",
+        package_id: selectedEditInternetPackage?.id || null,
+        package_name_at_collection: selectedEditInternetPackage?.name || null,
+        title: `Thu cước ${packageName}`,
+        total_amount: totalAmount,
+        due_date: billingPeriod.dueDate,
+        period_start: billingPeriod.periodStart,
+        period_end: billingPeriod.periodEnd,
+        billing_months: cycle.paidMonths,
+        bonus_months: cycle.bonusMonths,
+        cycle_at_collection: editInternetCycle,
+        service_months: cycle.paidMonths + cycle.bonusMonths,
+        monthly_fee_at_collection: editInternetMonthlyFeeNumber,
+        status: getBillGoStoredStatus(totalAmount, 0, billingPeriod.dueDate),
+        note: getStringValue(nextWorkflow.billgo?.note) || null,
+        created_by: currentUserId,
+      };
+
+      const receivableResult = existingReceivable
+        ? await supabase.from("billgo_receivables").update(receivablePayload).eq("id", existingReceivable.id)
+        : await supabase.from("billgo_receivables").insert({ ...receivablePayload, paid_amount: 0 });
+
+      if (receivableResult.error) {
+        setEditError("Phiếu đã lưu nhưng chưa đồng bộ được khoản thu BillGo: " + receivableResult.error.message);
+        setSavingEdit(false);
+        return;
+      }
+    }
+
+    if (isInternetInstallReceipt && selectedEditAddOnPackage && job.customer_id && (currentWorkerId || job.worker_id)) {
+      const startDate = new Date().toISOString().slice(0, 10);
+      const billingPeriod = getBillGoBillingPeriod(startDate, editAddOnCycle);
+      const cycle = getBillGoCycleOption(editAddOnCycle);
+      const billGoWorkerId = currentWorkerId || job.worker_id || null;
+      const billGoAddress = job.address || (Array.isArray(job.customer) ? job.customer[0]?.address : job.customer?.address) || null;
+      const totalAmount = getBillGoCollectableAmount(editAddOnMonthlyFee, editAddOnCycle);
+      const note = [
+        `Bổ sung khi sửa phiếu ${job.job_code || job.id}`,
+        editAddOnNote.trim(),
+      ].filter(Boolean).join(" · ");
+
+      const { data: existingSubscription, error: existingSubscriptionError } = await supabase
+        .from("billgo_subscriptions")
+        .select("id")
+        .eq("job_id", job.id)
+        .eq("package_id", selectedEditAddOnPackage.id)
+        .maybeSingle();
+
+      if (existingSubscriptionError) {
+        setEditError("Phiếu đã lưu nhưng chưa kiểm tra được gói TV/đầu thu BillGo: " + existingSubscriptionError.message);
+        setSavingEdit(false);
+        return;
+      }
+
+      let subscriptionId = existingSubscription?.id || null;
+      const subscriptionPayload = {
+        customer_id: job.customer_id,
+        worker_id: billGoWorkerId,
+        job_id: job.id,
+        service_id: job.service_id || null,
+        customer_name: customerName || null,
+        phone: customerPhone || null,
+        customer_address: billGoAddress,
+        provider: selectedEditAddOnPackage.provider || null,
+        package_id: selectedEditAddOnPackage.id,
+        package_name: selectedEditAddOnPackage.name,
+        service_type: selectedEditAddOnPackage.type,
+        cycle: editAddOnCycle,
+        current_cycle: editAddOnCycle,
+        amount_per_cycle: editAddOnMonthlyFee,
+        monthly_fee: editAddOnMonthlyFee,
+        start_date: billingPeriod.periodStart,
+        next_due_date: billingPeriod.dueDate,
+        next_period_start: billingPeriod.periodStart,
+        status: "active",
+        note: note || null,
+        created_by: currentUserId,
+      };
+
+      if (subscriptionId) {
+        const { error: subscriptionUpdateError } = await supabase
+          .from("billgo_subscriptions")
+          .update(subscriptionPayload)
+          .eq("id", subscriptionId);
+        if (subscriptionUpdateError) {
+          setEditError("Phiếu đã lưu nhưng chưa cập nhật được gói TV/đầu thu BillGo: " + subscriptionUpdateError.message);
+          setSavingEdit(false);
+          return;
+        }
+      } else {
+        const { data: subscription, error: subscriptionInsertError } = await supabase
+          .from("billgo_subscriptions")
+          .insert(subscriptionPayload)
+          .select("id")
+          .single();
+        if (subscriptionInsertError) {
+          setEditError("Phiếu đã lưu nhưng chưa tạo được gói TV/đầu thu BillGo: " + subscriptionInsertError.message);
+          setSavingEdit(false);
+          return;
+        }
+        subscriptionId = subscription.id;
+      }
+
+      const { data: existingReceivable, error: existingReceivableError } = await supabase
+        .from("billgo_receivables")
+        .select("id")
+        .eq("job_id", job.id)
+        .eq("package_id", selectedEditAddOnPackage.id)
+        .eq("type", "subscription_fee")
+        .maybeSingle();
+
+      if (existingReceivableError) {
+        setEditError("Phiếu đã lưu nhưng chưa kiểm tra được khoản thu TV/đầu thu: " + existingReceivableError.message);
+        setSavingEdit(false);
+        return;
+      }
+
+      const receivablePayload = {
+        customer_id: job.customer_id,
+        worker_id: billGoWorkerId,
+        job_id: job.id,
+        subscription_id: subscriptionId,
+        type: "subscription_fee",
+        package_id: selectedEditAddOnPackage.id,
+        package_name_at_collection: selectedEditAddOnPackage.name,
+        title: `Thu cước ${selectedEditAddOnPackage.name}`,
+        total_amount: totalAmount,
+        due_date: billingPeriod.dueDate,
+        period_start: billingPeriod.periodStart,
+        period_end: billingPeriod.periodEnd,
+        billing_months: cycle.paidMonths,
+        bonus_months: cycle.bonusMonths,
+        cycle_at_collection: editAddOnCycle,
+        service_months: cycle.paidMonths + cycle.bonusMonths,
+        monthly_fee_at_collection: editAddOnMonthlyFee,
+        status: getBillGoStoredStatus(totalAmount, 0, billingPeriod.dueDate),
+        note: note || null,
+        created_by: currentUserId,
+      };
+
+      const receivableResult = existingReceivable
+        ? await supabase.from("billgo_receivables").update(receivablePayload).eq("id", existingReceivable.id)
+        : await supabase.from("billgo_receivables").insert({ ...receivablePayload, paid_amount: 0 });
+
+      if (receivableResult.error) {
+        setEditError("Phiếu đã lưu nhưng chưa đồng bộ được khoản thu TV/đầu thu: " + receivableResult.error.message);
+        setSavingEdit(false);
+        return;
+      }
     }
 
     setJob({
