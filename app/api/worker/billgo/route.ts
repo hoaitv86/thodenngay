@@ -17,6 +17,7 @@ import {
   toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
+import type { BillGoPackage } from "@/lib/billgo-packages";
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
@@ -225,6 +226,7 @@ const buildReceivableDraft = (
     id: string;
     customer_id?: string | null;
     worker_id?: string | null;
+    package_id?: string | null;
     package_name?: string | null;
     current_cycle?: string | null;
     cycle?: string | null;
@@ -247,6 +249,8 @@ const buildReceivableDraft = (
     worker_id: subscription.worker_id,
     subscription_id: subscription.id,
     type: "subscription_fee",
+    package_id: subscription.package_id,
+    package_name_at_collection: subscription.package_name || "Internet",
     title: `Thu cước ${subscription.package_name || "Internet"}`,
     total_amount: getBillGoCollectableAmount(monthlyFee, cycle),
     due_date: billing.dueDate,
@@ -305,6 +309,8 @@ type BillGoImportSubscription = {
   covered_until?: string | null;
   next_period_start?: string | null;
 };
+
+type BillGoPackageSelection = Pick<BillGoPackage, "id" | "name" | "type" | "provider" | "monthly_price" | "setup_price" | "allowed_cycles">;
 
 const normalizeImportText = (value: unknown) => String(value || "").trim();
 const normalizeImportKey = (value: unknown) => normalizeImportText(value).toLocaleLowerCase("vi");
@@ -517,7 +523,7 @@ const ensureDueReceivables = async (
 
   const { data: subscriptions, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start")
+    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start")
     .eq("worker_id", workerId)
     .eq("status", "active")
     .is("deleted_at", null);
@@ -573,7 +579,7 @@ export async function GET(request: Request) {
 
   let subscriptionQuery = admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
+    .select("id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
     .eq("worker_id", workerId)
     .not("status", "in", "(cancelled,deleted)")
     .is("deleted_at", null);
@@ -760,9 +766,23 @@ export async function POST(request: Request) {
   const subAreaName = asText(body.subAreaName);
   const addressDetail = asText(body.addressDetail);
   const provider = asText(body.provider);
-  const packageName = asText(body.packageName) || "Cước Internet";
-  const monthlyFee = toMoneyNumber(body.monthlyFee ?? body.amount);
+  const packageId = asText(body.packageId) || null;
+  let selectedPackage: BillGoPackageSelection | null = null;
+  if (packageId) {
+    const { data: packageRow, error: packageError } = await admin
+      .from("billgo_packages")
+      .select("id, name, type, provider, monthly_price, setup_price, allowed_cycles")
+      .eq("id", packageId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (packageError) return jsonError(packageError.message);
+    if (!packageRow) return jsonError("Gói cước không còn áp dụng.", 404);
+    selectedPackage = packageRow as BillGoPackageSelection;
+  }
+  const packageName = selectedPackage?.name || asText(body.packageName) || "Cước Internet";
+  const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
   const cycle = asText(body.cycle) || "monthly";
+  const allowedPackageCycles = selectedPackage?.allowed_cycles || ["monthly", "six_months", "yearly"];
   const startDate = asText(body.startDate);
   const dueDate = asText(body.dueDate);
   const note = asText(body.note);
@@ -770,7 +790,7 @@ export async function POST(request: Request) {
   const initialPaidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const initialPaymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
 
-  if (!customerName || !account || (!address && !addressDetail) || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle)) {
+  if (!customerName || !account || (!address && !addressDetail) || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle) || !allowedPackageCycles.includes(cycle as BillGoCycle)) {
     return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
   }
 
@@ -810,9 +830,10 @@ export async function POST(request: Request) {
       sub_area_id: location.subAreaId,
       address_detail: addressDetail,
       legacy_address: address || null,
-      provider: provider || null,
+      provider: selectedPackage?.provider || provider || null,
+      package_id: selectedPackage?.id || null,
       package_name: packageName,
-      service_type: "internet",
+      service_type: selectedPackage?.type || "internet",
       cycle,
       current_cycle: cycle,
       amount_per_cycle: monthlyFee,
@@ -836,6 +857,8 @@ export async function POST(request: Request) {
       worker_id: workerId,
       subscription_id: subscription.id,
       type: "subscription_fee",
+      package_id: selectedPackage?.id || null,
+      package_name_at_collection: packageName,
       title: `Thu cước ${packageName}`,
       total_amount: totalAmount,
       due_date: effectiveDueDate,

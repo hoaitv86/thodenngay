@@ -17,6 +17,13 @@ import {
   toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
+import {
+  BILLGO_PACKAGE_TYPES,
+  BILLGO_SIGNUP_CYCLES,
+  getBillGoPackageTypeLabel,
+  type BillGoPackage,
+  type BillGoPackageType,
+} from "@/lib/billgo-packages";
 
 type PaymentRow = {
   id: string;
@@ -155,6 +162,7 @@ const normalizeBillGoCustomerOptions = (rows: BillGoCustomerSource[]): CustomerO
   });
   return [...customerMap.values()].sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "", "vi"));
 };
+const signupCycleOptions = BILLGO_CYCLE_OPTIONS.filter(option => BILLGO_SIGNUP_CYCLES.includes(option.value));
 
 const getBillGoCustomerName = (item: BillGoReceivable) =>
   item.subscription?.customer_name || item.customer?.full_name || item.subscription?.internet_account || "Khách BillGo";
@@ -180,6 +188,7 @@ export default function AdminPayments() {
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [workers, setWorkers] = useState<WorkerOption[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
+  const [packages, setPackages] = useState<BillGoPackage[]>([]);
   const [selectedReceivableId, setSelectedReceivableId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -191,6 +200,7 @@ export default function AdminPayments() {
       workerId: "",
       serviceId: "",
       provider: "",
+      packageId: "",
       internetAccount: "",
       internetPassword: "",
       packageName: "Cước Internet",
@@ -208,12 +218,22 @@ export default function AdminPayments() {
     cycle: "monthly" as BillGoCycle,
     note: "",
   });
+  const [packageForm, setPackageForm] = useState({
+    id: "",
+    name: "",
+    type: "internet" as BillGoPackageType,
+    provider: "Viettel",
+    monthlyPrice: "",
+    setupPrice: "0",
+    description: "",
+    isActive: true,
+  });
 
   const fetchBillGo = async () => {
     setLoading(true);
     setMessage("");
 
-    const [receivableRes, billGoCustomerRes, workerRes, serviceRes] = await Promise.all([
+    const [receivableRes, billGoCustomerRes, workerRes, serviceRes, packageRes] = await Promise.all([
       supabase
         .from("billgo_receivables")
         .select("id, customer_id, worker_id, job_id, subscription_id, type, title, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, next_period_start, next_due_date, status, deleted_at, note, customer:profiles!customer_id(id, full_name, phone, address), worker:workers(id, profiles(full_name)), subscription:billgo_subscriptions!inner(id, customer_id, customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_due_date, next_period_start, covered_until, status, deleted_at), payments(id, amount, method, status, paid_at, collected_by, note)")
@@ -239,6 +259,12 @@ export default function AdminPayments() {
         .select("id, name")
         .eq("is_active", true)
         .order("name", { ascending: true }),
+      supabase
+        .from("billgo_packages")
+        .select("id, code, name, type, provider, monthly_price, setup_price, allowed_cycles, description, is_active, sort_order")
+        .order("type", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
     ]);
 
     if (receivableRes.error) {
@@ -256,6 +282,7 @@ export default function AdminPayments() {
     }
     if (!workerRes.error) setWorkers((workerRes.data || []) as WorkerOption[]);
     if (!serviceRes.error) setServices((serviceRes.data || []) as ServiceOption[]);
+    if (!packageRes.error) setPackages((packageRes.data || []) as BillGoPackage[]);
     setLoading(false);
   };
 
@@ -307,7 +334,83 @@ export default function AdminPayments() {
   const selectedSummary = selectedReceivable ? getBillGoReceivableSummary(selectedReceivable) : null;
 
   const updateNewBill = (field: keyof typeof newBill, value: string) => {
-    setNewBill(prev => ({ ...prev, [field]: value }));
+    setNewBill(prev => {
+      if (field !== "packageId") return { ...prev, [field]: value };
+      const selectedPackage = packages.find(item => item.id === value);
+      if (!selectedPackage) return { ...prev, packageId: "", packageName: "Cước Internet", monthlyFee: "" };
+      return {
+        ...prev,
+        packageId: selectedPackage.id,
+        packageName: selectedPackage.name,
+        monthlyFee: String(Number(selectedPackage.monthly_price || 0)),
+        setupFee: String(Number(selectedPackage.setup_price || 0)),
+        provider: selectedPackage.provider || prev.provider,
+      };
+    });
+  };
+
+  const resetPackageForm = () => setPackageForm({
+    id: "",
+    name: "",
+    type: "internet",
+    provider: "Viettel",
+    monthlyPrice: "",
+    setupPrice: "0",
+    description: "",
+    isActive: true,
+  });
+
+  const editPackage = (item: BillGoPackage) => {
+    setPackageForm({
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      provider: item.provider || "Viettel",
+      monthlyPrice: String(Number(item.monthly_price || 0)),
+      setupPrice: String(Number(item.setup_price || 0)),
+      description: item.description || "",
+      isActive: item.is_active,
+    });
+  };
+
+  const savePackage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (saving) return;
+    const monthlyPrice = toMoneyNumber(packageForm.monthlyPrice);
+    const setupPrice = toMoneyNumber(packageForm.setupPrice);
+    if (!packageForm.name.trim() || monthlyPrice < 0 || setupPrice < 0) {
+      setMessage("Vui lòng nhập tên gói và giá hợp lệ.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const payload = {
+        name: packageForm.name.trim(),
+        type: packageForm.type,
+        provider: packageForm.provider.trim() || null,
+        monthly_price: monthlyPrice,
+        setup_price: setupPrice,
+        allowed_cycles: BILLGO_SIGNUP_CYCLES,
+        description: packageForm.description.trim() || null,
+        is_active: packageForm.isActive,
+        created_by: user?.id || null,
+      };
+      const query = packageForm.id
+        ? supabase.from("billgo_packages").update(payload).eq("id", packageForm.id)
+        : supabase.from("billgo_packages").insert(payload);
+      const { error } = await query;
+      if (error) throw error;
+      resetPackageForm();
+      setMessage(packageForm.id ? "Đã cập nhật gói cước." : "Đã thêm gói cước.");
+      await fetchBillGo();
+    } catch (error: unknown) {
+      setMessage("Không thể lưu gói cước: " + getErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const selectReceivable = (item: BillGoReceivable) => {
@@ -326,7 +429,8 @@ export default function AdminPayments() {
       return;
     }
 
-    const monthlyFee = toMoneyNumber(newBill.monthlyFee);
+    const selectedPackage = packages.find(item => item.id === newBill.packageId) || null;
+    const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(newBill.monthlyFee);
     const setupFee = toMoneyNumber(newBill.setupFee);
     const paidAmount = toMoneyNumber(newBill.paidAmount);
     if (monthlyFee <= 0 && setupFee <= 0) {
@@ -345,6 +449,7 @@ export default function AdminPayments() {
       const nextPeriodStart = getBillGoNextPeriodStartDate(billingPeriod.periodEnd);
       const nextBillingPeriod = getBillGoBillingPeriod(nextPeriodStart, newBill.cycle);
       const selectedCustomer = customers.find(customer => customer.id === newBill.customerId);
+      const packageName = selectedPackage?.name || newBill.packageName.trim() || "Cước Internet";
       const subscriptionAmount = monthlyFee * cycle.paidMonths;
       const totalAmount = setupFee + subscriptionAmount;
       const initialPaidAmount = Math.min(Math.max(paidAmount, 0), totalAmount);
@@ -360,9 +465,10 @@ export default function AdminPayments() {
           phone: selectedCustomer?.phone || null,
           internet_account: newBill.internetAccount.trim() || null,
           customer_address: selectedCustomer?.address || null,
-          provider: newBill.provider.trim() || null,
-          package_name: newBill.packageName.trim() || "Cước Internet",
-          service_type: "internet",
+          provider: selectedPackage?.provider || newBill.provider.trim() || null,
+          package_id: selectedPackage?.id || null,
+          package_name: packageName,
+          service_type: selectedPackage?.type || "internet",
           cycle: newBill.cycle,
           current_cycle: newBill.cycle,
           amount_per_cycle: monthlyFee,
@@ -387,7 +493,9 @@ export default function AdminPayments() {
           worker_id: newBill.workerId || null,
           subscription_id: subscription.id,
           type: "subscription_fee",
-          title: `${newBill.packageName.trim() || "Cước Internet"} - ${cycle.label}`,
+          package_id: selectedPackage?.id || null,
+          package_name_at_collection: packageName,
+          title: `${packageName} - ${cycle.label}`,
           total_amount: totalAmount,
           due_date: billingPeriod.dueDate,
           period_start: billingPeriod.periodStart,
@@ -463,6 +571,7 @@ export default function AdminPayments() {
         provider: "",
         internetAccount: "",
         internetPassword: "",
+        packageId: "",
         packageName: "Cước Internet",
         monthlyFee: "",
         setupFee: "",
@@ -605,6 +714,52 @@ export default function AdminPayments() {
         </div>
       )}
 
+      <section className="rounded-lg border border-outline-variant/30 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-extrabold text-on-surface">Danh mục gói cước</h2>
+            <p className="mt-1 text-sm text-on-surface-variant">Quản lý gói Internet, TV360 và Đầu thu dùng cho form lắp mới.</p>
+          </div>
+          {packageForm.id && (
+            <button type="button" onClick={resetPackageForm} className="btn-outline !w-auto !px-3 !py-2 text-sm">Thêm gói mới</button>
+          )}
+        </div>
+        <form onSubmit={savePackage} className="mt-4 grid gap-3 md:grid-cols-6">
+          <input required className="input-field md:col-span-2" placeholder="Tên gói" value={packageForm.name} onChange={event => setPackageForm(prev => ({ ...prev, name: event.target.value }))} />
+          <select className="input-field" value={packageForm.type} onChange={event => setPackageForm(prev => ({ ...prev, type: event.target.value as BillGoPackageType }))}>
+            {BILLGO_PACKAGE_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <input className="input-field" placeholder="Nhà mạng" value={packageForm.provider} onChange={event => setPackageForm(prev => ({ ...prev, provider: event.target.value }))} />
+          <input required type="number" min="0" className="input-field" placeholder="Giá/tháng" value={packageForm.monthlyPrice} onChange={event => setPackageForm(prev => ({ ...prev, monthlyPrice: event.target.value }))} />
+          <input type="number" min="0" className="input-field" placeholder="Phí lắp" value={packageForm.setupPrice} onChange={event => setPackageForm(prev => ({ ...prev, setupPrice: event.target.value }))} />
+          <textarea className="input-field min-h-20 md:col-span-4" placeholder="Mô tả" value={packageForm.description} onChange={event => setPackageForm(prev => ({ ...prev, description: event.target.value }))} />
+          <label className="flex items-center gap-2 rounded-lg border border-outline-variant/30 px-3 py-2 text-sm font-bold text-on-surface-variant md:col-span-1">
+            <input type="checkbox" checked={packageForm.isActive} onChange={event => setPackageForm(prev => ({ ...prev, isActive: event.target.checked }))} />
+            Đang áp dụng
+          </label>
+          <button className="btn-primary md:col-span-1" disabled={saving}>{saving ? "Đang lưu..." : packageForm.id ? "Cập nhật" : "Thêm gói"}</button>
+        </form>
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {packages.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-outline-variant p-4 text-sm text-on-surface-variant md:col-span-2 xl:col-span-4">Chưa có gói cước trong danh mục.</div>
+          ) : packages.map(item => (
+            <button key={item.id} type="button" onClick={() => editPackage(item)} className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3 text-left hover:border-primary/40">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold uppercase text-primary">{getBillGoPackageTypeLabel(item.type)}</p>
+                  <p className="mt-1 font-extrabold text-on-surface">{item.name}</p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-extrabold ${item.is_active ? "bg-success-container text-success" : "bg-surface-container-high text-on-surface-variant"}`}>
+                  {item.is_active ? "Đang áp dụng" : "Tạm ngưng"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm font-bold text-primary-container">{formatBillGoCurrency(item.monthly_price)}/tháng</p>
+              {item.description && <p className="mt-1 line-clamp-2 text-xs text-on-surface-variant">{item.description}</p>}
+            </button>
+          ))}
+        </div>
+      </section>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-lg border border-outline-variant/30 bg-white p-4">
           <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng khách BillGo</p>
@@ -690,11 +845,19 @@ export default function AdminPayments() {
   placeholder="Mật khẩu Internet"
   disabled={saving}
 />
-              <input className="input-field" value={newBill.packageName} onChange={event => updateNewBill("packageName", event.target.value)} placeholder="Tên gói cước" disabled={saving} />
-              <input className="input-field" type="number" min="0" value={newBill.monthlyFee} onChange={event => updateNewBill("monthlyFee", event.target.value)} placeholder="Cước Internet / tháng" disabled={saving} />
+              <select className="input-field" value={newBill.packageId} onChange={event => updateNewBill("packageId", event.target.value)} disabled={saving}>
+                <option value="">Chọn gói cước</option>
+                {packages.filter(item => item.is_active).map(item => (
+                  <option key={item.id} value={item.id}>
+                    {getBillGoPackageTypeLabel(item.type)} - {item.name} - {formatBillGoCurrency(item.monthly_price)}/tháng
+                  </option>
+                ))}
+              </select>
+              <input className="input-field" value={newBill.packageName} onChange={event => updateNewBill("packageName", event.target.value)} placeholder="Tên gói tại thời điểm đăng ký" disabled={saving || Boolean(newBill.packageId)} />
+              <input className="input-field" type="number" min="0" value={newBill.monthlyFee} onChange={event => updateNewBill("monthlyFee", event.target.value)} placeholder="Cước / tháng" disabled={saving || Boolean(newBill.packageId)} />
               <input className="input-field" type="number" min="0" value={newBill.setupFee} onChange={event => updateNewBill("setupFee", event.target.value)} placeholder="Phí lắp đặt nếu có" disabled={saving} />
               <select className="input-field" value={newBill.cycle} onChange={event => updateNewBill("cycle", event.target.value)} disabled={saving}>
-                {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input className="input-field" type="date" value={newBill.startDate} onChange={event => updateNewBill("startDate", event.target.value)} disabled={saving} />
               <input className="input-field" type="number" min="0" value={newBill.paidAmount} onChange={event => updateNewBill("paidAmount", event.target.value)} placeholder="Số tiền đã thu ban đầu" disabled={saving} />

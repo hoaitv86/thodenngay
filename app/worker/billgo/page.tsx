@@ -31,6 +31,12 @@ import {
   toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
+import {
+  BILLGO_SIGNUP_CYCLES,
+  getBillGoPackageTypeLabel,
+  type BillGoPackage,
+} from "@/lib/billgo-packages";
+import { createClient } from "@/lib/supabase/client";
 
 type Payment = {
   id: string;
@@ -237,6 +243,7 @@ const methodLabels: Record<string, string> = {
 };
 
 const providerSuggestions = ["Viettel", "VNPT", "FPT"];
+const signupCycleOptions = BILLGO_CYCLE_OPTIONS.filter(option => BILLGO_SIGNUP_CYCLES.includes(option.value));
 
 const billGoImportHeaders = [
   "Tên khách hàng",
@@ -514,6 +521,7 @@ const initialForm = () => ({
   subAreaName: "",
   addressDetail: "",
   provider: "Viettel",
+  packageId: "",
   packageName: "",
   monthlyFee: "",
   cycle: "monthly" as BillGoCycle,
@@ -580,6 +588,7 @@ const getReceiptEntries = (item: Receivable): BillGoReceiptEntry[] =>
     });
 
 export default function WorkerBillGoPage() {
+  const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -599,6 +608,7 @@ export default function WorkerBillGoPage() {
   const [pageCount, setPageCount] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const [serverTotals, setServerTotals] = useState<BillGoListTotals>(emptyBillGoTotals);
+  const [packages, setPackages] = useState<BillGoPackage[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState<BillGoImportRow[]>([]);
@@ -694,6 +704,17 @@ export default function WorkerBillGoPage() {
     setAreas((result.areas || []) as AreaOption[]);
   }, []);
 
+  const fetchPackages = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("billgo_packages")
+      .select("id, code, name, type, provider, monthly_price, setup_price, allowed_cycles, description, is_active, sort_order")
+      .eq("is_active", true)
+      .order("type", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    setPackages(error ? [] : (data || []) as BillGoPackage[]);
+  }, [supabase]);
+
   const fetchBillGo = useCallback(async () => {
     setLoading(true);
     setMessage("");
@@ -738,6 +759,11 @@ export default function WorkerBillGoPage() {
     const timeoutId = window.setTimeout(() => void fetchAreas(), 0);
     return () => window.clearTimeout(timeoutId);
   }, [fetchAreas]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void fetchPackages(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchPackages]);
 
   useEffect(() => {
     if (!viewStateHydrated) return;
@@ -894,6 +920,10 @@ export default function WorkerBillGoPage() {
     () => areas.find(area => area.id === editForm.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
     [areas, editForm.areaId],
   );
+  const selectedFormPackage = useMemo(
+    () => packages.find(item => item.id === form.packageId) || null,
+    [form.packageId, packages],
+  );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
       if (key === "areaId") {
@@ -935,6 +965,20 @@ export default function WorkerBillGoPage() {
         return { ...prev, address: value };
       }
       if (key === "cycle" && value === "monthly") return { ...prev, cycle: value as BillGoCycle, startDate: previousMonthFirstInput(), dueDate: "" };
+      if (key === "packageId") {
+        const selectedPackage = packages.find(item => item.id === value);
+        if (!selectedPackage) return { ...prev, packageId: "", packageName: "", monthlyFee: "" };
+        const allowedCycles = selectedPackage.allowed_cycles?.length ? selectedPackage.allowed_cycles : BILLGO_SIGNUP_CYCLES;
+        const nextCycle = allowedCycles.includes(prev.cycle) ? prev.cycle : allowedCycles[0] || "monthly";
+        return {
+          ...prev,
+          packageId: selectedPackage.id,
+          packageName: selectedPackage.name,
+          monthlyFee: String(Number(selectedPackage.monthly_price || 0)),
+          provider: selectedPackage.provider || prev.provider,
+          cycle: nextCycle,
+        };
+      }
       if (key !== "packageName") return { ...prev, [key]: value };
       const packageAmount = getNumericPackageAmount(value);
       return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
@@ -1378,10 +1422,20 @@ export default function WorkerBillGoPage() {
               <datalist id="billgo-legacy-address-suggestions">
                 {legacyAddressSuggestions.map(address => <option key={address} value={address} />)}
               </datalist>
-              <input required className="input-field" placeholder="Gói cước hàng tháng" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
-              <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
+              <select required className="input-field" value={form.packageId} onChange={e => updateForm("packageId", e.target.value)}>
+                <option value="">Chọn gói cước</option>
+                {packages.map(packageOption => (
+                  <option key={packageOption.id} value={packageOption.id}>
+                    {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
+                  </option>
+                ))}
+              </select>
+              <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder="Tên gói tại thời điểm đăng ký" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
+              <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
               <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
-                {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {signupCycleOptions
+                  .filter(option => !selectedFormPackage?.allowed_cycles?.length || selectedFormPackage.allowed_cycles.includes(option.value))
+                  .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
