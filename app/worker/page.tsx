@@ -767,8 +767,7 @@ export default function WorkerDashboard() {
   const completionAddOnTotal = selectedCompletionAddOnPackage
     ? getBillGoCollectableAmount(completionAddOnMonthlyFee, completionAddOnCycle)
     : 0;
-  const completionAddOnInstallFee = selectedCompletionAddOnPackage ? BILLGO_COMPLETION_INSTALL_FEE : 0;
-  const completionAddOnGrandTotal = completionAddOnTotal + completionAddOnInstallFee;
+  const completionAddOnGrandTotal = completionAddOnTotal;
   const isInternetCompletionJob = React.useMemo(() => {
     if (!activeJobToComplete) return false;
     const serviceText = normalizeServiceText([
@@ -1854,11 +1853,13 @@ export default function WorkerDashboard() {
     setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
   };
 
-  const completionTotal = completionItems.reduce((sum, item) => {
+  const completionItemsTotal = completionItems.reduce((sum, item) => {
     const quantity = Number(item.quantity) || 0;
     const unitPrice = Number(item.unitPrice) || 0;
     return sum + quantity * unitPrice;
   }, 0);
+  const completionInternetInstallFee = isInternetCompletionJob ? BILLGO_COMPLETION_INSTALL_FEE : 0;
+  const completionTotal = completionItemsTotal + completionInternetInstallFee;
   const completionAllInTotal = completionTotal + completionAddOnGrandTotal;
   const completionPaidAmount =
     completionPaymentStatus === "paid"
@@ -2099,8 +2100,7 @@ export default function WorkerDashboard() {
       throw new Error("Không thể tạo thuê bao gói phát sinh: " + subscriptionError.message);
     }
 
-    const usageBillingParts = getBillGoBillingParts(billingPeriod.usageMonth);
-    const { error: receivableError } = await supabase.from("billgo_receivables").insert([{
+    const { error: receivableError } = await supabase.from("billgo_receivables").insert({
       customer_id: job.customer_id,
       worker_id: worker.id,
       job_id: job.id,
@@ -2128,35 +2128,7 @@ export default function WorkerDashboard() {
       status: getBillGoStoredStatus(totalAmount, 0, billingPeriod.dueDate),
       note: note || null,
       created_by: worker.user_id,
-    }, {
-      customer_id: job.customer_id,
-      worker_id: worker.id,
-      job_id: job.id,
-      subscription_id: subscription.id,
-      type: "installation_fee",
-      package_id: selectedCompletionAddOnPackage.id,
-      package_name_at_collection: selectedCompletionAddOnPackage.name,
-      title: `Phí lắp đặt ${selectedCompletionAddOnPackage.name}`,
-      total_amount: BILLGO_COMPLETION_INSTALL_FEE,
-      due_date: startDate,
-      period_start: billingPeriod.periodStart,
-      period_end: billingPeriod.periodStart,
-      collection_month: billingPeriod.usageMonth,
-      usage_month: billingPeriod.usageMonth,
-      billing_month: usageBillingParts.billingMonth,
-      billing_year: usageBillingParts.billingYear,
-      cycle_at_collection: completionAddOnCycle,
-      billing_months: 0,
-      bonus_months: 0,
-      service_months: 0,
-      paid_amount: 0,
-      monthly_fee_at_collection: 0,
-      next_period_start: nextPeriodStart,
-      next_due_date: nextBilling.dueDate,
-      status: getBillGoStoredStatus(BILLGO_COMPLETION_INSTALL_FEE, 0, startDate),
-      note: note || null,
-      created_by: worker.user_id,
-    }]);
+    });
 
     if (receivableError) {
       await supabase.from("billgo_subscriptions").delete().eq("id", subscription.id);
@@ -2194,7 +2166,7 @@ export default function WorkerDashboard() {
     setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
-    const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) + completionInternetInstallFee;
     const paidAmount =
       completionPaymentStatus === "paid"
         ? finalAmount
@@ -2328,7 +2300,6 @@ export default function WorkerDashboard() {
               monthlyFee: completionAddOnMonthlyFee,
               cycle: completionAddOnCycle,
               subscriptionAmount: completionAddOnTotal,
-              installFee: completionAddOnInstallFee,
               totalAmount: completionAddOnGrandTotal,
               totalAmountInWords: readVietnameseMoney(completionAddOnGrandTotal),
               note: completionAddOnNote.trim() || null,
@@ -3593,15 +3564,8 @@ export default function WorkerDashboard() {
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Phí lắp đặt</label>
-                      <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-on-surface">
-                        {formatBillGoCurrency(completionAddOnInstallFee)}
-                      </div>
-                    </div>
-
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng thanh toán</label>
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng cước gói</label>
                       <div className="rounded-lg border border-primary-container/30 bg-white px-3 py-2 text-base font-extrabold text-primary-container">
                         {formatBillGoCurrency(completionAddOnGrandTotal)}
                       </div>
@@ -3743,6 +3707,15 @@ export default function WorkerDashboard() {
                     <span className="text-sm font-bold text-on-success-container">Tổng tiền hóa đơn</span>
                     <span className="text-xl font-extrabold text-success">{formatCurrency(completionTotal)}</span>
                   </div>
+                  <p className="mt-1 text-xs font-semibold text-on-success-container">
+                    Bằng chữ: {readVietnameseMoney(completionTotal)}
+                  </p>
+                  {completionInternetInstallFee > 0 && (
+                    <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2 text-xs">
+                      <span className="font-semibold text-on-surface-variant">Đã cộng phí lắp đặt Internet</span>
+                      <span className="font-extrabold text-on-surface">{formatCurrency(completionInternetInstallFee)}</span>
+                    </div>
+                  )}
                   {selectedCompletionAddOnPackage && (
                     <div className="mt-3 rounded-lg bg-white/80 p-3">
                       <div className="flex items-center justify-between gap-3">
