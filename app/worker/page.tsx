@@ -724,7 +724,6 @@ export default function WorkerDashboard() {
   const [completionHandoverData, setCompletionHandoverData] = useState<WorkflowData>({});
   const [completionInternetInstallFeeInput, setCompletionInternetInstallFeeInput] = useState("300000");
   const [completionGiftCamera, setCompletionGiftCamera] = useState("");
-  const [completionGiftCameraAccount, setCompletionGiftCameraAccount] = useState("");
   const [completionGiftCameraPassword, setCompletionGiftCameraPassword] = useState("");
   const [completionInternetCycle, setCompletionInternetCycle] = useState<BillGoCycle>("monthly");
   const [completionInternetMonthlyFee, setCompletionInternetMonthlyFee] = useState("");
@@ -1803,7 +1802,6 @@ export default function WorkerDashboard() {
     setCompletionPaymentNote("");
     setCompletionInternetInstallFeeInput("300000");
     setCompletionGiftCamera("");
-    setCompletionGiftCameraAccount("");
     setCompletionGiftCameraPassword("");
     setCompletionInternetCycle(workflowBillGo?.cycle || "monthly");
     setCompletionInternetMonthlyFee(workflowBillGo?.amount ? String(workflowBillGo.amount) : "");
@@ -1891,6 +1889,8 @@ export default function WorkerDashboard() {
     : 0;
   const completionInternetReceiptTotal = completionInternetCycle === "monthly" ? 0 : completionInternetCycleTotal;
   const canGiftViettelCamera = isInternetCompletionJob && completionInternetInstallFee === 400000 && completionInternetCycle !== "monthly";
+  const completionCustomerPhone = activeJobToComplete?.customer?.phone || "";
+  const completionGiftCameraAccountValue = canGiftViettelCamera ? completionCustomerPhone.trim() : "";
   const completionTotal = completionItemsTotal + completionInternetInstallFee + completionInternetReceiptTotal;
   const completionAllInTotal = completionTotal + completionAddOnGrandTotal;
   const completionPaidAmount =
@@ -2278,8 +2278,14 @@ export default function WorkerDashboard() {
       return;
     }
 
-    if (canGiftViettelCamera && (!completionGiftCameraAccount.trim() || !completionGiftCameraPassword.trim())) {
-      showToast("Vui lòng nhập tài khoản và mật khẩu camera để bàn giao cho khách.", "error");
+    if (canGiftViettelCamera && !completionGiftCameraAccountValue) {
+      showToast("Khách hàng chưa có SĐT để làm tài khoản camera. Vui lòng cập nhật SĐT khách trước.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (canGiftViettelCamera && !completionGiftCameraPassword.trim()) {
+      showToast("Vui lòng nhập mật khẩu camera để bàn giao cho khách.", "error");
       setUploadingImages(false);
       return;
     }
@@ -2386,7 +2392,7 @@ export default function WorkerDashboard() {
             internetInstall: isInternetCompletionJob ? {
               installFee: completionInternetInstallFee,
               giftCamera: canGiftViettelCamera ? completionGiftCamera : null,
-              giftCameraAccount: canGiftViettelCamera ? completionGiftCameraAccount.trim() : null,
+              giftCameraAccount: canGiftViettelCamera ? completionGiftCameraAccountValue : null,
               giftCameraPassword: canGiftViettelCamera ? completionGiftCameraPassword.trim() : null,
             } : job.workflow_data?.internetInstall,
             billgoAddOn: selectedCompletionAddOnPackage ? {
@@ -2465,7 +2471,6 @@ export default function WorkerDashboard() {
       setCompletionPaymentNote("");
       setCompletionInternetInstallFeeInput("300000");
       setCompletionGiftCamera("");
-      setCompletionGiftCameraAccount("");
       setCompletionGiftCameraPassword("");
       setCompletionInternetCycle("monthly");
       setCompletionInternetMonthlyFee("");
@@ -3583,7 +3588,6 @@ export default function WorkerDashboard() {
                     setCompletionHandoverData({});
                     setCompletionInternetInstallFeeInput("300000");
                     setCompletionGiftCamera("");
-                    setCompletionGiftCameraAccount("");
                     setCompletionGiftCameraPassword("");
                     setCompletionInternetCycle("monthly");
                     setCompletionInternetMonthlyFee("");
@@ -3653,7 +3657,6 @@ export default function WorkerDashboard() {
                           setCompletionInternetCycle(nextCycle);
                           if (nextCycle === "monthly") {
                             setCompletionGiftCamera("");
-                            setCompletionGiftCameraAccount("");
                             setCompletionGiftCameraPassword("");
                           }
                         }}
@@ -3685,7 +3688,6 @@ export default function WorkerDashboard() {
                           setCompletionInternetInstallFeeInput(event.target.value);
                           if (event.target.value !== "400000") {
                             setCompletionGiftCamera("");
-                            setCompletionGiftCameraAccount("");
                             setCompletionGiftCameraPassword("");
                           }
                         }}
@@ -3714,12 +3716,13 @@ export default function WorkerDashboard() {
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold uppercase text-on-surface-variant">Tài khoản camera</label>
                             <input
-                              className="input-field !py-2 text-sm"
-                              value={completionGiftCameraAccount}
-                              onChange={event => setCompletionGiftCameraAccount(event.target.value)}
-                              placeholder="Nhập tài khoản bàn giao"
+                              className="input-field !py-2 text-sm bg-surface-container-low"
+                              value={completionGiftCameraAccountValue}
+                              readOnly
+                              placeholder="Tự lấy SĐT khách"
                               disabled={uploadingImages}
                             />
+                            <p className="text-[11px] font-semibold text-on-surface-variant">Tự lấy theo SĐT khách hàng.</p>
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold uppercase text-on-surface-variant">Mật khẩu camera</label>
@@ -3959,8 +3962,8 @@ export default function WorkerDashboard() {
                   {canGiftViettelCamera && completionGiftCamera && (
                     <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs font-semibold text-on-surface-variant">
                       Tặng kèm: {completionGiftCamera}
-                      {completionGiftCameraAccount.trim() && (
-                        <span className="block">Tài khoản cam: {completionGiftCameraAccount.trim()}</span>
+                      {completionGiftCameraAccountValue && (
+                        <span className="block">Tài khoản cam: {completionGiftCameraAccountValue}</span>
                       )}
                     </div>
                   )}
