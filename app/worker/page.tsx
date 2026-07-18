@@ -334,7 +334,11 @@ const initialWorkerDashboardData: WorkerDashboardData = {
 };
 
 const WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS = 450;
-const BILLGO_COMPLETION_INSTALL_FEE = 300000;
+const INTERNET_INSTALL_FEE_OPTIONS = [300000, 400000];
+const VIETTEL_GIFT_CAMERA_OPTIONS = [
+  "Camera Viettel trong nhà",
+  "Camera Viettel ngoài trời",
+];
 const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "three_months", "six_months", "yearly"];
 
 const getDefaultScheduledAt = () => {
@@ -718,6 +722,8 @@ export default function WorkerDashboard() {
   const [completionPaymentMethod, setCompletionPaymentMethod] = useState("cash");
   const [completionPaymentNote, setCompletionPaymentNote] = useState("");
   const [completionHandoverData, setCompletionHandoverData] = useState<WorkflowData>({});
+  const [completionInternetInstallFeeInput, setCompletionInternetInstallFeeInput] = useState("300000");
+  const [completionGiftCamera, setCompletionGiftCamera] = useState("");
   const [completionInternetCycle, setCompletionInternetCycle] = useState<BillGoCycle>("monthly");
   const [completionInternetMonthlyFee, setCompletionInternetMonthlyFee] = useState("");
   const [completionAddOnPackageId, setCompletionAddOnPackageId] = useState("");
@@ -1793,6 +1799,8 @@ export default function WorkerDashboard() {
     setCompletionPaymentAmount("");
     setCompletionPaymentMethod("cash");
     setCompletionPaymentNote("");
+    setCompletionInternetInstallFeeInput("300000");
+    setCompletionGiftCamera("");
     setCompletionInternetCycle(workflowBillGo?.cycle || "monthly");
     setCompletionInternetMonthlyFee(workflowBillGo?.amount ? String(workflowBillGo.amount) : "");
     setCompletionAddOnPackageId("");
@@ -1869,7 +1877,10 @@ export default function WorkerDashboard() {
     const unitPrice = Number(item.unitPrice) || 0;
     return sum + quantity * unitPrice;
   }, 0);
-  const completionInternetInstallFee = isInternetCompletionJob ? BILLGO_COMPLETION_INSTALL_FEE : 0;
+  const selectedInternetInstallFee = INTERNET_INSTALL_FEE_OPTIONS.includes(toMoneyNumber(completionInternetInstallFeeInput))
+    ? toMoneyNumber(completionInternetInstallFeeInput)
+    : INTERNET_INSTALL_FEE_OPTIONS[0];
+  const completionInternetInstallFee = isInternetCompletionJob ? selectedInternetInstallFee : 0;
   const completionInternetMonthlyFeeNumber = isInternetCompletionJob ? toMoneyNumber(completionInternetMonthlyFee) : 0;
   const completionInternetCycleTotal = completionInternetMonthlyFeeNumber > 0
     ? getBillGoCollectableAmount(completionInternetMonthlyFeeNumber, completionInternetCycle)
@@ -2250,6 +2261,18 @@ export default function WorkerDashboard() {
       return;
     }
 
+    if (isInternetCompletionJob && !INTERNET_INSTALL_FEE_OPTIONS.includes(completionInternetInstallFee)) {
+      showToast("Phí lắp đặt Internet không hợp lệ.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (isInternetCompletionJob && completionInternetInstallFee === 400000 && !completionGiftCamera) {
+      showToast("Vui lòng chọn loại camera Viettel tặng kèm.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
     if (completionAddOnPackageId && !selectedCompletionAddOnPackage) {
       showToast("Gói cước phát sinh không còn khả dụng. Vui lòng chọn lại.", "error");
       setUploadingImages(false);
@@ -2349,6 +2372,10 @@ export default function WorkerDashboard() {
               receiptAmount: completionInternetReceiptTotal,
               note: "Cước Internet lắp mới",
             } : job.workflow_data?.billgo,
+            internetInstall: isInternetCompletionJob ? {
+              installFee: completionInternetInstallFee,
+              giftCamera: completionInternetInstallFee === 400000 ? completionGiftCamera : null,
+            } : job.workflow_data?.internetInstall,
             billgoAddOn: selectedCompletionAddOnPackage ? {
               packageId: selectedCompletionAddOnPackage.id,
               packageName: selectedCompletionAddOnPackage.name,
@@ -2423,6 +2450,8 @@ export default function WorkerDashboard() {
       setCompletionHandoverData({});
       setCompletionPaymentAmount("");
       setCompletionPaymentNote("");
+      setCompletionInternetInstallFeeInput("300000");
+      setCompletionGiftCamera("");
       setCompletionInternetCycle("monthly");
       setCompletionInternetMonthlyFee("");
       setCompletionAddOnPackageId("");
@@ -3537,6 +3566,8 @@ export default function WorkerDashboard() {
                     setPreviewUrls([]);
                     setCompletionItems([]);
                     setCompletionHandoverData({});
+                    setCompletionInternetInstallFeeInput("300000");
+                    setCompletionGiftCamera("");
                     setCompletionInternetCycle("monthly");
                     setCompletionInternetMonthlyFee("");
                     setCompletionAddOnPackageId("");
@@ -3622,10 +3653,36 @@ export default function WorkerDashboard() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase text-on-surface-variant">Phí lắp đặt</label>
-                      <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-on-surface">
-                        {formatBillGoCurrency(completionInternetInstallFee)}
-                      </div>
+                      <select
+                        className="input-field !py-2 text-sm"
+                        value={completionInternetInstallFeeInput}
+                        onChange={event => {
+                          setCompletionInternetInstallFeeInput(event.target.value);
+                          if (event.target.value !== "400000") setCompletionGiftCamera("");
+                        }}
+                        disabled={uploadingImages}
+                      >
+                        {INTERNET_INSTALL_FEE_OPTIONS.map(fee => (
+                          <option key={fee} value={String(fee)}>{formatBillGoCurrency(fee)}</option>
+                        ))}
+                      </select>
                     </div>
+                    {completionInternetInstallFee === 400000 && (
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="text-[10px] font-bold uppercase text-on-surface-variant">Camera Viettel tặng kèm</label>
+                        <select
+                          className="input-field !py-2 text-sm"
+                          value={completionGiftCamera}
+                          onChange={event => setCompletionGiftCamera(event.target.value)}
+                          disabled={uploadingImages}
+                        >
+                          <option value="">Chọn loại camera</option>
+                          {VIETTEL_GIFT_CAMERA_OPTIONS.map(cameraName => (
+                            <option key={cameraName} value={cameraName}>{cameraName}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -3845,6 +3902,11 @@ export default function WorkerDashboard() {
                     <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2 text-xs">
                       <span className="font-semibold text-on-surface-variant">Đã cộng phí lắp đặt Internet</span>
                       <span className="font-extrabold text-on-surface">{formatCurrency(completionInternetInstallFee)}</span>
+                    </div>
+                  )}
+                  {completionGiftCamera && (
+                    <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs font-semibold text-on-surface-variant">
+                      Tặng kèm: {completionGiftCamera}
                     </div>
                   )}
                   {selectedCompletionAddOnPackage && (
