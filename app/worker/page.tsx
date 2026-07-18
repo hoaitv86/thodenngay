@@ -30,13 +30,22 @@ import {
   BillGoCycle,
   formatBillGoCurrency,
   getBillGoBillingPeriod,
+  getBillGoBillingParts,
+  getBillGoCollectableAmount,
   getBillGoCycleOption,
   getBillGoNextDueDate,
   getBillGoNextPeriodStartDate,
   getBillGoReceivableSummary,
   getBillGoStoredStatus,
+  toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
+import {
+  BILLGO_SIGNUP_CYCLES,
+  getBillGoPackagePrice,
+  getBillGoPackageTypeLabel,
+  type BillGoPackage,
+} from "@/lib/billgo-packages";
 import { Worker } from "@/lib/types";
 import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import PendingApproval from "./pending-approval";
@@ -294,6 +303,7 @@ type WorkerDashboardData = {
   activeJobs: WorkerJob[];
   inventoryProducts: InventoryProduct[];
   workerBillGoReceivables: WorkerBillGoReceivable[];
+  billGoPackages: BillGoPackage[];
   services: ServiceOption[];
   workerStats: WorkerDashboardStats;
 };
@@ -317,6 +327,7 @@ const initialWorkerDashboardData: WorkerDashboardData = {
   activeJobs: [],
   inventoryProducts: [],
   workerBillGoReceivables: [],
+  billGoPackages: [],
   services: [],
   workerStats: initialWorkerDashboardStats,
 };
@@ -492,6 +503,7 @@ export default function WorkerDashboard() {
     activeJobs,
     inventoryProducts,
     workerBillGoReceivables,
+    billGoPackages,
     services,
     workerStats,
   } = dashboardData;
@@ -703,6 +715,9 @@ export default function WorkerDashboard() {
   const [completionPaymentMethod, setCompletionPaymentMethod] = useState("cash");
   const [completionPaymentNote, setCompletionPaymentNote] = useState("");
   const [completionHandoverData, setCompletionHandoverData] = useState<WorkflowData>({});
+  const [completionAddOnPackageId, setCompletionAddOnPackageId] = useState("");
+  const [completionAddOnCycle, setCompletionAddOnCycle] = useState<BillGoCycle>("monthly");
+  const [completionAddOnNote, setCompletionAddOnNote] = useState("");
   const billGoRows = useMemo(
     () => workerBillGoReceivables.map(item => ({ item, summary: getBillGoReceivableSummary(item) })),
     [workerBillGoReceivables]
@@ -730,6 +745,39 @@ export default function WorkerDashboard() {
     () => activeJobToComplete ? getWorkflowServicesForJob(activeJobToComplete) : [],
     [activeJobToComplete, getWorkflowServicesForJob]
   );
+  const completionBillGoAddOnPackages = React.useMemo(
+    () => billGoPackages.filter(item => item.is_active && (item.type === "tv360" || item.type === "receiver")),
+    [billGoPackages]
+  );
+  const selectedCompletionAddOnPackage = React.useMemo(
+    () => completionBillGoAddOnPackages.find(item => item.id === completionAddOnPackageId) || null,
+    [completionAddOnPackageId, completionBillGoAddOnPackages]
+  );
+  const completionAddOnCycleOptions = React.useMemo(() => {
+    const allowedCycles = selectedCompletionAddOnPackage?.allowed_cycles?.length
+      ? selectedCompletionAddOnPackage.allowed_cycles
+      : BILLGO_SIGNUP_CYCLES;
+    return BILLGO_CYCLE_OPTIONS.filter(option =>
+      BILLGO_SIGNUP_CYCLES.includes(option.value) && allowedCycles.includes(option.value)
+    );
+  }, [selectedCompletionAddOnPackage]);
+  const completionAddOnMonthlyFee = getBillGoPackagePrice(selectedCompletionAddOnPackage);
+  const completionAddOnTotal = selectedCompletionAddOnPackage
+    ? getBillGoCollectableAmount(completionAddOnMonthlyFee, completionAddOnCycle)
+    : 0;
+  const isInternetCompletionJob = React.useMemo(() => {
+    if (!activeJobToComplete) return false;
+    const serviceText = normalizeServiceText([
+      activeJobToComplete.serviceName,
+      activeJobToComplete.description,
+      activeJobToComplete.service?.name,
+      activeJobToComplete.service?.description,
+      ...completionWorkflowServices.flatMap(service => [service.name, service.description]),
+    ].filter(Boolean).join(" "));
+    const hasInternetSignal = ["internet", "wifi", "wi-fi", "mang", "cap quang", "router", "modem"].some(keyword => serviceText.includes(keyword));
+    const hasInstallSignal = ["lap", "lap dat", "lap moi", "keo", "hoa mang", "trien khai"].some(keyword => serviceText.includes(keyword));
+    return hasInternetSignal && hasInstallSignal;
+  }, [activeJobToComplete, completionWorkflowServices]);
   const billGoTotals = useMemo(
     () => billGoRows.reduce(
       (acc, row) => {
@@ -907,6 +955,7 @@ export default function WorkerDashboard() {
       const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
       let nextInventoryProducts: InventoryProduct[] = [];
       let nextServices: ServiceOption[] = [];
+      let nextBillGoPackages: BillGoPackage[] = [];
 
       const { data: inventoryData, error: inventoryError } = await supabase
         .from("worker_inventory_products")
@@ -953,6 +1002,23 @@ export default function WorkerDashboard() {
             .sort(compareServicesByName);
 
         nextServices = servicesForMatching;
+      }
+
+      const { data: packageData, error: packageError } = await supabase
+        .from("billgo_packages")
+        .select("id, code, name, type, provider, monthly_price, setup_price, allowed_cycles, description, is_active, sort_order")
+        .eq("is_active", true)
+        .in("type", ["tv360", "receiver"])
+        .order("type", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true });
+
+      if (packageError) {
+        if (!isBackground) {
+          showToast("Không thể tải danh mục gói cước: " + packageError.message, "error");
+        }
+      } else {
+        nextBillGoPackages = (packageData || []) as BillGoPackage[];
       }
 
       // 3. Get New Jobs (Pending)
@@ -1163,6 +1229,7 @@ export default function WorkerDashboard() {
         pendingApprovalJobs: mappedPendingApproval,
         activeJobs: mappedActiveWithMocks,
         inventoryProducts: nextInventoryProducts,
+        billGoPackages: nextBillGoPackages,
         services: nextServices,
         workerStats: {
           jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
@@ -1717,6 +1784,9 @@ export default function WorkerDashboard() {
     setCompletionPaymentAmount("");
     setCompletionPaymentMethod("cash");
     setCompletionPaymentNote("");
+    setCompletionAddOnPackageId("");
+    setCompletionAddOnCycle("monthly");
+    setCompletionAddOnNote("");
     setCompletionHandoverData(pruneWorkflowData(
       job.workflow_data || {},
       getWorkflowServicesForJob(job),
@@ -1953,6 +2023,111 @@ export default function WorkerDashboard() {
     }
   };
 
+  const ensureBillGoAddOnFromCompletion = async (job: WorkerJob) => {
+    if (!selectedCompletionAddOnPackage || !worker?.id || !job.customer_id) return;
+
+    const allowedCycles = selectedCompletionAddOnPackage.allowed_cycles?.length
+      ? selectedCompletionAddOnPackage.allowed_cycles
+      : BILLGO_SIGNUP_CYCLES;
+    if (!allowedCycles.includes(completionAddOnCycle)) {
+      throw new Error("Chu kỳ gói cước phát sinh không hợp lệ.");
+    }
+
+    const monthlyFee = getBillGoPackagePrice(selectedCompletionAddOnPackage);
+    if (monthlyFee <= 0) {
+      throw new Error("Gói cước phát sinh chưa có giá hợp lệ.");
+    }
+
+    const { data: existingReceivable } = await supabase
+      .from("billgo_receivables")
+      .select("id")
+      .eq("job_id", job.id)
+      .eq("package_id", selectedCompletionAddOnPackage.id)
+      .eq("type", "subscription_fee")
+      .maybeSingle();
+
+    if (existingReceivable) return;
+
+    const startDate = toBillGoDateInput(new Date());
+    const billingPeriod = getBillGoBillingPeriod(startDate, completionAddOnCycle);
+    const billingParts = getBillGoBillingParts(billingPeriod.collectionMonth);
+    const cycle = getBillGoCycleOption(completionAddOnCycle);
+    const nextPeriodStart = getBillGoNextPeriodStartDate(billingPeriod.periodEnd);
+    const nextBilling = getBillGoBillingPeriod(nextPeriodStart, completionAddOnCycle);
+    const totalAmount = getBillGoCollectableAmount(monthlyFee, completionAddOnCycle);
+    const note = [
+      `Khách chọn thêm khi hoàn thành job ${job.job_code || job.id}`,
+      completionAddOnNote.trim(),
+    ].filter(Boolean).join(" · ");
+
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from("billgo_subscriptions")
+      .insert({
+        customer_id: job.customer_id,
+        worker_id: worker.id,
+        job_id: job.id,
+        service_id: job.service_id || null,
+        customer_name: job.customerName || job.customer?.full_name || null,
+        phone: job.customer?.phone || null,
+        customer_address: job.address || job.customer?.address || null,
+        provider: selectedCompletionAddOnPackage.provider || null,
+        package_id: selectedCompletionAddOnPackage.id,
+        package_name: selectedCompletionAddOnPackage.name,
+        service_type: selectedCompletionAddOnPackage.type,
+        cycle: completionAddOnCycle,
+        current_cycle: completionAddOnCycle,
+        amount_per_cycle: monthlyFee,
+        monthly_fee: monthlyFee,
+        start_date: billingPeriod.periodStart,
+        next_due_date: billingPeriod.dueDate,
+        next_period_start: billingPeriod.periodStart,
+        status: "active",
+        note: note || null,
+        created_by: worker.user_id,
+      })
+      .select("id")
+      .single();
+
+    if (subscriptionError) {
+      throw new Error("Không thể tạo thuê bao gói phát sinh: " + subscriptionError.message);
+    }
+
+    const { error: receivableError } = await supabase.from("billgo_receivables").insert({
+      customer_id: job.customer_id,
+      worker_id: worker.id,
+      job_id: job.id,
+      subscription_id: subscription.id,
+      type: "subscription_fee",
+      package_id: selectedCompletionAddOnPackage.id,
+      package_name_at_collection: selectedCompletionAddOnPackage.name,
+      title: `Thu cước ${selectedCompletionAddOnPackage.name}`,
+      total_amount: totalAmount,
+      due_date: billingPeriod.dueDate,
+      period_start: billingPeriod.periodStart,
+      period_end: billingPeriod.periodEnd,
+      collection_month: billingPeriod.collectionMonth,
+      usage_month: billingPeriod.usageMonth,
+      billing_month: billingParts.billingMonth,
+      billing_year: billingParts.billingYear,
+      cycle_at_collection: completionAddOnCycle,
+      billing_months: cycle.paidMonths,
+      bonus_months: cycle.bonusMonths,
+      service_months: cycle.paidMonths + cycle.bonusMonths,
+      paid_amount: 0,
+      monthly_fee_at_collection: monthlyFee,
+      next_period_start: nextPeriodStart,
+      next_due_date: nextBilling.dueDate,
+      status: getBillGoStoredStatus(totalAmount, 0, billingPeriod.dueDate),
+      note: note || null,
+      created_by: worker.user_id,
+    });
+
+    if (receivableError) {
+      await supabase.from("billgo_subscriptions").delete().eq("id", subscription.id);
+      throw new Error("Không thể tạo khoản thu gói phát sinh: " + receivableError.message);
+    }
+  };
+
   const handleConfirmCompleteJob = async () => {
     if (!activeJobToComplete) return;
 
@@ -2016,6 +2191,24 @@ export default function WorkerDashboard() {
 
     if (paidAmount > finalAmount) {
       showToast("Số tiền đã thu không được lớn hơn tổng tiền hóa đơn.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (completionAddOnPackageId && !selectedCompletionAddOnPackage) {
+      showToast("Gói cước phát sinh không còn khả dụng. Vui lòng chọn lại.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (selectedCompletionAddOnPackage && !isInternetCompletionJob) {
+      showToast("Chỉ chọn thêm gói cước khi hoàn thành việc lắp mới Internet.", "error");
+      setUploadingImages(false);
+      return;
+    }
+
+    if (selectedCompletionAddOnPackage && !completionAddOnCycleOptions.some(option => option.value === completionAddOnCycle)) {
+      showToast("Chu kỳ gói cước phát sinh không hợp lệ. Vui lòng chọn lại.", "error");
       setUploadingImages(false);
       return;
     }
@@ -2092,6 +2285,16 @@ export default function WorkerDashboard() {
               note: completionPaymentNote.trim() || null,
               recordedAt: new Date().toISOString(),
             },
+            billgoAddOn: selectedCompletionAddOnPackage ? {
+              packageId: selectedCompletionAddOnPackage.id,
+              packageName: selectedCompletionAddOnPackage.name,
+              packageType: selectedCompletionAddOnPackage.type,
+              monthlyFee: completionAddOnMonthlyFee,
+              cycle: completionAddOnCycle,
+              totalAmount: completionAddOnTotal,
+              note: completionAddOnNote.trim() || null,
+              selectedAt: new Date().toISOString(),
+            } : undefined,
           },
         })
         .eq('id', job.id)
@@ -2107,6 +2310,10 @@ export default function WorkerDashboard() {
 
       if (addToBillGo) {
         await ensureBillGoFromWorkflow(job);
+      }
+
+      if (selectedCompletionAddOnPackage) {
+        await ensureBillGoAddOnFromCompletion(job);
       }
 
       if (amountToRecord > 0) {
@@ -2145,6 +2352,9 @@ export default function WorkerDashboard() {
       setCompletionHandoverData({});
       setCompletionPaymentAmount("");
       setCompletionPaymentNote("");
+      setCompletionAddOnPackageId("");
+      setCompletionAddOnCycle("monthly");
+      setCompletionAddOnNote("");
       setAddToBillGo(false);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
@@ -3254,6 +3464,9 @@ export default function WorkerDashboard() {
                     setPreviewUrls([]);
                     setCompletionItems([]);
                     setCompletionHandoverData({});
+                    setCompletionAddOnPackageId("");
+                    setCompletionAddOnCycle("monthly");
+                    setCompletionAddOnNote("");
                   }
                 }}
                 className="p-1.5 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
@@ -3286,6 +3499,74 @@ export default function WorkerDashboard() {
                 includeSectionKeys={handoverWorkflowSectionKeys}
                 disabled={uploadingImages}
               />
+
+              {isInternetCompletionJob && (
+                <div className="rounded-xl border border-primary-container/20 bg-primary-fixed/40 p-4">
+                  <div className="mb-3">
+                    <label className="block text-sm font-bold text-on-surface">Khách chọn thêm gói cước</label>
+                    <p className="text-xs text-on-surface-variant">Dùng khi lắp Internet xong khách đăng ký thêm TV360 hoặc đầu thu.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Gói phát sinh</label>
+                      <select
+                        className="input-field !py-2 text-sm"
+                        value={completionAddOnPackageId}
+                        onChange={event => {
+                          const packageId = event.target.value;
+                          const nextPackage = completionBillGoAddOnPackages.find(item => item.id === packageId) || null;
+                          const allowedCycles = nextPackage?.allowed_cycles?.length ? nextPackage.allowed_cycles : BILLGO_SIGNUP_CYCLES;
+                          setCompletionAddOnPackageId(packageId);
+                          setCompletionAddOnCycle((allowedCycles.includes(completionAddOnCycle) ? completionAddOnCycle : allowedCycles[0] || "monthly") as BillGoCycle);
+                        }}
+                        disabled={uploadingImages || completionBillGoAddOnPackages.length === 0}
+                      >
+                        <option value="">Không thêm gói</option>
+                        {completionBillGoAddOnPackages.map(packageOption => (
+                          <option key={packageOption.id} value={packageOption.id}>
+                            {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(getBillGoPackagePrice(packageOption))}/tháng
+                          </option>
+                        ))}
+                      </select>
+                      {completionBillGoAddOnPackages.length === 0 && (
+                        <p className="text-xs font-semibold text-error">Chưa có gói TV360/Đầu thu đang áp dụng trong danh mục.</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Chu kỳ</label>
+                      <select
+                        className="input-field !py-2 text-sm"
+                        value={completionAddOnCycle}
+                        onChange={event => setCompletionAddOnCycle(event.target.value as BillGoCycle)}
+                        disabled={uploadingImages || !selectedCompletionAddOnPackage}
+                      >
+                        {completionAddOnCycleOptions.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Tổng cước kỳ đầu</label>
+                      <div className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-extrabold text-primary-container">
+                        {formatBillGoCurrency(completionAddOnTotal)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] font-bold uppercase text-on-surface-variant">Ghi chú gói phát sinh</label>
+                      <input
+                        className="input-field !py-2 text-sm"
+                        value={completionAddOnNote}
+                        onChange={event => setCompletionAddOnNote(event.target.value)}
+                        placeholder="Không bắt buộc"
+                        disabled={uploadingImages || !selectedCompletionAddOnPackage}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
