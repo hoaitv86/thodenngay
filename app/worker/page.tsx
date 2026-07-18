@@ -2273,19 +2273,19 @@ export default function WorkerDashboard() {
     }
 
     if (canGiftViettelCamera && !completionGiftCamera) {
-      showToast("Vui lòng chọn loại camera Viettel tặng kèm.", "error");
+      showToast("Còn thiếu mục: Camera Viettel tặng kèm.", "error");
       setUploadingImages(false);
       return;
     }
 
     if (canGiftViettelCamera && !completionGiftCameraAccountValue) {
-      showToast("Khách hàng chưa có SĐT để làm tài khoản camera. Vui lòng cập nhật SĐT khách trước.", "error");
+      showToast("Còn thiếu mục: Tài khoản camera (SĐT khách hàng). Vui lòng cập nhật SĐT khách trước.", "error");
       setUploadingImages(false);
       return;
     }
 
     if (canGiftViettelCamera && !completionGiftCameraPassword.trim()) {
-      showToast("Vui lòng nhập mật khẩu camera để bàn giao cho khách.", "error");
+      showToast("Còn thiếu mục: Mật khẩu camera.", "error");
       setUploadingImages(false);
       return;
     }
