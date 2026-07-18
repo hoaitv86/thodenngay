@@ -746,6 +746,17 @@ export default function WorkerDashboard() {
       .filter((service): service is ServiceOption => Boolean(service))
       .filter((service, index, list) => list.findIndex(item => item.id === service.id) === index);
   }, [services]);
+  const isInternetInstallCompletionJob = React.useCallback((job: WorkerJob) => {
+    const workflowServices = getWorkflowServicesForJob(job);
+    const serviceText = normalizeServiceText([
+      job.serviceName,
+      job.service?.name,
+      ...workflowServices.map(service => service.name),
+    ].filter(Boolean).join(" "));
+    const hasInternetSignal = ["internet", "wifi", "wi-fi", "mang internet", "cap quang"].some(keyword => serviceText.includes(keyword));
+    const hasInstallSignal = ["lap moi", "lap dat", "lap internet", "lap dat internet", "hoa mang"].some(keyword => serviceText.includes(keyword));
+    return hasInternetSignal && hasInstallSignal;
+  }, [getWorkflowServicesForJob]);
   const completionWorkflowServices = React.useMemo(
     () => activeJobToComplete ? getWorkflowServicesForJob(activeJobToComplete) : [],
     [activeJobToComplete, getWorkflowServicesForJob]
@@ -772,16 +783,8 @@ export default function WorkerDashboard() {
     : 0;
   const completionAddOnGrandTotal = completionAddOnTotal;
   const isInternetCompletionJob = React.useMemo(() => {
-    if (!activeJobToComplete) return false;
-    const serviceText = normalizeServiceText([
-      activeJobToComplete.serviceName,
-      activeJobToComplete.service?.name,
-      ...completionWorkflowServices.map(service => service.name),
-    ].filter(Boolean).join(" "));
-    const hasInternetSignal = ["internet", "wifi", "wi-fi", "mang internet", "cap quang"].some(keyword => serviceText.includes(keyword));
-    const hasInstallSignal = ["lap moi", "lap dat", "lap internet", "lap dat internet", "hoa mang"].some(keyword => serviceText.includes(keyword));
-    return hasInternetSignal && hasInstallSignal;
-  }, [activeJobToComplete, completionWorkflowServices]);
+    return activeJobToComplete ? isInternetInstallCompletionJob(activeJobToComplete) : false;
+  }, [activeJobToComplete, isInternetInstallCompletionJob]);
   const billGoTotals = useMemo(
     () => billGoRows.reduce(
       (acc, row) => {
@@ -1783,6 +1786,7 @@ export default function WorkerDashboard() {
 
   const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
     const workflowBillGo = job.workflow_data?.billgo as { cycle?: BillGoCycle; amount?: number | string } | undefined;
+    const isInternetInstallJob = isInternetInstallCompletionJob(job);
     setActiveJobToComplete(job);
     setAddToBillGo(false);
     setCompletionPaymentStatus("paid");
@@ -1802,7 +1806,7 @@ export default function WorkerDashboard() {
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
-      makeCompletionItem(job.serviceName || "Công dịch vụ", Number(job.quoted_price || 0)),
+      makeCompletionItem(job.serviceName || "Công dịch vụ", isInternetInstallJob ? 0 : Number(job.quoted_price || 0)),
       ...(startWithMaterial ? [makeInventoryCompletionItem()] : []),
     ]);
     setWarrantyNote("Bảo hành theo hạng mục đã ghi trên phiếu, không áp dụng cho lỗi phát sinh do sử dụng sai cách.");
@@ -1859,7 +1863,8 @@ export default function WorkerDashboard() {
     setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
   };
 
-  const completionItemsTotal = completionItems.reduce((sum, item) => {
+  const completionItemsTotal = completionItems.reduce((sum, item, index) => {
+    if (isInternetCompletionJob && index === 0 && item.source !== "inventory") return sum;
     const quantity = Number(item.quantity) || 0;
     const unitPrice = Number(item.unitPrice) || 0;
     return sum + quantity * unitPrice;
@@ -2193,7 +2198,10 @@ export default function WorkerDashboard() {
     setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
-    const finalAmount = cleanedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) + completionInternetInstallFee + completionInternetReceiptTotal;
+    const finalAmount = cleanedItems.reduce((sum, item, index) => {
+      if (isInternetCompletionJob && index === 0 && item.source !== "inventory") return sum;
+      return sum + item.quantity * item.unitPrice;
+    }, 0) + completionInternetInstallFee + completionInternetReceiptTotal;
     const paidAmount =
       completionPaymentStatus === "paid"
         ? finalAmount
@@ -3822,6 +3830,11 @@ export default function WorkerDashboard() {
                   <p className="mt-1 text-xs font-semibold text-on-success-container">
                     Bằng chữ: {readVietnameseMoney(completionTotal)}
                   </p>
+                  {isInternetCompletionJob && (
+                    <p className="mt-1 text-xs font-semibold text-on-success-container">
+                      Dòng dịch vụ lắp mới Internet không tính vào phiếu thu; chỉ thu phí lắp đặt và cước trả trước nếu có.
+                    </p>
+                  )}
                   {completionInternetReceiptTotal > 0 && (
                     <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2 text-xs">
                       <span className="font-semibold text-on-surface-variant">Đã cộng cước Internet {getBillGoCycleOption(completionInternetCycle).label}</span>
