@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
+import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
+import {
+  getCustomerServiceBasePrice,
+  getCustomerServiceDisplayName,
+  getCustomerServiceGroups,
+} from "@/lib/customer-service-catalog";
 import {
   ArrowRightIcon,
   BarChartIcon,
@@ -26,6 +31,7 @@ interface Service {
   color: string;
   accent: string;
   parent_service_id?: string | null;
+  base_price?: number | string | null;
 }
 
 interface WorkerSummary {
@@ -62,10 +68,10 @@ const serviceStyles: Record<string, Pick<Service, "color" | "accent">> = {
 };
 
 const defaultServices: Service[] = [
-  { id: "internet", iconName: "BriefcaseIcon", name: "Lắp đặt Internet", price: "195.000đ", color: "bg-cyan-100 text-cyan-700", accent: "from-cyan-500 to-blue-500" },
-  { id: "camera", iconName: "CameraIcon", name: "Lắp đặt Camera", price: "500.000đ", color: "bg-violet-100 text-violet-700", accent: "from-violet-500 to-fuchsia-500" },
-  { id: "computer", iconName: "BriefcaseIcon", name: "Sửa Máy Tính", price: "150.000đ", color: "bg-slate-100 text-slate-700", accent: "from-slate-500 to-slate-700" },
-  { id: "printer", iconName: "BriefcaseIcon", name: "Sửa Máy In", price: "150.000đ", color: "bg-teal-100 text-teal-700", accent: "from-teal-500 to-emerald-500" },
+  { id: "internet", iconName: "BriefcaseIcon", name: "Lắp đặt Internet", price: "195.000đ", color: "bg-cyan-100 text-cyan-700", accent: "from-cyan-500 to-blue-500", base_price: 195000 },
+  { id: "camera", iconName: "CameraIcon", name: "Lắp đặt Camera", price: "500.000đ", color: "bg-violet-100 text-violet-700", accent: "from-violet-500 to-fuchsia-500", base_price: 500000 },
+  { id: "computer", iconName: "BriefcaseIcon", name: "Sửa Máy Tính", price: "150.000đ", color: "bg-slate-100 text-slate-700", accent: "from-slate-500 to-slate-700", base_price: 150000 },
+  { id: "printer", iconName: "BriefcaseIcon", name: "Sửa Máy In", price: "150.000đ", color: "bg-teal-100 text-teal-700", accent: "from-teal-500 to-emerald-500", base_price: 150000 },
 ];
 
 const customerPromise = [
@@ -90,8 +96,30 @@ export default function CustomerHome() {
   const [services, setServices] = useState<Service[]>(defaultServices);
   const [topWorkers, setTopWorkers] = useState<WorkerSummary[]>([]);
   const [activeJobs, setActiveJobs] = useState(0);
+  const [featuredServiceGroupIndex, setFeaturedServiceGroupIndex] = useState(0);
   const supabase = useMemo(() => createClient(), []);
-  const serviceGroups = useMemo(() => groupServicesForDisplay(services), [services]);
+  const customerServiceGroups = useMemo(() => getCustomerServiceGroups(services), [services]);
+  const featuredServiceGroup = customerServiceGroups.length > 0
+    ? customerServiceGroups[featuredServiceGroupIndex % customerServiceGroups.length]
+    : null;
+  const featuredServices = featuredServiceGroup?.services.slice(0, 8) || [];
+  const displayedServices = featuredServices.length > 0 ? featuredServices : services.slice(0, 8);
+
+  useEffect(() => {
+    if (customerServiceGroups.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setFeaturedServiceGroupIndex((current) => (current + 1) % customerServiceGroups.length);
+    }, 4200);
+
+    return () => window.clearInterval(timer);
+  }, [customerServiceGroups.length]);
+
+  useEffect(() => {
+    if (featuredServiceGroupIndex >= customerServiceGroups.length) {
+      setFeaturedServiceGroupIndex(0);
+    }
+  }, [customerServiceGroups.length, featuredServiceGroupIndex]);
 
   useEffect(() => {
     async function fetchServices() {
@@ -119,6 +147,7 @@ export default function CustomerHome() {
             color: visual.color,
             accent: visual.accent,
             parent_service_id: svc.parent_service_id || null,
+            base_price: svc.base_price,
           };
         });
         setServices(formattedServices);
@@ -332,29 +361,61 @@ export default function CustomerHome() {
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <p className="text-xs font-bold uppercase text-secondary-container">Dịch vụ phổ biến</p>
-                <h2 className="mt-1 text-xl font-bold text-on-surface">Bạn cần xử lý gì?</h2>
+                <h2 className="mt-1 text-xl font-bold text-on-surface">
+                  Đa dạng dịch vụ {featuredServiceGroup?.category.name || "sửa chữa"}
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                  Nhóm dịch vụ nổi bật tự đổi để bạn thấy thêm lựa chọn phù hợp.
+                </p>
               </div>
               <Link href="/customer/booking" className="shrink-0 text-xs font-bold text-primary-container">
                 Xem tất cả
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {serviceGroups.slice(0, 12).map(({ category, services: categoryServices }) => {
-                const firstService = categoryServices[0];
+            {customerServiceGroups.length > 1 && (
+              <div className="mb-3 flex gap-1.5">
+                {customerServiceGroups.map((group, index) => (
+                  <button
+                    key={group.category.id}
+                    type="button"
+                    onClick={() => setFeaturedServiceGroupIndex(index)}
+                    className={`h-1.5 rounded-full transition-all ${
+                      index === featuredServiceGroupIndex % customerServiceGroups.length
+                        ? "w-8 bg-secondary-container"
+                        : "w-3 bg-outline-variant/50"
+                    }`}
+                    aria-label={`Xem nhóm ${group.category.name}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+              {displayedServices.map((service) => {
+                const servicePrice = getCustomerServiceBasePrice(service, services);
+                const displayPrice = servicePrice > 0
+                  ? `${servicePrice.toLocaleString("vi-VN")}đ`
+                  : service.price;
+                const categoryId = featuredServiceGroup?.category.id;
+                const href = categoryId
+                  ? `/customer/booking?category=${categoryId}&service=${service.id}`
+                  : `/customer/booking?service=${service.id}`;
 
                 return (
                   <Link
-                    key={category.id}
-                    href={`/customer/booking?category=${category.id}`}
-                    className="group relative min-h-[156px] overflow-hidden rounded-xl border border-white/70 bg-white/82 p-4 shadow-[0_12px_28px_rgba(15,35,66,0.07)] backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
+                    key={service.id}
+                    href={href}
+                    className="group relative min-h-[142px] overflow-hidden rounded-xl border border-white/70 bg-white/82 p-3.5 shadow-[0_12px_28px_rgba(15,35,66,0.07)] backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:min-h-[150px] sm:p-4"
                   >
-                    <div className={`absolute inset-x-0 top-0 h-1.5 bg-linear-to-r ${firstService.accent}`} />
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${firstService.color}`}>
-                      <span className="text-2xl leading-none">{category.emoji || "•"}</span>
+                    <div className={`absolute inset-x-0 top-0 h-1.5 bg-linear-to-r ${service.accent}`} />
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${service.color} sm:h-12 sm:w-12`}>
+                      <BriefcaseIcon size={20} />
                     </div>
-                    <p className="mt-4 min-h-10 text-sm font-bold leading-5 text-on-surface">{category.name}</p>
-                    <p className="mt-1 text-xs text-on-surface-variant">{categoryServices.length} dịch vụ, từ {firstService.price}</p>
+                    <p className="mt-3 min-h-10 text-sm font-bold leading-5 text-on-surface">
+                      {getCustomerServiceDisplayName(service)}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-on-surface-variant">Từ {displayPrice}</p>
                     <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-primary-fixed px-2.5 py-1 text-[11px] font-bold text-primary-container">
                       Chọn
                       <ArrowRightIcon size={12} />
