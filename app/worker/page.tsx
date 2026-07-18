@@ -769,13 +769,11 @@ export default function WorkerDashboard() {
     if (!activeJobToComplete) return false;
     const serviceText = normalizeServiceText([
       activeJobToComplete.serviceName,
-      activeJobToComplete.description,
       activeJobToComplete.service?.name,
-      activeJobToComplete.service?.description,
-      ...completionWorkflowServices.flatMap(service => [service.name, service.description]),
+      ...completionWorkflowServices.map(service => service.name),
     ].filter(Boolean).join(" "));
-    const hasInternetSignal = ["internet", "wifi", "wi-fi", "mang", "cap quang", "router", "modem"].some(keyword => serviceText.includes(keyword));
-    const hasInstallSignal = ["lap", "lap dat", "lap moi", "keo", "hoa mang", "trien khai"].some(keyword => serviceText.includes(keyword));
+    const hasInternetSignal = ["internet", "wifi", "wi-fi", "mang internet", "cap quang"].some(keyword => serviceText.includes(keyword));
+    const hasInstallSignal = ["lap moi", "lap dat", "lap internet", "lap dat internet", "hoa mang"].some(keyword => serviceText.includes(keyword));
     return hasInternetSignal && hasInstallSignal;
   }, [activeJobToComplete, completionWorkflowServices]);
   const billGoTotals = useMemo(
@@ -1864,6 +1862,10 @@ export default function WorkerDashboard() {
         ? 0
         : toMoneyNumber(completionPaymentAmount);
   const completionRemainingAmount = Math.max(completionTotal - completionPaidAmount, 0);
+  const hasCompletionExtraSale = completionItems.some((item, index) =>
+    (index > 0 || item.source === "inventory") && item.name.trim() && (Number(item.quantity) || 0) > 0
+  );
+  const completionWarrantyNote = hasCompletionExtraSale ? warrantyNote.trim() : "";
 
   const openCancelRequestModal = (job: WorkerJob) => {
     setJobToCancel(job);
@@ -2254,7 +2256,7 @@ export default function WorkerDashboard() {
           p_completion_items: cleanedItems,
           p_final_amount: finalAmount,
           p_warranty_days: maxWarrantyDays,
-          p_warranty_note: warrantyNote.trim(),
+          p_warranty_note: completionWarrantyNote,
           p_material_items: buildSalesRpcItems(materialDraftItems),
         });
 
@@ -2272,7 +2274,7 @@ export default function WorkerDashboard() {
           completion_items: cleanedItems,
           final_amount: finalAmount,
           warranty_days: maxWarrantyDays,
-          warranty_note: warrantyNote.trim(),
+          warranty_note: completionWarrantyNote,
           workflow_data: {
             ...(job.workflow_data || {}),
             ...handoverWorkflowData,
@@ -3772,15 +3774,17 @@ export default function WorkerDashboard() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-on-surface block">Ghi chú phiếu bảo hành</label>
-                  <textarea
-                    value={warrantyNote}
-                    onChange={(e) => setWarrantyNote(e.target.value)}
-                    className="input-field min-h-24 resize-none"
-                    disabled={uploadingImages}
-                  />
-                </div>
+                {hasCompletionExtraSale && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-on-surface block">Ghi chú phiếu bảo hành</label>
+                    <textarea
+                      value={warrantyNote}
+                      onChange={(e) => setWarrantyNote(e.target.value)}
+                      className="input-field min-h-24 resize-none"
+                      disabled={uploadingImages}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Upload Section */}
