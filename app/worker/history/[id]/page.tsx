@@ -6,6 +6,19 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import {
+  BILLGO_CYCLE_OPTIONS,
+  getBillGoCollectableAmount,
+  getBillGoCycleOption,
+  type BillGoCycle,
+} from "@/lib/billgo";
+import {
+  BILLGO_SIGNUP_CYCLES,
+  getBillGoPackagePrice,
+  getBillGoPackageTypeLabel,
+  type BillGoPackage,
+} from "@/lib/billgo-packages";
+import { readVietnameseMoney } from "@/lib/vietnamese-money";
+import {
   MapPinIcon,
   ClockIcon,
   BriefcaseIcon,
@@ -24,7 +37,15 @@ interface CompletionItem {
   quantity: number;
   unitPrice: number;
   warrantyDays: number;
+  generatedKey?: string;
 }
+
+const INTERNET_INSTALL_FEE_OPTIONS = [300000, 400000];
+const VIETTEL_GIFT_CAMERA_OPTIONS = [
+  "Camera Viettel trong nhà",
+  "Camera Viettel ngoài trời",
+];
+const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "three_months", "six_months", "yearly"];
 
 type ReceiptEditEntry = {
   editedAt: string;
@@ -39,6 +60,9 @@ type ReceiptEditEntry = {
 type JobWorkflowData = Record<string, unknown> & {
   receiptEditHistory?: ReceiptEditEntry[];
   receiptRevision?: number;
+  billgo?: Record<string, unknown>;
+  internetInstall?: Record<string, unknown>;
+  billgoAddOn?: Record<string, unknown>;
 };
 
 interface WorkerJobDetail {
@@ -90,16 +114,34 @@ const makeEditItem = (): CompletionItem => ({
 const calculateItemsTotal = (items: CompletionItem[]) =>
   items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
 
+const getStringValue = (value: unknown) =>
+  typeof value === "string" || typeof value === "number" ? String(value) : "";
+
+const getNumberValue = (value: unknown) => {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
 export default function WorkerJobDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [job, setJob] = useState<WorkerJobDetail | null>(null);
+  const [billGoPackages, setBillGoPackages] = useState<BillGoPackage[]>([]);
   const [workerName, setWorkerName] = useState("Thợ thực hiện");
   const [workerPhone, setWorkerPhone] = useState("");
   const [loading, setLoading] = useState(true);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editItems, setEditItems] = useState<CompletionItem[]>([]);
+  const [editInternetPackageId, setEditInternetPackageId] = useState("");
+  const [editInternetMonthlyFee, setEditInternetMonthlyFee] = useState("");
+  const [editInternetCycle, setEditInternetCycle] = useState<BillGoCycle>("monthly");
+  const [editInternetInstallFeeInput, setEditInternetInstallFeeInput] = useState("300000");
+  const [editGiftCamera, setEditGiftCamera] = useState("");
+  const [editGiftCameraPassword, setEditGiftCameraPassword] = useState("");
+  const [editAddOnPackageId, setEditAddOnPackageId] = useState("");
+  const [editAddOnCycle, setEditAddOnCycle] = useState<BillGoCycle>("monthly");
+  const [editAddOnNote, setEditAddOnNote] = useState("");
   const [editReason, setEditReason] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
@@ -174,6 +216,20 @@ export default function WorkerJobDetailPage() {
       } else {
         setJob(result.data as unknown as WorkerJobDetail);
       }
+
+      const { data: packageData, error: packageError } = await supabase
+        .from("billgo_packages")
+        .select("id, code, name, type, provider, monthly_price, setup_price, allowed_cycles, description, is_active, sort_order")
+        .eq("is_active", true)
+        .order("type", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true });
+
+      if (packageError) {
+        console.warn("Cannot load BillGo packages for receipt edit:", packageError.message);
+      } else {
+        setBillGoPackages((packageData || []) as BillGoPackage[]);
+      }
       setLoading(false);
     };
 
@@ -182,8 +238,11 @@ export default function WorkerJobDetailPage() {
 
   const openEditReceipt = () => {
     if (!job) return;
+    const workflowBillGo = job.workflow_data?.billgo || {};
+    const workflowInternetInstall = job.workflow_data?.internetInstall || {};
+    const workflowAddOn = job.workflow_data?.billgoAddOn || {};
     const currentItems = Array.isArray(job.completion_items) && job.completion_items.length > 0
-      ? job.completion_items
+      ? job.completion_items.filter(item => !item.generatedKey)
       : [makeEditItem()];
     setEditItems(currentItems.map(item => ({
       name: item.name || "",
@@ -191,6 +250,23 @@ export default function WorkerJobDetailPage() {
       unitPrice: Number(item.unitPrice || 0),
       warrantyDays: Number(item.warrantyDays || 0),
     })));
+    setEditInternetPackageId(getStringValue(workflowBillGo.packageId));
+    setEditInternetMonthlyFee(getStringValue(workflowBillGo.amount));
+    setEditInternetCycle(
+      INTERNET_COMPLETION_CYCLES.includes(workflowBillGo.cycle as BillGoCycle)
+        ? workflowBillGo.cycle as BillGoCycle
+        : "monthly"
+    );
+    setEditInternetInstallFeeInput(String(getNumberValue(workflowInternetInstall.installFee) || 300000));
+    setEditGiftCamera(getStringValue(workflowInternetInstall.giftCamera));
+    setEditGiftCameraPassword(getStringValue(workflowInternetInstall.giftCameraPassword));
+    setEditAddOnPackageId(getStringValue(workflowAddOn.packageId));
+    setEditAddOnCycle(
+      BILLGO_SIGNUP_CYCLES.includes(workflowAddOn.cycle as BillGoCycle)
+        ? workflowAddOn.cycle as BillGoCycle
+        : "monthly"
+    );
+    setEditAddOnNote(getStringValue(workflowAddOn.note));
     setEditReason("");
     setEditError("");
     setEditModalOpen(true);
@@ -207,7 +283,7 @@ export default function WorkerJobDetailPage() {
   const saveReceiptEdit = async () => {
     if (!job || savingEdit) return;
 
-    const cleanedItems = editItems
+    const cleanedManualItems = editItems
       .map(item => ({
         name: item.name.trim(),
         quantity: Number(item.quantity) || 0,
@@ -216,8 +292,10 @@ export default function WorkerJobDetailPage() {
       }))
       .filter(item => item.name && item.quantity > 0);
 
+    const cleanedItems = [...cleanedManualItems, ...editGeneratedItems];
+
     if (cleanedItems.length === 0) {
-      setEditError("Vui lòng nhập ít nhất một hạng mục hợp lệ.");
+      setEditError("Vui lòng nhập ít nhất một hạng mục hoặc chọn gói cước hợp lệ.");
       return;
     }
 
@@ -231,13 +309,43 @@ export default function WorkerJobDetailPage() {
       return;
     }
 
+    if (editInternetMonthlyFeeNumber < 0) {
+      setEditError("Cước Internet/tháng không được âm.");
+      return;
+    }
+
+    if (!INTERNET_COMPLETION_CYCLES.includes(editInternetCycle)) {
+      setEditError("Chu kỳ gói Internet không hợp lệ.");
+      return;
+    }
+
+    if (selectedEditAddOnPackage && !editAddOnCycleOptions.some(option => option.value === editAddOnCycle)) {
+      setEditError("Chu kỳ gói TV/đầu thu không hợp lệ.");
+      return;
+    }
+
+    if (canEditGiftViettelCamera && !editGiftCamera) {
+      setEditError("Còn thiếu mục: Camera Viettel tặng kèm.");
+      return;
+    }
+
+    if (canEditGiftViettelCamera && !editGiftCameraAccountValue) {
+      setEditError("Còn thiếu mục: Tài khoản camera (SĐT khách hàng). Vui lòng cập nhật SĐT khách trước.");
+      return;
+    }
+
+    if (canEditGiftViettelCamera && !editGiftCameraPassword.trim()) {
+      setEditError("Còn thiếu mục: Mật khẩu camera.");
+      return;
+    }
+
     setSavingEdit(true);
     setEditError("");
 
     const previousItems = Array.isArray(job.completion_items) ? job.completion_items : [];
     const previousAmount = Number(job.final_amount || calculateItemsTotal(previousItems));
     const nextAmount = calculateItemsTotal(cleanedItems);
-    const nextWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
+    const nextWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, Number(item.warrantyDays || 0)), 0);
     const previousWorkflow = job.workflow_data || {};
     const nextHistory: ReceiptEditEntry[] = [
       ...(Array.isArray(previousWorkflow.receiptEditHistory) ? previousWorkflow.receiptEditHistory : []),
@@ -254,6 +362,37 @@ export default function WorkerJobDetailPage() {
 
     const nextWorkflow: JobWorkflowData = {
       ...previousWorkflow,
+      billgo: isInternetInstallReceipt && editInternetMonthlyFeeNumber > 0 ? {
+        ...(previousWorkflow.billgo || {}),
+        packageId: selectedEditInternetPackage?.id || null,
+        packageName: selectedEditInternetPackage?.name || null,
+        packageType: selectedEditInternetPackage?.type || "internet",
+        cycle: editInternetCycle,
+        amount: editInternetMonthlyFeeNumber,
+        startDate: getStringValue(previousWorkflow.billgo?.startDate) || new Date().toISOString().slice(0, 10),
+        totalAmount: editInternetCycleTotal,
+        receiptAmount: editInternetReceiptTotal,
+        note: "Cước Internet lắp mới",
+      } : previousWorkflow.billgo,
+      internetInstall: isInternetInstallReceipt ? {
+        ...(previousWorkflow.internetInstall || {}),
+        installFee: editInternetInstallFee,
+        giftCamera: canEditGiftViettelCamera ? editGiftCamera || null : null,
+        giftCameraAccount: canEditGiftViettelCamera ? editGiftCameraAccountValue || null : null,
+        giftCameraPassword: canEditGiftViettelCamera ? editGiftCameraPassword.trim() || null : null,
+      } : previousWorkflow.internetInstall,
+      billgoAddOn: isInternetInstallReceipt && selectedEditAddOnPackage ? {
+        packageId: selectedEditAddOnPackage.id,
+        packageName: selectedEditAddOnPackage.name,
+        packageType: selectedEditAddOnPackage.type,
+        monthlyFee: editAddOnMonthlyFee,
+        cycle: editAddOnCycle,
+        subscriptionAmount: editAddOnTotal,
+        totalAmount: editAddOnTotal,
+        totalAmountInWords: readVietnameseMoney(editAddOnTotal),
+        note: editAddOnNote.trim() || null,
+        selectedAt: getStringValue(previousWorkflow.billgoAddOn?.selectedAt) || new Date().toISOString(),
+      } : undefined,
       receiptRevision: Number(previousWorkflow.receiptRevision || 0) + 1,
       receiptEditHistory: nextHistory,
     };
@@ -311,6 +450,9 @@ export default function WorkerJobDetailPage() {
   const finalAmount = Number(job.final_amount || completionItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0));
   const serviceName = job.service?.name || completionItems[0]?.name || "Công dịch vụ";
   const jobServices = getJobServices({ service: job.service, job_services: job.job_services });
+  const serviceText = `${serviceName} ${jobServices.map(service => service.name || "").join(" ")}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const isInternetInstallReceipt = Boolean(job.workflow_data?.billgo || job.workflow_data?.internetInstall)
+    || ((/internet|wifi|wi-fi|mang|cap quang/.test(serviceText)) && (/lap|moi|hoa mang|install/.test(serviceText)));
   const warrantyDays = Number(job.warranty_days || completionItems.reduce((max, item) => Math.max(max, Number(item.warrantyDays || 0)), 0));
   const warrantyUntil = new Date(completedDate);
   warrantyUntil.setDate(warrantyUntil.getDate() + warrantyDays);
@@ -320,7 +462,63 @@ export default function WorkerJobDetailPage() {
   const receiptEditHistory = Array.isArray(job.workflow_data?.receiptEditHistory)
     ? job.workflow_data.receiptEditHistory
     : [];
-  const editTotal = calculateItemsTotal(editItems);
+  const editInternetPackages = billGoPackages.filter(pkg => pkg.is_active && pkg.type === "internet");
+  const editAddOnPackages = billGoPackages.filter(pkg => pkg.is_active && (pkg.type === "tv360" || pkg.type === "receiver"));
+  const selectedEditInternetPackage = editInternetPackages.find(pkg => pkg.id === editInternetPackageId) || null;
+  const selectedEditAddOnPackage = editAddOnPackages.find(pkg => pkg.id === editAddOnPackageId) || null;
+  const editInternetMonthlyFeeNumber = isInternetInstallReceipt && selectedEditInternetPackage
+    ? getBillGoPackagePrice(selectedEditInternetPackage)
+    : isInternetInstallReceipt ? getNumberValue(editInternetMonthlyFee) : 0;
+  const editInternetInstallFee = INTERNET_INSTALL_FEE_OPTIONS.includes(getNumberValue(editInternetInstallFeeInput))
+    ? (isInternetInstallReceipt ? getNumberValue(editInternetInstallFeeInput) : 0)
+    : (isInternetInstallReceipt ? INTERNET_INSTALL_FEE_OPTIONS[0] : 0);
+  const editInternetCycleTotal = editInternetMonthlyFeeNumber > 0
+    ? getBillGoCollectableAmount(editInternetMonthlyFeeNumber, editInternetCycle)
+    : 0;
+  const editInternetReceiptTotal = editInternetCycle === "monthly" ? 0 : editInternetCycleTotal;
+  const editAddOnAllowedCycles = selectedEditAddOnPackage?.allowed_cycles?.length
+    ? selectedEditAddOnPackage.allowed_cycles
+    : BILLGO_SIGNUP_CYCLES;
+  const editAddOnCycleOptions = BILLGO_CYCLE_OPTIONS.filter(option =>
+    BILLGO_SIGNUP_CYCLES.includes(option.value) && editAddOnAllowedCycles.includes(option.value)
+  );
+  const editAddOnMonthlyFee = isInternetInstallReceipt ? getBillGoPackagePrice(selectedEditAddOnPackage) : 0;
+  const editAddOnTotal = isInternetInstallReceipt && selectedEditAddOnPackage
+    ? getBillGoCollectableAmount(editAddOnMonthlyFee, editAddOnCycle)
+    : 0;
+  const canEditGiftViettelCamera = editInternetInstallFee === 400000 && editInternetCycle !== "monthly";
+  const editGiftCameraAccountValue = canEditGiftViettelCamera ? (customerPhone || "").trim() : "";
+  const editGeneratedItems = ([
+    editInternetInstallFee > 0 ? {
+      name: "Phí lắp đặt Internet",
+      quantity: 1,
+      unitPrice: editInternetInstallFee,
+      warrantyDays: 0,
+      generatedKey: "internet-install-fee",
+    } : null,
+    editInternetReceiptTotal > 0 ? {
+      name: `Cước Internet ${getBillGoCycleOption(editInternetCycle).label}${selectedEditInternetPackage ? ` - ${selectedEditInternetPackage.name}` : ""}`,
+      quantity: 1,
+      unitPrice: editInternetReceiptTotal,
+      warrantyDays: 0,
+      generatedKey: "internet-package",
+    } : null,
+    isInternetInstallReceipt && selectedEditAddOnPackage ? {
+      name: `${getBillGoPackageTypeLabel(selectedEditAddOnPackage.type)} - ${selectedEditAddOnPackage.name} (${getBillGoCycleOption(editAddOnCycle).label})`,
+      quantity: 1,
+      unitPrice: editAddOnTotal,
+      warrantyDays: 0,
+      generatedKey: "billgo-addon",
+    } : null,
+    canEditGiftViettelCamera && editGiftCamera ? {
+      name: `Tặng kèm: ${editGiftCamera}`,
+      quantity: 1,
+      unitPrice: 0,
+      warrantyDays: 0,
+      generatedKey: "viettel-gift-camera",
+    } : null,
+  ] as Array<CompletionItem | null>).filter((item): item is CompletionItem => Boolean(item));
+  const editTotal = calculateItemsTotal(editItems) + calculateItemsTotal(editGeneratedItems);
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface animate-fade-in">
@@ -766,6 +964,214 @@ export default function WorkerJobDetailPage() {
                 >
                   Thêm hạng mục
                 </button>
+
+                {isInternetInstallReceipt && (
+                  <>
+                    <div className="rounded-xl border border-primary-container/20 bg-primary-fixed/35 p-4">
+                      <div className="mb-3">
+                        <p className="text-sm font-extrabold text-on-surface">Gói Internet lắp mới</p>
+                        <p className="mt-1 text-xs text-on-surface-variant">Chọn lại gói, chu kỳ đóng và phí lắp đặt để hệ thống tự tính dòng phiếu.</p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 sm:col-span-2">
+                      <span className="text-xs font-bold text-on-surface-variant">Gói Internet</span>
+                      <select
+                        className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                        value={editInternetPackageId}
+                        onChange={(event) => {
+                          const nextPackage = editInternetPackages.find(pkg => pkg.id === event.target.value) || null;
+                          setEditInternetPackageId(event.target.value);
+                          if (nextPackage) setEditInternetMonthlyFee(String(getBillGoPackagePrice(nextPackage)));
+                        }}
+                        disabled={savingEdit}
+                      >
+                        <option value="">Nhập cước Internet thủ công</option>
+                        {editInternetPackages.map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>
+                            {pkg.name} - {formatCurrency(getBillGoPackagePrice(pkg))}/tháng
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-bold text-on-surface-variant">Cước/tháng</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={editInternetMonthlyFee}
+                        onChange={(event) => {
+                          setEditInternetPackageId("");
+                          setEditInternetMonthlyFee(event.target.value);
+                        }}
+                        className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                        disabled={savingEdit || Boolean(selectedEditInternetPackage)}
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-bold text-on-surface-variant">Chu kỳ Internet</span>
+                      <select
+                        className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                        value={editInternetCycle}
+                        onChange={(event) => {
+                          const nextCycle = event.target.value as BillGoCycle;
+                          setEditInternetCycle(nextCycle);
+                          if (nextCycle === "monthly") {
+                            setEditGiftCamera("");
+                            setEditGiftCameraPassword("");
+                          }
+                        }}
+                        disabled={savingEdit}
+                      >
+                        {BILLGO_CYCLE_OPTIONS.filter(option => INTERNET_COMPLETION_CYCLES.includes(option.value)).map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-bold text-on-surface-variant">Phí lắp đặt</span>
+                      <select
+                        className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                        value={editInternetInstallFeeInput}
+                        onChange={(event) => {
+                          setEditInternetInstallFeeInput(event.target.value);
+                          if (event.target.value !== "400000") {
+                            setEditGiftCamera("");
+                            setEditGiftCameraPassword("");
+                          }
+                        }}
+                        disabled={savingEdit}
+                      >
+                        {INTERNET_INSTALL_FEE_OPTIONS.map(fee => (
+                          <option key={fee} value={String(fee)}>{formatCurrency(fee)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-on-surface-variant">Cước thu trên phiếu</span>
+                      <div className="rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-extrabold text-success">
+                        {formatCurrency(editInternetReceiptTotal)}
+                      </div>
+                    </div>
+                    {canEditGiftViettelCamera && (
+                      <div className="space-y-3 sm:col-span-2">
+                        <label className="block space-y-1">
+                          <span className="text-xs font-bold text-on-surface-variant">Camera Viettel tặng kèm</span>
+                          <select
+                            className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                            value={editGiftCamera}
+                            onChange={(event) => setEditGiftCamera(event.target.value)}
+                            disabled={savingEdit}
+                          >
+                            <option value="">Chọn loại camera</option>
+                            {VIETTEL_GIFT_CAMERA_OPTIONS.map(cameraName => (
+                              <option key={cameraName} value={cameraName}>{cameraName}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="space-y-1">
+                            <span className="text-xs font-bold text-on-surface-variant">Tài khoản camera</span>
+                            <input
+                              className="w-full rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface outline-none"
+                              value={editGiftCameraAccountValue}
+                              placeholder="Tự lấy SĐT khách"
+                              readOnly
+                              disabled={savingEdit}
+                            />
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-xs font-bold text-on-surface-variant">Mật khẩu camera</span>
+                            <input
+                              className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                              value={editGiftCameraPassword}
+                              onChange={(event) => setEditGiftCameraPassword(event.target.value)}
+                              placeholder="Nhập mật khẩu bàn giao"
+                              disabled={savingEdit}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low p-4">
+                      <div className="mb-3">
+                        <p className="text-sm font-extrabold text-on-surface">Dịch vụ xem TV thêm</p>
+                        <p className="mt-1 text-xs text-on-surface-variant">Chọn thêm TV360 hoặc đầu thu nếu khách phát sinh sau khi lắp Internet.</p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 sm:col-span-2">
+                      <span className="text-xs font-bold text-on-surface-variant">Gói TV/đầu thu</span>
+                      <select
+                        className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                        value={editAddOnPackageId}
+                        onChange={(event) => {
+                          setEditAddOnPackageId(event.target.value);
+                          setEditAddOnCycle("monthly");
+                        }}
+                        disabled={savingEdit}
+                      >
+                        <option value="">Không chọn thêm</option>
+                        {editAddOnPackages.map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>
+                            {getBillGoPackageTypeLabel(pkg.type)} - {pkg.name} - {formatCurrency(getBillGoPackagePrice(pkg))}/tháng
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedEditAddOnPackage && (
+                      <>
+                        <label className="space-y-1">
+                          <span className="text-xs font-bold text-on-surface-variant">Chu kỳ gói thêm</span>
+                          <select
+                            className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                            value={editAddOnCycle}
+                            onChange={(event) => setEditAddOnCycle(event.target.value as BillGoCycle)}
+                            disabled={savingEdit}
+                          >
+                            {editAddOnCycleOptions.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="space-y-1">
+                          <span className="text-xs font-bold text-on-surface-variant">Tổng gói thêm</span>
+                          <div className="rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-extrabold text-primary-container">
+                            {formatCurrency(editAddOnTotal)}
+                          </div>
+                        </div>
+                        <label className="space-y-1 sm:col-span-2">
+                          <span className="text-xs font-bold text-on-surface-variant">Ghi chú gói thêm</span>
+                          <input
+                            className="w-full rounded-lg border border-outline-variant/35 bg-white px-3 py-2 text-sm font-semibold text-on-surface outline-none focus:border-primary-container"
+                            value={editAddOnNote}
+                            onChange={(event) => setEditAddOnNote(event.target.value)}
+                            placeholder="Ví dụ: Khách chọn thêm TV360 sau nghiệm thu"
+                            disabled={savingEdit}
+                          />
+                        </label>
+                      </>
+                    )}
+                      </div>
+                    </div>
+
+                    {editGeneratedItems.length > 0 && (
+                      <div className="rounded-xl border border-success/20 bg-success-container/35 p-4">
+                        <p className="text-xs font-bold uppercase text-on-success-container">Dòng hệ thống sẽ thêm vào phiếu</p>
+                        <div className="mt-2 space-y-1">
+                          {editGeneratedItems.map(item => (
+                            <div key={item.generatedKey} className="flex items-center justify-between gap-3 text-sm">
+                              <span className="font-semibold text-on-surface">{item.name}</span>
+                              <span className="shrink-0 font-extrabold text-success">{formatCurrency(item.unitPrice)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <label className="block">
                   <span className="text-xs font-bold text-on-surface-variant">Lý do sửa phiếu</span>
