@@ -1886,6 +1886,7 @@ export default function WorkerDashboard() {
     ? getBillGoCollectableAmount(completionInternetMonthlyFeeNumber, completionInternetCycle)
     : 0;
   const completionInternetReceiptTotal = completionInternetCycle === "monthly" ? 0 : completionInternetCycleTotal;
+  const canGiftViettelCamera = isInternetCompletionJob && completionInternetInstallFee === 400000 && completionInternetCycle !== "monthly";
   const completionTotal = completionItemsTotal + completionInternetInstallFee + completionInternetReceiptTotal;
   const completionAllInTotal = completionTotal + completionAddOnGrandTotal;
   const completionPaidAmount =
@@ -2267,7 +2268,7 @@ export default function WorkerDashboard() {
       return;
     }
 
-    if (isInternetCompletionJob && completionInternetInstallFee === 400000 && !completionGiftCamera) {
+    if (canGiftViettelCamera && !completionGiftCamera) {
       showToast("Vui lòng chọn loại camera Viettel tặng kèm.", "error");
       setUploadingImages(false);
       return;
@@ -2374,7 +2375,7 @@ export default function WorkerDashboard() {
             } : job.workflow_data?.billgo,
             internetInstall: isInternetCompletionJob ? {
               installFee: completionInternetInstallFee,
-              giftCamera: completionInternetInstallFee === 400000 ? completionGiftCamera : null,
+              giftCamera: canGiftViettelCamera ? completionGiftCamera : null,
             } : job.workflow_data?.internetInstall,
             billgoAddOn: selectedCompletionAddOnPackage ? {
               packageId: selectedCompletionAddOnPackage.id,
@@ -3631,7 +3632,11 @@ export default function WorkerDashboard() {
                       <select
                         className="input-field !py-2 text-sm"
                         value={completionInternetCycle}
-                        onChange={event => setCompletionInternetCycle(event.target.value as BillGoCycle)}
+                        onChange={event => {
+                          const nextCycle = event.target.value as BillGoCycle;
+                          setCompletionInternetCycle(nextCycle);
+                          if (nextCycle === "monthly") setCompletionGiftCamera("");
+                        }}
                         disabled={uploadingImages}
                       >
                         {BILLGO_CYCLE_OPTIONS.filter(option => INTERNET_COMPLETION_CYCLES.includes(option.value)).map(option => (
@@ -3667,7 +3672,7 @@ export default function WorkerDashboard() {
                         ))}
                       </select>
                     </div>
-                    {completionInternetInstallFee === 400000 && (
+                    {canGiftViettelCamera && (
                       <div className="space-y-1 sm:col-span-2">
                         <label className="text-[10px] font-bold uppercase text-on-surface-variant">Camera Viettel tặng kèm</label>
                         <select
@@ -3904,7 +3909,7 @@ export default function WorkerDashboard() {
                       <span className="font-extrabold text-on-surface">{formatCurrency(completionInternetInstallFee)}</span>
                     </div>
                   )}
-                  {completionGiftCamera && (
+                  {canGiftViettelCamera && completionGiftCamera && (
                     <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs font-semibold text-on-surface-variant">
                       Tặng kèm: {completionGiftCamera}
                     </div>
