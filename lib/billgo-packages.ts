@@ -22,7 +22,7 @@ export const BILLGO_PACKAGE_TYPES: Array<{ value: BillGoPackageType; label: stri
   { value: "receiver", label: "Đầu thu" },
 ];
 
-export const BILLGO_SIGNUP_CYCLES: BillGoCycle[] = ["monthly", "six_months", "yearly"];
+export const BILLGO_SIGNUP_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
 
 export const getBillGoPackageTypeLabel = (type: string | null | undefined) =>
   BILLGO_PACKAGE_TYPES.find(option => option.value === type)?.label || "Internet";

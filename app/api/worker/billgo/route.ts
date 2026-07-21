@@ -18,6 +18,7 @@ import {
   toMoneyNumber,
 } from "@/lib/billgo";
 import type { BillGoPackage } from "@/lib/billgo-packages";
+import { BILLGO_SIGNUP_CYCLES } from "@/lib/billgo-packages";
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
@@ -796,7 +797,9 @@ export async function POST(request: Request) {
   const packageName = selectedPackage?.name || asText(body.packageName) || "Cước Internet";
   const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
   const cycle = asText(body.cycle) || "monthly";
-  const allowedPackageCycles = selectedPackage?.allowed_cycles || ["monthly", "six_months", "yearly"];
+  const allowedPackageCycles = selectedPackage?.allowed_cycles?.length
+    ? Array.from(new Set([...selectedPackage.allowed_cycles, ...BILLGO_SIGNUP_CYCLES]))
+    : BILLGO_SIGNUP_CYCLES;
   const startDate = asText(body.startDate);
   const dueDate = asText(body.dueDate);
   const note = asText(body.note);

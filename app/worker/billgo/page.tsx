@@ -591,6 +591,9 @@ const getBillGoRowCycle = (item: Receivable) =>
     ? item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly"
     : item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
 
+const getSignupCycleValues = (allowedCycles?: BillGoCycle[] | null) =>
+  new Set([...(allowedCycles || []), ...BILLGO_SIGNUP_CYCLES]);
+
 export default function WorkerBillGoPage() {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
@@ -972,8 +975,8 @@ export default function WorkerBillGoPage() {
       if (key === "packageId") {
         const selectedPackage = packages.find(item => item.id === value);
         if (!selectedPackage) return { ...prev, packageId: "", packageName: "", monthlyFee: "" };
-        const allowedCycles = selectedPackage.allowed_cycles?.length ? selectedPackage.allowed_cycles : BILLGO_SIGNUP_CYCLES;
-        const nextCycle = allowedCycles.includes(prev.cycle) ? prev.cycle : allowedCycles[0] || "monthly";
+        const allowedCycles = getSignupCycleValues(selectedPackage.allowed_cycles);
+        const nextCycle = allowedCycles.has(prev.cycle) ? prev.cycle : BILLGO_SIGNUP_CYCLES[0] || "monthly";
         return {
           ...prev,
           packageId: selectedPackage.id,
@@ -1438,7 +1441,7 @@ export default function WorkerBillGoPage() {
               <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
               <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
                 {signupCycleOptions
-                  .filter(option => !selectedFormPackage?.allowed_cycles?.length || selectedFormPackage.allowed_cycles.includes(option.value))
+                  .filter(option => getSignupCycleValues(selectedFormPackage?.allowed_cycles).has(option.value))
                   .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
@@ -1766,7 +1769,7 @@ export default function WorkerBillGoPage() {
               <div className="mt-4 grid gap-2 text-sm">
                 <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
                 <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(collecting.subscription?.current_cycle || collecting.subscription?.cycle || collecting.cycle_at_collection || "monthly").label}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(getBillGoRowCycle(collecting)).label}</strong></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
                   <div className="rounded-lg bg-surface-container-low p-3">Số tháng sử dụng<br /><strong>{collecting.service_months || ((collecting.billing_months || 0) + (collecting.bonus_months || 0))}</strong></div>

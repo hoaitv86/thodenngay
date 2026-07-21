@@ -351,7 +351,7 @@ const VIETTEL_GIFT_CAMERA_OPTIONS = [
   "Camera Viettel trong nhà",
   "Camera Viettel ngoài trời",
 ];
-const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "three_months", "six_months", "yearly"];
+const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
 
 const getDefaultScheduledAt = () => {
   const nextHour = new Date();
@@ -814,11 +814,12 @@ export default function WorkerDashboard() {
     [completionAddOnPackageId, completionBillGoAddOnPackages]
   );
   const completionAddOnCycleOptions = React.useMemo(() => {
-    const allowedCycles = selectedCompletionAddOnPackage?.allowed_cycles?.length
-      ? selectedCompletionAddOnPackage.allowed_cycles
-      : BILLGO_SIGNUP_CYCLES;
+    const allowedCycles = new Set([
+      ...(selectedCompletionAddOnPackage?.allowed_cycles || []),
+      ...BILLGO_SIGNUP_CYCLES,
+    ]);
     return BILLGO_CYCLE_OPTIONS.filter(option =>
-      BILLGO_SIGNUP_CYCLES.includes(option.value) && allowedCycles.includes(option.value)
+      BILLGO_SIGNUP_CYCLES.includes(option.value) && allowedCycles.has(option.value)
     );
   }, [selectedCompletionAddOnPackage]);
   const completionAddOnMonthlyFee = getBillGoPackagePrice(selectedCompletionAddOnPackage);
@@ -2278,10 +2279,11 @@ export default function WorkerDashboard() {
   const ensureBillGoAddOnFromCompletion = async (job: WorkerJob) => {
     if (!selectedCompletionAddOnPackage || !worker?.id || !job.customer_id) return;
 
-    const allowedCycles = selectedCompletionAddOnPackage.allowed_cycles?.length
-      ? selectedCompletionAddOnPackage.allowed_cycles
-      : BILLGO_SIGNUP_CYCLES;
-    if (!allowedCycles.includes(completionAddOnCycle)) {
+    const allowedCycles = new Set([
+      ...(selectedCompletionAddOnPackage.allowed_cycles || []),
+      ...BILLGO_SIGNUP_CYCLES,
+    ]);
+    if (!allowedCycles.has(completionAddOnCycle)) {
       throw new Error("Chu kỳ gói cước phát sinh không hợp lệ.");
     }
 
@@ -3973,9 +3975,12 @@ export default function WorkerDashboard() {
                         onChange={event => {
                           const packageId = event.target.value;
                           const nextPackage = completionBillGoAddOnPackages.find(item => item.id === packageId) || null;
-                          const allowedCycles = nextPackage?.allowed_cycles?.length ? nextPackage.allowed_cycles : BILLGO_SIGNUP_CYCLES;
+                          const allowedCycles = new Set([
+                            ...(nextPackage?.allowed_cycles || []),
+                            ...BILLGO_SIGNUP_CYCLES,
+                          ]);
                           setCompletionAddOnPackageId(packageId);
-                          setCompletionAddOnCycle((allowedCycles.includes(completionAddOnCycle) ? completionAddOnCycle : allowedCycles[0] || "monthly") as BillGoCycle);
+                          setCompletionAddOnCycle((allowedCycles.has(completionAddOnCycle) ? completionAddOnCycle : BILLGO_SIGNUP_CYCLES[0] || "monthly") as BillGoCycle);
                         }}
                         disabled={uploadingImages || completionBillGoAddOnPackages.length === 0}
                       >

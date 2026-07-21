@@ -47,7 +47,7 @@ const VIETTEL_GIFT_CAMERA_OPTIONS = [
   "Camera Viettel trong nhà",
   "Camera Viettel ngoài trời",
 ];
-const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "three_months", "six_months", "yearly"];
+const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
 
 type ReceiptEditEntry = {
   editedAt: string;
@@ -770,11 +770,12 @@ export default function WorkerJobDetailPage() {
     ? getBillGoCollectableAmount(editInternetMonthlyFeeNumber, editInternetCycle)
     : 0;
   const editInternetReceiptTotal = editInternetCycle === "monthly" ? 0 : editInternetCycleTotal;
-  const editAddOnAllowedCycles = selectedEditAddOnPackage?.allowed_cycles?.length
-    ? selectedEditAddOnPackage.allowed_cycles
-    : BILLGO_SIGNUP_CYCLES;
+  const editAddOnAllowedCycles = new Set([
+    ...(selectedEditAddOnPackage?.allowed_cycles || []),
+    ...BILLGO_SIGNUP_CYCLES,
+  ]);
   const editAddOnCycleOptions = BILLGO_CYCLE_OPTIONS.filter(option =>
-    BILLGO_SIGNUP_CYCLES.includes(option.value) && editAddOnAllowedCycles.includes(option.value)
+    BILLGO_SIGNUP_CYCLES.includes(option.value) && editAddOnAllowedCycles.has(option.value)
   );
   const editAddOnMonthlyFee = isInternetInstallReceipt ? getBillGoPackagePrice(selectedEditAddOnPackage) : 0;
   const editAddOnTotal = isInternetInstallReceipt && selectedEditAddOnPackage
