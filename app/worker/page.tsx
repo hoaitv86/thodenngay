@@ -101,6 +101,7 @@ type QuickCustomerOption = {
 };
 
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
+const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
 const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
 const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
 
@@ -1273,12 +1274,16 @@ export default function WorkerDashboard() {
         ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
         : 0;
 
+      const billGoMonthEnd = toBillGoDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0));
       const { data: billGoReceivablesData, error: billGoReceivablesError } = await supabase
         .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date)")
         .eq("worker_id", workerData.id)
+        .is("deleted_at", null)
+        .in("status", ["unpaid", "partial", "overdue", "due"])
+        .lte("due_date", billGoMonthEnd)
         .order("due_date", { ascending: true })
-        .range(0, 9999);
+        .range(0, WORKER_DASHBOARD_BILLGO_LIMIT - 1);
 
       if (billGoReceivablesError) {
         if (!isBackground) {
@@ -1802,7 +1807,7 @@ export default function WorkerDashboard() {
             note: receivable.note || null,
             created_by: user?.id || null,
           })
-          .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date), payments(id, amount, method, status, paid_at, note)")
+          .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date)")
           .single();
 
         if (nextReceivableError) {
