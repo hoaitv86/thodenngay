@@ -390,7 +390,7 @@ export default function CustomerProfile() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-10rem)]">
+      <div className="customer-profile-page flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -398,7 +398,7 @@ export default function CustomerProfile() {
 
   if (!profile) {
     return (
-      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-10rem)] px-6 text-center">
+      <div className="customer-profile-page flex flex-col items-center justify-center px-6 text-center">
         <p className="text-on-surface-variant text-body-md mb-4">Không tìm thấy thông tin tài khoản.</p>
         <button onClick={() => router.push("/login")} className="btn-primary w-full">
           Đăng nhập ngay
@@ -421,10 +421,10 @@ export default function CustomerProfile() {
   );
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100vh-8rem)] bg-surface pb-8 animate-fade-in">
+    <div className="customer-profile-page flex w-full flex-col bg-surface">
       
       {/* Profile Premium Header */}
-      <div className="bg-gradient-to-br from-primary via-primary-container to-[#004ba0] text-white pt-8 pb-20 px-5 relative overflow-hidden">
+      <div className="profile-hero bg-gradient-to-br from-primary via-primary-container to-[#004ba0] text-white pt-8 pb-20 px-5 relative overflow-hidden">
         {/* Visual abstract circles background */}
         <div className="absolute w-40 h-40 bg-white/5 rounded-full -top-10 -right-10 pointer-events-none" />
         <div className="absolute w-24 h-24 bg-white/5 rounded-full bottom-2 left-1/3 pointer-events-none" />
@@ -684,7 +684,7 @@ export default function CustomerProfile() {
         </div>
 
         {/* General Actions Panel */}
-        <div className="card !p-0 overflow-hidden">
+        <div className="profile-stable-card card !p-0 overflow-hidden">
           {/* Link: Booking History */}
           <button
             onClick={() => router.push("/customer/jobs")}

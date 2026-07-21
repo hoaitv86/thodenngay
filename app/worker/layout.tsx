@@ -117,6 +117,7 @@ export default function WorkerLayout({
     [mobileMoreItems]
   );
   const unreadNotificationCount = notifications.filter((notification) => !notification.read_at).length;
+  const isProfilePage = pathname === "/worker/profile";
 
   const fetchWorkerNotifications = useCallback(async (userId: string) => {
     const { data: notificationRows, error: notificationError } = await supabase
@@ -495,7 +496,7 @@ export default function WorkerLayout({
           }
         `}</style>
 
-        <main className="worker-mobile-content flex-1 overflow-y-auto bg-surface">
+        <main className={`worker-mobile-content flex-1 overflow-y-auto bg-surface ${isProfilePage ? "worker-profile-shell" : ""}`}>
           <div className="w-full lg:mx-auto lg:max-w-6xl">
             {children}
           </div>

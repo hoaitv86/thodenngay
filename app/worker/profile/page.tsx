@@ -442,7 +442,7 @@ export default function WorkerProfile() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-8rem)]">
+      <div className="worker-profile-page flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -450,7 +450,7 @@ export default function WorkerProfile() {
 
   if (!profile) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-8rem)]">
+      <div className="worker-profile-page flex items-center justify-center px-4 text-center">
         <p className="text-on-surface-variant text-body-md">Không tìm thấy thông tin hồ sơ.</p>
       </div>
     );
@@ -460,9 +460,9 @@ export default function WorkerProfile() {
   const isActive = profile.worker?.status === 'active';
 
   return (
-    <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface pb-6 animate-fade-in">
+    <div className="worker-profile-page flex w-full flex-col bg-surface">
       {/* Header / Avatar */}
-      <div className="hero-gradient relative overflow-hidden px-4 pb-16 pt-7 text-white shadow-sm sm:px-6">
+      <div className="profile-hero hero-gradient relative overflow-hidden px-4 pb-16 pt-7 text-white shadow-sm sm:px-6">
         <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25" />
         <div className="flex items-center gap-4">
           <div className="w-20 h-20 rounded-full bg-white text-primary flex items-center justify-center text-3xl font-extrabold shadow-sm relative shrink-0 overflow-hidden">
@@ -533,7 +533,7 @@ export default function WorkerProfile() {
       {/* Menu Settings */}
       <div className="px-4 mt-6 space-y-4">
         {/* Personal Info */}
-        <div className="card !p-0 overflow-hidden">
+        <div className="profile-stable-card card !p-0 overflow-hidden">
           <div className="px-4 py-3 border-b border-outline-variant/50 bg-surface-container-lowest flex items-center justify-between">
             <div className="flex items-center gap-3">
               <UserIcon size={18} className="text-primary-container" />
@@ -693,7 +693,7 @@ export default function WorkerProfile() {
         </div>
 
         {/* General Settings */}
-        <div className="card !p-0 overflow-hidden">
+        <div className="profile-stable-card card !p-0 overflow-hidden">
           {/* Link: Register Specialties */}
           <button
             type="button"

@@ -96,6 +96,51 @@ body {
   overflow-x: hidden;
 }
 
+.worker-profile-page,
+.customer-profile-page {
+  min-height: calc(100svh - 4rem);
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  overflow-x: clip;
+}
+
+.worker-profile-shell,
+.customer-profile-shell {
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.profile-hero,
+.profile-stable-card {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+@supports (-webkit-touch-callout: none) {
+  .worker-profile-shell,
+  .customer-profile-shell {
+    height: auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .worker-profile-page,
+  .customer-profile-page {
+    min-height: calc(100svh - 4rem);
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    animation: none !important;
+  }
+
+  .worker-profile-page .animate-fade-in,
+  .customer-profile-page .animate-fade-in {
+    animation: none !important;
+  }
+
+  .worker-profile-page .profile-hero,
+  .customer-profile-page .profile-hero {
+    contain: paint;
+  }
+}
+
 h1,
 h2,
 h3,

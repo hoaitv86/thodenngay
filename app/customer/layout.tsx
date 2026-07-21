@@ -57,6 +57,7 @@ export default function CustomerLayout({
 
   const currentItem = navItems.find((item) => pathname.startsWith(item.href));
   const pageLabel = currentItem?.label || "Khách hàng";
+  const isProfilePage = pathname === "/customer/profile";
 
   return (
     <div className="min-h-dvh w-full bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35 lg:flex">
@@ -149,7 +150,7 @@ export default function CustomerLayout({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-8">
+        <main className={`flex-1 overflow-y-auto pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-8 ${isProfilePage ? "customer-profile-shell" : ""}`}>
           {children}
         </main>
 
