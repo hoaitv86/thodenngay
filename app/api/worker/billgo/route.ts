@@ -192,6 +192,12 @@ const getComputedListStatus = (row: {
   return "unpaid";
 };
 
+const matchesBillGoStatusFilter = (status: string, filter: string) => {
+  if (filter === "all") return true;
+  if (filter === "unpaid") return status === "unpaid" || status === "partial" || status === "overdue";
+  return status === filter;
+};
+
 const getRowSearchText = (row: {
   subscription?: {
     customer_name?: string | null;
@@ -647,7 +653,7 @@ export async function GET(request: Request) {
     .filter(row => {
       const status = getComputedListStatus(row);
       if (cycleFilter !== BILLGO_ALL_TAB && getBillGoRowCycle(row) !== cycleFilter) return false;
-      if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (!matchesBillGoStatusFilter(status, statusFilter)) return false;
       if (dueFilter === "due_this_month" && row.due_date?.slice(0, 7) !== monthFilter) return false;
       if (dueFilter === "not_due" && status !== "not_due" && !isFutureBillGoDate(row.due_date)) return false;
       if (searchQuery && !getRowSearchText(row).includes(searchQuery)) return false;

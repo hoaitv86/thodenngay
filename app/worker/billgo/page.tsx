@@ -563,6 +563,12 @@ const isFutureDate = (dateValue: string | null | undefined) => {
   return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
 };
 
+const matchesBillGoStatusFilter = (status: string, filter: string) => {
+  if (filter === "all") return true;
+  if (filter === "unpaid") return status === "unpaid" || status === "partial" || status === "overdue";
+  return status === filter;
+};
+
 const getPaymentReceipts = (payment: Payment): BillGoReceipt[] => {
   const receipts = payment.billgo_receipts;
   if (!receipts) return [];
@@ -813,7 +819,7 @@ export default function WorkerBillGoPage() {
 
   const filteredRows = useMemo(() => rowViews.filter(row => {
     if (activeTab !== BILLGO_ALL_TAB && row.cycle !== activeTab) return false;
-    if (statusFilter !== "all" && row.summary.status !== statusFilter) return false;
+    if (!matchesBillGoStatusFilter(row.summary.status, statusFilter)) return false;
     if (!matchesDueFilter(row)) return false;
     return matchesSearch(row);
   }), [activeTab, matchesDueFilter, matchesSearch, rowViews, statusFilter]);
@@ -859,7 +865,7 @@ export default function WorkerBillGoPage() {
       const matchesLegacySubAreaName = !subscription?.sub_area_id && !!subAreaName && locationText.includes(subAreaName);
       if (!matchesSubAreaId && !matchesLegacySubAreaName) return false;
     }
-    if (areaStatusFilter !== "all" && row.summary.status !== areaStatusFilter) return false;
+    if (!matchesBillGoStatusFilter(row.summary.status, areaStatusFilter)) return false;
     if (!matchesDueFilter(row)) return false;
     return matchesSearch(row);
   }).sort((a, b) => {
@@ -881,6 +887,7 @@ export default function WorkerBillGoPage() {
   const remainingCount = areaStats.unpaid + areaStats.partial + areaStats.overdue;
 
   const totals = serverTotals;
+  const totalUncollectedCustomers = totals.unpaid + totals.partial + totals.overdue;
 
   const selectedSubAreaIndex = selectedAreaSubAreas.findIndex(subArea => subArea.id === selectedSubAreaId);
   const previousSubArea = selectedSubAreaIndex > 0 ? selectedAreaSubAreas[selectedSubAreaIndex - 1] : null;
@@ -1514,7 +1521,7 @@ export default function WorkerBillGoPage() {
             {[
               ["Tổng khách", String(areaStats.total)],
               ["Đã thu", String(areaStats.paid)],
-              ["Chưa thu", String(areaStats.unpaid)],
+          ["Chưa thu", String(areaStats.unpaid + areaStats.partial + areaStats.overdue)],
               ["Thu thiếu", String(areaStats.partial)],
               ["Còn lại", formatBillGoCurrency(areaStats.debt)],
               ["Hoàn thành", `${areaStats.total ? Math.round((areaStats.paid / areaStats.total) * 100) : 0}%`],
@@ -1566,7 +1573,7 @@ export default function WorkerBillGoPage() {
       {viewMode === "cycle" && <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
         {[
           ["Tổng khách", String(totals.totalCustomers)],
-          ["Chưa thu", String(totals.unpaid)],
+          ["Chưa thu", String(totalUncollectedCustomers)],
           ["Đã thu", String(totals.paid)],
           ["Thu thiếu", String(totals.partial)],
           ["Cần thu", formatBillGoCurrency(totals.totalReceivable)],
