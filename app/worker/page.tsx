@@ -28,6 +28,8 @@ import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
   BILLGO_CYCLE_OPTIONS,
   BillGoCycle,
+  buildBillGoReceiptCode,
+  buildBillGoReceiptLookupCode,
   formatBillGoCurrency,
   getBillGoBillingPeriod,
   getBillGoBillingParts,
@@ -1677,6 +1679,48 @@ export default function WorkerDashboard() {
     const nextPaid = currentSummary.paid + parsedAmount;
     const totalAmount = toMoneyNumber(receivable.total_amount);
     const nextStatus = getBillGoStoredStatus(totalAmount, nextPaid, receivable.due_date);
+    const receiptCode = buildBillGoReceiptCode(data.id, data.paid_at || new Date());
+    const lookupCode = buildBillGoReceiptLookupCode(receiptCode);
+    const receiptUrl = `${window.location.origin}/billgo/receipt/${lookupCode}`;
+    const customerName = receivable.subscription?.customer_name || receivable.customer?.full_name || null;
+    const customerPhone = receivable.subscription?.phone || receivable.customer?.phone || null;
+    const customerAddress = receivable.subscription?.customer_address || receivable.customer?.address || null;
+    const packageName = receivable.package_name_at_collection || receivable.subscription?.package_name || receivable.title || null;
+
+    const { error: receiptError } = await supabase
+      .from("billgo_receipts")
+      .insert({
+        receipt_code: receiptCode,
+        lookup_code: lookupCode,
+        qr_payload: receiptUrl,
+        payment_id: data.id,
+        receivable_id: receivable.id,
+        subscription_id: receivable.subscription_id || null,
+        worker_id: receivable.worker_id || worker?.id || null,
+        collected_by: user?.id || null,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        internet_account: receivable.subscription?.internet_account || null,
+        customer_address: customerAddress,
+        package_name: packageName,
+        cycle_at_collection: effectivePaymentCycle,
+        period_start: receivable.period_start || null,
+        period_end: receivable.period_end || null,
+        total_amount: totalAmount,
+        paid_amount: parsedAmount,
+        remaining_amount: Math.max(totalAmount - nextPaid, 0),
+        payment_method: paymentMethod,
+        paid_at: data.paid_at || new Date().toISOString(),
+        collector_name: worker?.user?.phone || null,
+        note: paymentNote.trim() || null,
+      });
+
+    if (receiptError) {
+      showToast("Đã thu tiền nhưng chưa tạo được phiếu thu BillGo: " + receiptError.message, "error");
+      setCollectingPaymentJobId(null);
+      return;
+    }
+
     const isFullyPaid = totalAmount > 0 && nextPaid >= totalAmount;
     const nextPeriodStart = receivable.period_end
       ? getBillGoNextPeriodStartDate(receivable.period_end)
