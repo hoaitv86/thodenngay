@@ -109,14 +109,20 @@ export const getBillGoPostpaidDueDate = (periodEndDate: string | Date) => {
 export const getBillGoBillingPeriod = (startDate: string | Date, cycle: string) => {
   const periodStart = toBillGoDateInput(startDate);
   const periodEnd = getBillGoPeriodEndDate(periodStart, cycle);
-  const dueDate = getBillGoPostpaidDueDate(periodEnd);
   const option = getBillGoCycleOption(cycle);
+  const isMonthly = option.value === "monthly";
+  const dueDate = isMonthly
+    ? getBillGoPostpaidDueDate(periodEnd)
+    : toBillGoDateInput(new Date(new Date(periodStart).getFullYear(), new Date(periodStart).getMonth(), 19));
+  const collectionMonth = isMonthly
+    ? toBillGoDateInput(new Date(new Date(periodEnd).getFullYear(), new Date(periodEnd).getMonth() + 1, 1))
+    : toBillGoDateInput(new Date(new Date(periodStart).getFullYear(), new Date(periodStart).getMonth(), 1));
 
   return {
     periodStart,
     periodEnd,
     dueDate,
-    collectionMonth: toBillGoDateInput(new Date(new Date(periodEnd).getFullYear(), new Date(periodEnd).getMonth() + 1, 1)),
+    collectionMonth,
     usageMonth: toBillGoDateInput(new Date(new Date(periodStart).getFullYear(), new Date(periodStart).getMonth(), 1)),
     billingMonths: option.paidMonths,
     bonusMonths: option.bonusMonths,

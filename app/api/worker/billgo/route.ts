@@ -511,6 +511,19 @@ const buildNotDueRow = (
   };
 };
 
+const getBillGoRowCycle = (row: {
+  id?: string | null;
+  cycle_at_collection?: string | null;
+  subscription?: { current_cycle?: string | null; cycle?: string | null } | null;
+}) => {
+  const isNotDueRow = String(row.id || "").startsWith("not_due_");
+  return String(
+    isNotDueRow
+      ? row.subscription?.current_cycle || row.subscription?.cycle || row.cycle_at_collection || "monthly"
+      : row.cycle_at_collection || row.subscription?.current_cycle || row.subscription?.cycle || "monthly"
+  );
+};
+
 const ensureDueReceivables = async (
   admin: SupabaseClient,
   workerId: string,
@@ -532,7 +545,7 @@ const ensureDueReceivables = async (
 
   const { data: existing, error: existingError } = await admin
     .from("billgo_receivables")
-    .select("subscription_id")
+    .select("subscription_id, period_start, cycle_at_collection")
     .eq("worker_id", workerId)
     .eq("billing_month", billingParts.billingMonth)
     .eq("billing_year", billingParts.billingYear)
@@ -540,11 +553,14 @@ const ensureDueReceivables = async (
     .not("subscription_id", "is", null);
   if (existingError) return { error: existingError.message };
 
-  const existingSubscriptionIds = new Set((existing || []).map(row => row.subscription_id));
+  const existingPeriodKeys = new Set((existing || []).map(row =>
+    `${row.subscription_id || ""}:${firstOfMonth(row.period_start || collectionMonth)}:${row.cycle_at_collection || "monthly"}`
+  ));
   const rowsToCreate = (subscriptions || []).flatMap(subscription => {
-    if (existingSubscriptionIds.has(subscription.id)) return [];
+    const cycle = String(subscription.current_cycle || subscription.cycle || "monthly");
     const periodStart = firstOfMonth(subscription.next_period_start || subscription.start_date || collectionMonth);
-    const billing = getBillGoBillingPeriod(periodStart, subscription.current_cycle || subscription.cycle || "monthly");
+    if (existingPeriodKeys.has(`${subscription.id}:${periodStart}:${cycle}`)) return [];
+    const billing = getBillGoBillingPeriod(periodStart, cycle);
     if (billing.collectionMonth !== collectionMonth) return [];
     return [buildReceivableDraft(subscription, userId, periodStart)];
   });
@@ -585,9 +601,6 @@ export async function GET(request: Request) {
     .is("deleted_at", null);
   if (areaId) subscriptionQuery = subscriptionQuery.eq("area_id", areaId);
   if (subAreaId) subscriptionQuery = subscriptionQuery.eq("sub_area_id", subAreaId);
-  if (cycleFilter !== BILLGO_ALL_TAB) {
-    subscriptionQuery = subscriptionQuery.or(`current_cycle.eq.${cycleFilter},and(current_cycle.is.null,cycle.eq.${cycleFilter})`);
-  }
   if (searchQuery) {
     const escapedQuery = searchQuery.replace(/[%_]/g, "\\$&");
     subscriptionQuery = subscriptionQuery.or([
@@ -632,6 +645,7 @@ export async function GET(request: Request) {
   const filteredRows = [...currentRows, ...notDueRows]
     .filter(row => {
       const status = getComputedListStatus(row);
+      if (cycleFilter !== BILLGO_ALL_TAB && getBillGoRowCycle(row) !== cycleFilter) return false;
       if (statusFilter !== "all" && status !== statusFilter) return false;
       if (dueFilter === "due_this_month" && row.due_date?.slice(0, 7) !== monthFilter) return false;
       if (dueFilter === "not_due" && status !== "not_due" && !isFutureBillGoDate(row.due_date)) return false;

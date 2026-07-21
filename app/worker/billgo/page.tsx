@@ -205,7 +205,6 @@ const previousMonthFirstInput = () => {
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 };
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-const dueDateForMonthInput = (monthValue: string) => `${monthValue}-19`;
 const parseDateInput = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return null;
@@ -587,6 +586,11 @@ const getReceiptEntries = (item: Receivable): BillGoReceiptEntry[] =>
       return b.receipt.receipt_code.localeCompare(a.receipt.receipt_code);
     });
 
+const getBillGoRowCycle = (item: Receivable) =>
+  (String(item.id || "").startsWith("not_due_")
+    ? item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly"
+    : item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
+
 export default function WorkerBillGoPage() {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
@@ -772,7 +776,7 @@ export default function WorkerBillGoPage() {
   }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
-    const cycle = (item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly") as BillGoCycle;
+    const cycle = getBillGoRowCycle(item);
     return {
       item,
       cycle,
@@ -880,7 +884,7 @@ export default function WorkerBillGoPage() {
   const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
   const formBilling = useMemo(() => getBillGoBillingPeriod(form.startDate, form.cycle), [form.cycle, form.startDate]);
-  const formDueDate = form.dueDate || dueDateForMonthInput(monthFilter);
+  const formDueDate = form.dueDate || formBilling.dueDate;
   const formTotal = useMemo(() => getBillGoCollectableAmount(form.monthlyFee, form.cycle), [form.cycle, form.monthlyFee]);
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
   const formSubAreas = useMemo(
