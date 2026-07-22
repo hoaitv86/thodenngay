@@ -1846,7 +1846,7 @@ export default function WorkerDashboard() {
 
   const openQuickJobEdit = (job: WorkerJob) => {
     if (!["assigned", "in_progress"].includes(String(job.status))) {
-      showToast("CÃ´ng viá»‡c Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ khÃ³a, khÃ´ng thá»ƒ sá»­a.", "error");
+      showToast("Công việc đã hoàn thành hoặc đã khóa, không thể sửa.", "error");
       return;
     }
 
@@ -1892,12 +1892,12 @@ export default function WorkerDashboard() {
     if (!editingQuickJob || savingQuickJobEdit) return;
 
     if (!["assigned", "in_progress"].includes(String(editingQuickJob.status))) {
-      showToast("CÃ´ng viá»‡c Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ khÃ³a, khÃ´ng thá»ƒ sá»­a.", "error");
+      showToast("Công việc đã hoàn thành hoặc đã khóa, không thể sửa.", "error");
       return;
     }
 
     if ((!editQuickJob.customerId && (!editQuickJob.customerName.trim() || !editQuickJob.customerPhone.trim())) || !editQuickJob.serviceId || !editQuickJob.address.trim()) {
-      showToast("Vui lÃ²ng chá»n khÃ¡ch, dá»‹ch vá»¥ vÃ  Ä‘á»‹a chá»‰ há»£p lá»‡.", "error");
+      showToast("Vui lòng chọn khách, dịch vụ và địa chỉ hợp lệ.", "error");
       return;
     }
 
@@ -1929,7 +1929,7 @@ export default function WorkerDashboard() {
     if (String(editingQuickJob.id).startsWith("mock-")) {
       updateEditedJobInState(normalizedJob);
       setEditingQuickJob(null);
-      showToast("ÄÃ£ cáº­p nháº­t cÃ´ng viá»‡c demo.", "success");
+      showToast("Đã cập nhật công việc demo.", "success");
       return;
     }
 
@@ -1954,7 +1954,7 @@ export default function WorkerDashboard() {
 
       const data = (await res.json()) as WorkerUpdateJobResponse;
       if (!res.ok) {
-        throw new Error(data.error || "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c.");
+        throw new Error(data.error || "Không thể cập nhật công việc.");
       }
 
       const returnedJob: Partial<WorkerJob> = data.job || {};
@@ -1967,10 +1967,10 @@ export default function WorkerDashboard() {
       });
       setEditingQuickJob(null);
       setEditQuickServicePickerOpen(false);
-      showToast("ÄÃ£ cáº­p nháº­t thÃ´ng tin cÃ´ng viá»‡c.", "success");
+      showToast("Đã cập nhật thông tin công việc.", "success");
       fetchData(true);
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c.", "error");
+      showToast(err instanceof Error ? err.message : "Không thể cập nhật công việc.", "error");
     } finally {
       setSavingQuickJobEdit(false);
     }

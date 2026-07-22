@@ -704,14 +704,14 @@ export async function PATCH(request: Request) {
 
     if (!jobId || (!requestedCustomerId && (!customerName || customerPhone.length < 8)) || !primaryServiceId || !address) {
       return NextResponse.json(
-        { error: "Vui lÃ²ng chá»n khÃ¡ch, dá»‹ch vá»¥ vÃ  Ä‘á»‹a chá»‰ há»£p lá»‡." },
+        { error: "Vui lòng chọn khách, dịch vụ và địa chỉ hợp lệ." },
         { status: 400 }
       );
     }
 
     if (isLegacyServiceId(primaryServiceId)) {
       return NextResponse.json(
-        { error: "Dá»‹ch vá»¥ cÅ© Ä‘Ã£ Ä‘Æ°á»£c áº©n, vui lÃ²ng chá»n danh má»¥c chuáº©n má»›i." },
+        { error: "Dịch vụ cũ đã được ẩn, vui lòng chọn danh mục chuẩn mới." },
         { status: 400 }
       );
     }
@@ -724,15 +724,15 @@ export async function PATCH(request: Request) {
       .maybeSingle();
 
     if (currentJobError) {
-      return NextResponse.json({ error: "KhÃ´ng thá»ƒ kiá»ƒm tra cÃ´ng viá»‡c: " + currentJobError.message }, { status: 500 });
+      return NextResponse.json({ error: "Không thể kiểm tra công việc: " + currentJobError.message }, { status: 500 });
     }
 
     if (!currentJob) {
-      return NextResponse.json({ error: "KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c Ä‘ang lÃ m." }, { status: 404 });
+      return NextResponse.json({ error: "Không tìm thấy công việc đang làm." }, { status: 404 });
     }
 
     if (!["assigned", "in_progress"].includes(String(currentJob.status))) {
-      return NextResponse.json({ error: "CÃ´ng viá»‡c Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ khÃ³a, khÃ´ng thá»ƒ sá»­a thÃ´ng tin nÃ y." }, { status: 409 });
+      return NextResponse.json({ error: "Công việc đã hoàn thành hoặc đã khóa, không thể sửa thông tin này." }, { status: 409 });
     }
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -761,7 +761,7 @@ export async function PATCH(request: Request) {
 
       if (!rpcMissing) {
         return NextResponse.json(
-          { error: rpcError.message || "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c." },
+          { error: rpcError.message || "Không thể cập nhật công việc." },
           { status: 400 }
         );
       }
@@ -788,7 +788,7 @@ export async function PATCH(request: Request) {
       .maybeSingle();
 
     if (!service) {
-      return NextResponse.json({ error: "Dá»‹ch vá»¥ khÃ´ng há»£p lá»‡ hoáº·c Ä‘Ã£ bá»‹ táº¯t." }, { status: 400 });
+      return NextResponse.json({ error: "Dịch vụ không hợp lệ hoặc đã bị tắt." }, { status: 400 });
     }
 
     const existingCustomerQuery = supabaseAdmin
@@ -803,8 +803,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json(
         {
           error: requestedCustomerId
-            ? "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch hÃ ng Ä‘Ã£ chá»n."
-            : "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch quen vá»›i SÄT nÃ y. HÃ£y chá»n khÃ¡ch Ä‘Ã£ cÃ³ Ä‘á»ƒ trÃ¡nh táº¡o trÃ¹ng.",
+            ? "Không tìm thấy khách hàng đã chọn."
+            : "Không tìm thấy khách quen với SĐT này. Hãy chọn khách đã có để tránh tạo trùng.",
         },
         { status: 400 }
       );
@@ -827,7 +827,7 @@ export async function PATCH(request: Request) {
       .single();
 
     if (updateError) {
-      return NextResponse.json({ error: "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c: " + updateError.message }, { status: 500 });
+      return NextResponse.json({ error: "Không thể cập nhật công việc: " + updateError.message }, { status: 500 });
     }
 
     await replaceJobServices(supabaseAdmin as SupabaseClient, jobId, serviceIds);
@@ -844,7 +844,7 @@ export async function PATCH(request: Request) {
     });
   } catch (error: unknown) {
     return NextResponse.json(
-      { error: "Lá»—i há»‡ thá»‘ng: " + (error instanceof Error ? error.message : "KhÃ´ng xÃ¡c Ä‘á»‹nh") },
+      { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
       { status: 500 }
     );
   }
