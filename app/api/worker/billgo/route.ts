@@ -178,7 +178,6 @@ const getComputedListStatus = (row: {
   due_date?: string | null;
   status?: string | null;
 }) => {
-  if (row.status === "not_due" || row.status === "promo") return row.status;
   const total = toMoneyNumber(row.total_amount);
   const paid = toMoneyNumber(row.paid_amount);
   const debt = Math.max(total - paid, 0);
@@ -189,6 +188,7 @@ const getComputedListStatus = (row: {
   if (total > 0 && debt <= 0) return "paid";
   if (paid > 0 && debt > 0) return "partial";
   if (dueTime !== null && dueTime < today.getTime() && debt > 0) return "overdue";
+  if (row.status === "paid" || row.status === "not_due" || row.status === "promo") return row.status;
   return "unpaid";
 };
 
@@ -486,9 +486,11 @@ const buildNotDueRow = (
     next_due_date?: string | null;
     start_date?: string | null;
   },
+  coverageType?: string | null,
 ) => {
   const cycle = String(subscription.current_cycle || subscription.cycle || "monthly") as BillGoCycle;
   const option = getBillGoCycleOption(cycle);
+  const coverageStatus = coverageType === "paid" ? "paid" : coverageType === "promo" ? "promo" : "not_due";
 
   return {
     id: `not_due_${subscription.id}`,
@@ -511,7 +513,7 @@ const buildNotDueRow = (
     paid_amount: 0,
     paid_at: null,
     payment_method: null,
-    status: "not_due",
+    status: coverageStatus,
     note: null,
     subscription,
     payments: [],
@@ -626,19 +628,32 @@ export async function GET(request: Request) {
   if (subscriptionError) return jsonError("Không thể tải khách BillGo: " + subscriptionError.message);
 
   const subscriptionIds = (subscriptions || []).map(subscription => subscription.id);
-  const { data: currentRowsData, error: receivableError } = subscriptionIds.length > 0
-    ? await admin
-        .from("billgo_receivables")
-        .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id")
-        .eq("worker_id", workerId)
-        .eq("billing_month", month)
-        .eq("billing_year", year)
-        .in("subscription_id", subscriptionIds)
-        .is("deleted_at", null)
-    : { data: [], error: null };
+  const coveredMonth = monthStartInput(year, month);
+  const [receivableResult, coverageResult] = subscriptionIds.length > 0
+    ? await Promise.all([
+        admin
+          .from("billgo_receivables")
+          .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id")
+          .eq("worker_id", workerId)
+          .eq("billing_month", month)
+          .eq("billing_year", year)
+          .in("subscription_id", subscriptionIds)
+          .is("deleted_at", null),
+        admin
+          .from("billgo_payment_coverages")
+          .select("subscription_id, coverage_type")
+          .in("subscription_id", subscriptionIds)
+          .eq("covered_month", coveredMonth),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  const { data: currentRowsData, error: receivableError } = receivableResult;
   if (receivableError) return jsonError("Không thể tải kỳ thu BillGo: " + receivableError.message);
+  if (coverageResult.error) return jsonError("Không thể tải tháng đã thanh toán BillGo: " + coverageResult.error.message);
 
   const subscriptionsById = new Map((subscriptions || []).map(subscription => [subscription.id, subscription]));
+  const coverageBySubscription = new Map(
+    (coverageResult.data || []).map(coverage => [coverage.subscription_id, coverage.coverage_type])
+  );
   const currentRows = (currentRowsData || []).map(row => ({
     ...row,
     subscription: subscriptionsById.get(row.subscription_id || "") || null,
@@ -647,7 +662,7 @@ export async function GET(request: Request) {
   const currentSubscriptionIds = new Set(currentRows.map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
   const notDueRows = (subscriptions || [])
     .filter(subscription => subscription.status === "active" && !currentSubscriptionIds.has(subscription.id))
-    .map(subscription => buildNotDueRow(subscription));
+    .map(subscription => buildNotDueRow(subscription, coverageBySubscription.get(subscription.id)));
 
   const filteredRows = [...currentRows, ...notDueRows]
     .filter(row => {

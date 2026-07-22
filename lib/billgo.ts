@@ -208,11 +208,16 @@ export const getBillGoReceivableSummary = (receivable: BillGoReceivableLike): Bi
   const storedPaid = toMoneyNumber(receivable.paid_amount);
   const paid = storedPaid > 0 ? storedPaid : getBillGoPaid(receivable.payments || []);
   const debt = Math.max(total - paid, 0);
-  const status = receivable.status === "not_due"
-    ? "not_due"
-    : receivable.status === "promo"
-      ? "promo"
-      : getBillGoComputedStatus(total, paid, receivable.due_date);
+  const computedStatus = getBillGoComputedStatus(total, paid, receivable.due_date);
+  const status = computedStatus === "paid" || computedStatus === "partial" || computedStatus === "overdue"
+    ? computedStatus
+    : receivable.status === "paid"
+      ? "paid"
+      : receivable.status === "not_due"
+        ? "not_due"
+        : receivable.status === "promo"
+          ? "promo"
+          : computedStatus;
 
   return { receivable: total, paid, debt, status, statusLabel: getBillGoStatusLabel(status) };
 };
