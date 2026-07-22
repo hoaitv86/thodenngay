@@ -305,6 +305,7 @@ type WorkerDashboardStats = {
   todayIncome: number;
   todayRating: number;
   monthlyCustomers: number;
+  monthlyNewCustomers: number;
   monthlyIncome: number;
   monthlyRating: number;
 };
@@ -329,8 +330,31 @@ const initialWorkerDashboardStats: WorkerDashboardStats = {
   todayIncome: 0,
   todayRating: 0,
   monthlyCustomers: 0,
+  monthlyNewCustomers: 0,
   monthlyIncome: 0,
   monthlyRating: 0,
+};
+
+type WorkerMonthlyGoal = {
+  id?: string;
+  worker_id: string;
+  goal_month: string;
+  revenue_target: number;
+  total_customers_target: number;
+  new_customers_target: number;
+  skipped: boolean;
+};
+
+type WorkerMonthlyGoalDraft = {
+  revenueTarget: string;
+  totalCustomersTarget: string;
+  newCustomersTarget: string;
+};
+
+const DEFAULT_WORKER_MONTHLY_GOAL = {
+  revenueTarget: 20000000,
+  totalCustomersTarget: 40,
+  newCustomersTarget: 10,
 };
 
 const initialWorkerDashboardData: WorkerDashboardData = {
@@ -352,6 +376,22 @@ const VIETTEL_GIFT_CAMERA_OPTIONS = [
   "Camera Viettel ngoài trời",
 ];
 const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
+
+const getMonthKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+
+const getPreviousMonthKey = (date: Date) =>
+  getMonthKey(new Date(date.getFullYear(), date.getMonth() - 1, 1));
+
+const makeGoalDraft = (goal: {
+  revenueTarget: number;
+  totalCustomersTarget: number;
+  newCustomersTarget: number;
+}): WorkerMonthlyGoalDraft => ({
+  revenueTarget: String(goal.revenueTarget),
+  totalCustomersTarget: String(goal.totalCustomersTarget),
+  newCustomersTarget: String(goal.newCustomersTarget),
+});
 
 const getDefaultScheduledAt = () => {
   const nextHour = new Date();
@@ -591,6 +631,15 @@ export default function WorkerDashboard() {
   });
   const [quickWorkflowData, setQuickWorkflowData] = useState<WorkflowData>({});
   const supabase = React.useMemo(() => createClient(), []);
+  const currentGoalMonth = React.useMemo(() => getMonthKey(new Date()), []);
+  const previousGoalMonth = React.useMemo(() => getPreviousMonthKey(new Date()), []);
+  const [monthlyGoal, setMonthlyGoal] = useState<WorkerMonthlyGoal | null>(null);
+  const [monthlyGoalDraft, setMonthlyGoalDraft] = useState<WorkerMonthlyGoalDraft>(
+    makeGoalDraft(DEFAULT_WORKER_MONTHLY_GOAL)
+  );
+  const [monthlyGoalFormOpen, setMonthlyGoalFormOpen] = useState(false);
+  const [monthlyGoalSaving, setMonthlyGoalSaving] = useState(false);
+  const [monthlyGoalError, setMonthlyGoalError] = useState("");
   const quickServiceGroups = React.useMemo(() => buildAdminServiceGroups(services), [services]);
   const getTechnicalDetailOptions = React.useCallback((serviceId?: string | null) =>
     services
@@ -978,6 +1027,81 @@ export default function WorkerDashboard() {
     return () => window.removeEventListener("worker:open-quick-job", openQuickJob);
   }, []);
 
+  const loadWorkerMonthlyGoal = React.useCallback(async (workerId: string, isBackground = false) => {
+    const { data, error } = await supabase
+      .from("worker_monthly_goals")
+      .select("id, worker_id, goal_month, revenue_target, total_customers_target, new_customers_target, skipped")
+      .eq("worker_id", workerId)
+      .in("goal_month", [currentGoalMonth, previousGoalMonth])
+      .order("goal_month", { ascending: false });
+
+    if (error) {
+      if (!isBackground) {
+        setMonthlyGoalError("Chưa tải được mục tiêu tháng. Hãy chạy migration worker_monthly_goals.");
+      }
+      return;
+    }
+
+    const goals = (data || []) as unknown as WorkerMonthlyGoal[];
+    const currentGoal = goals.find(goal => goal.goal_month === currentGoalMonth) || null;
+    const previousGoal = goals.find(goal => goal.goal_month === previousGoalMonth) || null;
+    const suggestion = currentGoal
+      ? {
+        revenueTarget: Number(currentGoal.revenue_target || DEFAULT_WORKER_MONTHLY_GOAL.revenueTarget),
+        totalCustomersTarget: Number(currentGoal.total_customers_target || DEFAULT_WORKER_MONTHLY_GOAL.totalCustomersTarget),
+        newCustomersTarget: Number(currentGoal.new_customers_target || DEFAULT_WORKER_MONTHLY_GOAL.newCustomersTarget),
+      }
+      : previousGoal
+        ? {
+          revenueTarget: Number(previousGoal.revenue_target || DEFAULT_WORKER_MONTHLY_GOAL.revenueTarget),
+          totalCustomersTarget: Number(previousGoal.total_customers_target || DEFAULT_WORKER_MONTHLY_GOAL.totalCustomersTarget),
+          newCustomersTarget: Number(previousGoal.new_customers_target || DEFAULT_WORKER_MONTHLY_GOAL.newCustomersTarget),
+        }
+        : DEFAULT_WORKER_MONTHLY_GOAL;
+
+    setMonthlyGoalError("");
+    setMonthlyGoal(currentGoal);
+    setMonthlyGoalDraft(makeGoalDraft(suggestion));
+    if (!currentGoal) setMonthlyGoalFormOpen(true);
+    if (currentGoal?.skipped) setMonthlyGoalFormOpen(false);
+  }, [currentGoalMonth, previousGoalMonth, supabase]);
+
+  const saveWorkerMonthlyGoal = async (skipped = false) => {
+    if (!worker?.id) return;
+
+    const revenueTarget = Math.max(0, Number(monthlyGoalDraft.revenueTarget || 0));
+    const totalCustomersTarget = Math.max(0, Math.round(Number(monthlyGoalDraft.totalCustomersTarget || 0)));
+    const newCustomersTarget = Math.max(0, Math.round(Number(monthlyGoalDraft.newCustomersTarget || 0)));
+
+    setMonthlyGoalSaving(true);
+    setMonthlyGoalError("");
+
+    const { data, error } = await supabase
+      .from("worker_monthly_goals")
+      .upsert({
+        worker_id: worker.id,
+        goal_month: currentGoalMonth,
+        revenue_target: revenueTarget,
+        total_customers_target: totalCustomersTarget,
+        new_customers_target: newCustomersTarget,
+        skipped,
+      }, { onConflict: "worker_id,goal_month" })
+      .select("id, worker_id, goal_month, revenue_target, total_customers_target, new_customers_target, skipped")
+      .single();
+
+    setMonthlyGoalSaving(false);
+
+    if (error) {
+      const action = skipped ? "bỏ qua" : "lưu";
+      setMonthlyGoalError(`Không thể ${action} mục tiêu tháng. Vui lòng kiểm tra migration worker_monthly_goals.`);
+      return;
+    }
+
+    setMonthlyGoal(data as unknown as WorkerMonthlyGoal);
+    setMonthlyGoalFormOpen(false);
+    showToast(skipped ? "Đã bỏ qua mục tiêu tháng này." : "Đã lưu mục tiêu tháng.", "success");
+  };
+
   const fetchData = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
 
@@ -1001,6 +1125,7 @@ export default function WorkerDashboard() {
 
     if (normalizedWorkerData) {
       const workerData = normalizedWorkerData;
+      await loadWorkerMonthlyGoal(workerData.id, isBackground);
       const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
       const isDemoWorker = isDemoAccount(workerData.user);
@@ -1204,11 +1329,19 @@ export default function WorkerDashboard() {
       let hasTodayJobPayments = false;
       let legacyMonthlyIncome = 0;
       let hasMonthlyJobPayments = false;
+      const firstCompletedAtByCustomer = new Map<string, Date>();
 
       if (workerJobs) {
         workerJobs.forEach(j => {
           if (j.status === 'completed' || j.status === 'done') {
             const completedDate = j.updated_at ? new Date(j.updated_at) : null;
+            const customerKey = j.customer_id || j.id;
+            if (completedDate) {
+              const firstCompletedAt = firstCompletedAtByCustomer.get(customerKey);
+              if (!firstCompletedAt || completedDate < firstCompletedAt) {
+                firstCompletedAtByCustomer.set(customerKey, completedDate);
+              }
+            }
             const completedToday = Boolean(
               completedDate &&
               completedDate >= todayStart &&
@@ -1219,8 +1352,6 @@ export default function WorkerDashboard() {
               completedDate >= monthStart &&
               completedDate < nextMonthStart
             );
-            const customerKey = j.customer_id || j.id;
-
             servedCustomerIds.add(customerKey);
             if (completedToday) todayCustomerIds.add(customerKey);
             if (completedThisMonth) monthlyCustomerIds.add(customerKey);
@@ -1252,6 +1383,9 @@ export default function WorkerDashboard() {
       jobsDone = servedCustomerIds.size;
       if (!hasTodayJobPayments) todayIncome = legacyTodayIncome;
       if (!hasMonthlyJobPayments) monthlyIncome = legacyMonthlyIncome;
+      const monthlyNewCustomerCount = [...firstCompletedAtByCustomer.values()]
+        .filter(firstCompletedAt => firstCompletedAt >= monthStart && firstCompletedAt < nextMonthStart)
+        .length;
 
       const { data: todayRatings } = await supabase
         .from("ratings")
@@ -1312,6 +1446,7 @@ export default function WorkerDashboard() {
           todayIncome,
           todayRating,
           monthlyCustomers: monthlyCustomerIds.size,
+          monthlyNewCustomers: monthlyNewCustomerCount,
           monthlyIncome,
           monthlyRating,
         },
@@ -2706,10 +2841,25 @@ export default function WorkerDashboard() {
   }
 
   const isWorkerAvailable = worker?.is_available !== false;
-  const monthlyRevenueTarget = 30000000;
+  const monthlyGoalTargets = monthlyGoal
+    ? {
+      revenueTarget: Number(monthlyGoal.revenue_target || DEFAULT_WORKER_MONTHLY_GOAL.revenueTarget),
+      totalCustomersTarget: Number(monthlyGoal.total_customers_target || DEFAULT_WORKER_MONTHLY_GOAL.totalCustomersTarget),
+      newCustomersTarget: Number(monthlyGoal.new_customers_target || DEFAULT_WORKER_MONTHLY_GOAL.newCustomersTarget),
+    }
+    : {
+      revenueTarget: Math.max(0, Number(monthlyGoalDraft.revenueTarget || DEFAULT_WORKER_MONTHLY_GOAL.revenueTarget)),
+      totalCustomersTarget: Math.max(0, Number(monthlyGoalDraft.totalCustomersTarget || DEFAULT_WORKER_MONTHLY_GOAL.totalCustomersTarget)),
+      newCustomersTarget: Math.max(0, Number(monthlyGoalDraft.newCustomersTarget || DEFAULT_WORKER_MONTHLY_GOAL.newCustomersTarget)),
+    };
+  const monthlyRevenueTarget = monthlyGoalTargets.revenueTarget || DEFAULT_WORKER_MONTHLY_GOAL.revenueTarget;
+  const monthlyTotalCustomerTarget = monthlyGoalTargets.totalCustomersTarget || DEFAULT_WORKER_MONTHLY_GOAL.totalCustomersTarget;
+  const monthlyNewCustomerTarget = monthlyGoalTargets.newCustomersTarget || DEFAULT_WORKER_MONTHLY_GOAL.newCustomersTarget;
   const monthlyRevenueProgress = Math.min(100, Math.round((workerStats.monthlyIncome / monthlyRevenueTarget) * 100));
-  const monthNewCustomers = workerStats.monthlyCustomers;
-  const totalCustomers = workerStats.jobsDone;
+  const totalCustomers = workerStats.monthlyCustomers;
+  const monthNewCustomers = workerStats.monthlyNewCustomers;
+  const monthlyTotalCustomerProgress = Math.min(100, Math.round((totalCustomers / monthlyTotalCustomerTarget) * 100));
+  const monthlyNewCustomerProgress = Math.min(100, Math.round((monthNewCustomers / monthlyNewCustomerTarget) * 100));
   const returningCustomers = Math.max(totalCustomers - monthNewCustomers, 0);
 
   return (
@@ -2789,6 +2939,81 @@ export default function WorkerDashboard() {
           </div>
 
           <div className="space-y-5 p-5 sm:p-6">
+            {(monthlyGoalFormOpen || monthlyGoalError) && (
+              <div className="rounded-lg border border-primary-container/20 bg-primary-fixed/35 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-extrabold text-on-surface">Đặt mục tiêu tháng này</h2>
+                    <p className="mt-1 text-sm text-on-surface-variant">
+                      Gợi ý tự lấy từ tháng trước, nếu chưa có sẽ là 20 triệu, 40 khách, 10 khách mới.
+                    </p>
+                  </div>
+                  {monthlyGoal?.skipped && (
+                    <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold text-primary-container">
+                      Đã bỏ qua
+                    </span>
+                  )}
+                </div>
+                {monthlyGoalError && (
+                  <div className="mt-3 rounded-lg border border-error/20 bg-error-container p-3 text-sm font-bold text-error">
+                    {monthlyGoalError}
+                  </div>
+                )}
+                {monthlyGoalFormOpen && (
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto]">
+                    <label className="grid gap-1.5 text-xs font-bold uppercase text-on-surface-variant">
+                      Doanh thu
+                      <input
+                        type="number"
+                        min="0"
+                        className="input-field !py-2.5"
+                        value={monthlyGoalDraft.revenueTarget}
+                        onChange={event => setMonthlyGoalDraft(current => ({ ...current, revenueTarget: event.target.value }))}
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-bold uppercase text-on-surface-variant">
+                      Tổng khách phục vụ
+                      <input
+                        type="number"
+                        min="0"
+                        className="input-field !py-2.5"
+                        value={monthlyGoalDraft.totalCustomersTarget}
+                        onChange={event => setMonthlyGoalDraft(current => ({ ...current, totalCustomersTarget: event.target.value }))}
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-bold uppercase text-on-surface-variant">
+                      Khách mới
+                      <input
+                        type="number"
+                        min="0"
+                        className="input-field !py-2.5"
+                        value={monthlyGoalDraft.newCustomersTarget}
+                        onChange={event => setMonthlyGoalDraft(current => ({ ...current, newCustomersTarget: event.target.value }))}
+                      />
+                    </label>
+                    <div className="grid gap-2 self-end sm:grid-cols-2 lg:min-w-48 lg:grid-cols-1">
+                      <button
+                        type="button"
+                        disabled={monthlyGoalSaving}
+                        onClick={() => void saveWorkerMonthlyGoal(false)}
+                        className="btn-primary !min-h-0 !py-2.5"
+                      >
+                        {monthlyGoalSaving ? "Đang lưu..." : "Lưu"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={monthlyGoalSaving}
+                        onClick={() => void saveWorkerMonthlyGoal(true)}
+                        className="btn-outline !min-h-0 !py-2.5"
+                      >
+                        Bỏ qua
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
                 <p className="text-[10px] font-bold uppercase text-on-surface-variant">Doanh thu</p>
@@ -2799,25 +3024,52 @@ export default function WorkerDashboard() {
                 <p className="mt-1 text-2xl font-extrabold text-on-surface">{formatBillGoCurrency(monthlyRevenueTarget)}</p>
               </div>
               <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
-                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Thu nhập hôm nay</p>
-                <p className="mt-1 text-2xl font-extrabold text-success">{formatBillGoCurrency(workerStats.todayIncome)}</p>
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Trạng thái</p>
+                <p className="mt-1 text-2xl font-extrabold text-success">{monthlyGoal?.skipped ? "Đã bỏ qua" : monthlyGoal ? "Đã đặt" : "Gợi ý"}</p>
+                <button
+                  type="button"
+                  onClick={() => setMonthlyGoalFormOpen(true)}
+                  className="mt-2 text-xs font-bold text-primary-container hover:underline"
+                >
+                  Chỉnh lại
+                </button>
               </div>
             </div>
 
-            <div>
+            <div className="space-y-4">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-xs font-bold uppercase text-on-surface-variant">Thanh tiến độ</span>
+                <span className="text-xs font-bold uppercase text-on-surface-variant">Tiến độ doanh thu</span>
                 <span className="text-sm font-extrabold text-primary-container">{monthlyRevenueProgress}%</span>
               </div>
               <div className="progress h-3">
                 <div className="progress-bar" style={{ width: `${monthlyRevenueProgress}%` }} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold uppercase text-on-surface-variant">Tổng khách phục vụ</span>
+                    <span className="text-sm font-extrabold text-primary-container">{monthlyTotalCustomerProgress}%</span>
+                  </div>
+                  <div className="progress">
+                    <div className="progress-bar" style={{ width: `${monthlyTotalCustomerProgress}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold uppercase text-on-surface-variant">Khách mới</span>
+                    <span className="text-sm font-extrabold text-primary-container">{monthlyNewCustomerProgress}%</span>
+                  </div>
+                  <div className="progress">
+                    <div className="progress-bar" style={{ width: `${monthlyNewCustomerProgress}%` }} />
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-lg bg-primary-fixed p-3 text-center">
                 <p className="text-xl font-extrabold text-primary-container">{monthNewCustomers}</p>
-                <p className="mt-1 text-[10px] font-bold uppercase text-primary-container/75">Khách mới</p>
+                <p className="mt-1 text-[10px] font-bold uppercase text-primary-container/75">Khách mới / {monthlyNewCustomerTarget}</p>
               </div>
               <div className="rounded-lg bg-surface-container p-3 text-center">
                 <p className="text-xl font-extrabold text-on-surface">{returningCustomers}</p>
@@ -2825,7 +3077,7 @@ export default function WorkerDashboard() {
               </div>
               <div className="rounded-lg bg-secondary-fixed p-3 text-center">
                 <p className="text-xl font-extrabold text-primary">{totalCustomers}</p>
-                <p className="mt-1 text-[10px] font-bold uppercase text-primary/75">Tổng khách</p>
+                <p className="mt-1 text-[10px] font-bold uppercase text-primary/75">Tổng khách / {monthlyTotalCustomerTarget}</p>
               </div>
             </div>
           </div>
