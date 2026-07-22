@@ -638,6 +638,7 @@ export default function WorkerDashboard() {
     makeGoalDraft(DEFAULT_WORKER_MONTHLY_GOAL)
   );
   const [monthlyGoalFormOpen, setMonthlyGoalFormOpen] = useState(false);
+  const [monthlyGoalExpanded, setMonthlyGoalExpanded] = useState(false);
   const [monthlyGoalSaving, setMonthlyGoalSaving] = useState(false);
   const [monthlyGoalError, setMonthlyGoalError] = useState("");
   const quickServiceGroups = React.useMemo(() => buildAdminServiceGroups(services), [services]);
@@ -2861,6 +2862,7 @@ export default function WorkerDashboard() {
   const monthlyTotalCustomerProgress = Math.min(100, Math.round((totalCustomers / monthlyTotalCustomerTarget) * 100));
   const monthlyNewCustomerProgress = Math.min(100, Math.round((monthNewCustomers / monthlyNewCustomerTarget) * 100));
   const returningCustomers = Math.max(totalCustomers - monthNewCustomers, 0);
+  const showMonthlyGoalDetails = monthlyGoalExpanded || monthlyGoalFormOpen || Boolean(monthlyGoalError);
 
   return (
     <div className="flex flex-col w-full relative">
@@ -2909,14 +2911,14 @@ export default function WorkerDashboard() {
       )}
 
       {/* Monthly Goal */}
-      <section className="px-4 pt-4 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-xl border border-primary/10 bg-white shadow-sm">
-          <div className="hero-gradient px-5 py-5 text-white sm:px-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <section className="px-3 pt-3 sm:px-6 sm:pt-4 lg:px-8">
+        <div className="overflow-hidden rounded-lg border border-primary/10 bg-white shadow-sm sm:rounded-xl">
+          <div className="hero-gradient px-4 py-3 text-white sm:px-6 sm:py-5">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-bold uppercase text-white/75">{statPeriodLabels.month}</p>
-                <h1 className="mt-1 text-2xl font-extrabold leading-tight text-primary-fixed">Mục tiêu tháng</h1>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">
+                <h1 className="mt-0.5 text-xl font-extrabold leading-tight text-primary-fixed sm:mt-1 sm:text-2xl">Mục tiêu tháng</h1>
+                <p className="mt-2 hidden max-w-xl text-sm leading-6 text-white/80 sm:block">
                   Theo dõi doanh thu, khách hàng và tiến độ trong tháng hiện tại.
                 </p>
               </div>
@@ -2924,7 +2926,7 @@ export default function WorkerDashboard() {
                 type="button"
                 onClick={handleToggleAvailability}
                 disabled={availabilitySaving}
-                className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold shadow-sm transition-all active:scale-95 disabled:cursor-wait disabled:opacity-70 ${
+                className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold shadow-sm transition-all active:scale-95 disabled:cursor-wait disabled:opacity-70 ${
                   isWorkerAvailable
                     ? "bg-white/95 text-success"
                     : "bg-white/80 text-on-surface-variant"
@@ -2938,7 +2940,7 @@ export default function WorkerDashboard() {
             </div>
           </div>
 
-          <div className="space-y-5 p-5 sm:p-6">
+          <div className="space-y-3 p-3 sm:space-y-5 sm:p-6">
             {(monthlyGoalFormOpen || monthlyGoalError) && (
               <div className="rounded-lg border border-primary-container/20 bg-primary-fixed/35 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -3014,29 +3016,55 @@ export default function WorkerDashboard() {
               </div>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+            <div className="space-y-2 sm:hidden">
+              {[
+                ["Doanh thu", monthlyRevenueProgress, formatBillGoCurrency(workerStats.monthlyIncome), formatBillGoCurrency(monthlyRevenueTarget)],
+                ["Tổng khách", monthlyTotalCustomerProgress, String(totalCustomers), String(monthlyTotalCustomerTarget)],
+                ["Khách mới", monthlyNewCustomerProgress, String(monthNewCustomers), String(monthlyNewCustomerTarget)],
+              ].map(([label, progress, current, target]) => (
+                <div key={label} className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</span>
+                    <span className="text-sm font-extrabold text-primary-container">{progress}%</span>
+                  </div>
+                  <div className="progress h-2">
+                    <div className="progress-bar" style={{ width: `${progress}%` }} />
+                  </div>
+                  <p className="mt-1 truncate text-[11px] font-bold text-on-surface-variant">{current} / {target}</p>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setMonthlyGoalExpanded(current => !current)}
+                className="w-full rounded-lg border border-primary-container/25 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container"
+              >
+                {showMonthlyGoalDetails ? "Thu gọn" : "Xem thêm"}
+              </button>
+            </div>
+
+            <div className={`${showMonthlyGoalDetails ? "grid" : "hidden"} grid-cols-3 gap-2 sm:grid sm:gap-3`}>
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 sm:p-4">
                 <p className="text-[10px] font-bold uppercase text-on-surface-variant">Doanh thu</p>
-                <p className="mt-1 text-2xl font-extrabold text-primary-container">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
+                <p className="mt-1 truncate text-sm font-extrabold text-primary-container sm:text-2xl">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
               </div>
-              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 sm:p-4">
                 <p className="text-[10px] font-bold uppercase text-on-surface-variant">Chỉ tiêu</p>
-                <p className="mt-1 text-2xl font-extrabold text-on-surface">{formatBillGoCurrency(monthlyRevenueTarget)}</p>
+                <p className="mt-1 truncate text-sm font-extrabold text-on-surface sm:text-2xl">{formatBillGoCurrency(monthlyRevenueTarget)}</p>
               </div>
-              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 sm:p-4">
                 <p className="text-[10px] font-bold uppercase text-on-surface-variant">Trạng thái</p>
-                <p className="mt-1 text-2xl font-extrabold text-success">{monthlyGoal?.skipped ? "Đã bỏ qua" : monthlyGoal ? "Đã đặt" : "Gợi ý"}</p>
+                <p className="mt-1 truncate text-sm font-extrabold text-success sm:text-2xl">{monthlyGoal?.skipped ? "Đã bỏ qua" : monthlyGoal ? "Đã đặt" : "Gợi ý"}</p>
                 <button
                   type="button"
                   onClick={() => setMonthlyGoalFormOpen(true)}
-                  className="mt-2 text-xs font-bold text-primary-container hover:underline"
+                  className="mt-1 text-[11px] font-bold text-primary-container hover:underline sm:mt-2 sm:text-xs"
                 >
                   Chỉnh lại
                 </button>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className={`${showMonthlyGoalDetails ? "block" : "hidden"} space-y-3 sm:block sm:space-y-4`}>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="text-xs font-bold uppercase text-on-surface-variant">Tiến độ doanh thu</span>
                 <span className="text-sm font-extrabold text-primary-container">{monthlyRevenueProgress}%</span>
@@ -3047,7 +3075,7 @@ export default function WorkerDashboard() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold uppercase text-on-surface-variant">Tổng khách phục vụ</span>
+                    <span className="text-xs font-bold uppercase text-on-surface-variant">Tổng khách <span className="font-extrabold text-on-surface">({totalCustomers}/{monthlyTotalCustomerTarget})</span></span>
                     <span className="text-sm font-extrabold text-primary-container">{monthlyTotalCustomerProgress}%</span>
                   </div>
                   <div className="progress">
@@ -3056,7 +3084,7 @@ export default function WorkerDashboard() {
                 </div>
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold uppercase text-on-surface-variant">Khách mới</span>
+                    <span className="text-xs font-bold uppercase text-on-surface-variant">Khách mới <span className="font-extrabold text-on-surface">({monthNewCustomers}/{monthlyNewCustomerTarget})</span></span>
                     <span className="text-sm font-extrabold text-primary-container">{monthlyNewCustomerProgress}%</span>
                   </div>
                   <div className="progress">
@@ -3066,7 +3094,7 @@ export default function WorkerDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="hidden grid-cols-3 gap-2 sm:grid">
               <div className="rounded-lg bg-primary-fixed p-3 text-center">
                 <p className="text-xl font-extrabold text-primary-container">{monthNewCustomers}</p>
                 <p className="mt-1 text-[10px] font-bold uppercase text-primary-container/75">Khách mới / {monthlyNewCustomerTarget}</p>
