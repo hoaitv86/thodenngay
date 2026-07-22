@@ -21,6 +21,17 @@ type CreateWorkerJobRequest = {
   description?: string;
 };
 
+type UpdateWorkerJobRequest = {
+  jobId?: string;
+  customerId?: string | null;
+  customerName?: string;
+  customerPhone?: string;
+  serviceId?: string;
+  serviceIds?: string[];
+  address?: string;
+  description?: string | null;
+};
+
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
 const WORKER_JOB_RESPONSE_SELECT = "id, customer_id, worker_id, service_id, job_code, created_at, address, status, quoted_price, description, workflow_data, service:services!jobs_service_id_fkey(id, name, icon, base_price, parent_service_id), customer:profiles!customer_id(id, full_name, phone, email, address)";
@@ -219,6 +230,30 @@ async function logQuickJobLifecycle(
     serviceId,
     mode,
   });
+}
+
+async function replaceJobServices(
+  supabaseClient: SupabaseClient,
+  jobId: string,
+  serviceIds: string[],
+) {
+  const normalizedServiceIds = normalizeServiceIds(null, serviceIds);
+  if (normalizedServiceIds.length === 0) return;
+
+  const { error: deleteError } = await supabaseClient
+    .from("job_services")
+    .delete()
+    .eq("job_id", jobId);
+
+  if (deleteError) {
+    console.warn("[worker_quick_job] Failed to clear job_services before edit", {
+      jobId,
+      error: deleteError.message,
+    });
+    return;
+  }
+
+  await attachJobServices(supabaseClient, jobId, normalizedServiceIds);
 }
 
 export async function POST(request: Request) {
@@ -644,6 +679,172 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     return NextResponse.json(
       { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const workerCheck = await getActiveWorker();
+    if (workerCheck.error) return workerCheck.error;
+    if (workerCheck.isDemo) {
+      return NextResponse.json({ error: DEMO_ACTION_BLOCK_MESSAGE }, { status: 403 });
+    }
+
+    const body = (await request.json()) as UpdateWorkerJobRequest;
+    const jobId = (body.jobId || "").trim();
+    const requestedCustomerId = (body.customerId || "").trim() || null;
+    const customerName = (body.customerName || "").trim().replace(/\s+/g, " ");
+    const customerPhone = normalizePhone(body.customerPhone || "");
+    const address = (body.address || "").trim();
+    const description = body.description?.trim() || null;
+    const serviceIds = normalizeServiceIds(body.serviceId, body.serviceIds);
+    const primaryServiceId = getPrimaryServiceId(body.serviceId, body.serviceIds);
+
+    if (!jobId || (!requestedCustomerId && (!customerName || customerPhone.length < 8)) || !primaryServiceId || !address) {
+      return NextResponse.json(
+        { error: "Vui lÃ²ng chá»n khÃ¡ch, dá»‹ch vá»¥ vÃ  Ä‘á»‹a chá»‰ há»£p lá»‡." },
+        { status: 400 }
+      );
+    }
+
+    if (isLegacyServiceId(primaryServiceId)) {
+      return NextResponse.json(
+        { error: "Dá»‹ch vá»¥ cÅ© Ä‘Ã£ Ä‘Æ°á»£c áº©n, vui lÃ²ng chá»n danh má»¥c chuáº©n má»›i." },
+        { status: 400 }
+      );
+    }
+
+    const { data: currentJob, error: currentJobError } = await workerCheck.supabase
+      .from("jobs")
+      .select("id, worker_id, status")
+      .eq("id", jobId)
+      .eq("worker_id", workerCheck.worker.id)
+      .maybeSingle();
+
+    if (currentJobError) {
+      return NextResponse.json({ error: "KhÃ´ng thá»ƒ kiá»ƒm tra cÃ´ng viá»‡c: " + currentJobError.message }, { status: 500 });
+    }
+
+    if (!currentJob) {
+      return NextResponse.json({ error: "KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c Ä‘ang lÃ m." }, { status: 404 });
+    }
+
+    if (!["assigned", "in_progress"].includes(String(currentJob.status))) {
+      return NextResponse.json({ error: "CÃ´ng viá»‡c Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ khÃ³a, khÃ´ng thá»ƒ sá»­a thÃ´ng tin nÃ y." }, { status: 409 });
+    }
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      const { data: rpcJob, error: rpcError } = await workerCheck.supabase.rpc(
+        "worker_update_quick_job",
+        {
+          p_job_id: jobId,
+          p_customer_id: requestedCustomerId,
+          p_customer_name: customerName || null,
+          p_customer_phone: customerPhone || null,
+          p_service_id: primaryServiceId,
+          p_service_ids: serviceIds,
+          p_address: address,
+          p_description: description,
+        }
+      );
+
+      const rpcMissing =
+        rpcError?.message?.includes("Could not find the function") ||
+        rpcError?.code === "PGRST202";
+
+      if (!rpcError) {
+        return NextResponse.json({ job: rpcJob, customerAlreadyExists: true });
+      }
+
+      if (!rpcMissing) {
+        return NextResponse.json(
+          { error: rpcError.message || "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const supabaseAdmin = serviceRoleKey
+      ? createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          serviceRoleKey,
+          {
+            auth: {
+              autoRefreshToken: false,
+              persistSession: false,
+            },
+          }
+        )
+      : workerCheck.supabase;
+
+    const { data: service } = await supabaseAdmin
+      .from("services")
+      .select("id, name, is_active")
+      .eq("id", primaryServiceId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!service) {
+      return NextResponse.json({ error: "Dá»‹ch vá»¥ khÃ´ng há»£p lá»‡ hoáº·c Ä‘Ã£ bá»‹ táº¯t." }, { status: 400 });
+    }
+
+    const existingCustomerQuery = supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, phone, email")
+      .eq("role", "customer");
+    const { data: existingCustomer } = requestedCustomerId
+      ? await existingCustomerQuery.eq("id", requestedCustomerId).maybeSingle()
+      : await existingCustomerQuery.eq("phone", customerPhone).maybeSingle();
+
+    if (!existingCustomer) {
+      return NextResponse.json(
+        {
+          error: requestedCustomerId
+            ? "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch hÃ ng Ä‘Ã£ chá»n."
+            : "KhÃ´ng tÃ¬m tháº¥y khÃ¡ch quen vá»›i SÄT nÃ y. HÃ£y chá»n khÃ¡ch Ä‘Ã£ cÃ³ Ä‘á»ƒ trÃ¡nh táº¡o trÃ¹ng.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const updatePayload = {
+      customer_id: existingCustomer.id,
+      service_id: service.id,
+      address,
+      description,
+    };
+
+    const { data: updatedJob, error: updateError } = await supabaseAdmin
+      .from("jobs")
+      .update(updatePayload)
+      .eq("id", jobId)
+      .eq("worker_id", workerCheck.worker.id)
+      .in("status", ["assigned", "in_progress"])
+      .select(WORKER_JOB_RESPONSE_SELECT)
+      .single();
+
+    if (updateError) {
+      return NextResponse.json({ error: "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c: " + updateError.message }, { status: 500 });
+    }
+
+    await replaceJobServices(supabaseAdmin as SupabaseClient, jobId, serviceIds);
+
+    const { data: refreshedJob } = await supabaseAdmin
+      .from("jobs")
+      .select(`${WORKER_JOB_RESPONSE_SELECT}, job_services(service:services(id, name, icon, base_price, parent_service_id))`)
+      .eq("id", jobId)
+      .single();
+
+    return NextResponse.json({
+      job: refreshedJob || updatedJob,
+      customerAlreadyExists: true,
+    });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: "Lá»—i há»‡ thá»‘ng: " + (error instanceof Error ? error.message : "KhÃ´ng xÃ¡c Ä‘á»‹nh") },
       { status: 500 }
     );
   }

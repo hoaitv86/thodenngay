@@ -57,7 +57,7 @@ import {
   validateSalesDraft,
   type SalesDraftItem,
 } from "@/lib/worker-sales";
-import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
+import { getJobServices, isMissingWorkflowColumn, normalizeServiceIds, type JobWithWorkflow } from "@/lib/job-workflow";
 import { isDemoAccount } from "@/lib/demo-accounts";
 import { readVietnameseMoney } from "@/lib/vietnamese-money";
 
@@ -276,6 +276,12 @@ interface WorkerCreateJobResponse {
   customerAlreadyExists?: boolean;
   mock?: boolean;
   approvalRequired?: boolean;
+}
+
+interface WorkerUpdateJobResponse {
+  error?: string;
+  job?: WorkerJob;
+  customerAlreadyExists?: boolean;
 }
 
 type ToastType = "success" | "error" | "info";
@@ -630,6 +636,21 @@ export default function WorkerDashboard() {
     description: "",
   });
   const [quickWorkflowData, setQuickWorkflowData] = useState<WorkflowData>({});
+  const [editingQuickJob, setEditingQuickJob] = useState<WorkerJob | null>(null);
+  const [savingQuickJobEdit, setSavingQuickJobEdit] = useState(false);
+  const [editQuickCustomerQuery, setEditQuickCustomerQuery] = useState("");
+  const [editQuickServiceSearch, setEditQuickServiceSearch] = useState("");
+  const [editQuickServicePickerOpen, setEditQuickServicePickerOpen] = useState(false);
+  const [expandedEditQuickServiceGroup, setExpandedEditQuickServiceGroup] = useState("internet");
+  const [editQuickJob, setEditQuickJob] = useState({
+    customerId: "",
+    customerName: "",
+    customerPhone: "",
+    serviceId: "",
+    serviceIds: [] as string[],
+    address: "",
+    description: "",
+  });
   const supabase = React.useMemo(() => createClient(), []);
   const currentGoalMonth = React.useMemo(() => getMonthKey(new Date()), []);
   const previousGoalMonth = React.useMemo(() => getPreviousMonthKey(new Date()), []);
@@ -709,6 +730,25 @@ export default function WorkerDashboard() {
       .map(({ service }) => service);
   }, [quickServiceGroups, quickServiceSearch, services]);
 
+  const editQuickServiceSearchResults = React.useMemo(() => {
+    const leafServices = quickServiceGroups
+      .flatMap(group => group.services)
+      .filter((service, index, list) => list.findIndex(item => item.id === service.id) === index);
+    const query = normalizeServiceText(editQuickServiceSearch);
+
+    if (!query) return [];
+
+    const queryParts = query.split(/\s+/).filter(Boolean);
+    return leafServices
+      .map(service => ({
+        service,
+        searchText: getQuickServiceSearchText(service, services),
+      }))
+      .filter(({ searchText }) => queryParts.every(part => searchText.includes(part)))
+      .slice(0, 8)
+      .map(({ service }) => service);
+  }, [editQuickServiceSearch, quickServiceGroups, services]);
+
   const quickCustomerOptions = React.useMemo<QuickCustomerOption[]>(() => {
     const customerMap = new Map<string, QuickCustomerOption>();
     const addCustomer = (customer: QuickCustomerOption) => {
@@ -763,6 +803,23 @@ export default function WorkerDashboard() {
       })
       .slice(0, 8);
   }, [quickCustomerOptions, quickCustomerQuery]);
+
+  const editQuickCustomerResults = React.useMemo(() => {
+    const query = normalizeServiceText(editQuickCustomerQuery);
+    if (!query) return quickCustomerOptions.slice(0, 6);
+    const queryParts: string[] = query.split(/\s+/).filter(Boolean);
+    return quickCustomerOptions
+      .filter(customer => {
+        const searchText = normalizeServiceText([
+          customer.name,
+          customer.phone,
+          customer.account,
+          customer.address,
+        ].filter(Boolean).join(" "));
+        return queryParts.every(part => searchText.includes(part));
+      })
+      .slice(0, 8);
+  }, [editQuickCustomerQuery, quickCustomerOptions]);
 
   // Completion modal states
   const [activeJobToComplete, setActiveJobToComplete] = useState<WorkerJob | null>(null);
@@ -826,6 +883,12 @@ export default function WorkerDashboard() {
       .map(serviceId => services.find(service => service.id === serviceId))
       .filter((service): service is ServiceOption => Boolean(service)),
     [quickJob.serviceIds, services]
+  );
+  const selectedEditQuickServices = React.useMemo(
+    () => editQuickJob.serviceIds
+      .map(serviceId => services.find(service => service.id === serviceId))
+      .filter((service): service is ServiceOption => Boolean(service)),
+    [editQuickJob.serviceIds, services]
   );
   const getWorkflowServicesForJob = React.useCallback((job: WorkerJob) => {
     const linkedServiceIds = getJobServices(job).map(service => service.id).filter((serviceId): serviceId is string => Boolean(serviceId));
@@ -1751,6 +1814,166 @@ export default function WorkerDashboard() {
       customer.phone,
       customer.account ? `Account ${customer.account}` : "",
     ].filter(Boolean).join(" - "));
+  };
+
+  const selectEditQuickCustomer = (customer: QuickCustomerOption) => {
+    setEditQuickJob(prev => ({
+      ...prev,
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone || prev.customerPhone,
+      address: customer.address || prev.address,
+    }));
+    setEditQuickCustomerQuery([
+      customer.name,
+      customer.phone,
+      customer.account ? `Account ${customer.account}` : "",
+    ].filter(Boolean).join(" - "));
+  };
+
+  const handleEditQuickServiceChange = (serviceId: string) => {
+    setEditQuickJob(prev => {
+      const nextIds = prev.serviceIds.includes(serviceId)
+        ? prev.serviceIds.filter(id => id !== serviceId)
+        : [...prev.serviceIds, serviceId];
+      return {
+        ...prev,
+        serviceId: nextIds[0] || "",
+        serviceIds: nextIds,
+      };
+    });
+  };
+
+  const openQuickJobEdit = (job: WorkerJob) => {
+    if (!["assigned", "in_progress"].includes(String(job.status))) {
+      showToast("CÃ´ng viá»‡c Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ khÃ³a, khÃ´ng thá»ƒ sá»­a.", "error");
+      return;
+    }
+
+    const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
+    const linkedServiceIds = getJobServices(job)
+      .map(service => service.id)
+      .filter((serviceId): serviceId is string => Boolean(serviceId));
+    const serviceIds = normalizeServiceIds(job.service_id, linkedServiceIds);
+    const firstService = serviceIds[0] ? services.find(service => service.id === serviceIds[0]) : null;
+    const customerName = customer?.full_name || job.customerName || "";
+    const customerPhone = customer?.phone || "";
+
+    setEditingQuickJob(job);
+    setEditQuickJob({
+      customerId: job.customer_id || "",
+      customerName,
+      customerPhone,
+      serviceId: serviceIds[0] || job.service_id || "",
+      serviceIds,
+      address: job.address || customer?.address || "",
+      description: job.description || "",
+    });
+    setEditQuickCustomerQuery([customerName, customerPhone].filter(Boolean).join(" - "));
+    setEditQuickServiceSearch(firstService ? getQuickServicePathLabel(firstService, services) : "");
+    setEditQuickServicePickerOpen(false);
+    setExpandedEditQuickServiceGroup(quickServiceGroups[0]?.category.id || "internet");
+  };
+
+  const updateEditedJobInState = (updatedJob: WorkerJob) => {
+    setActiveJobs(prev => prev.map(item =>
+      item.id === updatedJob.id ? { ...item, ...updatedJob } : item
+    ));
+    setPendingApprovalJobs(prev => prev.map(item =>
+      item.id === updatedJob.id ? { ...item, ...updatedJob } : item
+    ));
+    mockActiveJobsRef.current = mockActiveJobsRef.current.map(item =>
+      item.id === updatedJob.id ? { ...item, ...updatedJob } : item
+    );
+  };
+
+  const handleSaveQuickJobEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingQuickJob || savingQuickJobEdit) return;
+
+    if (!["assigned", "in_progress"].includes(String(editingQuickJob.status))) {
+      showToast("CÃ´ng viá»‡c Ä‘Ã£ hoÃ n thÃ nh hoáº·c Ä‘Ã£ khÃ³a, khÃ´ng thá»ƒ sá»­a.", "error");
+      return;
+    }
+
+    if ((!editQuickJob.customerId && (!editQuickJob.customerName.trim() || !editQuickJob.customerPhone.trim())) || !editQuickJob.serviceId || !editQuickJob.address.trim()) {
+      showToast("Vui lÃ²ng chá»n khÃ¡ch, dá»‹ch vá»¥ vÃ  Ä‘á»‹a chá»‰ há»£p lá»‡.", "error");
+      return;
+    }
+
+    const selectedServices = selectedEditQuickServices.length > 0
+      ? selectedEditQuickServices
+      : services.filter(service => editQuickJob.serviceIds.includes(service.id));
+    const firstService = selectedServices[0] || services.find(service => service.id === editQuickJob.serviceId);
+    const currentCustomer = Array.isArray(editingQuickJob.customer) ? editingQuickJob.customer[0] : editingQuickJob.customer;
+    const nextCustomer = {
+      ...(currentCustomer || {}),
+      full_name: editQuickJob.customerName,
+      phone: editQuickJob.customerPhone,
+      address: editQuickJob.address,
+    };
+
+    const normalizedJob: WorkerJob = {
+      ...editingQuickJob,
+      customer_id: editQuickJob.customerId || editingQuickJob.customer_id,
+      customerName: editQuickJob.customerName,
+      customer: nextCustomer,
+      service_id: editQuickJob.serviceId,
+      serviceName: firstService?.name || editingQuickJob.serviceName,
+      service: firstService || editingQuickJob.service,
+      job_services: selectedServices.map(service => ({ service })),
+      address: editQuickJob.address,
+      description: editQuickJob.description || null,
+    };
+
+    if (String(editingQuickJob.id).startsWith("mock-")) {
+      updateEditedJobInState(normalizedJob);
+      setEditingQuickJob(null);
+      showToast("ÄÃ£ cáº­p nháº­t cÃ´ng viá»‡c demo.", "success");
+      return;
+    }
+
+    setSavingQuickJobEdit(true);
+    try {
+      const res = await fetch("/api/worker/jobs", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jobId: editingQuickJob.id,
+          customerId: editQuickJob.customerId || null,
+          customerName: editQuickJob.customerName,
+          customerPhone: editQuickJob.customerPhone,
+          serviceId: editQuickJob.serviceId,
+          serviceIds: editQuickJob.serviceIds,
+          address: editQuickJob.address,
+          description: editQuickJob.description,
+        }),
+      });
+
+      const data = (await res.json()) as WorkerUpdateJobResponse;
+      if (!res.ok) {
+        throw new Error(data.error || "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c.");
+      }
+
+      const returnedJob: Partial<WorkerJob> = data.job || {};
+      updateEditedJobInState({
+        ...normalizedJob,
+        ...returnedJob,
+        customerName: returnedJob.customerName || returnedJob.customer?.full_name || normalizedJob.customerName,
+        serviceName: returnedJob.serviceName || returnedJob.service?.name || normalizedJob.serviceName,
+        job_services: selectedServices.map(service => ({ service })),
+      });
+      setEditingQuickJob(null);
+      setEditQuickServicePickerOpen(false);
+      showToast("ÄÃ£ cáº­p nháº­t thÃ´ng tin cÃ´ng viá»‡c.", "success");
+      fetchData(true);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "KhÃ´ng thá»ƒ cáº­p nháº­t cÃ´ng viá»‡c.", "error");
+    } finally {
+      setSavingQuickJobEdit(false);
+    }
   };
 
   const handleUpdateServiceDetail = async (job: WorkerJob, serviceDetailId: string) => {
@@ -3742,7 +3965,14 @@ export default function WorkerDashboard() {
                           Chỉ đường
                         </button>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => openQuickJobEdit(job)}
+                          className="rounded-lg border border-primary-container/25 bg-primary-fixed px-5 py-3.5 text-sm font-extrabold text-primary-container transition-all hover:bg-primary-container hover:text-white active:scale-[0.98]"
+                        >
+                          Sửa
+                        </button>
                         <button
                           onClick={() => openCancelRequestModal(job)}
                           className="rounded-lg border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
@@ -4364,7 +4594,14 @@ export default function WorkerDashboard() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => openQuickJobEdit(job)}
+                  className="rounded-lg border border-primary-container/25 bg-primary-fixed px-5 py-3.5 text-sm font-extrabold text-primary-container transition-all hover:bg-primary-container hover:text-white active:scale-[0.98]"
+                >
+                  Sửa
+                </button>
                 <button
                   onClick={() => openCancelRequestModal(job)}
                   className="rounded-lg border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
@@ -4393,6 +4630,327 @@ export default function WorkerDashboard() {
           )
         )}
       </div>
+
+      {editingQuickJob && (
+        <div className="fixed inset-0 z-[68] flex items-stretch justify-center overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
+          <form
+            onSubmit={handleSaveQuickJobEdit}
+            className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl"
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-outline-variant/50 p-4 sm:p-5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-extrabold uppercase text-primary-container">Công việc đang làm</p>
+                <h2 className="mt-1 text-lg font-extrabold text-on-surface">Sửa thông tin công việc</h2>
+                <p className="mt-1 line-clamp-1 text-xs font-semibold text-on-surface-variant">
+                  {editingQuickJob.job_code || editingQuickJob.customerName || "Việc nhanh"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!savingQuickJobEdit) setEditingQuickJob(null);
+                }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface-variant transition-colors hover:bg-error-container hover:text-error"
+                aria-label="Đóng sửa công việc"
+                disabled={savingQuickJobEdit}
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5">
+              <div className="rounded-xl border border-primary-container/15 bg-primary-fixed/45 p-3 text-xs font-semibold text-primary-container">
+                Chỉ sửa dịch vụ, khách hàng, địa chỉ và ghi chú. Ảnh, vật tư, thu tiền và lịch sử công việc được giữ nguyên.
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Tìm khách đã có
+                </label>
+                <input
+                  value={editQuickCustomerQuery}
+                  onChange={(e) => {
+                    setEditQuickCustomerQuery(e.target.value);
+                    if (editQuickJob.customerId) setEditQuickJob(prev => ({ ...prev, customerId: "" }));
+                  }}
+                  placeholder="Tìm theo tên, SĐT hoặc account"
+                  className="input-field !py-2.5"
+                  disabled={savingQuickJobEdit}
+                />
+                {editQuickCustomerQuery.trim() && editQuickCustomerResults.length > 0 && (
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white shadow-sm">
+                    {editQuickCustomerResults.map(customer => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => selectEditQuickCustomer(customer)}
+                        className="block w-full border-b border-outline-variant/20 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-low"
+                        disabled={savingQuickJobEdit}
+                      >
+                        <span className="font-bold text-on-surface">{customer.name}</span>
+                        <span className="mt-0.5 block text-xs text-on-surface-variant">
+                          {[customer.phone, customer.account ? `Account ${customer.account}` : "", customer.address].filter(Boolean).join(" • ")}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {editQuickJob.customerId && (
+                  <div className="rounded-lg bg-success-container px-3 py-2 text-xs font-bold text-success">
+                    Đang dùng khách đã có: {editQuickJob.customerName}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    Tên khách hàng
+                  </label>
+                  <input
+                    value={editQuickJob.customerName}
+                    onChange={(e) => setEditQuickJob(prev => ({ ...prev, customerId: "", customerName: e.target.value }))}
+                    placeholder="Nhập tên khách hàng"
+                    className="input-field !py-2.5"
+                    disabled={savingQuickJobEdit}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    SĐT khách hàng
+                  </label>
+                  <input
+                    type="tel"
+                    value={editQuickJob.customerPhone}
+                    onChange={(e) => setEditQuickJob(prev => ({ ...prev, customerId: "", customerPhone: e.target.value }))}
+                    placeholder="Nhập SĐT"
+                    className="input-field !py-2.5"
+                    disabled={savingQuickJobEdit}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                    Dịch vụ
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditQuickServicePickerOpen(open => !open)}
+                    className="rounded-full bg-primary-container px-3 py-1.5 text-xs font-extrabold text-white shadow-sm transition hover:brightness-110"
+                    disabled={savingQuickJobEdit || services.length === 0}
+                  >
+                    Đổi dịch vụ
+                  </button>
+                </div>
+
+                {selectedEditQuickServices.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 rounded-lg border border-secondary-container/20 bg-secondary-container/10 p-2">
+                    {selectedEditQuickServices.map(service => (
+                      <span key={service.id} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-secondary-container">
+                        {getQuickServicePathLabel(service, services)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-outline-variant/60 bg-surface-container-low px-3 py-4 text-sm font-semibold text-on-surface-variant">
+                    Chưa chọn dịch vụ
+                  </div>
+                )}
+
+                {editQuickServicePickerOpen && (
+                  <div className="space-y-3 rounded-xl border border-outline-variant/40 bg-surface-container-low p-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="search"
+                        value={editQuickServiceSearch}
+                        onChange={(e) => setEditQuickServiceSearch(e.target.value)}
+                        placeholder="Tìm dịch vụ: camera, internet, máy lạnh..."
+                        className="input-field min-w-0 flex-1 !py-2.5"
+                        disabled={savingQuickJobEdit}
+                      />
+                      {editQuickServiceSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setEditQuickServiceSearch("")}
+                          className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-outline-variant/50 bg-white text-on-surface-variant transition-colors hover:border-secondary-container hover:text-secondary-container"
+                          aria-label="Xóa tìm kiếm dịch vụ"
+                          disabled={savingQuickJobEdit}
+                        >
+                          <XIcon size={18} />
+                        </button>
+                      )}
+                    </div>
+
+                    {editQuickServiceSearch.trim() && (
+                      <div className="max-h-52 space-y-2 overflow-y-auto">
+                        {editQuickServiceSearchResults.length > 0 ? (
+                          editQuickServiceSearchResults.map(service => {
+                            const isSelected = editQuickJob.serviceIds.includes(service.id);
+                            return (
+                              <button
+                                key={`edit-search-${service.id}`}
+                                type="button"
+                                onClick={() => handleEditQuickServiceChange(service.id)}
+                                className={`w-full rounded-lg border px-3 py-2.5 text-left transition-all active:scale-[0.99] ${
+                                  isSelected
+                                    ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                    : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                }`}
+                                disabled={savingQuickJobEdit}
+                              >
+                                <span className="block text-sm font-extrabold leading-5">{service.name}</span>
+                                <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                  {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                </span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-outline-variant/60 bg-white px-3 py-4 text-sm font-semibold text-on-surface-variant">
+                            Không tìm thấy dịch vụ phù hợp
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="max-h-80 space-y-2 overflow-y-auto">
+                      {quickServiceGroups.map(group => {
+                        const isOpen = expandedEditQuickServiceGroup === group.category.id;
+                        const hasSelectedService = group.services.some(service => editQuickJob.serviceIds.includes(service.id));
+                        return (
+                          <div key={`edit-${group.parent.id}`} className="rounded-lg border border-outline-variant/30 bg-white">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedEditQuickServiceGroup(isOpen ? "" : group.category.id)}
+                              className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
+                                hasSelectedService ? "bg-secondary-container/10 text-secondary-container" : "text-on-surface hover:bg-surface-container-low"
+                              }`}
+                              disabled={savingQuickJobEdit}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-extrabold">{group.parent.name}</span>
+                                <span className="mt-0.5 block text-xs font-semibold text-on-surface-variant">
+                                  {group.services.length} mục công việc
+                                </span>
+                              </span>
+                              <ChevronRightIcon size={18} className={`shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                            </button>
+
+                            {isOpen && (
+                              <div className="space-y-3 border-t border-outline-variant/30 p-2">
+                                {group.directServices.length > 0 && (
+                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {group.directServices.map(service => {
+                                      const isSelected = editQuickJob.serviceIds.includes(service.id);
+                                      return (
+                                        <button
+                                          key={`edit-direct-${service.id}`}
+                                          type="button"
+                                          onClick={() => handleEditQuickServiceChange(service.id)}
+                                          className={`min-h-[58px] rounded-lg border px-4 py-3 text-left transition-all active:scale-[0.98] ${
+                                            isSelected
+                                              ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                              : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                          }`}
+                                          disabled={savingQuickJobEdit}
+                                        >
+                                          <span className="block text-sm font-extrabold leading-5">{service.name}</span>
+                                          <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                            Từ {formatCurrency(Number(service.base_price || 0))}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {group.childGroups.map(({ child, services: childServices }) => (
+                                  <section key={`edit-child-${child.id}`} className="space-y-2">
+                                    <h4 className="px-1 text-sm font-extrabold text-on-surface">{child.name}</h4>
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                      {childServices.map(service => {
+                                        const isSelected = editQuickJob.serviceIds.includes(service.id);
+                                        return (
+                                          <button
+                                            key={`edit-child-service-${service.id}`}
+                                            type="button"
+                                            onClick={() => handleEditQuickServiceChange(service.id)}
+                                            className={`min-h-[58px] rounded-lg border px-4 py-3 text-left transition-all active:scale-[0.98] ${
+                                              isSelected
+                                                ? "border-secondary-container bg-secondary-container text-white shadow-sm"
+                                                : "border-outline-variant/40 bg-white text-on-surface hover:border-secondary-container/60 hover:bg-secondary-container/10"
+                                            }`}
+                                            disabled={savingQuickJobEdit}
+                                          >
+                                            <span className="block text-sm font-extrabold leading-5">{service.name}</span>
+                                            <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                              Từ {formatCurrency(Number(service.base_price || 0))}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </section>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Địa chỉ làm việc
+                </label>
+                <input
+                  value={editQuickJob.address}
+                  onChange={(e) => setEditQuickJob(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="Nhập địa chỉ thực tế"
+                  className="input-field !py-2.5"
+                  disabled={savingQuickJobEdit}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                  Ghi chú
+                </label>
+                <textarea
+                  value={editQuickJob.description}
+                  onChange={(e) => setEditQuickJob(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Ghi chú tình trạng, yêu cầu hoặc trao đổi với khách"
+                  className="input-field min-h-24 resize-none !py-2.5"
+                  disabled={savingQuickJobEdit}
+                />
+              </div>
+            </div>
+
+            <div className="grid shrink-0 grid-cols-2 gap-3 border-t border-outline-variant/50 bg-white p-4 sm:p-5">
+              <button
+                type="button"
+                onClick={() => setEditingQuickJob(null)}
+                className="rounded-lg border border-outline-variant/60 bg-white px-4 py-3 text-sm font-extrabold text-on-surface-variant transition hover:bg-surface-container"
+                disabled={savingQuickJobEdit}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-primary-container px-4 py-3 text-sm font-extrabold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={savingQuickJobEdit}
+              >
+                {savingQuickJobEdit ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {directionsView && (
         <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center sm:px-4">
