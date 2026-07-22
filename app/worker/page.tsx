@@ -2706,6 +2706,11 @@ export default function WorkerDashboard() {
   }
 
   const isWorkerAvailable = worker?.is_available !== false;
+  const monthlyRevenueTarget = 30000000;
+  const monthlyRevenueProgress = Math.min(100, Math.round((workerStats.monthlyIncome / monthlyRevenueTarget) * 100));
+  const monthNewCustomers = workerStats.monthlyCustomers;
+  const totalCustomers = workerStats.jobsDone;
+  const returningCustomers = Math.max(totalCustomers - monthNewCustomers, 0);
 
   return (
     <div className="flex flex-col w-full relative">
@@ -2753,8 +2758,82 @@ export default function WorkerDashboard() {
         </div>
       )}
 
-      {/* Stats Bar */}
+      {/* Monthly Goal */}
       <section className="px-4 pt-4 sm:px-6 lg:px-8">
+        <div className="overflow-hidden rounded-xl border border-primary/10 bg-white shadow-sm">
+          <div className="hero-gradient px-5 py-5 text-white sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase text-white/75">{statPeriodLabels.month}</p>
+                <h1 className="mt-1 text-2xl font-extrabold leading-tight text-primary-fixed">Mục tiêu tháng</h1>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">
+                  Theo dõi doanh thu, khách hàng và tiến độ trong tháng hiện tại.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleAvailability}
+                disabled={availabilitySaving}
+                className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold shadow-sm transition-all active:scale-95 disabled:cursor-wait disabled:opacity-70 ${
+                  isWorkerAvailable
+                    ? "bg-white/95 text-success"
+                    : "bg-white/80 text-on-surface-variant"
+                }`}
+                aria-pressed={isWorkerAvailable}
+                title={isWorkerAvailable ? "Bấm để chuyển Offline" : "Bấm để chuyển Online"}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${isWorkerAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
+                {availabilitySaving ? "Đang lưu..." : isWorkerAvailable ? "Online" : "Offline"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-5 p-5 sm:p-6">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Doanh thu</p>
+                <p className="mt-1 text-2xl font-extrabold text-primary-container">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
+              </div>
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Chỉ tiêu</p>
+                <p className="mt-1 text-2xl font-extrabold text-on-surface">{formatBillGoCurrency(monthlyRevenueTarget)}</p>
+              </div>
+              <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Thu nhập hôm nay</p>
+                <p className="mt-1 text-2xl font-extrabold text-success">{formatBillGoCurrency(workerStats.todayIncome)}</p>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-xs font-bold uppercase text-on-surface-variant">Thanh tiến độ</span>
+                <span className="text-sm font-extrabold text-primary-container">{monthlyRevenueProgress}%</span>
+              </div>
+              <div className="progress h-3">
+                <div className="progress-bar" style={{ width: `${monthlyRevenueProgress}%` }} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-primary-fixed p-3 text-center">
+                <p className="text-xl font-extrabold text-primary-container">{monthNewCustomers}</p>
+                <p className="mt-1 text-[10px] font-bold uppercase text-primary-container/75">Khách mới</p>
+              </div>
+              <div className="rounded-lg bg-surface-container p-3 text-center">
+                <p className="text-xl font-extrabold text-on-surface">{returningCustomers}</p>
+                <p className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Khách cũ</p>
+              </div>
+              <div className="rounded-lg bg-secondary-fixed p-3 text-center">
+                <p className="text-xl font-extrabold text-primary">{totalCustomers}</p>
+                <p className="mt-1 text-[10px] font-bold uppercase text-primary/75">Tổng khách</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Bar */}
+      <section className="hidden px-4 pt-4 sm:px-6 lg:px-8">
         <div className="overflow-hidden rounded-xl border border-primary/10 bg-white shadow-sm">
           <div className="hero-gradient px-5 py-5 text-white sm:px-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -3208,8 +3287,354 @@ export default function WorkerDashboard() {
         </div>
       </section>
 
+      {/* Redesigned Worker Feed */}
+      <div className="space-y-5 p-4 sm:px-6 lg:px-8">
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="section-eyebrow">Công việc hôm nay</p>
+              <h2 className="text-xl font-extrabold text-on-surface">Việc mới và chờ duyệt</h2>
+            </div>
+            <span className="rounded-full bg-primary-fixed px-3 py-1 text-xs font-extrabold text-primary-container">
+              {newJobs.length + pendingApprovalJobs.length}
+            </span>
+          </div>
+
+          {newJobs.length > 0 || pendingApprovalJobs.length > 0 ? (
+            <div className="grid gap-3">
+              {newJobs.map(job => {
+                const JobIcon = job.icon || BriefcaseIcon;
+                return (
+                  <div key={job.id} className="overflow-hidden rounded-xl border border-primary/15 bg-white shadow-sm">
+                    <div className="flex items-center justify-between gap-3 border-b border-outline-variant/20 bg-primary-fixed/45 px-4 py-3">
+                      <span className="text-[10px] font-extrabold uppercase text-primary-container">Việc mới quanh bạn</span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-error shadow-sm">{getUnworkedAgeLabel(job)}</span>
+                    </div>
+                    <div className="space-y-4 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white shadow-sm">
+                            <JobIcon size={20} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-base font-bold text-on-surface">{job.serviceName}</div>
+                            <div className="text-label-sm text-on-surface-variant">{job.customerName || job.job_code}</div>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right text-base font-bold text-primary-container">{job.price}</div>
+                      </div>
+                      <div className="grid gap-2 rounded-lg bg-surface-container-low p-3">
+                        <div className="flex items-start gap-2 text-on-surface-variant">
+                          <MapPinIcon size={15} className="mt-1 shrink-0 text-primary-container" />
+                          <span className="min-w-0 flex-1 text-body-sm leading-6">{job.address || "Chưa cung cấp địa chỉ"}</span>
+                          <button
+                            type="button"
+                            onClick={() => openDirections(job)}
+                            className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold uppercase text-primary-container shadow-sm transition-colors hover:bg-primary-container hover:text-white"
+                          >
+                            Chỉ đường
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 text-on-surface-variant">
+                          <ClockIcon size={15} className="text-primary-container" />
+                          <span className="text-body-sm">Hẹn lúc: {job.time}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-[1fr_1.7fr] gap-3">
+                        <button
+                          onClick={() => handleDeclineJob(job.id)}
+                          className="rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
+                        >
+                          Từ chối
+                        </button>
+                        <button
+                          onClick={() => handleAcceptJob(job.id)}
+                          className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white shadow-sm transition-all hover:bg-primary active:scale-[0.98]"
+                        >
+                          Nhận việc
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {pendingApprovalJobs.map(job => (
+                <div key={job.id} className="overflow-hidden rounded-xl border border-warning/25 bg-white shadow-sm">
+                  <div className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning-container/80 px-4 py-3">
+                    <span className="badge badge-pending uppercase text-[10px]">Chờ admin duyệt</span>
+                    <span className="font-mono text-xs font-bold text-warning">{job.job_code}</span>
+                  </div>
+                  <div className="space-y-3 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-base font-extrabold text-on-surface">{job.customerName}</h3>
+                        <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
+                      </div>
+                      <div className="rounded-lg bg-surface-container px-3 py-2 text-right text-xs font-bold text-on-surface-variant">{job.time}</div>
+                    </div>
+                    <div className="flex items-start gap-2 rounded-lg bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
+                      <MapPinIcon size={14} className="mt-0.5 shrink-0 text-primary-container" />
+                      <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-12 text-center">
+              <BriefcaseIcon size={32} className="mx-auto mb-3 text-on-surface-variant" />
+              <p className="text-base font-bold text-on-surface">{isWorkerAvailable ? "Chưa có công việc hôm nay" : "Bạn đang Offline"}</p>
+              <p className="text-body-sm text-on-surface-variant">
+                {isWorkerAvailable ? "Việc mới và việc chờ duyệt sẽ hiển thị tại đây." : "Bật Online ở mục tiêu tháng để tiếp tục nhận việc."}
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="section-eyebrow">Đang thực hiện</p>
+              <h2 className="text-xl font-extrabold text-on-surface">Việc đã nhận</h2>
+            </div>
+            <span className="rounded-full bg-success-container px-3 py-1 text-xs font-extrabold text-success">{activeJobs.length}</span>
+          </div>
+
+          {activeJobs.length > 0 ? (
+            <div className="grid gap-3">
+              {activeJobs.map(job => {
+                const detailOptions = getTechnicalDetailOptions(job.service_id);
+                const selectedDetailName = getServiceName(job.service_detail_id);
+                return (
+                  <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
+                    <div className="flex items-center justify-between gap-3 border-b border-success/20 bg-success-container px-4 py-3">
+                      <span className={`badge ${job.status === 'assigned' ? 'badge-assigned' : 'badge-in_progress'} uppercase text-[10px]`}>
+                        {job.status === 'assigned' ? 'Mới nhận' : 'Đang thực hiện'}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-extrabold text-secondary-container shadow-sm">{job.hasGpsEstimate ? `~${job.distance}` : job.distance}</span>
+                    </div>
+                    <div className="space-y-4 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-base font-extrabold text-on-surface">{job.customerName}</h3>
+                          <p className="text-body-sm text-on-surface-variant">{job.serviceName}</p>
+                          {selectedDetailName && <p className="mt-0.5 text-xs font-bold text-secondary-container">Chi tiết: {selectedDetailName}</p>}
+                        </div>
+                        <div className="rounded-lg bg-primary-fixed px-3 py-2 text-right text-xs font-bold text-primary-container">{job.time}</div>
+                      </div>
+                      <div className="flex items-start gap-2 rounded-lg bg-surface-container-low p-3 text-label-sm text-on-surface-variant">
+                        <MapPinIcon size={14} className="mt-0.5 shrink-0 text-primary-container" />
+                        <span className="line-clamp-2">{job.address || "Chưa cung cấp địa chỉ"}</span>
+                      </div>
+                      {detailOptions.length > 0 && (
+                        <select
+                          className="input-field !py-2 text-sm"
+                          value={job.service_detail_id || ""}
+                          onChange={e => void handleUpdateServiceDetail(job, e.target.value)}
+                        >
+                          <option value="">Chưa chọn chi tiết</option>
+                          {detailOptions.map(detail => (
+                            <option key={detail.id} value={detail.id}>{detail.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <a
+                          href={job.customer?.phone ? `tel:${job.customer.phone}` : "#"}
+                          onClick={(e) => {
+                            if (!job.customer?.phone) {
+                              e.preventDefault();
+                              showToast("Khách hàng chưa cập nhật số điện thoại!", "error");
+                            }
+                          }}
+                          className="flex items-center justify-center gap-2 rounded-lg border border-success/25 bg-success-container px-4 py-3 text-sm font-extrabold text-success"
+                        >
+                          <PhoneIcon size={18} />
+                          Gọi khách
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => openDirections(job)}
+                          className="flex items-center justify-center gap-2 rounded-lg bg-primary-fixed px-4 py-3 text-sm font-extrabold text-primary-container"
+                        >
+                          <MapPinIcon size={18} />
+                          Chỉ đường
+                        </button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <button
+                          onClick={() => openCancelRequestModal(job)}
+                          className="rounded-lg border border-error/25 bg-error-container px-5 py-3.5 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
+                        >
+                          Yêu cầu huỷ
+                        </button>
+                        <button
+                          onClick={() => triggerCompleteJob(job)}
+                          className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
+                        >
+                          Hoàn thành Job
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-12 text-center">
+              <CheckCircleIcon size={32} className="mx-auto mb-3 text-on-surface-variant" />
+              <p className="text-base font-bold text-on-surface">Chưa có việc đang làm</p>
+              <p className="text-body-sm text-on-surface-variant">Việc đã nhận sẽ hiển thị tại đây.</p>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="section-eyebrow">BillGo cần thu</p>
+              <h2 className="text-xl font-extrabold text-on-surface">Danh sách công nợ</h2>
+            </div>
+            <span className="rounded-full bg-error-container px-3 py-1 text-xs font-extrabold text-error">{billGoTotals.debtItems}</span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-on-surface-variant">Phải thu</p>
+              <p className="mt-1 text-xl font-extrabold text-on-surface">{formatBillGoCurrency(billGoTotals.receivable)}</p>
+            </div>
+            <div className="rounded-xl border border-success/20 bg-success-container p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-on-success-container/75">Đã thu</p>
+              <p className="mt-1 text-xl font-extrabold text-success">{formatBillGoCurrency(billGoTotals.paid)}</p>
+            </div>
+            <div className="rounded-xl border border-error/20 bg-error-container p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-error/75">Còn nợ</p>
+              <p className="mt-1 text-xl font-extrabold text-error">{formatBillGoCurrency(billGoTotals.debt)}</p>
+            </div>
+          </div>
+
+          {billGoRows.length > 0 ? (
+            <div className="grid gap-3">
+              {billGoRows.map(({ item, summary }) => {
+                const rowCycle = paymentCyclesByReceivable[item.id]
+                  || (item.cycle_at_collection as BillGoCycle | undefined)
+                  || (item.subscription?.current_cycle as BillGoCycle | undefined)
+                  || (item.subscription?.cycle as BillGoCycle | undefined)
+                  || "monthly";
+                return (
+                  <div key={item.id} className="overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 bg-primary-fixed/45 px-4 py-3">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase text-primary-container">Thu cước BillGo</p>
+                        <p className="mt-1 text-sm font-bold text-on-surface">{item.title || item.subscription?.package_name || item.id.slice(0, 8)}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${summary.status === "overdue" ? "bg-error-container text-error" : summary.debt > 0 ? "bg-warning-container text-warning" : "bg-success-container text-success"}`}>
+                        {summary.statusLabel}
+                      </span>
+                    </div>
+                    <div className="space-y-4 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-base font-extrabold text-on-surface">{item.subscription?.customer_name || item.customer?.full_name || "Khách hàng"}</h3>
+                          <p className="text-body-sm text-on-surface-variant">{item.subscription?.phone || item.customer?.phone || "Chưa có SĐT"}</p>
+                        </div>
+                        <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right text-xs font-bold text-on-surface-variant">
+                          Hạn: {item.due_date || item.subscription?.next_due_date || "Chưa có"}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs text-on-surface-variant">
+                        <span className="rounded-lg bg-surface-container-low p-3">Phải thu<br /><strong className="text-on-surface">{formatBillGoCurrency(summary.receivable)}</strong></span>
+                        <span className="rounded-lg bg-success-container p-3">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></span>
+                        <span className="rounded-lg bg-error-container p-3">Còn nợ<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong></span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
+                        <select
+                          className="input-field !py-2 text-sm sm:col-span-2"
+                          value={rowCycle}
+                          onChange={event => {
+                            const nextCycle = event.target.value as BillGoCycle;
+                            setPaymentCycle(nextCycle);
+                            setPaymentCyclesByReceivable(current => ({ ...current, [item.id]: nextCycle }));
+                          }}
+                          disabled={collectingPaymentJobId === item.id}
+                        >
+                          {BILLGO_CYCLE_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          className="input-field !py-2 text-sm"
+                          type="number"
+                          min="0"
+                          value={paymentAmount}
+                          onChange={event => setPaymentAmount(event.target.value)}
+                          placeholder="Số tiền thu"
+                          disabled={collectingPaymentJobId === item.id}
+                        />
+                        <select
+                          className="input-field !py-2 text-sm"
+                          value={paymentMethod}
+                          onChange={event => setPaymentMethod(event.target.value)}
+                          disabled={collectingPaymentJobId === item.id}
+                        >
+                          <option value="cash">Tiền mặt</option>
+                          <option value="transfer">Chuyển khoản</option>
+                          <option value="card">Thẻ</option>
+                          <option value="momo">MoMo</option>
+                          <option value="zalopay">ZaloPay</option>
+                          <option value="other">Khác</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void handleCollectBillGoReceivable(item)}
+                          disabled={collectingPaymentJobId === item.id}
+                          className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white disabled:opacity-60 sm:col-span-2"
+                        >
+                          {collectingPaymentJobId === item.id ? "Đang lưu..." : "Tích đóng kỳ này"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-outline-variant/70 bg-white px-5 py-12 text-center">
+              <DollarSignIcon size={32} className="mx-auto mb-3 text-on-surface-variant" />
+              <p className="text-base font-bold text-on-surface">Chưa có khoản BillGo</p>
+              <p className="text-body-sm text-on-surface-variant">Các khách thu cước được admin phân công sẽ hiển thị tại đây.</p>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div>
+            <p className="section-eyebrow">Đánh giá</p>
+            <h2 className="text-xl font-extrabold text-on-surface">Hiệu suất phục vụ</h2>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-on-surface-variant">Điểm trung bình</p>
+              <p className="mt-1 flex items-center gap-1 text-2xl font-extrabold text-on-surface">
+                {workerStats.rating}
+                <StarIcon size={18} className="fill-current text-warning" />
+              </p>
+            </div>
+            <div className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tháng này</p>
+              <p className="mt-1 text-2xl font-extrabold text-primary-container">{workerStats.monthlyRating > 0 ? workerStats.monthlyRating : "0"}★</p>
+            </div>
+            <div className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-bold uppercase text-on-surface-variant">Hôm nay</p>
+              <p className="mt-1 text-2xl font-extrabold text-primary">{workerStats.todayRating > 0 ? workerStats.todayRating : "0"}★</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
       {/* Tabs */}
-      <div className="mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm sm:mx-6 lg:mx-8">
+      <div className="hidden mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm sm:mx-6 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
@@ -3241,7 +3666,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Job Feed */}
-      <div className="flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
+      <div className="hidden flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => {
