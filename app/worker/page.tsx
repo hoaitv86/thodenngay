@@ -3288,7 +3288,7 @@ export default function WorkerDashboard() {
       </section>
 
       {/* Redesigned Worker Feed */}
-      <div className="space-y-5 p-4 sm:px-6 lg:px-8">
+      <div className="hidden space-y-5 p-4 sm:px-6 lg:px-8">
         <section className="space-y-3">
           <div className="flex items-end justify-between gap-3">
             <div>
@@ -3634,7 +3634,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="hidden mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm sm:mx-6 lg:mx-8">
+      <div className="mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm sm:mx-6 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
@@ -3666,7 +3666,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Job Feed */}
-      <div className="hidden flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
+      <div className="flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => {
