@@ -172,6 +172,13 @@ const endOfMonth = (value: string | Date) => {
   return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth() + 1, 0));
 };
 
+const withEffectiveNextPeriodStart = <T extends { covered_until?: string | null; next_period_start?: string | null }>(subscription: T) => ({
+  ...subscription,
+  next_period_start: subscription.covered_until
+    ? getBillGoNextPeriodStartDate(subscription.covered_until)
+    : subscription.next_period_start,
+});
+
 const getComputedListStatus = (row: {
   total_amount?: number | string | null;
   paid_amount?: number | string | null;
@@ -627,7 +634,8 @@ export async function GET(request: Request) {
   const { data: subscriptions, error: subscriptionError } = await subscriptionQuery.order("customer_name", { ascending: true });
   if (subscriptionError) return jsonError("Không thể tải khách BillGo: " + subscriptionError.message);
 
-  const subscriptionIds = (subscriptions || []).map(subscription => subscription.id);
+  const hydratedSubscriptions = (subscriptions || []).map(subscription => withEffectiveNextPeriodStart(subscription));
+  const subscriptionIds = hydratedSubscriptions.map(subscription => subscription.id);
   const coveredMonth = monthStartInput(year, month);
   const [receivableResult, coverageResult] = subscriptionIds.length > 0
     ? await Promise.all([
@@ -650,7 +658,7 @@ export async function GET(request: Request) {
   if (receivableError) return jsonError("Không thể tải kỳ thu BillGo: " + receivableError.message);
   if (coverageResult.error) return jsonError("Không thể tải tháng đã thanh toán BillGo: " + coverageResult.error.message);
 
-  const subscriptionsById = new Map((subscriptions || []).map(subscription => [subscription.id, subscription]));
+  const subscriptionsById = new Map(hydratedSubscriptions.map(subscription => [subscription.id, subscription]));
   const coverageBySubscription = new Map(
     (coverageResult.data || []).map(coverage => [coverage.subscription_id, coverage.coverage_type])
   );
@@ -660,7 +668,7 @@ export async function GET(request: Request) {
     payments: [],
   }));
   const currentSubscriptionIds = new Set(currentRows.map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
-  const notDueRows = (subscriptions || [])
+  const notDueRows = hydratedSubscriptions
     .filter(subscription => subscription.status === "active" && !currentSubscriptionIds.has(subscription.id))
     .map(subscription => buildNotDueRow(subscription, coverageBySubscription.get(subscription.id)));
 

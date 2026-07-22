@@ -74,6 +74,7 @@ type Receivable = {
   billing_months?: number | null;
   bonus_months?: number | null;
   service_months?: number | null;
+  next_period_start?: string | null;
   next_due_date?: string | null;
   paid_amount?: number | string | null;
   paid_at?: string | null;
@@ -200,6 +201,17 @@ type BillGoListTotals = {
 
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
+const getNextPeriodStartDisplay = (subscription?: Subscription | null, fallback?: string | null) => {
+  if (subscription?.covered_until) {
+    const coveredUntil = new Date(subscription.covered_until);
+    if (!Number.isNaN(coveredUntil.getTime())) {
+      coveredUntil.setDate(coveredUntil.getDate() + 1);
+      return toBillGoDateInput(coveredUntil);
+    }
+  }
+
+  return subscription?.next_period_start || fallback || null;
+};
 const previousMonthFirstInput = () => {
   const today = new Date();
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
@@ -1159,7 +1171,7 @@ export default function WorkerBillGoPage() {
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
       note: subscription?.note || "",
       cycle: (subscription?.current_cycle || subscription?.cycle || "monthly") as BillGoCycle,
-      effectivePeriodStart: subscription?.next_period_start || item.period_start || todayInput(),
+      effectivePeriodStart: getNextPeriodStartDisplay(subscription, item.period_start) || todayInput(),
     });
   };
 
@@ -1828,7 +1840,7 @@ export default function WorkerBillGoPage() {
                   ["Nhà mạng", actionTarget.subscription?.provider || "Chưa có"],
                   ["Hình thức hiện tại", getBillGoCycleOption(actionTarget.subscription?.current_cycle || actionTarget.subscription?.cycle || "monthly").label],
                   ["Đã thanh toán đến", actionTarget.subscription?.covered_until || "Chưa có"],
-                  ["Kỳ thu tiếp theo", actionTarget.subscription?.next_period_start || "Chưa có"],
+                  ["Kỳ thu tiếp theo", getNextPeriodStartDisplay(actionTarget.subscription, actionTarget.next_period_start || actionTarget.period_start) ? dateLabel(getNextPeriodStartDisplay(actionTarget.subscription, actionTarget.next_period_start || actionTarget.period_start) || "") : "Chưa có"],
                   ["Ghi chú", actionTarget.subscription?.note || actionTarget.note || "Chưa có"],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg bg-surface-container-low p-3">
