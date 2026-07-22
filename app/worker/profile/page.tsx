@@ -495,7 +495,7 @@ export default function WorkerProfile() {
             </label>
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words" style={{ color: "#fcd34d" }}>{profile.full_name || "Thợ chưa có tên"}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words text-primary-fixed">{profile.full_name || "Thợ chưa có tên"}</h1>
             <p className="opacity-80 text-sm mt-1 break-all">{profile.email}</p>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success shadow-sm">
               <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-success animate-pulse' : 'bg-amber-400'}`} />

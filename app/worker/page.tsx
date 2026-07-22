@@ -2760,7 +2760,7 @@ export default function WorkerDashboard() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-[11px] font-bold uppercase text-white/75">Bảng điều khiển thợ</p>
-                <h1 className="mt-1 text-2xl font-extrabold leading-tight drop-shadow-sm" style={{ color: "#fde68a" }}>
+                <h1 className="mt-1 text-2xl font-extrabold leading-tight drop-shadow-sm text-primary-fixed">
                   {isWorkerAvailable ? "Sẵn sàng nhận việc" : "Đang nghỉ nhận việc"}
                 </h1>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">

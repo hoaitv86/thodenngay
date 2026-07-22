@@ -878,7 +878,7 @@ export default function WorkerJobDetailPage() {
             {isCompleted ? <CheckCircleIcon size={32} /> : <XIcon size={32} />}
           </div>
           <div className="relative mt-3">
-            <h2 className={`text-xl font-extrabold ${isCompleted ? "" : "text-white"}`} style={isCompleted ? { color: "#fcd34d" } : undefined}>
+            <h2 className={`text-xl font-extrabold ${isCompleted ? "text-primary-fixed" : "text-white"}`}>
               {isCompleted ? 'Đã hoàn thành' : 'Đã hủy'}
             </h2>
             <p className="mt-1 break-all font-mono text-label-md font-medium text-white/75">{job.job_code}</p>

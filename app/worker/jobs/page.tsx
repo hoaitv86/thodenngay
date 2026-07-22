@@ -212,7 +212,7 @@ export default function WorkerJobs() {
       <header className="mb-4 overflow-hidden rounded-xl border border-primary/10 bg-white shadow-sm">
         <div className="hero-gradient px-5 py-5 text-white">
           <p className="text-[11px] font-bold uppercase text-white/75">Tồn việc</p>
-          <h1 className="mt-1 text-2xl font-extrabold leading-tight" style={{ color: "#fde68a" }}>
+          <h1 className="mt-1 text-2xl font-extrabold leading-tight text-primary-fixed">
             Việc cũ chưa làm
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">

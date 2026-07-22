@@ -113,7 +113,7 @@ export default function WorkerHistory() {
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in">
       <div className="app-hero-panel mb-5">
         <p className="text-[11px] font-bold uppercase tracking-wide text-white/70">Hồ sơ công việc</p>
-        <h1 className="mt-1 text-2xl font-extrabold leading-tight" style={{ color: "#fcd34d" }}>Lịch sử việc làm</h1>
+        <h1 className="mt-1 text-2xl font-extrabold leading-tight text-primary-fixed">Lịch sử việc làm</h1>
         <p className="mt-2 max-w-[19rem] text-sm leading-6 text-white/80">
           Theo dõi các việc đã hoàn thành, đã hủy và doanh thu từng đơn.
         </p>

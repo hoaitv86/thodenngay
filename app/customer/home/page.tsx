@@ -51,27 +51,27 @@ interface WorkerSummary {
 }
 
 const serviceStyles: Record<string, Pick<Service, "color" | "accent">> = {
-  ZapIcon: { color: "bg-amber-100 text-amber-700", accent: "from-amber-500 to-orange-500" },
-  DropletIcon: { color: "bg-sky-100 text-sky-700", accent: "from-sky-500 to-cyan-500" },
-  CameraIcon: { color: "bg-violet-100 text-violet-700", accent: "from-violet-500 to-fuchsia-500" },
-  CogIcon: { color: "bg-emerald-100 text-emerald-700", accent: "from-emerald-500 to-teal-500" },
-  WrenchIcon: { color: "bg-rose-100 text-rose-700", accent: "from-rose-500 to-orange-500" },
-  ShieldCheckIcon: { color: "bg-emerald-100 text-emerald-700", accent: "from-emerald-500 to-green-500" },
-  StarIcon: { color: "bg-yellow-100 text-yellow-700", accent: "from-yellow-500 to-amber-500" },
-  ClockIcon: { color: "bg-indigo-100 text-indigo-700", accent: "from-indigo-500 to-blue-500" },
-  MapPinIcon: { color: "bg-red-100 text-red-700", accent: "from-red-500 to-rose-500" },
-  BriefcaseIcon: { color: "bg-slate-100 text-slate-700", accent: "from-slate-500 to-slate-700" },
-  BarChartIcon: { color: "bg-cyan-100 text-cyan-700", accent: "from-cyan-500 to-blue-500" },
-  CalendarIcon: { color: "bg-pink-100 text-pink-700", accent: "from-pink-500 to-rose-500" },
-  PhoneIcon: { color: "bg-teal-100 text-teal-700", accent: "from-teal-500 to-emerald-500" },
-  UsersIcon: { color: "bg-orange-100 text-orange-700", accent: "from-orange-500 to-amber-500" },
+  ZapIcon: { color: "bg-primary-fixed text-primary-container", accent: "from-primary to-secondary-container" },
+  DropletIcon: { color: "bg-primary-fixed text-primary", accent: "from-primary-container to-primary" },
+  CameraIcon: { color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary" },
+  CogIcon: { color: "bg-primary-fixed text-primary-container", accent: "from-primary to-secondary-container" },
+  WrenchIcon: { color: "bg-secondary-fixed text-primary-container", accent: "from-primary-container to-secondary-container" },
+  ShieldCheckIcon: { color: "bg-primary-fixed text-primary", accent: "from-primary to-secondary-container" },
+  StarIcon: { color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary" },
+  ClockIcon: { color: "bg-primary-fixed text-primary-container", accent: "from-primary-container to-primary" },
+  MapPinIcon: { color: "bg-secondary-fixed text-primary-container", accent: "from-primary to-secondary-container" },
+  BriefcaseIcon: { color: "bg-surface-container text-on-surface-variant", accent: "from-primary to-secondary-container" },
+  BarChartIcon: { color: "bg-primary-fixed text-primary", accent: "from-secondary-container to-primary" },
+  CalendarIcon: { color: "bg-secondary-fixed text-primary-container", accent: "from-primary-container to-secondary-container" },
+  PhoneIcon: { color: "bg-primary-fixed text-primary", accent: "from-primary to-secondary-container" },
+  UsersIcon: { color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary" },
 };
 
 const defaultServices: Service[] = [
-  { id: "internet", iconName: "BriefcaseIcon", name: "Lắp đặt Internet", price: "195.000đ", color: "bg-cyan-100 text-cyan-700", accent: "from-cyan-500 to-blue-500", base_price: 195000 },
-  { id: "camera", iconName: "CameraIcon", name: "Lắp đặt Camera", price: "500.000đ", color: "bg-violet-100 text-violet-700", accent: "from-violet-500 to-fuchsia-500", base_price: 500000 },
-  { id: "computer", iconName: "BriefcaseIcon", name: "Sửa Máy Tính", price: "150.000đ", color: "bg-slate-100 text-slate-700", accent: "from-slate-500 to-slate-700", base_price: 150000 },
-  { id: "printer", iconName: "BriefcaseIcon", name: "Sửa Máy In", price: "150.000đ", color: "bg-teal-100 text-teal-700", accent: "from-teal-500 to-emerald-500", base_price: 150000 },
+  { id: "internet", iconName: "BriefcaseIcon", name: "Lắp đặt Internet", price: "195.000đ", color: "bg-primary-fixed text-primary-container", accent: "from-primary to-secondary-container", base_price: 195000 },
+  { id: "camera", iconName: "CameraIcon", name: "Lắp đặt Camera", price: "500.000đ", color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary", base_price: 500000 },
+  { id: "computer", iconName: "BriefcaseIcon", name: "Sửa Máy Tính", price: "150.000đ", color: "bg-surface-container text-on-surface-variant", accent: "from-primary-container to-primary", base_price: 150000 },
+  { id: "printer", iconName: "BriefcaseIcon", name: "Sửa Máy In", price: "150.000đ", color: "bg-primary-fixed text-primary", accent: "from-primary to-secondary-container", base_price: 150000 },
 ];
 
 const customerPromise = [
@@ -182,12 +182,12 @@ export default function CustomerHome() {
           const specialtyLower = specialty.toLowerCase();
           const dispatchMeta = mockDispatchMeta[index % mockDispatchMeta.length];
           const route = getRouteEstimate(customerGps, workerProfile?.gps_location);
-          let color = "bg-rose-100 text-rose-700";
+          let color = "bg-secondary-fixed text-primary";
 
-          if (specialtyLower.includes("điện") || specialtyLower.includes("dien")) color = "bg-amber-100 text-amber-700";
-          else if (specialtyLower.includes("nước") || specialtyLower.includes("nuoc")) color = "bg-sky-100 text-sky-700";
-          else if (specialtyLower.includes("camera") || specialtyLower.includes("cam")) color = "bg-violet-100 text-violet-700";
-          else if (specialtyLower.includes("cơ khí") || specialtyLower.includes("co khi")) color = "bg-emerald-100 text-emerald-700";
+          if (specialtyLower.includes("điện") || specialtyLower.includes("dien")) color = "bg-primary-fixed text-primary-container";
+          else if (specialtyLower.includes("nước") || specialtyLower.includes("nuoc")) color = "bg-primary-fixed text-primary";
+          else if (specialtyLower.includes("camera") || specialtyLower.includes("cam")) color = "bg-secondary-fixed text-primary";
+          else if (specialtyLower.includes("cơ khí") || specialtyLower.includes("co khi")) color = "bg-secondary-fixed text-primary-container";
 
           return {
             id: worker.id,
@@ -215,7 +215,7 @@ export default function CustomerHome() {
             specialty: "Điện",
             rating: "4.9",
             jobs: 230,
-            color: "bg-amber-100 text-amber-700",
+            color: "bg-primary-fixed text-primary-container",
             status: "Phản hồi nhanh",
             ...mockDispatchMeta[0],
             distance: "Chưa có GPS",
@@ -231,7 +231,7 @@ export default function CustomerHome() {
             specialty: "Nước",
             rating: "4.8",
             jobs: 185,
-            color: "bg-sky-100 text-sky-700",
+            color: "bg-primary-fixed text-primary",
             status: "Gần bạn",
             ...mockDispatchMeta[1],
             distance: "Chưa có GPS",

@@ -210,7 +210,7 @@ export default function WorkerCustomersPage() {
       <div className="relative mb-5 overflow-hidden rounded-xl border border-white/30 bg-linear-to-br from-primary via-tertiary-container to-secondary-container p-5 text-white shadow-[0_18px_42px_rgba(6,52,103,0.18)]">
         <div className="absolute inset-x-0 bottom-0 h-1 bg-white/25" />
         <p className="text-[11px] font-bold uppercase text-white/75">Quan hệ khách hàng</p>
-        <h1 className="mt-1 text-2xl font-extrabold leading-tight" style={{ color: "#fcd34d" }}>Quản lý khách hàng</h1>
+        <h1 className="mt-1 text-2xl font-extrabold leading-tight text-primary-fixed">Quản lý khách hàng</h1>
         <p className="mt-2 max-w-[22rem] text-sm leading-6 text-white/85">
           Theo dõi khách quen, lịch sử phục vụ, doanh thu và liên hệ nhanh khi cần chăm sóc lại.
         </p>
@@ -350,7 +350,7 @@ export default function WorkerCustomersPage() {
                     {customer.lastJobId && (
                       <Link
                         href={`/worker/history/${customer.lastJobId}`}
-                        className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-extrabold text-white shadow-md shadow-orange-900/15 transition-all hover:brightness-105 active:scale-[0.98]"
+                        className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-extrabold text-white shadow-md shadow-blue-900/15 transition-all hover:bg-primary active:scale-[0.98]"
                       >
                         Xem đơn gần nhất
                       </Link>

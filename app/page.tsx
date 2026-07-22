@@ -49,80 +49,80 @@ const iconMap: Record<string, IconComponent> = {
 };
 
 const iconStyleMap: Record<string, { color: string; bgColor: string }> = {
-  ZapIcon: { color: "#f59e0b", bgColor: "#fef3c7" },
-  DropletIcon: { color: "#3b82f6", bgColor: "#dbeafe" },
-  CameraIcon: { color: "#8b5cf6", bgColor: "#ede9fe" },
-  CogIcon: { color: "#10b981", bgColor: "#d1fae5" },
-  WrenchIcon: { color: "#ec4899", bgColor: "#fce7f3" },
-  ShieldCheckIcon: { color: "#059669", bgColor: "#d1fae5" },
-  StarIcon: { color: "#eab308", bgColor: "#fef9c3" },
-  ClockIcon: { color: "#6366f1", bgColor: "#e0e7ff" },
-  MapPinIcon: { color: "#ef4444", bgColor: "#fee2e2" },
-  BriefcaseIcon: { color: "#64748b", bgColor: "#f1f5f9" },
-  BarChartIcon: { color: "#06b6d4", bgColor: "#ecfeff" },
-  CalendarIcon: { color: "#f43f5e", bgColor: "#ffe4e6" },
-  PhoneIcon: { color: "#14b8a6", bgColor: "#ccfbf1" },
-  UsersIcon: { color: "#f97316", bgColor: "#ffedd5" },
+  ZapIcon: { color: "#2563EB", bgColor: "#DBEAFE" },
+  DropletIcon: { color: "#1D4ED8", bgColor: "#DBEAFE" },
+  CameraIcon: { color: "#3B82F6", bgColor: "#EFF6FF" },
+  CogIcon: { color: "#2563EB", bgColor: "#DBEAFE" },
+  WrenchIcon: { color: "#1D4ED8", bgColor: "#EFF6FF" },
+  ShieldCheckIcon: { color: "#2563EB", bgColor: "#DBEAFE" },
+  StarIcon: { color: "#3B82F6", bgColor: "#EFF6FF" },
+  ClockIcon: { color: "#1D4ED8", bgColor: "#DBEAFE" },
+  MapPinIcon: { color: "#2563EB", bgColor: "#EFF6FF" },
+  BriefcaseIcon: { color: "#64748B", bgColor: "#F8FAFC" },
+  BarChartIcon: { color: "#3B82F6", bgColor: "#EFF6FF" },
+  CalendarIcon: { color: "#1D4ED8", bgColor: "#DBEAFE" },
+  PhoneIcon: { color: "#2563EB", bgColor: "#EFF6FF" },
+  UsersIcon: { color: "#3B82F6", bgColor: "#DBEAFE" },
 };
 
 const homepageServiceVisuals = [
   {
     match: ["điện", "dien", "electric"],
     icon: ZapIcon,
-    color: "#b45309",
-    bgColor: "#fef3c7",
+    color: "#2563EB",
+    bgColor: "#DBEAFE",
   },
   {
     match: ["nước", "nuoc", "ống", "ong", "plumb"],
     icon: DropletIcon,
-    color: "#2563eb",
-    bgColor: "#dbeafe",
+    color: "#1D4ED8",
+    bgColor: "#DBEAFE",
   },
   {
     match: ["camera", "cctv", "cam"],
     icon: CameraIcon,
-    color: "#7c3aed",
-    bgColor: "#ede9fe",
+    color: "#3B82F6",
+    bgColor: "#EFF6FF",
   },
   {
     match: ["cơ khí", "co khi", "sắt", "sat", "khóa", "khoa"],
     icon: CogIcon,
-    color: "#059669",
-    bgColor: "#d1fae5",
+    color: "#2563EB",
+    bgColor: "#DBEAFE",
   },
   {
     match: ["điều hòa", "dieu hoa", "máy lạnh", "may lanh", "lạnh", "lanh"],
     icon: ClockIcon,
-    color: "#4f46e5",
-    bgColor: "#e0e7ff",
+    color: "#1D4ED8",
+    bgColor: "#EFF6FF",
   },
   {
     match: ["sơn", "son", "tường", "tuong"],
     icon: ShieldCheckIcon,
-    color: "#be123c",
-    bgColor: "#ffe4e6",
+    color: "#3B82F6",
+    bgColor: "#DBEAFE",
   },
   {
     match: ["mộc", "moc", "gỗ", "go", "cửa", "cua"],
     icon: WrenchIcon,
-    color: "#9f4200",
-    bgColor: "#ffedd5",
+    color: "#2563EB",
+    bgColor: "#EFF6FF",
   },
   {
     match: ["vệ sinh", "ve sinh", "bảo trì", "bao tri"],
     icon: StarIcon,
-    color: "#0f766e",
-    bgColor: "#ccfbf1",
+    color: "#1D4ED8",
+    bgColor: "#DBEAFE",
   },
 ];
 
 const fallbackServiceVisuals = [
-  { icon: BriefcaseIcon, color: "#475569", bgColor: "#f1f5f9" },
-  { icon: CalendarIcon, color: "#db2777", bgColor: "#fce7f3" },
-  { icon: PhoneIcon, color: "#0d9488", bgColor: "#ccfbf1" },
-  { icon: UsersIcon, color: "#ea580c", bgColor: "#ffedd5" },
-  { icon: BarChartIcon, color: "#0891b2", bgColor: "#ecfeff" },
-  { icon: MapPinIcon, color: "#dc2626", bgColor: "#fee2e2" },
+  { icon: BriefcaseIcon, color: "#64748B", bgColor: "#F8FAFC" },
+  { icon: CalendarIcon, color: "#2563EB", bgColor: "#DBEAFE" },
+  { icon: PhoneIcon, color: "#1D4ED8", bgColor: "#EFF6FF" },
+  { icon: UsersIcon, color: "#3B82F6", bgColor: "#DBEAFE" },
+  { icon: BarChartIcon, color: "#2563EB", bgColor: "#EFF6FF" },
+  { icon: MapPinIcon, color: "#1D4ED8", bgColor: "#DBEAFE" },
 ];
 
 function getHomepageServiceVisual(serviceName: string, iconName?: string | null, index = 0) {
@@ -148,29 +148,29 @@ const defaultServices = [
     icon: ZapIcon,
     name: "Sửa điện",
     desc: "Sửa chữa, lắp đặt hệ thống điện dân dụng",
-    color: "#f59e0b",
-    bgColor: "#fef3c7",
+    color: "#2563EB",
+    bgColor: "#DBEAFE",
   },
   {
     icon: DropletIcon,
     name: "Sửa nước",
     desc: "Khắc phục sự cố đường ống, vòi nước",
-    color: "#3b82f6",
-    bgColor: "#dbeafe",
+    color: "#1D4ED8",
+    bgColor: "#DBEAFE",
   },
   {
     icon: CameraIcon,
     name: "Lắp camera",
     desc: "Tư vấn, lắp đặt camera an ninh",
-    color: "#8b5cf6",
-    bgColor: "#ede9fe",
+    color: "#3B82F6",
+    bgColor: "#EFF6FF",
   },
   {
     icon: CogIcon,
     name: "Cơ khí",
     desc: "Gia công, sửa chữa cơ khí tại chỗ",
-    color: "#10b981",
-    bgColor: "#d1fae5",
+    color: "#2563EB",
+    bgColor: "#DBEAFE",
   },
 ];
 
@@ -377,21 +377,21 @@ export default async function HomePage() {
           sizes="100vw"
           className="object-cover object-[62%_center]"
         />
-        <div className="absolute inset-0 bg-linear-to-r from-[#031f42] via-primary/92 to-primary/16" />
-        <div className="absolute inset-0 bg-linear-to-t from-[#031f42]/80 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-r from-primary-container via-primary/92 to-primary/16" />
+        <div className="absolute inset-0 bg-linear-to-t from-primary-container/80 via-transparent to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-36 bg-linear-to-t from-surface to-transparent" />
 
         <div className="relative mx-auto flex min-h-[700px] max-w-7xl items-center px-4 pb-28 pt-14 sm:min-h-[760px] sm:px-6 sm:pb-36 sm:pt-20 lg:px-8">
           <div className="max-w-2xl">
             {/* Badge */}
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/14 px-3.5 py-1.5 shadow-sm backdrop-blur-sm">
-              <span className="w-2 h-2 bg-secondary-container rounded-full animate-pulse" />
+              <span className="w-2 h-2 bg-primary-fixed rounded-full animate-pulse" />
               <span className="text-xs font-semibold text-white/95">Đang hoạt động 24/7 tại Nghĩa Lâm Ninh Bình</span>
             </div>
 
             <h1 className="mb-5 max-w-3xl text-5xl font-extrabold leading-[1.02] tracking-tight !text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
               Thợ giỏi,{" "}
-              <span className="!text-secondary-fixed drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]">đến ngay</span>{" "}
+              <span className="!text-primary-fixed drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]">đến ngay</span>{" "}
               khi bạn cần
             </h1>
 
@@ -430,7 +430,7 @@ export default async function HomePage() {
                 <span className="text-label-sm">Phản hồi &lt; 5 phút</span>
               </div>
               <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 backdrop-blur-sm">
-                <StarIcon size={18} className="text-secondary-container" />
+                <StarIcon size={18} className="text-primary-fixed" />
                 <span className="text-label-sm">4.8/5 sao</span>
               </div>
             </div>
@@ -439,7 +439,7 @@ export default async function HomePage() {
           <div className="absolute bottom-24 right-4 hidden w-[340px] rounded-xl border border-white/15 bg-white/92 p-5 shadow-[0_24px_80px_rgba(3,31,66,0.28)] backdrop-blur-xl lg:block">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase text-secondary-container">Đang điều phối</p>
+                <p className="text-xs font-semibold uppercase text-primary">Đang điều phối</p>
                 <p className="mt-1 text-lg font-bold text-on-surface">Thợ điện gần bạn</p>
               </div>
               <div className="rounded-full bg-success-container px-3 py-1 text-xs font-bold text-success">Sẵn sàng</div>
@@ -451,7 +451,7 @@ export default async function HomePage() {
               </div>
               <div className="flex items-center justify-between rounded-lg bg-surface-container-low p-3">
                 <span className="text-sm font-semibold text-on-surface">Đánh giá thợ</span>
-                <span className="flex items-center gap-1 text-sm font-bold text-secondary-container">
+                <span className="flex items-center gap-1 text-sm font-bold text-primary">
                   <StarIcon size={15} />
                   4.9
                 </span>
@@ -523,12 +523,12 @@ export default async function HomePage() {
       </section>
 
       {/* ===== HOW IT WORKS ===== */}
-      <section id="how-it-works" className="relative overflow-hidden bg-[#031f42] py-16 sm:py-24 lg:py-32">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(232,102,36,0.22),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(14,116,144,0.26),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]" />
+      <section id="how-it-works" className="relative overflow-hidden bg-primary-container py-16 sm:py-24 lg:py-32">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.30),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(37,99,235,0.24),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]" />
         <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-white/25 to-transparent" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mx-auto mb-10 max-w-3xl text-center sm:mb-14">
-            <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold uppercase !text-secondary-fixed backdrop-blur">
+            <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold uppercase !text-primary-fixed backdrop-blur">
               Quy trình
             </span>
             <h2 className="mt-4 text-4xl font-bold !text-white sm:text-5xl">
@@ -540,7 +540,7 @@ export default async function HomePage() {
           </div>
 
           <div className="relative">
-            <div className="absolute left-[12.5%] right-[12.5%] top-20 hidden h-1 rounded-full bg-linear-to-r from-secondary-container via-white/30 to-tertiary-container lg:block" />
+            <div className="absolute left-[12.5%] right-[12.5%] top-20 hidden h-1 rounded-full bg-linear-to-r from-primary-fixed via-white/30 to-secondary-container lg:block" />
             <div className="relative grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               {steps.map((item, idx) => {
                 const StepIcon = [BriefcaseIcon, CalendarIcon, MapPinIcon, CheckCircleIcon][idx] || CheckCircleIcon;
@@ -553,12 +553,12 @@ export default async function HomePage() {
                       <div className="relative mb-7 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-primary shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-transform group-hover:scale-105">
                         <StepIcon size={28} />
                       </div>
-                      <div className="relative mb-4 inline-flex rounded-full bg-secondary-container/18 px-3 py-1 text-xs font-bold !text-secondary-fixed">
+                      <div className="relative mb-4 inline-flex rounded-full bg-white/16 px-3 py-1 text-xs font-bold !text-primary-fixed">
                         Bước {idx + 1}
                       </div>
                       <h3 className="relative mb-3 text-xl font-bold !text-white">{item.title}</h3>
                       <p className="relative text-sm leading-6 !text-white/72">{item.desc}</p>
-                      <div className="absolute inset-x-5 bottom-5 h-px bg-linear-to-r from-secondary-container/80 via-white/20 to-transparent opacity-70" />
+                      <div className="absolute inset-x-5 bottom-5 h-px bg-linear-to-r from-primary-fixed/80 via-white/20 to-transparent opacity-70" />
                     </div>
                   </div>
                 );
@@ -611,7 +611,7 @@ export default async function HomePage() {
 
             {/* Visual Card */}
             <div className="relative">
-              <div className="rounded-2xl bg-linear-to-br from-primary to-tertiary-container p-6 text-white shadow-[0_24px_70px_rgba(6,52,103,0.22)] sm:p-8">
+              <div className="rounded-2xl bg-linear-to-br from-primary to-secondary-container p-6 text-white shadow-[0_24px_70px_rgba(37,99,235,0.22)] sm:p-8">
                 <div className="flex items-center gap-4 mb-6">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/14 text-lg font-bold text-white">
                     NT
@@ -620,7 +620,7 @@ export default async function HomePage() {
                     <div className="font-semibold text-white">Nguyễn Thanh</div>
                     <div className="text-sm text-white/70">Thợ điện • 5 năm KN</div>
                   </div>
-                  <div className="ml-auto flex items-center gap-1 text-secondary-container">
+                  <div className="ml-auto flex items-center gap-1 text-primary-fixed">
                     <StarIcon size={16} />
                     <span className="font-semibold text-white">4.9</span>
                   </div>
@@ -632,7 +632,7 @@ export default async function HomePage() {
                   </div>
                   <div className="flex items-center justify-between rounded-lg bg-white/10 px-4 py-3">
                     <span className="text-sm text-white/70">Tỷ lệ hoàn thành</span>
-                    <span className="font-semibold text-secondary-fixed">98%</span>
+                    <span className="font-semibold text-primary-fixed">98%</span>
                   </div>
                   <div className="flex items-center justify-between rounded-lg bg-white/10 px-4 py-3">
                     <span className="text-sm text-white/70">Phản hồi TB</span>
@@ -679,7 +679,7 @@ export default async function HomePage() {
                 <div className="mb-5 text-5xl font-serif leading-none text-primary-fixed-dim">“</div>
                 <div className="flex items-center gap-1 mb-4">
                   {Array.from({ length: t.rating }).map((_, i) => (
-                    <StarIcon key={i} size={16} className="text-secondary-container" />
+                    <StarIcon key={i} size={16} className="text-primary" />
                   ))}
                   {Array.from({ length: 5 - t.rating }).map((_, i) => (
                     <StarIcon key={i} size={16} className="text-outline-variant" />
@@ -704,8 +704,8 @@ export default async function HomePage() {
       </section>
 
       {/* ===== CTA SECTION ===== */}
-      <section className="relative overflow-hidden bg-[#031f42] py-16 text-on-primary sm:py-24 lg:py-28">
-        <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(232,102,36,0.28),rgba(232,102,36,0)_42%),linear-gradient(90deg,rgba(14,116,144,0.24),rgba(14,116,144,0)_58%)]" />
+      <section className="relative overflow-hidden bg-primary-container py-16 text-on-primary sm:py-24 lg:py-28">
+        <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(59,130,246,0.30),rgba(59,130,246,0)_42%),linear-gradient(90deg,rgba(37,99,235,0.24),rgba(37,99,235,0)_58%)]" />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="relative mb-4 text-3xl font-bold leading-tight !text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.35)] sm:text-5xl">
             Bắt đầu sử dụng Thợ đến ngay ngay hôm nay

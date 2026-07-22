@@ -98,20 +98,20 @@ export default function CustomerDashboard() {
             BarChartIcon, CalendarIcon, PhoneIcon, UsersIcon
           };
           const styleMap: Record<string, Pick<DashboardService, "color" | "bg" | "border">> = {
-            'ZapIcon': { color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
-            'DropletIcon': { color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-            'CameraIcon': { color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-            'CogIcon': { color: "text-green-600", bg: "bg-green-50", border: "border-green-100" },
-            'WrenchIcon': { color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
-            'ShieldCheckIcon': { color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-            'StarIcon': { color: "text-yellow-600", bg: "bg-yellow-50", border: "border-yellow-100" },
-            'ClockIcon': { color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
-            'MapPinIcon': { color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
-            'BriefcaseIcon': { color: "text-slate-600", bg: "bg-slate-50", border: "border-slate-100" },
-            'BarChartIcon': { color: "text-cyan-600", bg: "bg-cyan-50", border: "border-cyan-100" },
-            'CalendarIcon': { color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
-            'PhoneIcon': { color: "text-teal-600", bg: "bg-teal-50", border: "border-teal-100" },
-            'UsersIcon': { color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-100" }
+            'ZapIcon': { color: "text-primary-container", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'DropletIcon': { color: "text-primary", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'CameraIcon': { color: "text-primary", bg: "bg-secondary-fixed", border: "border-primary-fixed" },
+            'CogIcon': { color: "text-primary-container", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'WrenchIcon': { color: "text-primary-container", bg: "bg-secondary-fixed", border: "border-primary-fixed" },
+            'ShieldCheckIcon': { color: "text-primary", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'StarIcon': { color: "text-primary", bg: "bg-secondary-fixed", border: "border-primary-fixed" },
+            'ClockIcon': { color: "text-primary-container", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'MapPinIcon': { color: "text-primary-container", bg: "bg-secondary-fixed", border: "border-primary-fixed" },
+            'BriefcaseIcon': { color: "text-on-surface-variant", bg: "bg-surface-container", border: "border-outline-variant" },
+            'BarChartIcon': { color: "text-primary", bg: "bg-secondary-fixed", border: "border-primary-fixed" },
+            'CalendarIcon': { color: "text-primary-container", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'PhoneIcon': { color: "text-primary", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+            'UsersIcon': { color: "text-primary", bg: "bg-secondary-fixed", border: "border-primary-fixed" }
           };
 
           const mapped = svcs.map(s => ({
@@ -195,10 +195,10 @@ export default function CustomerDashboard() {
           <h2 className="section-eyebrow px-2">Dịch vụ phổ biến</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {(services.length > 0 ? services : [
-              { id: "1", name: "Sửa Điện", iconComponent: ZapIcon, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
-              { id: "2", name: "Sửa Nước", iconComponent: DropletIcon, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-              { id: "3", name: "Camera", iconComponent: CameraIcon, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-              { id: "4", name: "Cơ khí", iconComponent: CogIcon, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+              { id: "1", name: "Sửa Điện", iconComponent: ZapIcon, color: "text-primary-container", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+              { id: "2", name: "Sửa Nước", iconComponent: DropletIcon, color: "text-primary", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
+              { id: "3", name: "Camera", iconComponent: CameraIcon, color: "text-primary", bg: "bg-secondary-fixed", border: "border-primary-fixed" },
+              { id: "4", name: "Cơ khí", iconComponent: CogIcon, color: "text-primary-container", bg: "bg-primary-fixed", border: "border-primary-fixed-dim" },
             ]).map(svc => {
               const IconComp = svc.iconComponent;
               return (

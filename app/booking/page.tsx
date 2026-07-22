@@ -109,27 +109,27 @@ export default function BookingPage() {
           UsersIcon
         };
         const colorMap: Record<string, ServiceColor> = {
-          'ZapIcon': { color: "#f59e0b", bgColor: "#fef3c7" },
-          'DropletIcon': { color: "#3b82f6", bgColor: "#dbeafe" },
-          'CameraIcon': { color: "#8b5cf6", bgColor: "#ede9fe" },
-          'CogIcon': { color: "#10b981", bgColor: "#d1fae5" },
-          'WrenchIcon': { color: "#ec4899", bgColor: "#fce7f3" },
-          'ShieldCheckIcon': { color: "#059669", bgColor: "#d1fae5" },
-          'StarIcon': { color: "#eab308", bgColor: "#fef9c3" },
-          'ClockIcon': { color: "#6366f1", bgColor: "#e0e7ff" },
-          'MapPinIcon': { color: "#ef4444", bgColor: "#fee2e2" },
-          'BriefcaseIcon': { color: "#64748b", bgColor: "#f1f5f9" },
-          'BarChartIcon': { color: "#06b6d4", bgColor: "#ecfeff" },
-          'CalendarIcon': { color: "#f43f5e", bgColor: "#ffe4e6" },
-          'PhoneIcon': { color: "#14b8a6", bgColor: "#ccfbf1" },
-          'UsersIcon': { color: "#f97316", bgColor: "#ffedd5" }
+          'ZapIcon': { color: "#2563EB", bgColor: "#DBEAFE" },
+          'DropletIcon': { color: "#1D4ED8", bgColor: "#DBEAFE" },
+          'CameraIcon': { color: "#3B82F6", bgColor: "#EFF6FF" },
+          'CogIcon': { color: "#2563EB", bgColor: "#DBEAFE" },
+          'WrenchIcon': { color: "#1D4ED8", bgColor: "#EFF6FF" },
+          'ShieldCheckIcon': { color: "#2563EB", bgColor: "#DBEAFE" },
+          'StarIcon': { color: "#3B82F6", bgColor: "#EFF6FF" },
+          'ClockIcon': { color: "#1D4ED8", bgColor: "#DBEAFE" },
+          'MapPinIcon': { color: "#2563EB", bgColor: "#EFF6FF" },
+          'BriefcaseIcon': { color: "#64748B", bgColor: "#F8FAFC" },
+          'BarChartIcon': { color: "#3B82F6", bgColor: "#EFF6FF" },
+          'CalendarIcon': { color: "#1D4ED8", bgColor: "#DBEAFE" },
+          'PhoneIcon': { color: "#2563EB", bgColor: "#EFF6FF" },
+          'UsersIcon': { color: "#3B82F6", bgColor: "#DBEAFE" }
         };
 
         const mapped = filterStandardServiceCatalog(applyDefaultServiceParents(svcs as RawService[])).map((s): BookingService => ({
           ...s,
           iconComponent: iconMap[s.icon || ""] || BriefcaseIcon,
           formattedPrice: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(s.base_price || 0),
-          ...(colorMap[s.icon || ""] || { color: "#003178", bgColor: "#f0f4f9" })
+          ...(colorMap[s.icon || ""] || { color: "#2563EB", bgColor: "#DBEAFE" })
         }));
         setServices(mapped);
         if (mapped[0]) {
