@@ -517,13 +517,13 @@ export default function AdminCustomers() {
     <div className="space-y-6 animate-fade-in relative min-h-[calc(100vh-10rem)]">
       {/* Toast Alert */}
       {toast.type && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-lg border transform transition-all duration-300 translate-y-0 ${
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-5 py-3.5 rounded-lg shadow-elevated border transform transition-all duration-300 translate-y-0 ${
           toast.type === "success" 
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-            : "bg-rose-50 border-rose-200 text-rose-800"
+            ? "bg-success-container border-success/25 text-on-success-container"
+            : "bg-error-container border-error/25 text-on-error-container"
         }`}>
           <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-            toast.type === "success" ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+            toast.type === "success" ? "bg-white/70 text-success" : "bg-white/70 text-error"
           }`}>
             <CheckCircleIcon size={16} />
           </div>
@@ -541,7 +541,7 @@ export default function AdminCustomers() {
         </div>
         <button 
           onClick={() => setIsAddModalOpen(true)}
-          className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2"
+          className="btn-primary !py-2.5 !px-5 flex items-center gap-2"
         >
           <PlusIcon size={20} />
           <span>Thêm khách hàng</span>
@@ -557,7 +557,7 @@ export default function AdminCustomers() {
           <input
             type="text"
             placeholder="Tìm theo tên khách hàng, số điện thoại, email..."
-            className="input-field !pl-10 !py-2.5 !rounded-xl w-full"
+            className="input-field !pl-10 !py-2.5 w-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -582,7 +582,7 @@ export default function AdminCustomers() {
       </div>
 
       {/* Customers Table */}
-      <div className="bg-white rounded-2xl border border-outline-variant overflow-hidden shadow-sm">
+      <div className="admin-table-card overflow-hidden">
         {loading ? (
           <div className="flex justify-center items-center h-64">
              <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
@@ -854,7 +854,7 @@ export default function AdminCustomers() {
             </div>
 
             {/* Content Body (Scrollable) */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#f9f9fc]">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-surface">
               {/* Profile Details Card */}
               <div className="bg-white rounded-2xl p-5 border border-outline-variant/30 shadow-sm space-y-4">
                 <h3 className="text-label-lg text-primary font-bold uppercase tracking-wider">Thông tin liên hệ</h3>

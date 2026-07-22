@@ -114,7 +114,7 @@ function matchesJobStatusFilter(jobStatus: string | null | undefined, statusFilt
 
 function getJobStatusCardClass(status: string) {
   if (status === "completed") return "border-success-container bg-success-container/70 text-success";
-  if (status === "pending" || status === "cancel_requested") return "border-warning-container bg-warning-container/70 text-warning";
+  if (status === "pending" || status === "cancel_requested") return "border-primary-fixed-dim bg-primary-fixed text-primary-container";
   if (status === "cancelled") return "border-error-container bg-error-container/70 text-error";
   if (status === "all") return "border-primary-container bg-primary-fixed text-primary-container";
   return "border-outline-variant bg-surface-container-lowest text-on-surface";
@@ -608,7 +608,7 @@ export default function AdminJobs() {
               Theo dõi, điều phối và quản lý tất cả các công việc trên hệ thống
             </p>
           </div>
-          <button onClick={openModal} className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2">
+          <button onClick={openModal} className="btn-primary !py-2.5 !px-5 flex items-center gap-2">
             <PlusIcon size={20} />
             <span>Tạo Job mới</span>
           </button>
@@ -619,7 +619,7 @@ export default function AdminJobs() {
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
-              className={`rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+              className={`rounded-lg border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-card-hover ${
                 statusFilter === status
                   ? getJobStatusCardClass(status)
                   : "border-outline-variant bg-white text-on-surface hover:bg-surface-container-lowest"
@@ -642,7 +642,7 @@ export default function AdminJobs() {
             <input
               type="text"
               placeholder="Tìm theo mã job, khách hàng, dịch vụ..."
-              className="input-field !pl-10 !py-2.5 !rounded-xl w-full"
+              className="input-field !pl-10 !py-2.5 w-full"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -668,7 +668,7 @@ export default function AdminJobs() {
         </div>
 
         {/* Jobs Table */}
-        <div className="bg-white rounded-2xl border border-outline-variant overflow-hidden shadow-sm">
+        <div className="admin-table-card overflow-hidden">
           {loading ? (
             <div className="flex justify-center items-center h-64">
               <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
@@ -733,10 +733,10 @@ export default function AdminJobs() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-xl ${job.service?.icon === 'ZapIcon' ? 'bg-amber-50 text-amber-600' :
-                            job.service?.icon === 'DropletIcon' ? 'bg-blue-50 text-blue-600' :
-                              job.service?.icon === 'CameraIcon' ? 'bg-purple-50 text-purple-600' :
-                                'bg-green-50 text-green-600'
+                          <div className={`p-2 rounded-lg ${job.service?.icon === 'ZapIcon' ? 'bg-primary-fixed text-primary-container' :
+                            job.service?.icon === 'DropletIcon' ? 'bg-secondary-fixed text-primary' :
+                              job.service?.icon === 'CameraIcon' ? 'bg-primary-fixed-dim text-primary-container' :
+                                'bg-primary-fixed text-primary-container'
                             }`}>
                             {job.service?.icon === "ZapIcon" && <ZapIcon size={18} />}
                             {job.service?.icon === "DropletIcon" && <DropletIcon size={18} />}

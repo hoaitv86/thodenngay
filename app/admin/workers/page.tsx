@@ -552,7 +552,7 @@ export default function AdminWorkers() {
     <div className="space-y-6 animate-fade-in relative">
       {/* Toast Notification */}
       {toast.type && (
-        <div className={`fixed top-4 right-4 z-50 max-w-sm px-5 py-3.5 rounded-xl shadow-lg border animate-fade-in flex items-center gap-3 ${toast.type === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32] border-[#2e7d32]/20' : 'bg-[#ffebee] text-[#c62828] border-[#c62828]/20'
+        <div className={`fixed top-4 right-4 z-50 max-w-sm px-5 py-3.5 rounded-lg shadow-elevated border animate-fade-in flex items-center gap-3 ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/25' : 'bg-error-container text-on-error-container border-error/25'
           }`}>
           {toast.type === 'success' ? <CheckCircleIcon size={20} /> : <XIcon size={20} />}
           <span className="text-body-sm font-bold">{toast.message}</span>
@@ -568,7 +568,7 @@ export default function AdminWorkers() {
         </div>
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2"
+          className="btn-primary !py-2.5 !px-5 flex items-center gap-2"
         >
           <PlusIcon size={20} />
           <span>Thêm thợ mới</span>
@@ -584,7 +584,7 @@ export default function AdminWorkers() {
           <input
             type="text"
             placeholder="Tìm theo tên, số điện thoại, chuyên môn..."
-            className="input-field !pl-10 !py-2.5 !rounded-xl w-full"
+            className="input-field !pl-10 !py-2.5 w-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -612,7 +612,7 @@ export default function AdminWorkers() {
       </div>
 
       {/* Workers Table */}
-      <div className="bg-white rounded-2xl border border-outline-variant overflow-hidden shadow-sm">
+      <div className="admin-table-card overflow-hidden">
         {loading ? (
           <div className="flex justify-center items-center h-64">
             <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />

@@ -116,21 +116,21 @@ export default function AdminDashboard() {
           value: pendingJobs?.toString() || "0",
           change: "",
           icon: Clock,
-          color: "bg-warning/10 text-warning",
+          color: "bg-primary-fixed text-primary-container",
         },
         {
           label: "Hoàn thành",
           value: completedJobs?.toString() || "0",
           change: "+8%",
           icon: CheckCircle2,
-          color: "bg-success/10 text-success",
+          color: "bg-secondary-fixed text-primary",
         },
         {
           label: "Thợ hoạt động",
           value: activeWorkers?.toString() || "0",
           change: "+3",
           icon: UserCheck,
-          color: "bg-info/10 text-info",
+          color: "bg-primary-fixed-dim text-primary-container",
         },
       ]);
 
@@ -225,10 +225,10 @@ export default function AdminDashboard() {
     <div className="space-y-6 animate-fade-in relative min-h-[calc(100vh-10rem)]">
       {/* Toast Alert */}
       {toast.type && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-lg border transform transition-all duration-300 translate-y-0 ${
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-5 py-3.5 rounded-lg shadow-elevated border transform transition-all duration-300 translate-y-0 ${
           toast.type === "success" 
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
-            : "bg-rose-50 border-rose-200 text-rose-800"
+            ? "bg-success-container border-success/25 text-on-success-container"
+            : "bg-error-container border-error/25 text-on-error-container"
         }`}>
           <span className="text-body-sm font-semibold">{toast.message}</span>
         </div>
@@ -244,7 +244,7 @@ export default function AdminDashboard() {
         </div>
         <Link
           href="/admin/jobs?action=create"
-          className="px-4 py-2.5 bg-secondary-container text-on-secondary font-semibold rounded-lg hover:opacity-90 transition-opacity text-body-sm flex items-center gap-2 shadow-sm"
+          className="btn-primary !min-h-0 !px-4 !py-2.5 text-body-sm"
         >
           <Briefcase className="w-4 h-4" />
           Tạo Job mới

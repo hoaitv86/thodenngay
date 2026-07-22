@@ -38,11 +38,11 @@ type DashboardWidgetsProps = {
 const statusConfig: Record<string, { label: string; className: string }> = {
   pending: {
     label: "Chờ xử lý",
-    className: "bg-warning/10 text-warning",
+    className: "bg-primary-fixed text-primary-container",
   },
   assigned: {
     label: "Đã gán thợ",
-    className: "bg-info/10 text-info",
+    className: "bg-secondary-fixed text-primary",
   },
   in_progress: {
     label: "Đang làm",
@@ -58,7 +58,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   },
   cancel_requested: {
     label: "Chờ duyệt huỷ",
-    className: "bg-warning/10 text-warning",
+    className: "bg-primary-fixed text-primary-container",
   },
   cancelled: {
     label: "Đã huỷ",
@@ -80,7 +80,7 @@ export default function DashboardWidgets({
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-5"
+            className="rounded-lg border border-outline-variant bg-white p-5 shadow-card"
           >
             <div className="mb-3 flex items-center justify-between">
               <div
@@ -106,8 +106,8 @@ export default function DashboardWidgets({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-outline-variant/20 p-5">
+        <div className="rounded-lg border border-outline-variant bg-white shadow-card lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-outline-variant p-5">
             <h2 className="text-body-lg font-semibold text-on-surface">
               Job gần đây
             </h2>
@@ -127,7 +127,7 @@ export default function DashboardWidgets({
             ) : recentJobs.map((job) => (
               <div
                 key={job.id}
-                className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-surface-container-low/50"
+                className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-secondary-fixed"
               >
                 <div className="flex items-center gap-4">
                   <span className="font-mono text-label-sm text-on-surface-variant">
@@ -145,7 +145,7 @@ export default function DashboardWidgets({
                 <div className="flex items-center gap-3">
                   <span
                     className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase text-label-sm ${
-                      statusConfig[job.status]?.className || "bg-slate-100 text-slate-700"
+                      statusConfig[job.status]?.className || "bg-surface-container text-on-surface-variant"
                     }`}
                   >
                     {statusConfig[job.status]?.label || job.status}
@@ -159,13 +159,13 @@ export default function DashboardWidgets({
           </div>
         </div>
 
-        <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
-          <div className="flex items-center justify-between border-b border-outline-variant/20 p-5">
+        <div className="rounded-lg border border-outline-variant bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-outline-variant p-5">
             <h2 className="flex items-center gap-2 text-body-lg font-semibold text-on-surface">
-              <AlertCircle className="h-5 w-5 text-warning" />
+              <AlertCircle className="h-5 w-5 text-primary" />
               Thợ chờ duyệt
             </h2>
-            <span className="animate-pulse rounded-full bg-warning/10 px-2 py-0.5 text-label-sm font-bold text-warning">
+            <span className="animate-pulse rounded-full bg-primary-fixed px-2 py-0.5 text-label-sm font-bold text-primary-container">
               {pendingWorkers.length}
             </span>
           </div>
@@ -177,7 +177,7 @@ export default function DashboardWidgets({
             ) : pendingWorkers.map((worker) => (
               <div
                 key={worker.id}
-                className="rounded-lg border border-outline-variant/20 bg-surface-container-low p-4"
+                className="rounded-lg border border-outline-variant bg-surface p-4"
               >
                 <div className="mb-3 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-fixed text-label-md font-bold uppercase text-primary">
@@ -196,7 +196,7 @@ export default function DashboardWidgets({
                   <button
                     disabled={processingId !== null}
                     onClick={() => onApproveWorker(worker)}
-                    className="flex-1 rounded-lg bg-[#2e7d32] py-2 text-label-sm font-semibold text-white transition-opacity hover:bg-[#1b5e20] hover:opacity-90 disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-primary py-2 text-label-sm font-semibold text-white transition-opacity hover:bg-primary-container disabled:opacity-50"
                   >
                     {processingId === worker.id ? "..." : "Duyệt"}
                   </button>

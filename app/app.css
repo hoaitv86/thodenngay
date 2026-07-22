@@ -512,6 +512,200 @@ textarea {
   color: rgb(255 255 255 / 0.9);
 }
 
+/* ===== Admin Interface System ===== */
+.admin-shell {
+  background: var(--color-surface);
+}
+
+.admin-shell main {
+  background: var(--color-surface);
+}
+
+.admin-shell aside {
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.12);
+}
+
+.admin-shell aside a,
+.admin-shell aside button {
+  border-radius: var(--radius-lg);
+}
+
+.admin-shell aside a[aria-current="page"],
+.admin-shell aside a:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.admin-shell header {
+  background: rgb(255 255 255 / 0.98);
+}
+
+.admin-shell .card,
+.admin-shell .card-elevated,
+.admin-shell .admin-table-card,
+.admin-shell .metric-card,
+.admin-shell form.card,
+.admin-shell section.card {
+  border-color: var(--color-outline-variant);
+  background: #ffffff;
+  box-shadow: var(--shadow-card);
+}
+
+.admin-shell .card:hover,
+.admin-shell .card-elevated:hover,
+.admin-shell .admin-table-card:hover,
+.admin-shell .metric-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.admin-shell table {
+  width: 100%;
+  background: #ffffff;
+}
+
+.admin-shell thead tr {
+  background: var(--color-surface) !important;
+  border-color: var(--color-outline-variant) !important;
+}
+
+.admin-shell th {
+  color: var(--color-on-surface-variant) !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-shell tbody {
+  border-color: var(--color-outline-variant) !important;
+}
+
+.admin-shell tbody tr {
+  border-color: var(--color-outline-variant) !important;
+}
+
+.admin-shell tbody tr:hover {
+  background: var(--color-secondary-fixed) !important;
+}
+
+.admin-shell input:not([type="checkbox"]):not([type="radio"]),
+.admin-shell select,
+.admin-shell textarea {
+  border-color: var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+}
+
+.admin-shell input:not([type="checkbox"]):not([type="radio"]):focus,
+.admin-shell select:focus,
+.admin-shell textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.14);
+}
+
+.admin-shell .btn-primary,
+.admin-shell .btn-secondary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  box-shadow: 0 8px 18px rgb(37 99 235 / 0.16);
+}
+
+.admin-shell .btn-primary:hover,
+.admin-shell .btn-secondary:hover {
+  background: var(--color-primary-container);
+}
+
+.admin-shell .btn-outline {
+  border-color: var(--color-outline-variant);
+  background: #ffffff;
+  color: var(--color-on-surface-variant);
+}
+
+.admin-shell .btn-outline:hover {
+  border-color: var(--color-primary-container);
+  background: rgb(219 234 254 / 0.55);
+  color: var(--color-primary-container);
+}
+
+.admin-shell .badge-pending,
+.admin-shell .badge-assigned,
+.admin-shell .badge-in_progress {
+  background: var(--color-primary-fixed);
+  color: var(--color-primary-container);
+}
+
+.admin-shell .modal-panel,
+.admin-shell [class*="shadow-2xl"] {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-xl);
+}
+
+.admin-shell [class*="bg-amber-"],
+.admin-shell [class*="bg-yellow-"],
+.admin-shell [class*="bg-orange-"],
+.admin-shell [class*="bg-sky-"],
+.admin-shell [class*="bg-cyan-"],
+.admin-shell [class*="bg-blue-"],
+.admin-shell [class*="bg-indigo-"],
+.admin-shell [class*="bg-violet-"],
+.admin-shell [class*="bg-purple-"],
+.admin-shell [class*="bg-pink-"],
+.admin-shell [class*="bg-fuchsia-"] {
+  background-color: var(--color-primary-fixed) !important;
+}
+
+.admin-shell [class*="text-amber-"],
+.admin-shell [class*="text-yellow-"],
+.admin-shell [class*="text-orange-"],
+.admin-shell [class*="text-sky-"],
+.admin-shell [class*="text-cyan-"],
+.admin-shell [class*="text-blue-"],
+.admin-shell [class*="text-indigo-"],
+.admin-shell [class*="text-violet-"],
+.admin-shell [class*="text-purple-"],
+.admin-shell [class*="text-pink-"],
+.admin-shell [class*="text-fuchsia-"] {
+  color: var(--color-primary-container) !important;
+}
+
+.admin-shell [class*="bg-emerald-"],
+.admin-shell [class*="bg-green-"],
+.admin-shell [class*="bg-lime-"],
+.admin-shell [class*="bg-teal-"] {
+  background-color: var(--color-success-container) !important;
+}
+
+.admin-shell [class*="text-emerald-"],
+.admin-shell [class*="text-green-"],
+.admin-shell [class*="text-lime-"],
+.admin-shell [class*="text-teal-"] {
+  color: var(--color-success) !important;
+}
+
+.admin-shell [class*="bg-rose-"],
+.admin-shell [class*="bg-red-"] {
+  background-color: var(--color-error-container) !important;
+}
+
+.admin-shell [class*="text-rose-"],
+.admin-shell [class*="text-red-"] {
+  color: var(--color-error) !important;
+}
+
+.admin-shell [class*="bg-slate-"],
+.admin-shell [class*="bg-gray-"],
+.admin-shell [class*="bg-zinc-"],
+.admin-shell [class*="bg-neutral-"],
+.admin-shell [class*="bg-stone-"] {
+  background-color: var(--color-surface-container) !important;
+}
+
+.admin-shell [class*="text-slate-"],
+.admin-shell [class*="text-gray-"],
+.admin-shell [class*="text-zinc-"],
+.admin-shell [class*="text-neutral-"],
+.admin-shell [class*="text-stone-"] {
+  color: var(--color-on-surface-variant) !important;
+}
+
 @media (max-width: 640px) {
   .btn-primary,
   .btn-secondary,

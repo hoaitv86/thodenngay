@@ -127,9 +127,9 @@ export default function AdminLayout({
   };
 
   return (
-    <div className="flex h-screen bg-surface">
+    <div className="admin-shell flex h-screen bg-surface">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col bg-primary shrink-0">
+      <aside className="hidden md:flex w-64 flex-col bg-linear-to-b from-primary via-primary-container to-secondary-container shrink-0">
         <SidebarContent
           pathname={pathname}
           userName={userName}
@@ -146,7 +146,7 @@ export default function AdminLayout({
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 w-64 bg-primary z-50 flex flex-col transform transition-transform md:hidden ${
+        className={`fixed inset-y-0 left-0 w-64 bg-linear-to-b from-primary via-primary-container to-secondary-container z-50 flex flex-col transform transition-transform md:hidden ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -161,7 +161,7 @@ export default function AdminLayout({
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <header className="h-16 bg-surface-container-lowest border-b border-outline-variant/30 flex items-center justify-between px-6 shrink-0">
+        <header className="h-16 bg-white border-b border-outline-variant flex items-center justify-between px-6 shrink-0 shadow-card">
           <button
             onClick={() => setSidebarOpen(true)}
             aria-label="Mở menu quản trị"

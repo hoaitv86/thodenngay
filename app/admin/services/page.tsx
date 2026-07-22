@@ -127,41 +127,41 @@ type ServiceIconOption = {
 };
 
 const serviceIconOptions: ServiceIconOption[] = [
-  { name: "Lightbulb", label: "Điện", icon: Lightbulb, className: "bg-amber-50 text-amber-600" },
-  { name: "HousePlug", label: "Ổ cắm", icon: HousePlug, className: "bg-yellow-50 text-yellow-700" },
-  { name: "Plug", label: "Thiết bị điện", icon: Plug, className: "bg-orange-50 text-orange-600" },
-  { name: "Droplets", label: "Nước", icon: Droplets, className: "bg-sky-50 text-sky-600" },
-  { name: "Bath", label: "Phòng tắm", icon: Bath, className: "bg-cyan-50 text-cyan-700" },
-  { name: "Toilet", label: "Bồn cầu", icon: Toilet, className: "bg-blue-50 text-blue-700" },
-  { name: "Cctv", label: "Camera", icon: Cctv, className: "bg-violet-50 text-violet-600" },
-  { name: "Camera", label: "Hình ảnh", icon: Camera, className: "bg-purple-50 text-purple-600" },
-  { name: "Hammer", label: "Cơ khí", icon: Hammer, className: "bg-slate-100 text-slate-700" },
-  { name: "Drill", label: "Khoan lắp", icon: Drill, className: "bg-stone-100 text-stone-700" },
+  { name: "Lightbulb", label: "Điện", icon: Lightbulb, className: "bg-primary-fixed text-primary-container" },
+  { name: "HousePlug", label: "Ổ cắm", icon: HousePlug, className: "bg-secondary-fixed text-primary" },
+  { name: "Plug", label: "Thiết bị điện", icon: Plug, className: "bg-primary-fixed-dim text-primary-container" },
+  { name: "Droplets", label: "Nước", icon: Droplets, className: "bg-secondary-fixed text-primary" },
+  { name: "Bath", label: "Phòng tắm", icon: Bath, className: "bg-primary-fixed text-primary-container" },
+  { name: "Toilet", label: "Bồn cầu", icon: Toilet, className: "bg-primary-fixed-dim text-primary-container" },
+  { name: "Cctv", label: "Camera", icon: Cctv, className: "bg-secondary-fixed text-primary" },
+  { name: "Camera", label: "Hình ảnh", icon: Camera, className: "bg-primary-fixed text-primary-container" },
+  { name: "Hammer", label: "Cơ khí", icon: Hammer, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Drill", label: "Khoan lắp", icon: Drill, className: "bg-surface-container text-on-surface-variant" },
   { name: "Wrench", label: "Sửa chữa", icon: Wrench, className: "bg-primary-fixed text-primary-container" },
-  { name: "AirVent", label: "Điều hòa", icon: AirVent, className: "bg-teal-50 text-teal-700" },
-  { name: "Snowflake", label: "Điện lạnh", icon: Snowflake, className: "bg-cyan-50 text-cyan-600" },
-  { name: "Fan", label: "Quạt gió", icon: Fan, className: "bg-emerald-50 text-emerald-600" },
-  { name: "Refrigerator", label: "Tủ lạnh", icon: Refrigerator, className: "bg-blue-50 text-blue-600" },
-  { name: "WashingMachine", label: "Máy giặt", icon: WashingMachine, className: "bg-indigo-50 text-indigo-600" },
-  { name: "Wifi", label: "Wifi", icon: Wifi, className: "bg-lime-50 text-lime-700" },
-  { name: "Router", label: "Router", icon: Router, className: "bg-green-50 text-green-700" },
-  { name: "Cable", label: "Dây mạng", icon: Cable, className: "bg-emerald-50 text-emerald-700" },
-  { name: "Truck", label: "Vận chuyển", icon: Truck, className: "bg-orange-50 text-orange-700" },
-  { name: "Sofa", label: "Đồ nội thất", icon: Sofa, className: "bg-rose-50 text-rose-700" },
-  { name: "PaintRoller", label: "Sơn nhà", icon: PaintRoller, className: "bg-pink-50 text-pink-700" },
-  { name: "Paintbrush", label: "Trang trí", icon: Paintbrush, className: "bg-fuchsia-50 text-fuchsia-700" },
-  { name: "Computer", label: "Máy tính", icon: Computer, className: "bg-slate-50 text-slate-600" },
-  { name: "Monitor", label: "Màn hình", icon: Monitor, className: "bg-gray-100 text-gray-700" },
-  { name: "Printer", label: "Máy in", icon: Printer, className: "bg-zinc-100 text-zinc-700" },
-  { name: "MapPin", label: "Tại nhà", icon: MapPin, className: "bg-red-50 text-red-600" },
-  { name: "Clock", label: "Hẹn giờ", icon: Clock, className: "bg-indigo-50 text-indigo-700" },
-  { name: "ShieldCheck", label: "Bảo hành", icon: ShieldCheck, className: "bg-emerald-50 text-emerald-700" },
-  { name: "Star", label: "Nổi bật", icon: Star, className: "bg-yellow-50 text-yellow-600" },
-  { name: "Briefcase", label: "Dịch vụ", icon: Briefcase, className: "bg-neutral-100 text-neutral-700" },
-  { name: "Settings", label: "Kỹ thuật", icon: Settings, className: "bg-green-50 text-green-600" },
-  { name: "Calendar", label: "Lịch hẹn", icon: Calendar, className: "bg-rose-50 text-rose-600" },
-  { name: "Phone", label: "Liên hệ", icon: Phone, className: "bg-teal-50 text-teal-600" },
-  { name: "Users", label: "Đội thợ", icon: Users, className: "bg-orange-50 text-orange-600" },
+  { name: "AirVent", label: "Điều hòa", icon: AirVent, className: "bg-secondary-fixed text-primary" },
+  { name: "Snowflake", label: "Điện lạnh", icon: Snowflake, className: "bg-primary-fixed text-primary-container" },
+  { name: "Fan", label: "Quạt gió", icon: Fan, className: "bg-primary-fixed-dim text-primary-container" },
+  { name: "Refrigerator", label: "Tủ lạnh", icon: Refrigerator, className: "bg-secondary-fixed text-primary" },
+  { name: "WashingMachine", label: "Máy giặt", icon: WashingMachine, className: "bg-primary-fixed text-primary-container" },
+  { name: "Wifi", label: "Wifi", icon: Wifi, className: "bg-secondary-fixed text-primary" },
+  { name: "Router", label: "Router", icon: Router, className: "bg-primary-fixed-dim text-primary-container" },
+  { name: "Cable", label: "Dây mạng", icon: Cable, className: "bg-primary-fixed text-primary-container" },
+  { name: "Truck", label: "Vận chuyển", icon: Truck, className: "bg-secondary-fixed text-primary" },
+  { name: "Sofa", label: "Đồ nội thất", icon: Sofa, className: "bg-primary-fixed text-primary-container" },
+  { name: "PaintRoller", label: "Sơn nhà", icon: PaintRoller, className: "bg-primary-fixed-dim text-primary-container" },
+  { name: "Paintbrush", label: "Trang trí", icon: Paintbrush, className: "bg-secondary-fixed text-primary" },
+  { name: "Computer", label: "Máy tính", icon: Computer, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Monitor", label: "Màn hình", icon: Monitor, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Printer", label: "Máy in", icon: Printer, className: "bg-surface-container text-on-surface-variant" },
+  { name: "MapPin", label: "Tại nhà", icon: MapPin, className: "bg-primary-fixed text-primary-container" },
+  { name: "Clock", label: "Hẹn giờ", icon: Clock, className: "bg-secondary-fixed text-primary" },
+  { name: "ShieldCheck", label: "Bảo hành", icon: ShieldCheck, className: "bg-primary-fixed-dim text-primary-container" },
+  { name: "Star", label: "Nổi bật", icon: Star, className: "bg-primary-fixed text-primary-container" },
+  { name: "Briefcase", label: "Dịch vụ", icon: Briefcase, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Settings", label: "Kỹ thuật", icon: Settings, className: "bg-secondary-fixed text-primary" },
+  { name: "Calendar", label: "Lịch hẹn", icon: Calendar, className: "bg-primary-fixed text-primary-container" },
+  { name: "Phone", label: "Liên hệ", icon: Phone, className: "bg-secondary-fixed text-primary" },
+  { name: "Users", label: "Đội thợ", icon: Users, className: "bg-primary-fixed-dim text-primary-container" },
 ];
 
 const legacyIconAliases: Record<string, ServiceIconOption> = {
@@ -541,7 +541,7 @@ export default function AdminServices() {
         </div>
         <button 
           onClick={openCreateModal}
-          className="btn-primary !py-2.5 !px-5 !rounded-xl flex items-center gap-2"
+          className="btn-primary !py-2.5 !px-5 flex items-center gap-2"
         >
           <PlusIcon size={20} />
           <span>Thêm danh mục cha</span>
@@ -557,7 +557,7 @@ export default function AdminServices() {
           <input
             type="text"
             placeholder="Tìm theo tên danh mục, mô tả..."
-            className="input-field !pl-10 !py-2.5 !rounded-xl w-full"
+            className="input-field !pl-10 !py-2.5 w-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -613,7 +613,7 @@ export default function AdminServices() {
            <div className="w-8 h-8 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
         </div>
       ) : rootServices.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-outline-variant p-12 text-center shadow-sm">
+        <div className="card p-12 text-center">
           <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4 text-outline">
             <WrenchIcon size={32} />
           </div>
