@@ -706,6 +706,34 @@ textarea {
   color: var(--color-on-surface-variant) !important;
 }
 
+/* Keep high-contrast text on solid and gradient blue surfaces. */
+[class~="bg-primary"],
+[class~="bg-primary-container"],
+[class~="bg-secondary-container"],
+.hero-gradient,
+.app-hero-panel,
+[class*="from-primary"][class*="to-secondary-container"] {
+  color: var(--color-on-primary);
+}
+
+[class~="bg-primary"] :is(h1, h2, h3, h4, p, span, small, strong, label, svg, .text-headline-lg, .text-headline-md, .text-body-lg, .text-body-md, .text-body-sm, .text-body-xs, .text-label-sm, .text-label-md, [class*="text-on-surface"], [class*="text-primary"], [class*="text-secondary"], [class*="text-slate"], [class*="text-gray"], [class*="text-zinc"]):not([class*="bg-white"]):not([class*="bg-surface"]):not([class*="bg-primary-fixed"]):not([class*="bg-secondary-fixed"]):not([class*="bg-success"]):not([class*="bg-warning"]):not([class*="bg-error"]),
+[class~="bg-primary-container"] :is(h1, h2, h3, h4, p, span, small, strong, label, svg, .text-headline-lg, .text-headline-md, .text-body-lg, .text-body-md, .text-body-sm, .text-body-xs, .text-label-sm, .text-label-md, [class*="text-on-surface"], [class*="text-primary"], [class*="text-secondary"], [class*="text-slate"], [class*="text-gray"], [class*="text-zinc"]):not([class*="bg-white"]):not([class*="bg-surface"]):not([class*="bg-primary-fixed"]):not([class*="bg-secondary-fixed"]):not([class*="bg-success"]):not([class*="bg-warning"]):not([class*="bg-error"]),
+[class~="bg-secondary-container"] :is(h1, h2, h3, h4, p, span, small, strong, label, svg, .text-headline-lg, .text-headline-md, .text-body-lg, .text-body-md, .text-body-sm, .text-body-xs, .text-label-sm, .text-label-md, [class*="text-on-surface"], [class*="text-primary"], [class*="text-secondary"], [class*="text-slate"], [class*="text-gray"], [class*="text-zinc"]):not([class*="bg-white"]):not([class*="bg-surface"]):not([class*="bg-primary-fixed"]):not([class*="bg-secondary-fixed"]):not([class*="bg-success"]):not([class*="bg-warning"]):not([class*="bg-error"]),
+.hero-gradient :is(h1, h2, h3, h4, p, span, small, strong, label, svg, .text-headline-lg, .text-headline-md, .text-body-lg, .text-body-md, .text-body-sm, .text-body-xs, .text-label-sm, .text-label-md, [class*="text-on-surface"], [class*="text-primary"], [class*="text-secondary"], [class*="text-slate"], [class*="text-gray"], [class*="text-zinc"]):not([class*="bg-white"]):not([class*="bg-surface"]):not([class*="bg-primary-fixed"]):not([class*="bg-secondary-fixed"]):not([class*="bg-success"]):not([class*="bg-warning"]):not([class*="bg-error"]),
+.app-hero-panel :is(h1, h2, h3, h4, p, span, small, strong, label, svg, .text-headline-lg, .text-headline-md, .text-body-lg, .text-body-md, .text-body-sm, .text-body-xs, .text-label-sm, .text-label-md, [class*="text-on-surface"], [class*="text-primary"], [class*="text-secondary"], [class*="text-slate"], [class*="text-gray"], [class*="text-zinc"]):not([class*="bg-white"]):not([class*="bg-surface"]):not([class*="bg-primary-fixed"]):not([class*="bg-secondary-fixed"]):not([class*="bg-success"]):not([class*="bg-warning"]):not([class*="bg-error"]),
+[class*="from-primary"][class*="to-secondary-container"] :is(h1, h2, h3, h4, p, span, small, strong, label, svg, .text-headline-lg, .text-headline-md, .text-body-lg, .text-body-md, .text-body-sm, .text-body-xs, .text-label-sm, .text-label-md, [class*="text-on-surface"], [class*="text-primary"], [class*="text-secondary"], [class*="text-slate"], [class*="text-gray"], [class*="text-zinc"]):not([class*="bg-white"]):not([class*="bg-surface"]):not([class*="bg-primary-fixed"]):not([class*="bg-secondary-fixed"]):not([class*="bg-success"]):not([class*="bg-warning"]):not([class*="bg-error"]) {
+  color: inherit !important;
+}
+
+[class~="bg-primary"] :is(input, select, textarea, option),
+[class~="bg-primary-container"] :is(input, select, textarea, option),
+[class~="bg-secondary-container"] :is(input, select, textarea, option),
+.hero-gradient :is(input, select, textarea, option),
+.app-hero-panel :is(input, select, textarea, option),
+[class*="from-primary"][class*="to-secondary-container"] :is(input, select, textarea, option) {
+  color: var(--color-on-surface) !important;
+}
+
 @media (max-width: 640px) {
   .btn-primary,
   .btn-secondary,
