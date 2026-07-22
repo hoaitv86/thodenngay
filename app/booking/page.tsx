@@ -274,7 +274,7 @@ export default function BookingPage() {
                       setSelectedCategoryId(category.id);
                       setSelectedService(null);
                     }}
-                    className={`rounded-xl border-2 p-3 text-left transition-all ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : 'border-outline-variant bg-surface-container-lowest'}`}
+                    className={`rounded-lg border-2 p-3 text-left transition-all ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : 'border-outline-variant bg-surface-container-lowest'}`}
                   >
                     <span className="block text-2xl leading-none">{category.emoji || "•"}</span>
                     <span className="mt-2 block text-sm font-bold text-on-surface">{category.name}</span>
@@ -287,7 +287,7 @@ export default function BookingPage() {
             {selectedGroup && (
               <div className="space-y-5">
                 {selectedService && (
-                  <div className="rounded-xl border border-success/20 bg-success-container/60 px-4 py-3 text-sm font-extrabold text-success">
+                  <div className="rounded-lg border border-success/20 bg-success-container/60 px-4 py-3 text-sm font-extrabold text-success">
                     Bạn đã chọn: {getCustomerServicePathLabel(selectedService, services).replace(" / ", " → ")}
                   </div>
                 )}
@@ -304,7 +304,7 @@ export default function BookingPage() {
                     className={`card flex items-center gap-3 p-4 text-left transition-all sm:gap-5 sm:p-5 ${isSelected ? 'border-primary-container bg-primary-fixed/30 ring-1 ring-primary-container' : ''}`}
                   >
                     <div 
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 sm:w-14 sm:h-14"
+                      className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 sm:w-14 sm:h-14"
                       style={{ backgroundColor: svc.bgColor, color: svc.color }}
                     >
                       <svc.iconComponent size={28} />
@@ -368,7 +368,7 @@ export default function BookingPage() {
                     <button 
                       key={t}
                       onClick={() => setBookingData({...bookingData, time: t})}
-                      className={`py-3 rounded-xl border-2 transition-all font-semibold ${bookingData.time === t ? 'border-primary-container bg-primary-fixed text-primary-container' : 'border-outline-variant text-on-surface-variant'}`}
+                      className={`py-3 rounded-lg border-2 transition-all font-semibold ${bookingData.time === t ? 'border-primary-container bg-primary-fixed text-primary-container' : 'border-outline-variant text-on-surface-variant'}`}
                     >
                       {t}
                     </button>
@@ -396,7 +396,7 @@ export default function BookingPage() {
                 <p className="text-xs text-on-surface-variant">
                   Tải tối đa 5 ảnh để thợ xem trước địa hình và chuẩn bị dụng cụ.
                 </p>
-                <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant/60 bg-surface-container-lowest px-4 py-5 text-center transition-colors hover:bg-surface-container-low">
+                <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-outline-variant/60 bg-surface-container-lowest px-4 py-5 text-center transition-colors hover:bg-surface-container-low">
                   <CameraIcon size={26} className="mb-2 text-on-surface-variant/70" />
                   <span className="text-sm font-bold text-primary-container">Thêm ảnh</span>
                   <span className="mt-1 text-[11px] text-on-surface-variant">PNG, JPG, JPEG • tối đa 8MB/ảnh</span>
@@ -453,7 +453,7 @@ export default function BookingPage() {
             <div className="card-elevated !p-4 sm:!p-6 space-y-6 mb-8">
               <div className="flex items-center gap-4 border-b border-outline-variant pb-4">
                 <div 
-                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  className="w-12 h-12 rounded-lg flex items-center justify-center"
                   style={{ backgroundColor: selectedService.bgColor, color: selectedService.color }}
                 >
                   <selectedService.iconComponent size={24} />
@@ -516,7 +516,7 @@ export default function BookingPage() {
                 )}
               </div>
 
-              <div className="bg-primary-fixed/30 p-4 rounded-xl flex justify-between items-center">
+              <div className="bg-primary-fixed/30 p-4 rounded-lg flex justify-between items-center">
                 <span className="text-body-sm font-semibold text-primary-container">Giá ước tính</span>
                 <span className="text-xl font-bold text-primary-container sm:text-headline-md">{selectedService.formattedPrice}</span>
               </div>

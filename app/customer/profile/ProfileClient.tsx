@@ -57,7 +57,7 @@ export default function ProfileClient({ initialData }: { initialData: ProfileIni
 
   return (
     <div className="space-y-6">
-      <div className="mb-6 flex flex-col items-center rounded-2xl border border-outline-variant/20 bg-white p-5 shadow-lg shadow-blue-900/5">
+      <div className="mb-6 flex flex-col items-center rounded-lg border border-outline-variant bg-white p-5 shadow-card">
         <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-primary-container shadow-lg shadow-primary/20">
           <UserCircle className="h-12 w-12 text-white" />
         </div>
@@ -67,7 +67,7 @@ export default function ProfileClient({ initialData }: { initialData: ProfileIni
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid gap-5 rounded-2xl border border-outline-variant/20 bg-white p-4 shadow-lg shadow-blue-900/5 sm:p-5 lg:grid-cols-2">
+      <form onSubmit={handleSubmit} className="grid gap-5 rounded-lg border border-outline-variant bg-white p-4 shadow-card sm:p-5 lg:grid-cols-2">
         {/* Email - Readonly */}
         <div className="space-y-1 lg:col-span-2">
           <label className="text-label-md">Email</label>
@@ -148,7 +148,7 @@ export default function ProfileClient({ initialData }: { initialData: ProfileIni
         <button
           type="submit"
           disabled={loading}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-secondary-container px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50 lg:col-span-2"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-secondary-container px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-blue-900/15 transition-all hover:bg-primary active:scale-[0.98] disabled:opacity-50 lg:col-span-2"
         >
           {loading ? (
             <Loader2 className="w-5 h-5 animate-spin" />

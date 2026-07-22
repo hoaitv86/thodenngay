@@ -405,7 +405,7 @@ function CustomerBookingContent() {
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface animate-fade-in relative">
       {/* Toast Notification */}
       {toast.type && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-xl shadow-lg border animate-fade-in flex items-start gap-3 ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' : 'bg-error-container text-on-error-container border-error/30'
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-lg shadow-lg border animate-fade-in flex items-start gap-3 ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' : 'bg-error-container text-on-error-container border-error/30'
           }`}>
           <div className="mt-0.5 shrink-0">
             {toast.type === 'success' ? <CheckCircleIcon size={20} /> : <XIcon size={20} />}
@@ -425,7 +425,7 @@ function CustomerBookingContent() {
 
       {/* Booking Form */}
       <div className="-mt-6 flex-1 px-4 sm:mx-auto sm:w-full sm:max-w-md lg:max-w-4xl lg:px-8">
-        <div className="rounded-xl border border-outline-variant/20 bg-white p-4 shadow-md shadow-blue-950/5 sm:p-6">
+        <div className="rounded-lg border border-outline-variant bg-white p-4 shadow-card sm:p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
 
             {/* Service Selection */}
@@ -459,8 +459,8 @@ function CustomerBookingContent() {
                         setFormData(prev => ({ ...prev, serviceId: "", serviceIds: [] }));
                         setWorkflowData({});
                       }}
-                      className={`min-h-[104px] rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] ${isSelected
-                          ? "border-primary-container bg-primary-fixed/40 shadow-md shadow-blue-900/10"
+                      className={`min-h-[104px] rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-card-hover active:scale-[0.98] ${isSelected
+                          ? "border-primary-container bg-primary-fixed/40 shadow-card-hover"
                           : "border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20"
                         }`}
                     >
@@ -504,7 +504,7 @@ function CustomerBookingContent() {
                       key={service.id}
                       type="button"
                       onClick={() => toggleService(service.id)}
-                      className={`flex min-h-[128px] flex-col items-start justify-between rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:p-4 ${isSelected
+                      className={`flex min-h-[128px] flex-col items-start justify-between rounded-lg border-2 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-card-hover active:scale-[0.98] sm:p-4 ${isSelected
                           ? `${visual.selectedClass} shadow-md`
                           : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30 hover:bg-primary-fixed/20'
                         }`}

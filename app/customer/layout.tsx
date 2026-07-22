@@ -61,7 +61,7 @@ export default function CustomerLayout({
 
   return (
     <div className="min-h-dvh w-full bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35 lg:flex">
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:flex lg:w-72 lg:flex-col lg:border-r lg:border-primary-container/10 lg:bg-linear-to-b lg:from-primary lg:via-primary-container lg:to-tertiary-container lg:text-white">
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:flex lg:w-72 lg:flex-col lg:border-r lg:border-primary-container/10 lg:bg-linear-to-b lg:from-primary lg:via-primary-container lg:to-secondary-container lg:text-white">
         <div className="border-b border-white/12 p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/14 text-white shadow-sm ring-1 ring-white/18">
@@ -75,7 +75,7 @@ export default function CustomerLayout({
 
           <Link
             href="/customer/booking"
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-secondary-container px-4 py-3 text-sm font-bold text-white shadow-[0_12px_26px_rgba(232,102,36,0.24)] transition-all hover:brightness-105 active:scale-[0.98]"
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-secondary-container px-4 py-3 text-sm font-bold text-white shadow-[0_12px_26px_rgba(37,99,235,0.24)] transition-all hover:bg-primary active:scale-[0.98]"
           >
             <CalendarIcon size={17} />
             Đặt dịch vụ mới
@@ -117,7 +117,7 @@ export default function CustomerLayout({
         <header className="sticky top-0 z-30 border-b border-white/45 bg-white/72 backdrop-blur-xl">
           <div className="mx-auto flex h-16 w-full max-w-md items-center justify-between px-4 lg:h-20 lg:max-w-6xl lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-primary-container to-tertiary-container text-white shadow-sm lg:hidden">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-primary-container to-secondary-container text-white shadow-sm lg:hidden">
                 <WrenchIcon size={19} />
               </div>
               <div className="min-w-0">
@@ -133,7 +133,7 @@ export default function CustomerLayout({
             <div className="flex items-center gap-2">
               <Link
                 href="/customer/booking"
-                className="hidden items-center gap-2 rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:brightness-105 active:scale-[0.98] sm:inline-flex"
+                className="hidden items-center gap-2 rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-primary active:scale-[0.98] sm:inline-flex"
               >
                 <CalendarIcon size={16} />
                 Đặt lịch

@@ -424,7 +424,7 @@ export default function CustomerProfile() {
     <div className="customer-profile-page flex w-full flex-col bg-surface">
       
       {/* Profile Premium Header */}
-      <div className="profile-hero bg-gradient-to-br from-primary via-primary-container to-[#004ba0] text-white pt-8 pb-20 px-5 relative overflow-hidden">
+      <div className="profile-hero bg-linear-to-br from-primary via-primary-container to-secondary-container text-white pt-8 pb-20 px-5 relative overflow-hidden">
         {/* Visual abstract circles background */}
         <div className="absolute w-40 h-40 bg-white/5 rounded-full -top-10 -right-10 pointer-events-none" />
         <div className="absolute w-24 h-24 bg-white/5 rounded-full bottom-2 left-1/3 pointer-events-none" />
@@ -472,7 +472,7 @@ export default function CustomerProfile() {
 
       {/* Stats Cards Overlay Grid */}
       <div className="px-4 -mt-10 relative z-20">
-        <div className="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant/30 p-4 flex justify-between">
+        <div className="bg-white rounded-lg shadow-card border border-outline-variant p-4 flex justify-between">
           <div className="text-center flex-1">
             <div className="text-2xl font-extrabold text-primary">{stats.total}</div>
             <div className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider mt-1">Tổng Đơn</div>
@@ -575,7 +575,7 @@ export default function CustomerProfile() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+              <div className="rounded-lg border border-outline-variant bg-white p-3">
                 <div className="flex items-start gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
                     <MapPinIcon size={16} />
@@ -592,7 +592,7 @@ export default function CustomerProfile() {
                       type="button"
                       onClick={handleUseCurrentLocation}
                       disabled={locating}
-                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white disabled:opacity-60"
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white hover:bg-primary disabled:opacity-60"
                     >
                       {locating ? "Đang lấy vị trí..." : "Cập nhật vị trí hiện tại"}
                     </button>
@@ -647,7 +647,7 @@ export default function CustomerProfile() {
                 />
               </div>
 
-              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+              <div className="rounded-lg border border-outline-variant bg-white p-3">
                 <p className="text-sm font-extrabold text-on-surface">Định vị khách hàng</p>
                 <p className="mt-1 text-xs text-on-surface-variant">
                   {profile.gps_location
@@ -659,7 +659,7 @@ export default function CustomerProfile() {
                   type="button"
                   onClick={handleUseCurrentLocation}
                   disabled={locating || saving}
-                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white disabled:opacity-60"
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white hover:bg-primary disabled:opacity-60"
                 >
                   {locating ? "Đang lấy vị trí..." : "Lấy vị trí hiện tại"}
                 </button>
@@ -989,7 +989,7 @@ export default function CustomerProfile() {
         {/* Safety Logout CTA */}
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl bg-error-container text-error hover:brightness-95 active:scale-[0.98] transition-all font-bold mt-4 shadow-sm"
+          className="w-full flex items-center justify-center gap-2 p-4 rounded-lg bg-error-container text-error hover:brightness-95 active:scale-[0.98] transition-all font-bold mt-4 shadow-sm"
         >
           <LogOutIcon size={18} />
           <span>Đăng xuất tài khoản</span>

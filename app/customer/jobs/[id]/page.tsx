@@ -257,8 +257,8 @@ export default function JobDetailPage() {
     <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col bg-surface">
       {/* Toast Notification */}
       {toast.type && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-xl shadow-lg border animate-fade-in flex items-start gap-3 ${
-          toast.type === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32] border-[#2e7d32]/20' : 'bg-[#ffebee] text-[#c62828] border-[#c62828]/20'
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm px-4 py-3 rounded-lg shadow-lg border animate-fade-in flex items-start gap-3 ${
+          toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' : 'bg-error-container text-on-error-container border-error/30'
         }`}>
           <span className="text-body-sm font-bold leading-tight pt-0.5">{toast.message}</span>
         </div>
@@ -344,7 +344,7 @@ export default function JobDetailPage() {
         {job.worker && (
           <div className="space-y-4 pt-4 border-t border-outline-variant/30">
             <h3 className="text-label-md font-bold text-on-surface-variant uppercase tracking-wider">Thợ đảm nhận</h3>
-            <div className="flex items-center gap-4 rounded-2xl border border-primary-container/20 bg-white p-4 shadow-lg shadow-blue-900/5">
+            <div className="flex items-center gap-4 rounded-lg border border-outline-variant bg-white p-4 shadow-card">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-fixed text-lg font-bold text-primary-container">
                 {job.worker.user?.full_name?.charAt(0)}
               </div>
@@ -367,7 +367,7 @@ export default function JobDetailPage() {
         {job.description && (
           <div className="space-y-2">
             <p className="text-label-sm font-bold text-on-surface-variant uppercase tracking-wider opacity-60">Mô tả vấn đề</p>
-            <div className="bg-surface-container-low p-4 rounded-xl text-body-sm text-on-surface-variant italic break-words">
+            <div className="bg-surface-container-low p-4 rounded-lg text-body-sm text-on-surface-variant italic break-words">
               &ldquo;{job.description}&rdquo;
             </div>
           </div>
@@ -381,7 +381,7 @@ export default function JobDetailPage() {
             </h3>
             <div className="grid grid-cols-2 gap-2">
               {job.images.map((imgUrl: string, idx: number) => (
-                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-outline-variant/30 bg-surface-container-low shadow-sm">
+                <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-outline-variant bg-surface-container-low shadow-sm">
                   <a href={imgUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
                     <Image src={imgUrl} alt={`Ảnh hiện trạng ${idx + 1}`} fill sizes="(max-width: 640px) 50vw, 180px" className="object-cover hover:scale-105 transition-transform duration-200" unoptimized />
                   </a>
@@ -398,7 +398,7 @@ export default function JobDetailPage() {
             
             {existingRating ? (
               // Already Rated
-              <div className="bg-surface-container-low p-5 rounded-2xl border border-outline-variant/20 space-y-3">
+              <div className="bg-surface-container-low p-5 rounded-lg border border-outline-variant space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex gap-1 text-warning">
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -434,7 +434,7 @@ export default function JobDetailPage() {
               </div>
             ) : (
               // Not Rated Yet: Show Rating Form
-              <form onSubmit={handleSubmitRating} className="space-y-4 rounded-2xl border border-outline-variant/20 bg-white p-5 shadow-lg shadow-blue-900/5">
+              <form onSubmit={handleSubmitRating} className="space-y-4 rounded-lg border border-outline-variant bg-white p-5 shadow-card">
                 <div className="text-center space-y-2">
                   <p className="text-body-sm text-on-surface-variant">Bạn thấy dịch vụ của thợ thế nào? Hãy đánh giá nhé!</p>
                   
@@ -457,7 +457,7 @@ export default function JobDetailPage() {
                   
                   {/* Star label */}
                   <p className={`text-sm font-bold transition-colors ${
-                    ratingScore >= 4 ? 'text-success' : ratingScore >= 3 ? 'text-amber-600' : 'text-error'
+                    ratingScore >= 4 ? 'text-success' : ratingScore >= 3 ? 'text-primary' : 'text-error'
                   }`}>
                     {ratingScore === 1 ? '😞 Rất tệ' : 
                      ratingScore === 2 ? '😕 Chưa hài lòng' : 
@@ -472,7 +472,7 @@ export default function JobDetailPage() {
                     value={ratingComment}
                     onChange={(e) => setRatingComment(e.target.value)}
                     placeholder="Chia sẻ trải nghiệm của bạn về thợ (thái độ, chất lượng)..."
-                    className="w-full px-4 py-3 bg-surface-container-lowest border border-outline-variant/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary text-body-sm min-h-[80px] resize-none"
+                    className="input-field min-h-[80px] resize-none"
                   />
                 </div>
 
@@ -481,10 +481,10 @@ export default function JobDetailPage() {
                   <label className="text-label-sm font-semibold text-on-surface">Ảnh chứng minh (tùy chọn)</label>
                   <p className="text-[11px] text-on-surface-variant">Thêm ảnh để đánh giá khách quan hơn về chất lượng công việc.</p>
                   
-                  <label className="flex h-20 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-secondary-container/50 bg-secondary-container/5 transition-colors hover:bg-secondary-container/10">
+                  <label className="flex h-20 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-primary-container/40 bg-primary-fixed/40 transition-colors hover:bg-secondary-fixed">
                     <div className="flex items-center gap-2">
-                      <Camera size={20} className="text-secondary-container" />
-                      <span className="text-xs font-bold text-secondary">Thêm ảnh</span>
+                      <Camera size={20} className="text-primary-container" />
+                      <span className="text-xs font-bold text-primary-container">Thêm ảnh</span>
                       <span className="text-[10px] text-on-surface-variant">(PNG, JPG)</span>
                     </div>
                     <input 
@@ -520,7 +520,7 @@ export default function JobDetailPage() {
                 <button
                   type="submit"
                   disabled={submittingRating}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-secondary-container px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-secondary-container/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-secondary-container px-5 py-3 text-sm font-extrabold text-white shadow-lg shadow-blue-900/15 transition-all hover:bg-primary active:scale-[0.98] disabled:opacity-50"
                 >
                   {submittingRating ? (
                     <span className="flex items-center gap-2">
@@ -539,12 +539,12 @@ export default function JobDetailPage() {
           {job.status === 'pending' && (
             <button 
               onClick={handleCancel}
-              className="w-full rounded-xl border border-error/25 bg-error-container px-5 py-4 font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
+              className="w-full rounded-lg border border-error/25 bg-error-container px-5 py-4 font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
             >
               Hủy yêu cầu
             </button>
           )}
-          <Link href="/dashboard" className="block w-full rounded-xl border border-outline-variant/40 bg-white px-5 py-4 text-center font-extrabold text-on-surface-variant shadow-sm transition-all hover:border-primary/30 hover:text-primary">
+          <Link href="/dashboard" className="block w-full rounded-lg border border-outline-variant bg-white px-5 py-4 text-center font-extrabold text-on-surface-variant shadow-sm transition-all hover:border-primary/30 hover:text-primary">
             Quay lại trang chủ
           </Link>
         </div>

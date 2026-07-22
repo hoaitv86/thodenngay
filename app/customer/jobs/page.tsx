@@ -119,10 +119,10 @@ export default function CustomerJobs() {
   const getStatusInfo = (status: string) => {
     switch (status) {
       case 'pending':
-        return { label: 'Đang tìm thợ', color: 'bg-amber-100 text-amber-700', icon: Timer };
+        return { label: 'Đang tìm thợ', color: 'bg-primary-fixed text-primary-container', icon: Timer };
       case 'confirmed':
       case 'assigned':
-        return { label: 'Đã nhận việc', color: 'bg-blue-100 text-blue-700', icon: CheckCircle };
+        return { label: 'Đã nhận việc', color: 'bg-secondary-fixed text-primary', icon: CheckCircle };
       case 'in_progress':
         return { label: 'Đang thực hiện', color: 'bg-primary-container text-white', icon: Wrench };
       case 'completed':
@@ -218,7 +218,7 @@ export default function CustomerJobs() {
         </div>
       </div>
 
-      <div className="space-y-3 rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3 shadow-sm">
+      <div className="space-y-3 rounded-lg border border-outline-variant bg-white p-3 shadow-card">
         <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
@@ -226,10 +226,10 @@ export default function CustomerJobs() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Tìm mã đơn, dịch vụ, địa chỉ..."
-              className="h-11 w-full rounded-lg border border-outline-variant/30 bg-white pl-10 pr-3 text-sm font-semibold text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+              className="input-field !py-2.5 pl-10"
             />
           </label>
-          <label className="flex h-11 items-center gap-2 rounded-lg border border-outline-variant/30 bg-white px-3 text-sm font-bold text-on-surface-variant">
+          <label className="flex h-11 items-center gap-2 rounded-lg border border-outline-variant bg-white px-3 text-sm font-bold text-on-surface-variant">
             <SlidersHorizontal className="h-4 w-4" />
             <select
               value={sortOrder}
@@ -271,7 +271,7 @@ export default function CustomerJobs() {
             return (
               <div 
                 key={job.id} 
-                className="overflow-hidden rounded-lg border border-outline-variant/20 bg-surface-container-lowest shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
+                className="overflow-hidden rounded-lg border border-outline-variant bg-white shadow-card transition-all hover:shadow-card-hover active:scale-[0.98]"
               >
                 <div className="flex items-center justify-between bg-primary-fixed/50 px-4 py-2">
                   <span className="text-[10px] font-extrabold uppercase tracking-wide text-primary-container">Mã đơn: {job.job_code}</span>
@@ -301,7 +301,7 @@ export default function CustomerJobs() {
                 {(job.status === 'completed' || job.status === 'done') && (!job.ratings || job.ratings.length === 0) && (
                   <Link 
                     href={`/customer/jobs/${job.id}`}
-                    className="flex items-center gap-2 rounded-lg border border-amber-200/50 bg-amber-50 px-3 py-2 text-amber-700 transition-colors hover:bg-amber-100"
+                    className="flex items-center gap-2 rounded-lg border border-primary-container/20 bg-primary-fixed px-3 py-2 text-primary-container transition-colors hover:bg-secondary-fixed"
                   >
                     <Star size={14} className="animate-pulse" />
                     <span className="text-[11px] font-bold">Chưa đánh giá — nhấn để gửi nhận xét</span>
@@ -335,11 +335,11 @@ export default function CustomerJobs() {
                 )}
 
                 <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                  <Link href={`/customer/booking?service=${job.service_id || ""}`} className="inline-flex items-center gap-1 rounded-lg border border-secondary-container/30 bg-white px-3 py-2 text-xs font-extrabold text-secondary-container shadow-sm">
+                  <Link href={`/customer/booking?service=${job.service_id || ""}`} className="inline-flex items-center gap-1 rounded-lg border border-outline-variant bg-white px-3 py-2 text-xs font-extrabold text-primary-container shadow-sm hover:bg-primary-fixed">
                     <RotateCcw size={14} />
                     Đặt lại
                   </Link>
-                  <Link href={`/customer/jobs/${job.id}`} className="inline-flex items-center gap-1 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white shadow-sm">
+                  <Link href={`/customer/jobs/${job.id}`} className="inline-flex items-center gap-1 rounded-lg bg-secondary-container px-3 py-2 text-xs font-extrabold text-white shadow-sm hover:bg-primary">
                     Chi tiết
                     <ChevronRight size={14} />
                   </Link>
@@ -361,7 +361,7 @@ export default function CustomerJobs() {
                 setQuery("");
                 setStatusFilter("all");
               }}
-              className="mt-4 inline-flex rounded-xl bg-secondary-container px-4 py-2.5 text-sm font-extrabold text-white shadow-md shadow-secondary-container/20"
+              className="mt-4 inline-flex rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-extrabold text-white shadow-md shadow-blue-900/15 hover:bg-primary"
             >
               Xóa bộ lọc
             </button>
@@ -372,7 +372,7 @@ export default function CustomerJobs() {
               <Briefcase size={32} />
             </div>
             <p className="text-body-sm text-on-surface-variant font-medium">Bạn chưa có đơn đặt dịch vụ nào.</p>
-            <Link href="/customer/booking" className="mt-4 inline-flex rounded-xl bg-secondary-container px-4 py-2.5 text-sm font-extrabold text-white shadow-md shadow-secondary-container/20">
+            <Link href="/customer/booking" className="mt-4 inline-flex rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-extrabold text-white shadow-md shadow-blue-900/15 hover:bg-primary">
               Đặt dịch vụ ngay
             </Link>
           </div>

@@ -133,7 +133,7 @@ export default function CustomerHome() {
           const iconName = svc.icon || "WrenchIcon";
           const visual = serviceStyles[iconName] || {
             color: "bg-primary-fixed text-primary-container",
-            accent: "from-primary to-tertiary-container",
+            accent: "from-primary to-secondary-container",
           };
           const formattedPrice = svc.base_price
             ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ`
@@ -247,7 +247,7 @@ export default function CustomerHome() {
             specialty: "Camera",
             rating: "4.7",
             jobs: 142,
-            color: "bg-violet-100 text-violet-700",
+            color: "bg-secondary-fixed text-primary",
             status: "Được yêu thích",
             ...mockDispatchMeta[2],
             distance: "Chưa có GPS",
@@ -281,9 +281,9 @@ export default function CustomerHome() {
 
   return (
     <div className="relative min-h-full overflow-hidden bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-linear-to-br from-primary/12 via-tertiary-container/10 to-secondary-container/14" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-linear-to-br from-primary/12 via-primary-fixed/80 to-secondary-container/14" />
       <div className="relative mx-auto w-full max-w-md space-y-5 px-4 pb-5 pt-4 lg:max-w-6xl lg:px-8 lg:py-8">
-        <section className="relative overflow-hidden rounded-xl border border-white/25 bg-linear-to-br from-primary via-primary-container to-tertiary-container text-white shadow-[0_18px_46px_rgba(10,74,146,0.2)] lg:min-h-[330px]">
+        <section className="relative overflow-hidden rounded-xl border border-white/25 bg-linear-to-br from-primary via-primary-container to-secondary-container text-white shadow-[0_18px_46px_rgba(37,99,235,0.2)] lg:min-h-[330px]">
           <Image
             src="/hero-technician.webp"
             alt=""
@@ -342,7 +342,7 @@ export default function CustomerHome() {
             <Link
               key={action.href}
               href={action.href}
-              className="group flex items-center gap-3 rounded-xl border border-white/70 bg-white/78 p-4 shadow-[0_12px_28px_rgba(15,35,66,0.07)] backdrop-blur transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md active:scale-[0.99]"
+              className="group flex items-center gap-3 rounded-lg border border-outline-variant bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover active:scale-[0.99]"
             >
               <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${action.color}`}>
                 <action.icon size={22} />
@@ -406,7 +406,7 @@ export default function CustomerHome() {
                   <Link
                     key={service.id}
                     href={href}
-                    className="group relative min-h-[142px] overflow-hidden rounded-xl border border-white/70 bg-white/82 p-3.5 shadow-[0_12px_28px_rgba(15,35,66,0.07)] backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] sm:min-h-[150px] sm:p-4"
+                    className="group relative min-h-[142px] overflow-hidden rounded-lg border border-outline-variant bg-white p-3.5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover active:scale-[0.98] sm:min-h-[150px] sm:p-4"
                   >
                     <div className={`absolute inset-x-0 top-0 h-1.5 bg-linear-to-r ${service.accent}`} />
                     <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${service.color} sm:h-12 sm:w-12`}>
@@ -427,7 +427,7 @@ export default function CustomerHome() {
           </div>
 
           <aside className="space-y-3">
-            <div className="rounded-xl border border-white/70 bg-white/82 p-4 shadow-[0_12px_28px_rgba(15,35,66,0.07)] backdrop-blur">
+            <div className="rounded-lg border border-outline-variant bg-white p-4 shadow-card">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase text-on-surface-variant">Đang theo dõi</p>
@@ -446,7 +446,7 @@ export default function CustomerHome() {
               </Link>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-white/70 bg-white/82 shadow-[0_12px_28px_rgba(15,35,66,0.07)] backdrop-blur">
+            <div className="overflow-hidden rounded-lg border border-outline-variant bg-white shadow-card">
               <div className="border-b border-primary/10 bg-linear-to-r from-primary-fixed/70 via-white/70 to-secondary-fixed/70 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>

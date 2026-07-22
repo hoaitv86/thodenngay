@@ -205,7 +205,7 @@ export default function CustomerDashboard() {
                 <Link 
                   key={svc.id || svc.name} 
                   href={svc.id && svc.id !== "1" && svc.id !== "2" && svc.id !== "3" && svc.id !== "4" ? `/booking?service=${svc.id}` : "/booking"} 
-                  className={`card flex flex-col items-center gap-4 border bg-white !p-6 transition-all hover:-translate-y-1 hover:border-primary/25 hover:shadow-md group ${svc.border}`}
+                  className={`card flex flex-col items-center gap-4 border bg-white !p-6 transition-all hover:-translate-y-1 hover:border-primary/25 hover:shadow-card-hover group ${svc.border}`}
                 >
                   <div className={`flex h-14 w-14 items-center justify-center rounded-lg ${svc.bg} ${svc.color} transition-transform group-hover:scale-105`}>
                     <IconComp size={32} />
@@ -228,7 +228,7 @@ export default function CustomerDashboard() {
             {recentJobs.length > 0 ? (
               recentJobs.map(job => (
                 <div key={job.id} className="card-elevated group overflow-hidden !p-0 transition-shadow hover:shadow-md">
-                  <div className="p-4 sm:p-6 grid gap-3 border-b border-slate-50 bg-slate-50/50 sm:flex sm:items-center sm:justify-between">
+                  <div className="p-4 sm:p-6 grid gap-3 border-b border-outline-variant bg-surface-container-low sm:flex sm:items-center sm:justify-between">
                     <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-outline-variant/20 bg-white text-primary shadow-sm transition-transform group-hover:scale-105">
                         <BriefcaseIcon size={20} />

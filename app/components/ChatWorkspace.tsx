@@ -617,7 +617,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
         </div>
       )}
 
-      <div className="grid min-h-[680px] overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-sm lg:grid-cols-[340px_1fr]">
+      <div className="grid min-h-[680px] overflow-hidden rounded-lg border border-outline-variant bg-white shadow-card lg:grid-cols-[340px_1fr]">
         <aside className="border-b border-outline-variant bg-surface-container-lowest lg:border-b-0 lg:border-r">
           {mode === "admin" && (
             <div className="grid grid-cols-2 gap-2 border-b border-outline-variant p-3">
@@ -640,11 +640,11 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
             {loading ? (
               <div className="space-y-3">
                 {[0, 1, 2].map((item) => (
-                  <div key={item} className="h-16 animate-pulse rounded-xl bg-surface-container" />
+                  <div key={item} className="h-16 animate-pulse rounded-lg bg-surface-container" />
                 ))}
               </div>
             ) : filteredParticipants.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-outline-variant p-4 text-sm text-on-surface-variant">
+              <div className="rounded-lg border border-dashed border-outline-variant p-4 text-sm text-on-surface-variant">
                 Chưa có người để chat.
               </div>
             ) : (
@@ -660,7 +660,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
                     <button
                       key={participant.id}
                       onClick={() => openConversation(participant)}
-                      className={`w-full rounded-xl border p-3 text-left transition-all ${
+                      className={`w-full rounded-lg border p-3 text-left transition-all ${
                         isActive
                           ? "border-primary-container bg-primary-fixed shadow-sm"
                           : "border-transparent bg-white hover:border-outline-variant hover:bg-surface-container-low"
@@ -751,7 +751,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
                     const isMine = message.sender_id === currentUser?.id;
                     return (
                       <div key={message.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-                        <div className={`max-w-[78%] rounded-2xl px-4 py-2.5 shadow-sm ${
+                        <div className={`max-w-[78%] rounded-lg px-4 py-2.5 shadow-sm ${
                           isMine
                             ? "rounded-br-md bg-primary-container text-white"
                             : "rounded-bl-md bg-white text-on-surface ring-1 ring-outline-variant"
@@ -774,12 +774,12 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
                     onChange={(event) => setDraft(event.target.value)}
                     placeholder="Nhập tin nhắn..."
                     rows={2}
-                    className="input-field min-h-[48px] flex-1 resize-none !rounded-xl !py-3 text-sm"
+                    className="input-field min-h-[48px] flex-1 resize-none !rounded-lg !py-3 text-sm"
                   />
                   <button
                     type="submit"
                     disabled={sending || !draft.trim()}
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-container text-white transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white transition-all hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
                     aria-label="Gửi tin nhắn"
                   >
                     <Send size={19} />
