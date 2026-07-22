@@ -3064,7 +3064,7 @@ export default function WorkerDashboard() {
               </div>
             </div>
 
-            <div className={`${showMonthlyGoalDetails ? "block" : "hidden"} space-y-3 sm:block sm:space-y-4`}>
+            <div className="hidden space-y-4 sm:block">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="text-xs font-bold uppercase text-on-surface-variant">Tiến độ doanh thu</span>
                 <span className="text-sm font-extrabold text-primary-container">{monthlyRevenueProgress}%</span>
