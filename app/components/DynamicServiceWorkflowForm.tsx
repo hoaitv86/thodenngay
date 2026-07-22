@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import jsQR from "jsqr";
+import { ChevronDown, ImageUp, Plus, Trash2 } from "lucide-react";
 import {
   getWorkflowSectionsForServices,
   type ServiceLikeForWorkflow,
@@ -30,6 +31,77 @@ type Props = {
 };
 
 const getSectionValue = (value: WorkflowData, key: string) => value[key] || {};
+
+const readImageFile = (file: File) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Không thể đọc ảnh QR."));
+    };
+    image.src = objectUrl;
+  });
+
+const decodeQrImage = async (file: File) => {
+  const image = await readImageFile(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Trình duyệt không hỗ trợ đọc ảnh QR.");
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const decoded = jsQR(imageData.data, imageData.width, imageData.height, {
+    inversionAttempts: "attemptBoth",
+  });
+
+  if (!decoded?.data) throw new Error("Không tìm thấy mã QR trong ảnh.");
+  return decoded.data.trim();
+};
+
+function QRImageUpload({
+  onDecoded,
+  disabled = false,
+}: {
+  onDecoded: (qrText: string) => void;
+  disabled?: boolean;
+}) {
+  const [status, setStatus] = useState("");
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setStatus("Đang đọc mã QR...");
+    try {
+      const qrText = await decodeQrImage(file);
+      onDecoded(qrText);
+      setStatus("Đã lấy QR Text từ ảnh. Hệ thống chỉ lưu chuỗi text.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Không thể đọc mã QR.");
+    }
+  };
+
+  return (
+    <div className="space-y-1.5 sm:col-span-2">
+      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container hover:bg-primary-container/10">
+        <ImageUp size={14} />
+        Upload ảnh QR
+        <input type="file" accept="image/*" className="sr-only" onChange={handleFileChange} disabled={disabled} />
+      </label>
+      {status && <p className="text-xs font-medium text-on-surface-variant">{status}</p>}
+    </div>
+  );
+}
 
 function WorkflowInput({
   field,
@@ -126,6 +198,7 @@ function CameraDevicesEditor({
             <input className="input-field !rounded-lg text-sm" placeholder="Vị trí" value={device.location || ""} onChange={(event) => updateDevice(index, { location: event.target.value })} disabled={disabled} />
             <input className="input-field !rounded-lg text-sm" placeholder="Serial" value={device.serial || ""} onChange={(event) => updateDevice(index, { serial: event.target.value })} disabled={disabled} />
             <input className="input-field !rounded-lg text-sm" placeholder="UID nếu có" value={device.uid || ""} onChange={(event) => updateDevice(index, { uid: event.target.value })} disabled={disabled} />
+            <QRImageUpload onDecoded={(qrText) => updateDevice(index, { qrText })} disabled={disabled} />
             <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="QR Text" value={device.qrText || ""} onChange={(event) => updateDevice(index, { qrText: event.target.value })} disabled={disabled} />
             <textarea className="input-field min-h-[74px] resize-none !rounded-lg text-sm sm:col-span-2" placeholder="Ghi chú" value={device.note || ""} onChange={(event) => updateDevice(index, { note: event.target.value })} disabled={disabled} />
           </div>
