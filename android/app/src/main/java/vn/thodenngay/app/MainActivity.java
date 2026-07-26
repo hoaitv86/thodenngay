@@ -19,6 +19,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -33,6 +34,7 @@ public class MainActivity extends BridgeActivity {
 
     private FrameLayout rootView;
     private LinearLayout errorView;
+    private FrameLayout startupSplashView;
     private WebView webView;
 
     @Override
@@ -46,6 +48,7 @@ public class MainActivity extends BridgeActivity {
         super.load();
         configureWebView();
         createNetworkErrorView();
+        createStartupSplashView();
     }
 
     private void configureWebView() {
@@ -139,7 +142,62 @@ public class MainActivity extends BridgeActivity {
         );
     }
 
+    private void createStartupSplashView() {
+        if (rootView == null) {
+            return;
+        }
+
+        startupSplashView = new FrameLayout(this);
+        startupSplashView.setBackgroundColor(0xFFFFFFFF);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER);
+        content.setPadding(dp(32), dp(32), dp(32), dp(32));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setAdjustViewBounds(true);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(112), dp(112));
+        logoParams.setMargins(0, 0, 0, dp(18));
+
+        TextView appName = new TextView(this);
+        appName.setText(getString(R.string.app_name));
+        appName.setTextColor(0xFF123047);
+        appName.setTextSize(24);
+        appName.setGravity(Gravity.CENTER);
+        appName.setTypeface(appName.getTypeface(), android.graphics.Typeface.BOLD);
+
+        TextView version = new TextView(this);
+        version.setText(getString(R.string.startup_version));
+        version.setTextColor(0xFF476173);
+        version.setTextSize(14);
+        version.setGravity(Gravity.CENTER);
+        version.setPadding(0, dp(6), 0, dp(22));
+
+        TextView status = new TextView(this);
+        status.setText(getString(R.string.startup_status));
+        status.setTextColor(0xFF1F648D);
+        status.setTextSize(13);
+        status.setGravity(Gravity.CENTER);
+
+        content.addView(logo, logoParams);
+        content.addView(appName);
+        content.addView(version);
+        content.addView(status);
+
+        startupSplashView.addView(
+            content,
+            new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        );
+        rootView.addView(
+            startupSplashView,
+            new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        );
+    }
+
     private void showNetworkError() {
+        hideStartupSplash();
         if (errorView != null) {
             errorView.setVisibility(View.VISIBLE);
         }
@@ -149,6 +207,16 @@ public class MainActivity extends BridgeActivity {
         if (errorView != null) {
             errorView.setVisibility(View.GONE);
         }
+    }
+
+    private void hideStartupSplash() {
+        if (startupSplashView != null) {
+            startupSplashView.setVisibility(View.GONE);
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void downloadFile(String url, String userAgent, String contentDisposition, String mimeType) {
@@ -214,6 +282,7 @@ public class MainActivity extends BridgeActivity {
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
             hideNetworkError();
+            hideStartupSplash();
         }
 
         @Override

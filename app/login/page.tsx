@@ -16,6 +16,8 @@ import {
 } from "@/lib/demo-accounts";
 
 export default function LoginPage() {
+  const [androidStartup, setAndroidStartup] = useState(false);
+  const [checkingExistingSession, setCheckingExistingSession] = useState(true);
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,10 +31,15 @@ export default function LoginPage() {
 
   useEffect(() => {
     let isMounted = true;
+    setAndroidStartup(new URLSearchParams(window.location.search).get("app") === "android");
 
     const redirectExistingSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!isMounted || !user) return;
+      if (!isMounted) return;
+      if (!user) {
+        setCheckingExistingSession(false);
+        return;
+      }
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -40,7 +47,11 @@ export default function LoginPage() {
         .eq("id", user.id)
         .single();
 
-      if (!isMounted || !profile) return;
+      if (!isMounted) return;
+      if (!profile) {
+        setCheckingExistingSession(false);
+        return;
+      }
 
       const destination =
         profile.role === "admin"
@@ -58,6 +69,19 @@ export default function LoginPage() {
       isMounted = false;
     };
   }, [router, supabase]);
+
+  if (androidStartup && checkingExistingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-8">
+        <div className="flex flex-col items-center text-center">
+          <LogoIcon size={112} />
+          <h1 className="mt-5 text-2xl font-extrabold text-primary">Thợ Đến Ngay</h1>
+          <p className="mt-2 text-sm font-semibold text-on-surface-variant">v0.1.1 Beta</p>
+          <p className="mt-6 text-sm font-bold text-primary-container">Đang khởi động...</p>
+        </div>
+      </div>
+    );
+  }
 
   const finishLogin = async (userId: string, forceDemoSession = false) => {
     const { data: profile, error: profileError } = await supabase
