@@ -43,11 +43,11 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk artifacts/tho-den-ngay-v0.1.0-beta.apk
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/tho-den-ngay-v0.1.1-beta.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tho-den-ngay-v0.1.0-beta
-          path: artifacts/tho-den-ngay-v0.1.0-beta.apk
+          name: tho-den-ngay-v0.1.1-beta
+          path: artifacts/tho-den-ngay-v0.1.1-beta.apk
           if-no-files-found: error
