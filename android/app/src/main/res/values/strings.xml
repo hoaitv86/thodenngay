@@ -4,4 +4,9 @@
     <string name="title_activity_main">Thợ Đến Ngay</string>
     <string name="package_name">vn.thodenngay.app</string>
     <string name="custom_url_scheme">vn.thodenngay.app</string>
+    <string name="download_started">Đang tải file</string>
+    <string name="download_failed">Không thể tải file</string>
+    <string name="network_error_title">Không có kết nối</string>
+    <string name="network_error_message">Vui lòng kiểm tra mạng rồi thử lại.</string>
+    <string name="network_error_retry">Thử lại</string>
 </resources>
