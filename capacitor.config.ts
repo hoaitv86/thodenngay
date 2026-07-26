@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Thợ Đến Ngay',
   webDir: 'public',
   server: {
-    url: 'https://thodenngay.vn',
+    url: 'https://thodenngay.vn/login?app=android',
     cleartext: false,
     androidScheme: 'https',
   },
