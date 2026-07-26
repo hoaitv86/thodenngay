@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -26,6 +26,38 @@ export default function LoginPage() {
   const supabase = createClient();
   const { settings } = useSettings();
   const showDemoAccounts = process.env.NODE_ENV !== "production";
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const redirectExistingSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!isMounted || !user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (!isMounted || !profile) return;
+
+      const destination =
+        profile.role === "admin"
+          ? "/admin/dashboard"
+          : profile.role === "worker"
+            ? "/worker"
+            : "/customer/home";
+
+      router.replace(destination);
+    };
+
+    redirectExistingSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router, supabase]);
 
   const finishLogin = async (userId: string, forceDemoSession = false) => {
     const { data: profile, error: profileError } = await supabase
