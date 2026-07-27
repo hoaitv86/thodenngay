@@ -32,6 +32,7 @@ import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 
 export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const apkDownloadUrl = "https://thodenngay.vn/downloads/thodenngay.apk";
 const apkVersion = "0.1.1-beta";
@@ -238,27 +239,6 @@ const steps = [
   },
 ];
 
-const testimonials = [
-  {
-    name: "Chị Lan",
-    location: "Quận 7, HCM",
-    rating: 5,
-    text: "Thợ đến rất nhanh, chỉ 15 phút sau khi đặt. Sửa ống nước rất gọn gàng, giá hợp lý!",
-  },
-  {
-    name: "Anh Minh",
-    location: "Quận 1, HCM",
-    rating: 5,
-    text: "Lắp camera an ninh cho cả nhà, thợ tư vấn rất nhiệt tình. Chắc chắn sẽ dùng lại.",
-  },
-  {
-    name: "Chị Hương",
-    location: "Bình Thạnh, HCM",
-    rating: 4,
-    text: "Dịch vụ sửa điện nhanh gọn. Có hệ thống theo dõi nên rất yên tâm.",
-  },
-];
-
 type HomepageService = {
   id: string;
   name?: string | null;
@@ -267,10 +247,76 @@ type HomepageService = {
   parent_service_id?: string | null;
 };
 
+type GpsLocation = {
+  lat?: number | string | null;
+  lng?: number | string | null;
+  accuracy?: number | string | null;
+  captured_at?: string | null;
+};
+
+type DispatchWorkerProfile = {
+  full_name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  gps_location?: GpsLocation | null;
+};
+
+type DispatchWorker = {
+  id: string;
+  specialties?: string[] | null;
+  avg_rating?: number | string | null;
+  total_jobs?: number | null;
+  profiles?: DispatchWorkerProfile | DispatchWorkerProfile[] | null;
+};
+
+type HomepageDispatchWorker = {
+  id: string;
+  name: string;
+  specialty: string;
+  rating: string;
+  totalJobs: number;
+  gpsLabel: string;
+};
+
+type HomepageReviewProfile = {
+  full_name?: string | null;
+  address?: string | null;
+  avatar_url?: string | null;
+};
+
+type HomepageReviewJob = {
+  address?: string | null;
+  service?: {
+    name?: string | null;
+  } | {
+    name?: string | null;
+  }[] | null;
+};
+
+type HomepageRating = {
+  id: string;
+  customer_id?: string | null;
+  score?: number | null;
+  comment?: string | null;
+  created_at?: string | null;
+  customer?: HomepageReviewProfile | HomepageReviewProfile[] | null;
+  job?: HomepageReviewJob | HomepageReviewJob[] | null;
+};
+
+type HomepageCustomerReview = {
+  id: string;
+  name: string;
+  location: string;
+  rating: number;
+  text: string;
+  serviceName: string;
+  avatarUrl: string | null;
+};
+
 const getPublicSupabase = () =>
   createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {
         persistSession: false,
@@ -279,11 +325,62 @@ const getPublicSupabase = () =>
     }
   );
 
+function firstRelation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getInitials(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const first = words[0]?.[0] || "T";
+  const last = words.length > 1 ? words[words.length - 1]?.[0] : "";
+
+  return `${first}${last}`.toUpperCase();
+}
+
+function getDisplayLocation(address?: string | null) {
+  if (!address) return "Khách hàng Thợ đến ngay";
+
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) return parts.slice(-2).join(", ");
+  return parts[0] || "Khách hàng Thợ đến ngay";
+}
+
+function toValidGpsLocation(gpsLocation?: GpsLocation | null) {
+  const lat = Number(gpsLocation?.lat);
+  const lng = Number(gpsLocation?.lng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat === 0 && lng === 0) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+
+  return { lat, lng };
+}
+
+function shuffleItems<T>(items: T[]) {
+  const shuffled = [...items];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
+
 const getHomepageData = unstable_cache(
-  async (): Promise<{ systemSettings: SettingsData; dbServices: HomepageService[] }> => {
+  async (): Promise<{
+    systemSettings: SettingsData;
+    dbServices: HomepageService[];
+    dispatchWorkers: HomepageDispatchWorker[];
+    customerReviews: HomepageCustomerReview[];
+  }> => {
     const supabase = getPublicSupabase();
 
-    const [settingsResult, servicesResult] = await Promise.all([
+    const [settingsResult, servicesResult, workersResult, ratingsResult] = await Promise.all([
       supabase
         .from("system_settings")
         .select("*")
@@ -294,6 +391,19 @@ const getHomepageData = unstable_cache(
         .select("id,name,description,icon,parent_service_id,is_active")
         .eq("is_active", true)
         .order("name", { ascending: true }),
+      supabase
+        .from("workers")
+        .select("id,specialties,avg_rating,total_jobs,profiles(full_name,phone,address,gps_location)")
+        .eq("status", "active")
+        .eq("is_available", true)
+        .order("avg_rating", { ascending: false })
+        .limit(20),
+      supabase
+        .from("ratings")
+        .select("id,customer_id,score,comment,created_at,customer:profiles!customer_id(full_name,address,avatar_url),job:jobs(address,service:services!jobs_service_id_fkey(name))")
+        .not("comment", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(12),
     ]);
 
     if (settingsResult.error) {
@@ -304,7 +414,58 @@ const getHomepageData = unstable_cache(
       console.warn("Could not load homepage services:", servicesResult.error.message);
     }
 
+    if (workersResult.error) {
+      console.warn("Could not load homepage dispatch workers:", workersResult.error.message);
+    }
+
+    if (ratingsResult.error) {
+      console.warn("Could not load homepage customer reviews:", ratingsResult.error.message);
+    }
+
     const settings = settingsResult.data;
+    const dispatchWorkers = ((workersResult.data || []) as DispatchWorker[])
+      .map((worker) => {
+        const profile = firstRelation(worker.profiles);
+        const gps = toValidGpsLocation(profile?.gps_location);
+
+        if (!profile || !gps) return null;
+
+        const name = profile.full_name?.trim() || "Thợ đang hoạt động";
+        const specialty = worker.specialties?.find(Boolean) || "Sẵn sàng nhận việc";
+        const rating = Number(worker.avg_rating || 0);
+
+        return {
+          id: worker.id,
+          name,
+          specialty,
+          rating: rating > 0 ? rating.toFixed(1) : "Mới",
+          totalJobs: worker.total_jobs || 0,
+          gpsLabel: `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`,
+        };
+      })
+      .filter((worker): worker is HomepageDispatchWorker => Boolean(worker))
+      .slice(0, 3);
+    const customerReviews = ((ratingsResult.data || []) as HomepageRating[])
+      .map((rating) => {
+        const customer = firstRelation(rating.customer);
+        const job = firstRelation(rating.job);
+        const service = firstRelation(job?.service);
+        const comment = rating.comment?.trim();
+
+        if (!comment) return null;
+
+        return {
+          id: rating.id,
+          name: customer?.full_name?.trim() || `Khách hàng #${rating.customer_id?.slice(0, 8) || rating.id.slice(0, 8)}`,
+          location: getDisplayLocation(customer?.address || job?.address),
+          rating: Math.max(1, Math.min(5, Math.round(Number(rating.score || 5)))),
+          text: comment,
+          serviceName: service?.name || "Dịch vụ sửa chữa",
+          avatarUrl: customer?.avatar_url || null,
+        };
+      })
+      .filter((review): review is HomepageCustomerReview => Boolean(review))
+      .slice(0, 3);
 
     return {
       systemSettings: settings
@@ -321,6 +482,8 @@ const getHomepageData = unstable_cache(
           }
         : DEFAULT_SETTINGS,
       dbServices: servicesResult.data || [],
+      dispatchWorkers,
+      customerReviews,
     };
   },
   ["homepage-data"],
@@ -328,7 +491,7 @@ const getHomepageData = unstable_cache(
 );
 
 export default async function HomePage() {
-  const [{ systemSettings, dbServices }, apkDownloadData] = await Promise.all([
+  const [{ systemSettings, dbServices, dispatchWorkers, customerReviews }, apkDownloadData] = await Promise.all([
     getHomepageData(),
     getApkDownloadData(),
   ]);
@@ -338,9 +501,10 @@ export default async function HomePage() {
     : [];
 
   const services = standardDbServices.length > 0
-    ? standardDbServices
-      .filter((svc, index, all) =>
-        all.findIndex((item) => item.name?.trim().toLowerCase() === svc.name?.trim().toLowerCase()) === index
+    ? shuffleItems(
+        standardDbServices.filter((svc, index, all) =>
+          all.findIndex((item) => item.name?.trim().toLowerCase() === svc.name?.trim().toLowerCase()) === index
+        )
       )
       .slice(0, 8)
       .map((svc, index) => {
@@ -354,7 +518,7 @@ export default async function HomePage() {
           bgColor: visual.bgColor,
         };
       })
-    : defaultServices;
+    : shuffleItems(defaultServices);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -476,27 +640,51 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="absolute bottom-24 right-4 hidden w-[340px] rounded-xl border border-white/15 bg-white/92 p-5 shadow-[0_24px_80px_rgba(3,31,66,0.28)] backdrop-blur-xl lg:block">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="absolute bottom-24 right-4 hidden w-[380px] rounded-xl border border-white/20 bg-primary-container/95 p-5 text-white shadow-[0_26px_86px_rgba(0,18,48,0.46)] backdrop-blur-xl lg:block">
+            <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase text-primary">Đang điều phối</p>
-                <p className="mt-1 text-lg font-bold text-on-surface">Thợ điện gần bạn</p>
+                <p className="text-xs font-semibold uppercase !text-primary-fixed">Đang điều phối</p>
+                <p className="mt-1 text-lg font-bold !text-white">Thợ có GPS thật</p>
+                <p className="mt-1 text-xs !text-white/68">Danh sách thợ active đã bật định vị</p>
               </div>
-              <div className="rounded-full bg-success-container px-3 py-1 text-xs font-bold text-success">Sẵn sàng</div>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-lg bg-surface-container-low p-3">
-                <span className="text-sm font-semibold text-on-surface">Thời gian đến</span>
-                <span className="text-sm font-bold text-primary-container">18 phút</span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-surface-container-low p-3">
-                <span className="text-sm font-semibold text-on-surface">Đánh giá thợ</span>
-                <span className="flex items-center gap-1 text-sm font-bold text-primary">
-                  <StarIcon size={15} />
-                  4.9
-                </span>
+              <div className="shrink-0 rounded-full border border-success-container/40 bg-success-container px-3 py-1 text-xs font-bold text-success">
+                Live GPS
               </div>
             </div>
+            {dispatchWorkers.length > 0 ? (
+              <div className="space-y-3">
+                {dispatchWorkers.map((worker) => (
+                  <div key={worker.id} className="rounded-lg border border-white/12 bg-white/12 p-3 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-sm font-bold text-primary-container">
+                        {getInitials(worker.name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold !text-white">{worker.name}</p>
+                        <p className="truncate text-xs !text-white/68">{worker.specialty}</p>
+                      </div>
+                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/14 px-2 py-1 text-xs font-bold !text-primary-fixed">
+                        <StarIcon size={13} />
+                        {worker.rating}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3 rounded-md bg-white/10 px-3 py-2">
+                      <span className="truncate text-xs font-medium !text-white/72">
+                        GPS: {worker.gpsLabel}
+                      </span>
+                      <span className="text-xs font-bold !text-white">{worker.totalJobs} jobs</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-white/12 bg-white/12 p-4">
+                <p className="text-sm font-bold !text-white">Chưa có thợ active bật GPS</p>
+                <p className="mt-1 text-xs leading-5 !text-white/70">
+                  Khi thợ cập nhật vị trí trong hồ sơ, danh sách này sẽ tự hiển thị trên trang chủ.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -715,33 +903,61 @@ export default async function HomePage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {testimonials.map((t) => (
-              <div key={t.name} className="rounded-xl border border-outline-variant/25 bg-white p-6 shadow-sm">
-                <div className="mb-5 text-5xl font-serif leading-none text-primary-fixed-dim">“</div>
-                <div className="flex items-center gap-1 mb-4">
-                  {Array.from({ length: t.rating }).map((_, i) => (
-                    <StarIcon key={i} size={16} className="text-primary" />
-                  ))}
-                  {Array.from({ length: 5 - t.rating }).map((_, i) => (
-                    <StarIcon key={i} size={16} className="text-outline-variant" />
-                  ))}
-                </div>
-                <p className="mb-6 text-base leading-7 text-on-surface">
-                  {t.text}
-                </p>
-                <div className="flex items-center gap-3 pt-4 border-t border-outline-variant/50">
-                  <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container font-semibold text-sm">
-                    {t.name[0]}{t.name.split(" ").pop()?.[0]}
+          {customerReviews.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {customerReviews.map((review) => (
+                <div key={review.id} className="rounded-xl border border-outline-variant/25 bg-white p-6 shadow-sm">
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div className="text-5xl font-serif leading-none text-primary-fixed-dim">“</div>
+                    <span className="rounded-full bg-primary-fixed px-3 py-1 text-xs font-bold text-primary-container">
+                      {review.serviceName}
+                    </span>
                   </div>
-                  <div>
-                    <div className="font-semibold text-on-surface text-sm">{t.name}</div>
-                    <div className="text-label-sm text-on-surface-variant">{t.location}</div>
+                  <div className="flex items-center gap-1 mb-4">
+                    {Array.from({ length: review.rating }).map((_, i) => (
+                      <StarIcon key={`filled-${review.id}-${i}`} size={16} className="text-primary" />
+                    ))}
+                    {Array.from({ length: 5 - review.rating }).map((_, i) => (
+                      <StarIcon key={`empty-${review.id}-${i}`} size={16} className="text-outline-variant" />
+                    ))}
+                  </div>
+                  <p className="mb-6 line-clamp-4 text-base leading-7 text-on-surface">
+                    {review.text}
+                  </p>
+                  <div className="flex items-center gap-3 pt-4 border-t border-outline-variant/50">
+                    <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-fixed text-sm font-semibold text-primary-container">
+                      {review.avatarUrl ? (
+                        <Image
+                          src={review.avatarUrl}
+                          alt={review.name}
+                          fill
+                          sizes="40px"
+                          className="object-cover"
+                          unoptimized
+                        />
+                      ) : (
+                        getInitials(review.name)
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-on-surface">{review.name}</div>
+                      <div className="truncate text-label-sm text-on-surface-variant">{review.location}</div>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mx-auto max-w-2xl rounded-xl border border-outline-variant/25 bg-white p-6 text-center shadow-sm">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
+                <StarIcon size={24} />
               </div>
-            ))}
-          </div>
+              <h3 className="text-xl font-bold text-on-surface">Chưa có đánh giá từ khách hàng</h3>
+              <p className="mt-2 text-sm leading-6 text-on-surface-variant">
+                Khi khách hàng hoàn tất công việc và gửi đánh giá, nội dung thật sẽ tự hiển thị ở đây.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
