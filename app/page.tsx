@@ -1,8 +1,12 @@
 import Link from "next/link";
 import Image from "next/image";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { unstable_cache } from "next/cache";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import QRCode from "qrcode";
 import type { ReactElement } from "react";
+import ApkDownloadSection from "./components/ApkDownloadSection";
 import {
   LogoIcon,
   ZapIcon,
@@ -28,6 +32,36 @@ import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 
 export const revalidate = 300;
+
+const apkDownloadUrl = "https://thodenngay.vn/downloads/thodenngay.apk";
+const apkVersion = "0.1.1-beta";
+
+async function getApkDownloadData() {
+  const apkPath = path.join(process.cwd(), "public", "downloads", "thodenngay.apk");
+  const stat = await fs.stat(apkPath);
+  const qrCodeDataUrl = await QRCode.toDataURL(apkDownloadUrl, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    scale: 8,
+    width: 256,
+    color: {
+      dark: "#1D4ED8",
+      light: "#FFFFFF",
+    },
+  });
+
+  return {
+    downloadUrl: apkDownloadUrl,
+    qrCodeDataUrl,
+    version: apkVersion,
+    updatedAt: new Intl.DateTimeFormat("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(stat.mtime),
+    fileSize: `${(stat.size / 1024 / 1024).toFixed(2)} MB`,
+  };
+}
 
 type IconComponent = (props: { size?: number; className?: string; strokeWidth?: number }) => ReactElement;
 
@@ -294,7 +328,10 @@ const getHomepageData = unstable_cache(
 );
 
 export default async function HomePage() {
-  const { systemSettings, dbServices } = await getHomepageData();
+  const [{ systemSettings, dbServices }, apkDownloadData] = await Promise.all([
+    getHomepageData(),
+    getApkDownloadData(),
+  ]);
 
   const standardDbServices = dbServices && dbServices.length > 0
     ? filterStandardServiceCatalog(applyDefaultServiceParents(dbServices))
@@ -343,6 +380,9 @@ export default async function HomePage() {
               </a>
               <a href="#reviews" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
                 Đánh giá
+              </a>
+              <a href="#download-app" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
+                Tải app
               </a>
             </nav>
 
@@ -521,6 +561,8 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      <ApkDownloadSection {...apkDownloadData} />
 
       {/* ===== HOW IT WORKS ===== */}
       <section id="how-it-works" className="relative overflow-hidden bg-primary-container py-16 sm:py-24 lg:py-32">
