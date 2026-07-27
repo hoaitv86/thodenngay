@@ -305,6 +305,50 @@ CREATE POLICY "Workers create own record" ON public.workers FOR INSERT WITH CHEC
 CREATE POLICY "Workers update own record" ON public.workers FOR UPDATE USING (user_id = auth.uid());
 CREATE POLICY "Admins view all workers" ON public.workers FOR ALL USING (public.is_admin());
 
+CREATE OR REPLACE FUNCTION public.request_worker_role(p_specialties TEXT[] DEFAULT '{}')
+RETURNS public.workers AS $$
+DECLARE
+  existing_worker public.workers;
+  requested_worker public.workers;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  INSERT INTO public.user_roles (user_id, role, is_active)
+  VALUES (auth.uid(), 'customer', TRUE)
+  ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+
+  INSERT INTO public.user_roles (user_id, role, is_active)
+  VALUES (auth.uid(), 'worker', TRUE)
+  ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+
+  SELECT *
+  INTO existing_worker
+  FROM public.workers
+  WHERE user_id = auth.uid()
+  ORDER BY created_at ASC
+  LIMIT 1;
+
+  IF existing_worker.id IS NOT NULL THEN
+    UPDATE public.workers
+    SET
+      specialties = COALESCE(p_specialties, '{}'),
+      status = CASE WHEN existing_worker.status = 'active' THEN existing_worker.status ELSE 'pending' END
+    WHERE id = existing_worker.id
+    RETURNING * INTO requested_worker;
+  ELSE
+    INSERT INTO public.workers (user_id, status, specialties)
+    VALUES (auth.uid(), 'pending', COALESCE(p_specialties, '{}'))
+    RETURNING * INTO requested_worker;
+  END IF;
+
+  RETURN requested_worker;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.request_worker_role(TEXT[]) TO authenticated;
+
 -- Services: Everyone can view active services, admins can manage the catalog
 CREATE POLICY "Public view active services" ON public.services FOR SELECT USING (is_active = TRUE);
 CREATE POLICY "Admins view all services" ON public.services FOR SELECT USING (public.is_admin());

@@ -32,6 +32,7 @@ export default function CustomerLayout({
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [userName, setUserName] = useState("Khách hàng");
+  const [canUseWorkerMode, setCanUseWorkerMode] = useState(false);
 
   useEffect(() => {
     const getUser = async () => {
@@ -45,6 +46,14 @@ export default function CustomerLayout({
         .single();
 
       if (profile?.full_name) setUserName(profile.full_name);
+
+      const { data: worker } = await supabase
+        .from("workers")
+        .select("id, status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      setCanUseWorkerMode(worker?.status === "active");
     };
 
     getUser();
@@ -80,6 +89,15 @@ export default function CustomerLayout({
             <CalendarIcon size={17} />
             Đặt dịch vụ mới
           </Link>
+          {canUseWorkerMode && (
+            <Link
+              href="/worker"
+              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white/14 px-4 py-3 text-sm font-bold text-white ring-1 ring-white/18 transition-all hover:bg-white/20 active:scale-[0.98]"
+            >
+              <WrenchIcon size={17} />
+              Chế độ Thợ
+            </Link>
+          )}
         </div>
 
         <nav className="flex-1 space-y-1 p-3">
@@ -138,6 +156,25 @@ export default function CustomerLayout({
                 <CalendarIcon size={16} />
                 Đặt lịch
               </Link>
+              {canUseWorkerMode && (
+                <Link
+                  href="/worker"
+                  className="hidden items-center gap-2 rounded-lg border border-primary-container/20 bg-white px-4 py-2.5 text-sm font-bold text-primary-container shadow-sm transition-all hover:bg-primary-fixed active:scale-[0.98] sm:inline-flex"
+                >
+                  <WrenchIcon size={16} />
+                  Chế độ Thợ
+                </Link>
+              )}
+              {canUseWorkerMode && (
+                <Link
+                  href="/worker"
+                  aria-label="Chế độ Thợ"
+                  title="Chế độ Thợ"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/70 bg-white/70 text-primary-container shadow-sm transition-colors hover:border-primary/30 hover:bg-primary-fixed sm:hidden"
+                >
+                  <WrenchIcon size={18} />
+                </Link>
+              )}
               <button
                 onClick={handleLogout}
                 aria-label="Đăng xuất"

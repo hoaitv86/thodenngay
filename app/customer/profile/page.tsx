@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -8,6 +8,13 @@ import { getGpsLocationErrorMessage } from "@/lib/location";
 import { useSettings } from "@/lib/settings";
 import { formatBillGoCurrency, getBillGoReceivableSummary } from "@/lib/billgo";
 import { getWarrantyStatusLabel } from "@/lib/worker-sales";
+import {
+  buildWorkerSpecialtyGroups,
+  expandWorkerSpecialties,
+  inferWorkerSpecialtyChildValues,
+  inferWorkerSpecialtyParentIds,
+  type WorkerSpecialtyGroup,
+} from "@/lib/worker-specialty-catalog";
 import {
   UserIcon,
   PhoneIcon,
@@ -17,7 +24,8 @@ import {
   LogOutIcon,
   ShieldCheckIcon,
   ZapIcon,
-  CameraIcon
+  CameraIcon,
+  WrenchIcon
 } from "../../components/icons";
 
 interface CustomerProfileData {
@@ -74,6 +82,13 @@ type CustomerWarranty = {
   status: string;
 };
 
+type WorkerApplication = {
+  id: string;
+  status: "pending" | "active" | "blocked";
+  specialties?: string[] | null;
+  rejection_reason?: string | null;
+};
+
 export default function CustomerProfile() {
   const { settings } = useSettings();
   const [loading, setLoading] = useState(true);
@@ -99,8 +114,16 @@ export default function CustomerProfile() {
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
   const [showWarranties, setShowWarranties] = useState(false);
+  const [showWorkerSignup, setShowWorkerSignup] = useState(false);
   const [billGoJobs, setBillGoJobs] = useState<CustomerBillGoReceivable[]>([]);
   const [warranties, setWarranties] = useState<CustomerWarranty[]>([]);
+  const [workerApplication, setWorkerApplication] = useState<WorkerApplication | null>(null);
+  const [workerSignupSaving, setWorkerSignupSaving] = useState(false);
+  const [workerSignupError, setWorkerSignupError] = useState("");
+  const [workerSignupSuccess, setWorkerSignupSuccess] = useState("");
+  const [specialtyGroups, setSpecialtyGroups] = useState<WorkerSpecialtyGroup[]>(() => buildWorkerSpecialtyGroups());
+  const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  const [selectedChildValues, setSelectedChildValues] = useState<string[]>([]);
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -110,7 +133,7 @@ export default function CustomerProfile() {
   const [passwordSuccess, setPasswordSuccess] = useState("");
 
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const fetchProfileAndStats = async () => {
@@ -173,6 +196,27 @@ export default function CustomerProfile() {
 
         if (warrantyData) {
           setWarranties(warrantyData as CustomerWarranty[]);
+        }
+
+        const { data: serviceData } = await supabase
+          .from("services")
+          .select("id, name, parent_service_id")
+          .eq("is_active", true);
+
+        const nextSpecialtyGroups = buildWorkerSpecialtyGroups(serviceData || []);
+        setSpecialtyGroups(nextSpecialtyGroups);
+
+        const { data: workerData } = await supabase
+          .from("workers")
+          .select("id, status, specialties")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (workerData) {
+          const application = workerData as WorkerApplication;
+          setWorkerApplication(application);
+          setSelectedParentIds(inferWorkerSpecialtyParentIds(application.specialties || [], nextSpecialtyGroups));
+          setSelectedChildValues(inferWorkerSpecialtyChildValues(application.specialties || [], nextSpecialtyGroups));
         }
       } catch (error) {
         console.error("Error reading profile details:", error);
@@ -383,6 +427,62 @@ export default function CustomerProfile() {
     }
   };
 
+  const toggleParentSpecialty = (group: WorkerSpecialtyGroup) => {
+    setSelectedParentIds(prev => {
+      const isSelected = prev.includes(group.id);
+      if (isSelected) {
+        setSelectedChildValues(childValues => childValues.filter(value => !group.children.some(child => child.value === value)));
+        return prev.filter(id => id !== group.id);
+      }
+      return [...prev, group.id];
+    });
+  };
+
+  const toggleChildSpecialty = (group: WorkerSpecialtyGroup, value: string) => {
+    setSelectedParentIds(prev => prev.includes(group.id) ? prev : [...prev, group.id]);
+    setSelectedChildValues(prev =>
+      prev.includes(value)
+        ? prev.filter(item => item !== value)
+        : [...prev, value]
+    );
+  };
+
+  const handleSubmitWorkerSignup = async () => {
+    const selectedSpecialties = expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups, workerApplication?.specialties || []);
+
+    if (selectedSpecialties.length === 0) {
+      setWorkerSignupError("Vui lòng chọn ít nhất một chuyên môn.");
+      setWorkerSignupSuccess("");
+      return;
+    }
+
+    setWorkerSignupSaving(true);
+    setWorkerSignupError("");
+    setWorkerSignupSuccess("");
+
+    const { data, error } = await supabase.rpc("request_worker_role", {
+      p_specialties: selectedSpecialties,
+    });
+
+    setWorkerSignupSaving(false);
+
+    if (error) {
+      setWorkerSignupError("Không thể gửi hồ sơ thợ. Vui lòng chạy migration mới hoặc thử lại sau.");
+      console.error("request_worker_role error:", error);
+      return;
+    }
+
+    const requestedWorker = Array.isArray(data) ? data[0] : data;
+    setWorkerApplication((requestedWorker as WorkerApplication) || {
+      id: workerApplication?.id || "",
+      status: "pending",
+      specialties: selectedSpecialties,
+    });
+    setWorkerSignupSuccess("Đã gửi hồ sơ thợ. Admin sẽ duyệt trước khi bạn nhận việc.");
+    setShowWorkerSignup(false);
+    router.refresh();
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
@@ -409,6 +509,12 @@ export default function CustomerProfile() {
 
   const joinedYear = new Date(profile.created_at).getFullYear();
   const avatarChar = profile.full_name ? profile.full_name.trim().charAt(0).toUpperCase() : "C";
+  const selectedWorkerSpecialties = expandWorkerSpecialties(
+    selectedParentIds,
+    selectedChildValues,
+    specialtyGroups,
+    workerApplication?.specialties || []
+  );
   const billGoTotals = billGoJobs.reduce(
     (acc, job) => {
       const summary = getBillGoReceivableSummary(job);
@@ -685,6 +791,154 @@ export default function CustomerProfile() {
 
         {/* General Actions Panel */}
         <div className="profile-stable-card card !p-0 overflow-hidden">
+          <div className="p-4">
+            <div className="rounded-xl border border-primary-fixed bg-primary-fixed/40 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
+                  <WrenchIcon size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h2 className="text-base font-extrabold text-on-surface">Đăng ký làm thợ</h2>
+                      <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                        Bổ sung hồ sơ nghề nghiệp trên chính tài khoản này. Khi admin duyệt, bạn dùng được cả chế độ khách hàng và chế độ thợ.
+                      </p>
+                    </div>
+                    {workerApplication?.status === "active" ? (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/worker")}
+                        className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white shadow-sm hover:brightness-110"
+                      >
+                        <WrenchIcon size={15} />
+                        Chế độ Thợ
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                      workerApplication?.status === "active"
+                        ? "bg-success-container text-success"
+                        : workerApplication?.status === "blocked"
+                          ? "bg-error-container text-error"
+                          : workerApplication?.status === "pending"
+                            ? "bg-warning-container text-warning"
+                            : "bg-white text-primary-container"
+                    }`}>
+                      {workerApplication?.status === "active"
+                        ? "Đã được duyệt"
+                        : workerApplication?.status === "blocked"
+                          ? "Hồ sơ cần bổ sung"
+                          : workerApplication?.status === "pending"
+                            ? "Đang chờ duyệt"
+                            : "Chưa gửi hồ sơ"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWorkerSignup(open => !open);
+                        setWorkerSignupError("");
+                        setWorkerSignupSuccess("");
+                      }}
+                      className="text-xs font-extrabold text-primary-container hover:underline"
+                    >
+                      {workerApplication ? "Cập nhật hồ sơ nghề nghiệp" : "Bắt đầu đăng ký"}
+                    </button>
+                  </div>
+
+                  {workerSignupError && (
+                    <div className="mt-3 rounded-lg bg-error-container px-3 py-2 text-xs font-semibold text-error">
+                      {workerSignupError}
+                    </div>
+                  )}
+                  {workerSignupSuccess && (
+                    <div className="mt-3 rounded-lg bg-success-container px-3 py-2 text-xs font-semibold text-success">
+                      {workerSignupSuccess}
+                    </div>
+                  )}
+
+                  {showWorkerSignup && (
+                    <div className="mt-4 space-y-3 rounded-xl border border-outline-variant/30 bg-white p-3">
+                      <p className="text-xs font-extrabold uppercase text-on-surface-variant">Chọn chuyên môn</p>
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        {specialtyGroups.map(group => {
+                          const isSelected = selectedParentIds.includes(group.id);
+                          const selectedChildrenCount = group.children.filter(child => selectedChildValues.includes(child.value)).length;
+
+                          return (
+                            <button
+                              key={group.id}
+                              type="button"
+                              onClick={() => toggleParentSpecialty(group)}
+                              className={`min-h-14 rounded-xl border px-3 py-2.5 text-left text-xs transition-all ${
+                                isSelected
+                                  ? "border-primary bg-primary text-white shadow-sm"
+                                  : "border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:border-primary/40"
+                              }`}
+                            >
+                              <span className="block font-extrabold">{isSelected ? "✓ " : ""}{group.label}</span>
+                              <span className={`mt-0.5 block text-[11px] ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
+                                {selectedChildrenCount > 0 ? `${selectedChildrenCount} kỹ năng` : `${group.children.length} kỹ năng`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {selectedParentIds.length > 0 && (
+                        <div className="space-y-3 rounded-xl border border-outline-variant/25 bg-surface-container-lowest p-3">
+                          {specialtyGroups
+                            .filter(group => selectedParentIds.includes(group.id))
+                            .map(group => (
+                              <div key={`worker-signup-${group.id}`} className="space-y-2">
+                                <p className="text-[11px] font-extrabold uppercase text-on-surface-variant">{group.label}</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {group.children.map(child => {
+                                    const isSelected = selectedChildValues.includes(child.value);
+                                    return (
+                                      <button
+                                        key={child.id}
+                                        type="button"
+                                        onClick={() => toggleChildSpecialty(group, child.value)}
+                                        className={`min-h-10 rounded-lg border px-3 py-2 text-left text-xs font-bold transition-all ${
+                                          isSelected
+                                            ? "border-secondary-container bg-secondary-container text-white"
+                                            : "border-outline-variant/50 bg-white text-on-surface-variant hover:border-secondary-container/50"
+                                        }`}
+                                      >
+                                        {isSelected ? "✓ " : ""}{child.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+
+                      {selectedWorkerSpecialties.length > 0 && (
+                        <div className="rounded-lg bg-primary-fixed/70 p-3 text-xs font-semibold text-primary-container">
+                          Đã chọn: {selectedWorkerSpecialties.join(", ")}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleSubmitWorkerSignup}
+                        disabled={workerSignupSaving}
+                        className="btn-primary w-full !py-3 text-sm disabled:opacity-60"
+                      >
+                        {workerSignupSaving ? "Đang gửi hồ sơ..." : "Gửi hồ sơ chờ duyệt"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Link: Booking History */}
           <button
             onClick={() => router.push("/customer/jobs")}

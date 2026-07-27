@@ -382,6 +382,13 @@ export default function WorkerLayout({
         </nav>
 
         <div className="mt-auto border-t border-outline-variant/20 p-3">
+          <Link
+            href="/customer/home"
+            className="mb-2 flex w-full items-center justify-start gap-3 rounded-lg px-4 py-3 text-sm font-extrabold text-primary-container transition-colors hover:bg-primary-fixed"
+          >
+            <UserIcon size={20} />
+            <span>Chế độ Khách hàng</span>
+          </Link>
           <button
             onClick={handleLogout}
             title="Đăng xuất"
@@ -410,6 +417,21 @@ export default function WorkerLayout({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/customer/home"
+              className="hidden items-center gap-2 rounded-lg border border-primary-container/20 bg-white px-3 py-2.5 text-xs font-extrabold text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:inline-flex"
+            >
+              <UserIcon size={16} />
+              Chế độ Khách hàng
+            </Link>
+            <Link
+              href="/customer/home"
+              aria-label="Chế độ Khách hàng"
+              title="Chế độ Khách hàng"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary-container/15 bg-white text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
+            >
+              <UserIcon size={18} />
+            </Link>
             <div
               className="relative"
               onClick={() => {
