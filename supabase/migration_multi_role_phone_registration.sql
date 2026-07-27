@@ -6,6 +6,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 DO $$
 BEGIN
   IF to_regclass('public.system_settings') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS app_name TEXT DEFAULT ''Thợ Đến Ngay''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS support_email TEXT DEFAULT ''support@thodenngay.vn''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS facebook_url TEXT DEFAULT ''https://facebook.com/thodenngay''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS zalo_url TEXT DEFAULT ''https://zalo.me/thodenngay''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS terms_url TEXT DEFAULT ''https://thodenngay.vn/terms''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS privacy_url TEXT DEFAULT ''https://thodenngay.vn/privacy''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS apk_backup_download_url TEXT DEFAULT ''https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk''';
+
     UPDATE public.system_settings
     SET
       app_name = CASE WHEN app_name IN ('Alo Thợ', 'Alo Thá»£') THEN 'Thợ Đến Ngay' ELSE app_name END,
@@ -47,13 +55,9 @@ BEGIN
     GROUP BY normalized_phone
     HAVING COUNT(*) > 1
   ) THEN
-    CREATE UNIQUE INDEX IF NOT EXISTS profiles_normalized_phone_unique
-      ON public.profiles(normalized_phone)
-      WHERE normalized_phone IS NOT NULL;
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS profiles_normalized_phone_unique ON public.profiles(normalized_phone) WHERE normalized_phone IS NOT NULL';
   ELSE
-    CREATE INDEX IF NOT EXISTS profiles_normalized_phone_idx
-      ON public.profiles(normalized_phone)
-      WHERE normalized_phone IS NOT NULL;
+    EXECUTE 'CREATE INDEX IF NOT EXISTS profiles_normalized_phone_idx ON public.profiles(normalized_phone) WHERE normalized_phone IS NOT NULL';
   END IF;
 END;
 $$;
@@ -142,6 +146,18 @@ DROP TRIGGER IF EXISTS sync_profiles_normalized_phone ON public.profiles;
 CREATE TRIGGER sync_profiles_normalized_phone
   BEFORE INSERT OR UPDATE OF phone ON public.profiles
   FOR EACH ROW EXECUTE PROCEDURE public.sync_profile_normalized_phone();
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION public.user_has_role(check_user_id UUID, check_role TEXT)
 RETURNS BOOLEAN AS $$
