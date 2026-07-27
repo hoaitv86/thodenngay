@@ -8,6 +8,7 @@ export interface SettingsData {
   maintenance_mode: boolean;
   terms_url: string;
   privacy_url: string;
+  apk_backup_download_url: string;
 }
 
 export const DEFAULT_SETTINGS: SettingsData = {
@@ -19,5 +20,6 @@ export const DEFAULT_SETTINGS: SettingsData = {
   zalo_url: "https://zalo.me/alotho",
   maintenance_mode: false,
   terms_url: "https://alotho.vn/terms",
-  privacy_url: "https://alotho.vn/privacy"
+  privacy_url: "https://alotho.vn/privacy",
+  apk_backup_download_url: ""
 };

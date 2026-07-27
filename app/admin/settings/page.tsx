@@ -37,7 +37,7 @@ export default function AdminSettings() {
     try {
       const { data, error } = await supabase
         .from('system_settings')
-        .select('app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url')
+        .select('app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url, apk_backup_download_url')
         .eq('id', 'default')
         .single();
         
@@ -54,6 +54,7 @@ export default function AdminSettings() {
           maintenance_mode: data.maintenance_mode ?? DEFAULT_SETTINGS.maintenance_mode,
           terms_url: data.terms_url || DEFAULT_SETTINGS.terms_url,
           privacy_url: data.privacy_url || DEFAULT_SETTINGS.privacy_url,
+          apk_backup_download_url: data.apk_backup_download_url || DEFAULT_SETTINGS.apk_backup_download_url,
         });
         setDbConnected(true);
       }
@@ -125,6 +126,7 @@ export default function AdminSettings() {
             maintenance_mode: settings.maintenance_mode,
             terms_url: settings.terms_url,
             privacy_url: settings.privacy_url,
+            apk_backup_download_url: settings.apk_backup_download_url,
           })
           .eq('id', 'default');
           
@@ -342,6 +344,20 @@ export default function AdminSettings() {
                   value={settings.privacy_url} 
                   onChange={e => setSettings({...settings, privacy_url: e.target.value})}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-label-sm">Link tải APK dự phòng</label>
+                <input
+                  type="url"
+                  className="input-field"
+                  placeholder="https://drive.google.com/..."
+                  value={settings.apk_backup_download_url}
+                  onChange={e => setSettings({...settings, apk_backup_download_url: e.target.value})}
+                />
+                <p className="text-xs leading-5 text-on-surface-variant">
+                  Link này sẽ hiển thị ở trang chủ như phương án tải dự phòng cho file APK.
+                </p>
               </div>
             </div>
 

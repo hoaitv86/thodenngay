@@ -6,7 +6,7 @@ export async function getSystemSettings(): Promise<SettingsData> {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from('system_settings')
-      .select('app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url')
+      .select('app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url, apk_backup_download_url')
       .eq('id', 'default')
       .single();
 
@@ -22,6 +22,7 @@ export async function getSystemSettings(): Promise<SettingsData> {
         maintenance_mode: data.maintenance_mode ?? DEFAULT_SETTINGS.maintenance_mode,
         terms_url: data.terms_url || DEFAULT_SETTINGS.terms_url,
         privacy_url: data.privacy_url || DEFAULT_SETTINGS.privacy_url,
+        apk_backup_download_url: data.apk_backup_download_url || DEFAULT_SETTINGS.apk_backup_download_url,
       };
     }
   } catch (err: unknown) {

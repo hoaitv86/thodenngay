@@ -12,8 +12,12 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     maintenance_mode BOOLEAN DEFAULT FALSE,
     terms_url TEXT DEFAULT 'https://alotho.vn/terms',
     privacy_url TEXT DEFAULT 'https://alotho.vn/privacy',
+    apk_backup_download_url TEXT DEFAULT '',
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
+
+ALTER TABLE public.system_settings
+ADD COLUMN IF NOT EXISTS apk_backup_download_url TEXT DEFAULT '';
 
 -- Insert default settings row
 INSERT INTO public.system_settings (id)

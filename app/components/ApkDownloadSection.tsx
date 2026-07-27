@@ -12,6 +12,7 @@ import {
 
 type ApkDownloadSectionProps = {
   downloadUrl: string;
+  backupDownloadUrl?: string;
   qrCodeDataUrl: string;
   version: string;
   updatedAt: string;
@@ -20,13 +21,15 @@ type ApkDownloadSectionProps = {
 
 export default function ApkDownloadSection({
   downloadUrl,
+  backupDownloadUrl,
   qrCodeDataUrl,
   version,
   updatedAt,
   fileSize,
 }: ApkDownloadSectionProps) {
   const [isAppleMobile, setIsAppleMobile] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "primary-copied" | "backup-copied" | "failed">("idle");
+  const backupUrl = backupDownloadUrl?.trim() || "";
 
   useEffect(() => {
     const userAgent = window.navigator.userAgent || "";
@@ -36,10 +39,10 @@ export default function ApkDownloadSection({
     setIsAppleMobile(/iPhone|iPad|iPod/i.test(userAgent) || isIpadOsDesktopMode);
   }, []);
 
-  async function copyDownloadLink() {
+  async function copyDownloadLink(url: string, successStatus: "primary-copied" | "backup-copied") {
     try {
-      await navigator.clipboard.writeText(downloadUrl);
-      setCopyStatus("copied");
+      await navigator.clipboard.writeText(url);
+      setCopyStatus(successStatus);
     } catch {
       setCopyStatus("failed");
     }
@@ -81,17 +84,29 @@ export default function ApkDownloadSection({
               </a>
               <button
                 type="button"
-                onClick={copyDownloadLink}
+                onClick={() => copyDownloadLink(downloadUrl, "primary-copied")}
                 className="btn-outline !min-h-12 !px-6 !py-3.5 sm:!w-auto"
                 id="apk-copy-link-button"
               >
-                {copyStatus === "copied" ? <CheckCircleIcon size={20} /> : <LinkIcon size={20} />}
-                {copyStatus === "copied"
+                {copyStatus === "primary-copied" ? <CheckCircleIcon size={20} /> : <LinkIcon size={20} />}
+                {copyStatus === "primary-copied"
                   ? "Đã sao chép"
                   : copyStatus === "failed"
                     ? "Không sao chép được"
                     : "Sao chép link tải"}
               </button>
+              {backupUrl ? (
+                <a
+                  href={backupUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-outline !min-h-12 !px-6 !py-3.5 sm:!w-auto"
+                  id="apk-backup-download-button"
+                >
+                  <LinkIcon size={20} />
+                  Tải dự phòng
+                </a>
+              ) : null}
             </div>
 
             <div className="mt-7 rounded-lg border border-outline-variant/25 bg-surface-container-lowest p-4">
@@ -102,6 +117,27 @@ export default function ApkDownloadSection({
                 {downloadUrl}
               </p>
             </div>
+
+            {backupUrl ? (
+              <div className="mt-4 rounded-lg border border-outline-variant/25 bg-surface-container-lowest p-4">
+                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-bold uppercase text-on-surface-variant">
+                    Link tải dự phòng
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => copyDownloadLink(backupUrl, "backup-copied")}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md border border-outline-variant bg-white px-3 py-1.5 text-xs font-bold text-primary-container transition-colors hover:bg-primary-fixed/40"
+                  >
+                    {copyStatus === "backup-copied" ? <CheckCircleIcon size={14} /> : <LinkIcon size={14} />}
+                    {copyStatus === "backup-copied" ? "Đã sao chép" : "Sao chép"}
+                  </button>
+                </div>
+                <p className="break-all rounded-md bg-surface-container-low px-3 py-2 font-mono text-sm text-primary-container">
+                  {backupUrl}
+                </p>
+              </div>
+            ) : null}
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               {[

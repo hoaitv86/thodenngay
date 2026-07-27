@@ -383,7 +383,7 @@ const getHomepageData = unstable_cache(
     const [settingsResult, servicesResult, workersResult, ratingsResult] = await Promise.all([
       supabase
         .from("system_settings")
-        .select("*")
+        .select("app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url, apk_backup_download_url")
         .eq("id", "default")
         .maybeSingle(),
       supabase
@@ -479,6 +479,7 @@ const getHomepageData = unstable_cache(
             maintenance_mode: settings.maintenance_mode ?? DEFAULT_SETTINGS.maintenance_mode,
             terms_url: settings.terms_url || DEFAULT_SETTINGS.terms_url,
             privacy_url: settings.privacy_url || DEFAULT_SETTINGS.privacy_url,
+            apk_backup_download_url: settings.apk_backup_download_url || DEFAULT_SETTINGS.apk_backup_download_url,
           }
         : DEFAULT_SETTINGS,
       dbServices: servicesResult.data || [],
@@ -750,7 +751,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <ApkDownloadSection {...apkDownloadData} />
+      <ApkDownloadSection
+        {...apkDownloadData}
+        backupDownloadUrl={systemSettings.apk_backup_download_url.trim()}
+      />
 
       {/* ===== HOW IT WORKS ===== */}
       <section id="how-it-works" className="relative overflow-hidden bg-primary-container py-16 sm:py-24 lg:py-32">
