@@ -7,6 +7,10 @@ DROP TABLE IF EXISTS public.payments CASCADE;
 DROP TABLE IF EXISTS public.ratings CASCADE;
 DROP TABLE IF EXISTS public.jobs CASCADE;
 DROP TABLE IF EXISTS public.services CASCADE;
+DROP TABLE IF EXISTS public.worker_unit_members CASCADE;
+DROP TABLE IF EXISTS public.worker_teams CASCADE;
+DROP TABLE IF EXISTS public.worker_units CASCADE;
+DROP TABLE IF EXISTS public.user_roles CASCADE;
 DROP TABLE IF EXISTS public.workers CASCADE;
 DROP TABLE IF EXISTS public.profiles CASCADE;
 
@@ -574,6 +578,8 @@ CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON public.profiles FOR E
 CREATE TRIGGER update_services_updated_at BEFORE UPDATE ON public.services FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON public.jobs FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
+/*
+
 -- 8. AUTO-CREATE PROFILE ON SIGN UP
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -607,6 +613,8 @@ $$ language 'plpgsql' SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+*/
 
 CREATE TRIGGER update_worker_units_updated_at BEFORE UPDATE ON public.worker_units FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_worker_teams_updated_at BEFORE UPDATE ON public.worker_teams FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
@@ -669,3 +677,7 @@ BEGIN
   RETURN NEW;
 END;
 $$ language 'plpgsql' SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
