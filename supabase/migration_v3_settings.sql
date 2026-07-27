@@ -12,12 +12,12 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     maintenance_mode BOOLEAN DEFAULT FALSE,
     terms_url TEXT DEFAULT 'https://thodenngay.vn/terms',
     privacy_url TEXT DEFAULT 'https://thodenngay.vn/privacy',
-    apk_backup_download_url TEXT DEFAULT '',
+    apk_backup_download_url TEXT DEFAULT 'https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk',
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
 ALTER TABLE public.system_settings
-ADD COLUMN IF NOT EXISTS apk_backup_download_url TEXT DEFAULT '';
+ADD COLUMN IF NOT EXISTS apk_backup_download_url TEXT DEFAULT 'https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk';
 
 -- Insert default settings row
 INSERT INTO public.system_settings (id)

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertTriangleIcon,
   CheckCircleIcon,
@@ -27,17 +27,17 @@ export default function ApkDownloadSection({
   updatedAt,
   fileSize,
 }: ApkDownloadSectionProps) {
-  const [isAppleMobile, setIsAppleMobile] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "primary-copied" | "backup-copied" | "failed">("idle");
-  const backupUrl = backupDownloadUrl?.trim() || "";
+  const [isAppleMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
 
-  useEffect(() => {
     const userAgent = window.navigator.userAgent || "";
     const isIpadOsDesktopMode =
       window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1;
 
-    setIsAppleMobile(/iPhone|iPad|iPod/i.test(userAgent) || isIpadOsDesktopMode);
-  }, []);
+    return /iPhone|iPad|iPod/i.test(userAgent) || isIpadOsDesktopMode;
+  });
+  const [copyStatus, setCopyStatus] = useState<"idle" | "primary-copied" | "backup-copied" | "failed">("idle");
+  const backupUrl = backupDownloadUrl?.trim() || "";
 
   async function copyDownloadLink(url: string, successStatus: "primary-copied" | "backup-copied") {
     try {
@@ -106,7 +106,15 @@ export default function ApkDownloadSection({
                   <LinkIcon size={20} />
                   Tải dự phòng
                 </a>
-              ) : null}
+              ) : (
+                <span
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-dashed border-outline-variant/70 bg-surface-container-low px-6 py-3.5 text-sm font-bold text-on-surface-variant sm:w-auto"
+                  id="apk-backup-download-unconfigured"
+                >
+                  <LinkIcon size={20} />
+                  Chưa cấu hình link dự phòng
+                </span>
+              )}
             </div>
 
             <div className="mt-7 rounded-lg border border-outline-variant/25 bg-surface-container-lowest p-4">
@@ -118,12 +126,12 @@ export default function ApkDownloadSection({
               </p>
             </div>
 
-            {backupUrl ? (
-              <div className="mt-4 rounded-lg border border-outline-variant/25 bg-surface-container-lowest p-4">
-                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs font-bold uppercase text-on-surface-variant">
-                    Link tải dự phòng
-                  </p>
+            <div className="mt-4 rounded-lg border border-outline-variant/25 bg-surface-container-lowest p-4">
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-bold uppercase text-on-surface-variant">
+                  Link tải dự phòng
+                </p>
+                {backupUrl ? (
                   <button
                     type="button"
                     onClick={() => copyDownloadLink(backupUrl, "backup-copied")}
@@ -132,12 +140,18 @@ export default function ApkDownloadSection({
                     {copyStatus === "backup-copied" ? <CheckCircleIcon size={14} /> : <LinkIcon size={14} />}
                     {copyStatus === "backup-copied" ? "Đã sao chép" : "Sao chép"}
                   </button>
-                </div>
+                ) : null}
+              </div>
+              {backupUrl ? (
                 <p className="break-all rounded-md bg-surface-container-low px-3 py-2 font-mono text-sm text-primary-container">
                   {backupUrl}
                 </p>
-              </div>
-            ) : null}
+              ) : (
+                <p className="rounded-md bg-surface-container-low px-3 py-2 text-sm font-semibold text-on-surface-variant">
+                  Admin chưa nhập link tải dự phòng trong cấu hình hệ thống.
+                </p>
+              )}
+            </div>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               {[

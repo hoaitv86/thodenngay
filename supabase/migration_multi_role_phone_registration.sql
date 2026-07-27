@@ -13,7 +13,11 @@ BEGIN
       facebook_url = CASE WHEN facebook_url = 'https://facebook.com/alotho' THEN 'https://facebook.com/thodenngay' ELSE facebook_url END,
       zalo_url = CASE WHEN zalo_url = 'https://zalo.me/alotho' THEN 'https://zalo.me/thodenngay' ELSE zalo_url END,
       terms_url = CASE WHEN terms_url = 'https://alotho.vn/terms' THEN 'https://thodenngay.vn/terms' ELSE terms_url END,
-      privacy_url = CASE WHEN privacy_url = 'https://alotho.vn/privacy' THEN 'https://thodenngay.vn/privacy' ELSE privacy_url END
+      privacy_url = CASE WHEN privacy_url = 'https://alotho.vn/privacy' THEN 'https://thodenngay.vn/privacy' ELSE privacy_url END,
+      apk_backup_download_url = CASE
+        WHEN COALESCE(apk_backup_download_url, '') = '' THEN 'https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk'
+        ELSE apk_backup_download_url
+      END
     WHERE id = 'default';
   END IF;
 END;
