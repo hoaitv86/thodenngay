@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { buildPhoneLoginEmail } from "@/lib/account-roles";
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 
@@ -34,18 +35,19 @@ export async function POST(request: Request) {
     const { data, error } = await supabaseAdmin
       .from("profiles")
       .select("email")
-      .eq("phone", normalizedPhone)
-      .maybeSingle();
+      .or(`normalized_phone.eq.${normalizedPhone},phone.eq.${normalizedPhone}`)
+      .limit(1);
 
     if (error) {
       return NextResponse.json({ error: "Lỗi tìm tài khoản: " + error.message }, { status: 500 });
     }
 
-    if (!data?.email) {
+    const profile = data?.[0];
+    if (!profile?.email) {
       return NextResponse.json({ error: "Không tìm thấy tài khoản theo SĐT này." }, { status: 404 });
     }
 
-    return NextResponse.json({ email: data.email });
+    return NextResponse.json({ email: profile.email || buildPhoneLoginEmail(normalizedPhone) });
   } catch (error: unknown) {
     return NextResponse.json(
       { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },

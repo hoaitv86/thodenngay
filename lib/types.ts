@@ -1,6 +1,6 @@
 // ===== Core Types — Alo Thợ =====
 
-export type UserRole = 'customer' | 'worker' | 'admin';
+export type UserRole = 'customer' | 'worker' | 'admin' | 'unit_owner' | 'lead_worker' | 'assistant_worker';
 export type WorkerStatus = 'pending' | 'active' | 'blocked';
 export type JobStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'done' | 'cancel_requested' | 'cancelled';
 export type JobSource = 'app' | 'call';

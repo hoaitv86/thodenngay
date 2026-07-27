@@ -222,7 +222,7 @@ export default function WorkerLayout({
       if (!user) return;
       if (isMounted) setNotificationUserId(user.id);
 
-      const [{ data: profile }, { data: worker }] = await Promise.all([
+      const [{ data: profile }, { data: worker }, { data: userRoles }] = await Promise.all([
         supabase
           .from("profiles")
           .select("full_name, role, phone, email")
@@ -233,6 +233,10 @@ export default function WorkerLayout({
           .select("*")
           .eq("user_id", user.id)
           .maybeSingle(),
+        supabase
+          .from("user_roles")
+          .select("role, is_active")
+          .eq("user_id", user.id),
       ]);
 
       if (!isMounted) return;
@@ -252,7 +256,18 @@ export default function WorkerLayout({
       const isDemoWorker = isDemoAccount(profile);
       const billgoHistory = worker?.id ? await hasBillGoData(worker.id) : false;
       const billgoAccess = isDemoWorker || billgoHistory;
-      const role = typeof profile?.role === "string" ? profile.role : "worker";
+      const activeRoles = (userRoles || [])
+        .filter((item) => item.is_active !== false)
+        .map((item) => item.role);
+      const role = worker?.id
+        ? "worker"
+        : activeRoles.includes("lead_worker")
+          ? "lead_worker"
+          : activeRoles.includes("assistant_worker")
+            ? "assistant_worker"
+            : typeof profile?.role === "string"
+              ? profile.role
+              : "worker";
 
       if (!isMounted) return;
 

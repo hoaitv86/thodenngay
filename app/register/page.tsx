@@ -12,7 +12,6 @@ import {
   MapPinIcon,
 } from "../components/icons";
 
-type UserRole = "customer" | "worker";
 type GpsLocation = {
   lat: number;
   lng: number;
@@ -20,6 +19,7 @@ type GpsLocation = {
 };
 
 import { createClient } from "@/lib/supabase/client";
+import { buildPhoneLoginEmail, normalizePhone } from "@/lib/account-roles";
 import { useSettings } from "@/lib/settings";
 import {
   buildWorkerSpecialtyGroups,
@@ -31,9 +31,9 @@ function RegisterContent() {
 
   const searchParams = useSearchParams();
   const { settings } = useSettings();
-  const initialRole = searchParams.get("role") === "worker" ? "worker" : "customer";
+  const initialWorkerSignup = searchParams.get("role") === "worker";
 
-  const [role, setRole] = useState<UserRole>(initialRole);
+  const [requestWorkerRole, setRequestWorkerRole] = useState(initialWorkerSignup);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -130,8 +130,13 @@ function RegisterContent() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.email || !formData.password) {
+    const normalizedPhone = normalizePhone(formData.phone);
+    if (!formData.name || !formData.phone || !formData.password) {
       setError("Vui lòng nhập đầy đủ thông tin bắt buộc");
+      return;
+    }
+    if (normalizedPhone.length < 8) {
+      setError("Số điện thoại không hợp lệ");
       return;
     }
     if (formData.password.length < 6) {
@@ -143,17 +148,20 @@ function RegisterContent() {
     setError("");
 
     // Supabase Auth Sign Up
-    const workerSpecialties = role === "worker"
+    const workerSpecialties = requestWorkerRole
       ? expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups)
       : [];
+    const email = formData.email.trim() || buildPhoneLoginEmail(normalizedPhone);
 
     const { data, error: authError } = await supabase.auth.signUp({
-      email: formData.email,
+      email,
       password: formData.password,
       options: {
         data: {
           full_name: formData.name,
-          role: role,
+          phone: normalizedPhone,
+          role: "customer",
+          requested_role: requestWorkerRole ? "worker" : "customer",
           specialties: workerSpecialties,
         }
       }
@@ -171,13 +179,13 @@ function RegisterContent() {
       await supabase
         .from('profiles')
         .update({
-          phone: formData.phone,
+          phone: normalizedPhone,
           address: formData.address,
           gps_location: formData.gpsLocation
         })
         .eq('id', data.user.id);
 
-      if (role === 'worker' && workerSpecialties.length > 0) {
+      if (requestWorkerRole && workerSpecialties.length > 0) {
         await supabase
           .from('workers')
           .update({
@@ -199,12 +207,12 @@ function RegisterContent() {
             <CheckCircleIcon size={40} />
           </div>
           <h1 className="mb-3 text-3xl font-bold text-on-surface">
-            {role === "customer" ? "Đăng ký thành công!" : "Đã gửi yêu cầu!"}
+            {requestWorkerRole ? "Đã tạo tài khoản và gửi hồ sơ thợ!" : "Đăng ký thành công!"}
           </h1>
           <p className="mb-8 leading-relaxed text-on-surface-variant">
-            {role === "customer"
-              ? "Tài khoản của bạn đã được tạo. Vui lòng kiểm tra email để xác nhận (nếu yêu cầu) và đăng nhập."
-              : "Hồ sơ thợ của bạn đã được gửi và đang chờ duyệt. Admin sẽ liên hệ với bạn sớm nhất."}
+            {requestWorkerRole
+              ? "Tài khoản mới của bạn mặc định là khách hàng. Hồ sơ thợ đã được gửi và đang chờ admin duyệt."
+              : "Tài khoản khách hàng của bạn đã được tạo. Bạn có thể đăng nhập bằng số điện thoại và mật khẩu."}
           </p>
           <Link href="/login" className="w-full btn-primary !py-4 flex items-center justify-center gap-2">
             Đăng nhập ngay
@@ -230,22 +238,22 @@ function RegisterContent() {
 
         <div className="relative z-10">
           <h2 className="text-lg mb-4 text-white font-bold">
-            {role === "customer" ? (
+            {requestWorkerRole ? (
+              <>
+                Một tài khoản,{" "}
+                <span className="text-secondary-container">nhiều vai trò</span>
+              </>
+            ) : (
               <>
                 Tìm thợ giỏi{" "}
                 <span className="text-secondary-container">dễ dàng</span>
               </>
-            ) : (
-              <>
-                Nhận việc{" "}
-                <span className="text-secondary-container">mỗi ngày</span>
-              </>
             )}
           </h2>
           <p className="text-lg text-white/80 w-full max-w-[400px] leading-relaxed">
-            {role === "customer"
-              ? "Đăng ký tài khoản để đặt dịch vụ sửa chữa tại nhà nhanh chóng và tiện lợi."
-              : `Đăng ký làm thợ trên ${settings.app_name} để tiếp cận hàng ngàn khách hàng tiềm năng.`}
+            {requestWorkerRole
+              ? `Đăng ký bằng số điện thoại, dùng được vai trò khách hàng ngay và chờ duyệt hồ sơ thợ trên ${settings.app_name}.`
+              : "Đăng ký bằng số điện thoại để đặt dịch vụ sửa chữa tại nhà nhanh chóng và tiện lợi."}
           </p>
         </div>
 
@@ -269,30 +277,28 @@ function RegisterContent() {
               <p className="text-on-surface-variant">Tạo tài khoản mới để bắt đầu sử dụng</p>
             </div>
 
-            {/* Role Toggle */}
-            <div className="mb-7 grid grid-cols-2 gap-1.5 rounded-lg bg-surface-container-low p-1.5">
-              <button
-                type="button"
-                onClick={() => setRole("customer")}
-                className={`flex min-w-0 items-center justify-center gap-2 py-3 px-2 rounded-lg text-sm font-semibold transition-all sm:py-3.5 sm:px-4 ${role === "customer"
-                    ? "bg-white text-primary shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
-                  }`}
-              >
-                <UserIcon size={18} />
-                Khách hàng
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole("worker")}
-                className={`flex min-w-0 items-center justify-center gap-2 py-3 px-2 rounded-lg text-sm font-semibold transition-all sm:py-3.5 sm:px-4 ${role === "worker"
-                    ? "bg-white text-primary shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
-                  }`}
-              >
+            <div className="mb-7 rounded-lg border border-outline-variant/30 bg-surface-container-low p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
+                  <UserIcon size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-extrabold text-on-surface">Tài khoản khách hàng</p>
+                  <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                    Tài khoản mới luôn được tạo là khách hàng trước, đăng nhập bằng số điện thoại và mật khẩu.
+                  </p>
+                </div>
+              </div>
+              <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-lg bg-white px-3 py-3 text-sm font-bold text-on-surface shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={requestWorkerRole}
+                  onChange={(event) => setRequestWorkerRole(event.target.checked)}
+                  className="h-4 w-4 accent-primary"
+                />
                 <WrenchIcon size={18} />
-                Đăng ký thợ
-              </button>
+                Tôi muốn đăng ký thêm vai trò thợ
+              </label>
             </div>
 
             <form onSubmit={handleRegister} className="space-y-5 sm:space-y-6">
@@ -314,7 +320,7 @@ function RegisterContent() {
 
                 <div>
                   <label htmlFor="register-email" className="block text-sm font-semibold text-on-surface mb-2">
-                    Email
+                    Email (tùy chọn)
                   </label>
                   <input
                     id="register-email"
@@ -342,7 +348,7 @@ function RegisterContent() {
 
                 <div>
                   <label htmlFor="register-phone" className="block text-sm font-semibold text-on-surface mb-2">
-                    Số điện thoại (tùy chọn)
+                    Số điện thoại <span className="text-error">*</span>
                   </label>
                   <input
                     id="register-phone"
@@ -377,10 +383,10 @@ function RegisterContent() {
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-extrabold text-on-surface">
-                            {role === "worker" ? "Định vị thợ" : "Định vị khách hàng"}
+                            {requestWorkerRole ? "Định vị thợ" : "Định vị khách hàng"}
                           </p>
                           <p className="mt-0.5 text-xs leading-5 text-on-surface-variant">
-                            {role === "worker"
+                            {requestWorkerRole
                               ? "Lưu tọa độ khu vực hoạt động để hệ thống gợi ý đơn phù hợp gần bạn."
                               : "Lưu tọa độ để thợ tìm đúng vị trí khi bạn đặt dịch vụ."}
                           </p>
@@ -421,7 +427,7 @@ function RegisterContent() {
 
 
                 {/* Worker Specialties */}
-                {role === "worker" && (
+                {requestWorkerRole && (
                   <div>
                     <label className="block text-sm font-semibold text-on-surface mb-3">
                       Chuyên môn <span className="text-error">*</span>

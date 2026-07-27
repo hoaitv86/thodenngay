@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { resolvePostLoginDestination } from "@/lib/account-roles";
 
 export default function RedirectPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -18,12 +19,22 @@ export default function RedirectPage() {
       }
 
       console.log("Checking profile in /redirect for ID:", user.id);
-      // Fetch role from profiles table
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
+      const [{ data: profile, error: profileError }, { data: worker }, { data: userRoles }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from("workers")
+          .select("status")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("user_roles")
+          .select("role, is_active")
+          .eq("user_id", user.id),
+      ]);
 
       if (profileError || !profile) {
         console.error("Profile not found in /redirect:", profileError);
@@ -32,19 +43,15 @@ export default function RedirectPage() {
       }
 
       console.log("Profile found in /redirect:", profile);
-      const role = profile.role;
-
-      if (role === "admin") {
-        router.replace("/admin/dashboard");
-      } else if (role === "worker") {
-        router.replace("/worker");
-      } else {
-        router.replace("/customer/home");
-      }
+      router.replace(resolvePostLoginDestination({
+        legacyRole: profile.role,
+        worker,
+        userRoles: userRoles || [],
+      }));
     };
 
     checkUser();
-  }, [router, supabase.auth]);
+  }, [router, supabase]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface">

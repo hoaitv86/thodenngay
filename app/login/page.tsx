@@ -8,6 +8,7 @@ import { useSettings } from "@/lib/settings";
 import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 import { MapPinCheck } from "lucide-react";
 import { saveLoginLocation } from "@/services/locationService";
+import { resolvePostLoginDestination } from "@/lib/account-roles";
 import {
   DEMO_ACTION_BLOCK_MESSAGE,
   DEMO_SESSION_STORAGE_KEY,
@@ -16,7 +17,9 @@ import {
 } from "@/lib/demo-accounts";
 
 export default function LoginPage() {
-  const [androidStartup, setAndroidStartup] = useState(false);
+  const [androidStartup] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("app") === "android"
+  );
   const [checkingExistingSession, setCheckingExistingSession] = useState(true);
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -31,7 +34,6 @@ export default function LoginPage() {
 
   useEffect(() => {
     let isMounted = true;
-    setAndroidStartup(new URLSearchParams(window.location.search).get("app") === "android");
 
     const redirectExistingSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -41,11 +43,22 @@ export default function LoginPage() {
         return;
       }
 
-      const { data: profile } = await supabase
+      const [{ data: profile }, { data: worker }, { data: userRoles }] = await Promise.all([
+        supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
-        .single();
+        .single(),
+        supabase
+          .from("workers")
+          .select("status")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("user_roles")
+          .select("role, is_active")
+          .eq("user_id", user.id),
+      ]);
 
       if (!isMounted) return;
       if (!profile) {
@@ -53,12 +66,11 @@ export default function LoginPage() {
         return;
       }
 
-      const destination =
-        profile.role === "admin"
-          ? "/admin/dashboard"
-          : profile.role === "worker"
-            ? "/worker"
-            : "/customer/home";
+      const destination = resolvePostLoginDestination({
+        legacyRole: profile.role,
+        worker,
+        userRoles: userRoles || [],
+      });
 
       router.replace(destination);
     };
@@ -84,11 +96,22 @@ export default function LoginPage() {
   }
 
   const finishLogin = async (userId: string, forceDemoSession = false) => {
-    const { data: profile, error: profileError } = await supabase
+    const [{ data: profile, error: profileError }, { data: worker }, { data: userRoles }] = await Promise.all([
+      supabase
       .from("profiles")
       .select("role, phone, email")
       .eq("id", userId)
-      .single();
+      .single(),
+      supabase
+        .from("workers")
+        .select("status")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("user_roles")
+        .select("role, is_active")
+        .eq("user_id", userId),
+    ]);
 
     if (profileError || !profile) {
       console.error("Profile fetch error:", profileError);
@@ -105,12 +128,11 @@ export default function LoginPage() {
       window.localStorage.removeItem(DEMO_SESSION_STORAGE_KEY);
     }
 
-    const destination =
-      profile.role === "admin"
-        ? "/admin/dashboard"
-        : profile.role === "worker"
-          ? "/worker"
-          : "/customer/home";
+    const destination = resolvePostLoginDestination({
+      legacyRole: profile.role,
+      worker,
+      userRoles: userRoles || [],
+    });
 
     if (profile.role === "worker" || profile.role === "customer") {
       const locationResult = await saveLoginLocation(supabase, userId);
@@ -215,11 +237,22 @@ export default function LoginPage() {
     }
 
     if (data.user) {
-      const { data: profile, error: profileError } = await supabase
+      const [{ data: profile, error: profileError }, { data: worker }, { data: userRoles }] = await Promise.all([
+        supabase
         .from("profiles")
         .select("role")
         .eq("id", data.user.id)
-        .single();
+        .single(),
+        supabase
+          .from("workers")
+          .select("status")
+          .eq("user_id", data.user.id)
+          .maybeSingle(),
+        supabase
+          .from("user_roles")
+          .select("role, is_active")
+          .eq("user_id", data.user.id),
+      ]);
 
       if (profileError || !profile) {
         console.error("Profile fetch error:", profileError);
@@ -228,12 +261,11 @@ export default function LoginPage() {
         return;
       }
 
-      const destination =
-        profile.role === "admin"
-          ? "/admin/dashboard"
-          : profile.role === "worker"
-            ? "/worker"
-            : "/customer/home";
+      const destination = resolvePostLoginDestination({
+        legacyRole: profile.role,
+        worker,
+        userRoles: userRoles || [],
+      });
 
       if (profile.role === "worker" || profile.role === "customer") {
         const locationResult = await saveLoginLocation(supabase, data.user.id);
