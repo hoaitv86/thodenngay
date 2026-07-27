@@ -3,15 +3,15 @@
 -- Create system_settings table if not exists
 CREATE TABLE IF NOT EXISTS public.system_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
-    app_name TEXT DEFAULT 'Alo Thợ',
+    app_name TEXT DEFAULT 'Thợ Đến Ngay',
     hotline TEXT DEFAULT '1900 1234',
-    support_email TEXT DEFAULT 'support@alotho.vn',
+    support_email TEXT DEFAULT 'support@thodenngay.vn',
     company_address TEXT DEFAULT '123 Đường A, Quận 1, TP.HCM',
-    facebook_url TEXT DEFAULT 'https://facebook.com/alotho',
-    zalo_url TEXT DEFAULT 'https://zalo.me/alotho',
+    facebook_url TEXT DEFAULT 'https://facebook.com/thodenngay',
+    zalo_url TEXT DEFAULT 'https://zalo.me/thodenngay',
     maintenance_mode BOOLEAN DEFAULT FALSE,
-    terms_url TEXT DEFAULT 'https://alotho.vn/terms',
-    privacy_url TEXT DEFAULT 'https://alotho.vn/privacy',
+    terms_url TEXT DEFAULT 'https://thodenngay.vn/terms',
+    privacy_url TEXT DEFAULT 'https://thodenngay.vn/privacy',
     apk_backup_download_url TEXT DEFAULT '',
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );

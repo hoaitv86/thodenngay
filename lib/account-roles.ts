@@ -16,7 +16,7 @@ export function normalizePhone(phone: string) {
 
 export function buildPhoneLoginEmail(phone: string) {
   const normalizedPhone = normalizePhone(phone);
-  return normalizedPhone ? `${normalizedPhone}@phone.alotho.local` : "";
+  return normalizedPhone ? `${normalizedPhone}@phone.thodenngay.local` : "";
 }
 
 export function uniqueRoles(legacyRole?: string | null, userRoles: UserRoleRecord[] = []) {
@@ -58,4 +58,3 @@ export function resolvePostLoginDestination(params: {
   }
   return "/customer/home";
 }
-

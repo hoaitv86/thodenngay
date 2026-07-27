@@ -69,7 +69,7 @@ export default function CustomerLayout({
             </div>
             <div className="min-w-0">
               <span className="block truncate text-base font-bold leading-tight text-white">{userName}</span>
-              <span className="mt-1 block text-xs font-bold uppercase text-white/65">Khách hàng Alo Thợ</span>
+              <span className="mt-1 block text-xs font-bold uppercase text-white/65">Khách hàng Thợ Đến Ngay</span>
             </div>
           </div>
 

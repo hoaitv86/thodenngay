@@ -3,6 +3,22 @@
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+DO $$
+BEGIN
+  IF to_regclass('public.system_settings') IS NOT NULL THEN
+    UPDATE public.system_settings
+    SET
+      app_name = CASE WHEN app_name IN ('Alo Thợ', 'Alo Thá»£') THEN 'Thợ Đến Ngay' ELSE app_name END,
+      support_email = CASE WHEN support_email = 'support@alotho.vn' THEN 'support@thodenngay.vn' ELSE support_email END,
+      facebook_url = CASE WHEN facebook_url = 'https://facebook.com/alotho' THEN 'https://facebook.com/thodenngay' ELSE facebook_url END,
+      zalo_url = CASE WHEN zalo_url = 'https://zalo.me/alotho' THEN 'https://zalo.me/thodenngay' ELSE zalo_url END,
+      terms_url = CASE WHEN terms_url = 'https://alotho.vn/terms' THEN 'https://thodenngay.vn/terms' ELSE terms_url END,
+      privacy_url = CASE WHEN privacy_url = 'https://alotho.vn/privacy' THEN 'https://thodenngay.vn/privacy' ELSE privacy_url END
+    WHERE id = 'default';
+  END IF;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.normalize_phone(input_phone TEXT)
 RETURNS TEXT AS $$
 BEGIN
@@ -157,18 +173,27 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP POLICY IF EXISTS "Users view own roles" ON public.user_roles;
 CREATE POLICY "Users view own roles" ON public.user_roles
   FOR SELECT USING (user_id = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS "Admins manage roles" ON public.user_roles;
 CREATE POLICY "Admins manage roles" ON public.user_roles
   FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS "Owners view own units" ON public.worker_units;
 CREATE POLICY "Owners view own units" ON public.worker_units
   FOR SELECT USING (owner_id = auth.uid() OR public.is_admin());
+
+DROP POLICY IF EXISTS "Owners create own units" ON public.worker_units;
 CREATE POLICY "Owners create own units" ON public.worker_units
   FOR INSERT WITH CHECK (owner_id = auth.uid());
+
+DROP POLICY IF EXISTS "Owners update own units" ON public.worker_units;
 CREATE POLICY "Owners update own units" ON public.worker_units
   FOR UPDATE USING (owner_id = auth.uid() OR public.is_admin()) WITH CHECK (owner_id = auth.uid() OR public.is_admin());
 
+DROP POLICY IF EXISTS "Members view unit teams" ON public.worker_teams;
 CREATE POLICY "Members view unit teams" ON public.worker_teams
   FOR SELECT USING (
     public.current_user_owns_unit(unit_id)
@@ -180,16 +205,21 @@ CREATE POLICY "Members view unit teams" ON public.worker_teams
         AND worker_unit_members.status = 'active'
     )
   );
+
+DROP POLICY IF EXISTS "Owners manage unit teams" ON public.worker_teams;
 CREATE POLICY "Owners manage unit teams" ON public.worker_teams
   FOR ALL USING (public.current_user_owns_unit(unit_id) OR public.is_admin())
   WITH CHECK (public.current_user_owns_unit(unit_id) OR public.is_admin());
 
+DROP POLICY IF EXISTS "Members view memberships" ON public.worker_unit_members;
 CREATE POLICY "Members view memberships" ON public.worker_unit_members
   FOR SELECT USING (
     user_id = auth.uid()
     OR public.current_user_owns_unit(unit_id)
     OR public.is_admin()
   );
+
+DROP POLICY IF EXISTS "Owners manage memberships" ON public.worker_unit_members;
 CREATE POLICY "Owners manage memberships" ON public.worker_unit_members
   FOR ALL USING (public.current_user_owns_unit(unit_id) OR public.is_admin())
   WITH CHECK (public.current_user_owns_unit(unit_id) OR public.is_admin());

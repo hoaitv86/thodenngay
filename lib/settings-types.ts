@@ -12,14 +12,14 @@ export interface SettingsData {
 }
 
 export const DEFAULT_SETTINGS: SettingsData = {
-  app_name: "Alo Thợ",
+  app_name: "Thợ Đến Ngay",
   hotline: "1900 1234",
-  support_email: "support@alotho.vn",
+  support_email: "support@thodenngay.vn",
   company_address: "123 Đường A, Quận 1, TP.HCM",
-  facebook_url: "https://facebook.com/alotho",
-  zalo_url: "https://zalo.me/alotho",
+  facebook_url: "https://facebook.com/thodenngay",
+  zalo_url: "https://zalo.me/thodenngay",
   maintenance_mode: false,
-  terms_url: "https://alotho.vn/terms",
-  privacy_url: "https://alotho.vn/privacy",
+  terms_url: "https://thodenngay.vn/terms",
+  privacy_url: "https://thodenngay.vn/privacy",
   apk_backup_download_url: ""
 };
