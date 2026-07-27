@@ -994,8 +994,8 @@ export default async function HomePage() {
       {/* ===== FOOTER ===== */}
       <footer className="bg-on-surface text-surface py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
-            <div className="md:col-span-2">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-10 md:grid-cols-4">
+            <div className="col-span-2">
               <div className="flex items-center gap-3 mb-4">
                 <LogoIcon size={32} />
                 <span className="text-xl font-bold">{systemSettings.app_name}</span>
