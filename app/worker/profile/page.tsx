@@ -21,7 +21,9 @@ import {
   ShieldCheckIcon,
   LogOutIcon,
   ChevronRightIcon,
-  CameraIcon
+  CameraIcon,
+  BuildingIcon,
+  UsersIcon
 } from "../../components/icons";
 
 interface WorkerProfileData {
@@ -53,12 +55,37 @@ type GpsLocation = {
   captured_at?: string;
 };
 
+type WorkerUnitMember = {
+  id: string;
+  user_id: string;
+  member_role: "owner" | "manager" | "lead_worker" | "assistant_worker" | "worker";
+  status: string;
+  invited_phone?: string | null;
+};
+
+type WorkerTeam = {
+  id: string;
+  name: string;
+  status: string;
+};
+
+type WorkerUnit = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  address?: string | null;
+  status: string;
+  members?: WorkerUnitMember[];
+  teams?: WorkerTeam[];
+};
+
 export default function WorkerProfile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<WorkerProfileData | null>(null);
   const [profileStats, setProfileStats] = useState({ jobsDone: 0, rating: 0 });
   const [showSecurity, setShowSecurity] = useState(false);
   const [showSpecialties, setShowSpecialties] = useState(false);
+  const [showUnitPanel, setShowUnitPanel] = useState(false);
 
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
@@ -76,6 +103,17 @@ export default function WorkerProfile() {
   const [selectedChildValues, setSelectedChildValues] = useState<string[]>([]);
   const [savingSpecialties, setSavingSpecialties] = useState(false);
   const [specialtyMsg, setSpecialtyMsg] = useState("");
+  const [workerUnits, setWorkerUnits] = useState<WorkerUnit[]>([]);
+  const [unitName, setUnitName] = useState("");
+  const [unitPhone, setUnitPhone] = useState("");
+  const [unitAddress, setUnitAddress] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [unitSaving, setUnitSaving] = useState(false);
+  const [unitMsg, setUnitMsg] = useState("");
+  const [memberPhone, setMemberPhone] = useState("");
+  const [memberRole, setMemberRole] = useState<"worker" | "lead_worker" | "assistant_worker" | "manager">("worker");
+  const [memberTeamId, setMemberTeamId] = useState("");
+  const [memberSaving, setMemberSaving] = useState(false);
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -86,6 +124,15 @@ export default function WorkerProfile() {
 
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  const loadWorkerUnits = React.useCallback(async () => {
+    const { data: units } = await supabase
+      .from("worker_units")
+      .select("id, name, phone, address, status, members:worker_unit_members(id, user_id, member_role, status, invited_phone), teams:worker_teams(id, name, status)")
+      .order("created_at", { ascending: false });
+
+    setWorkerUnits((units || []) as WorkerUnit[]);
+  }, [supabase]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -135,12 +182,16 @@ export default function WorkerProfile() {
           setFullName(userProfile.full_name || "");
           setPhone(userProfile.phone || "");
         }
+
+        if (workerData?.status === "active") {
+          await loadWorkerUnits();
+        }
       }
       setLoading(false);
     };
 
     fetchProfile();
-  }, [supabase]);
+  }, [loadWorkerUnits, supabase]);
 
   useEffect(() => {
     const fetchSpecialtyOptions = async () => {
@@ -227,6 +278,75 @@ export default function WorkerProfile() {
     setShowSpecialties(false);
     setSavingSpecialties(false);
     router.refresh();
+  };
+
+  const handleCreateUnit = async () => {
+    if (!profile?.worker || profile.worker.status !== "active") {
+      setUnitMsg("Chỉ thợ đã được duyệt mới có thể nâng cấp thành Chủ đơn vị.");
+      return;
+    }
+
+    if (!unitName.trim()) {
+      setUnitMsg("Vui lòng nhập tên cửa hàng hoặc đội thợ.");
+      return;
+    }
+
+    setUnitSaving(true);
+    setUnitMsg("");
+
+    const { error } = await supabase.rpc("create_worker_unit", {
+      p_name: unitName.trim(),
+      p_phone: unitPhone.trim() || null,
+      p_address: unitAddress.trim() || null,
+      p_team_name: teamName.trim() || null,
+    });
+
+    setUnitSaving(false);
+
+    if (error) {
+      setUnitMsg("Không thể tạo đơn vị. Vui lòng chạy migration mới hoặc thử lại sau.");
+      console.error("create_worker_unit error:", error);
+      return;
+    }
+
+    setUnitName("");
+    setUnitPhone("");
+    setUnitAddress("");
+    setTeamName("");
+    setUnitMsg("Đã tạo đơn vị và giữ nguyên vai trò thợ của bạn.");
+    await loadWorkerUnits();
+    router.refresh();
+  };
+
+  const handleAddMember = async (unitId: string) => {
+    if (!memberPhone.trim()) {
+      setUnitMsg("Vui lòng nhập SĐT tài khoản nhân viên đã đăng ký.");
+      return;
+    }
+
+    setMemberSaving(true);
+    setUnitMsg("");
+
+    const { error } = await supabase.rpc("add_worker_unit_member_by_phone", {
+      p_unit_id: unitId,
+      p_phone: memberPhone.trim(),
+      p_member_role: memberRole,
+      p_team_id: memberTeamId || null,
+    });
+
+    setMemberSaving(false);
+
+    if (error) {
+      setUnitMsg("Không thể thêm nhân viên. Nhân viên cần có tài khoản riêng trước khi được thêm.");
+      console.error("add_worker_unit_member_by_phone error:", error);
+      return;
+    }
+
+    setMemberPhone("");
+    setMemberRole("worker");
+    setMemberTeamId("");
+    setUnitMsg("Đã thêm nhân viên vào đơn vị.");
+    await loadWorkerUnits();
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -458,6 +578,13 @@ export default function WorkerProfile() {
 
   const joinedDate = profile.worker?.created_at || profile.created_at;
   const isActive = profile.worker?.status === 'active';
+  const roleLabels: Record<WorkerUnitMember["member_role"], string> = {
+    owner: "Chủ đơn vị",
+    manager: "Quản lý",
+    lead_worker: "Trưởng đội",
+    assistant_worker: "Phụ thợ",
+    worker: "Thợ",
+  };
 
   return (
     <div className="worker-profile-page flex w-full flex-col bg-surface">
@@ -694,6 +821,185 @@ export default function WorkerProfile() {
 
         {/* General Settings */}
         <div className="profile-stable-card card !p-0 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setShowUnitPanel(!showUnitPanel);
+              setUnitMsg("");
+            }}
+            className="w-full flex items-center gap-4 p-4 text-left transition-colors hover:bg-surface-container-lowest"
+          >
+            <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary-container shrink-0">
+              <BuildingIcon size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-body-sm font-bold text-on-surface">Nâng cấp thành Chủ đơn vị</div>
+              <div className="text-label-sm text-on-surface-variant truncate">
+                {workerUnits.length > 0
+                  ? `${workerUnits.length} cửa hàng/đội thợ đang quản lý`
+                  : isActive
+                    ? "Tạo cửa hàng, đội thợ và phân quyền nhân viên"
+                    : "Cần được duyệt thợ trước khi tạo đơn vị"}
+              </div>
+            </div>
+            <div className={`transform transition-transform duration-200 shrink-0 ${showUnitPanel ? "rotate-90" : ""}`}>
+              <ChevronRightIcon size={20} className="text-outline" />
+            </div>
+          </button>
+
+          {showUnitPanel && (
+            <div className="border-t border-outline-variant/50 bg-surface-container-lowest px-4 pb-5 pt-4 animate-fade-in space-y-4">
+              {unitMsg && (
+                <div className={`rounded-xl border p-3 text-xs font-semibold ${
+                  unitMsg.startsWith("Đã")
+                    ? "border-success/20 bg-success-container text-success"
+                    : "border-error/20 bg-error-container text-error"
+                }`}>
+                  {unitMsg}
+                </div>
+              )}
+
+              {!isActive ? (
+                <div className="rounded-xl border border-warning/25 bg-warning-container/40 p-4 text-sm font-semibold text-warning">
+                  Hồ sơ thợ của bạn cần được admin duyệt trước khi nâng cấp thành Chủ đơn vị.
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-outline-variant/30 bg-white p-3 space-y-3">
+                    <div>
+                      <p className="text-sm font-extrabold text-on-surface">Tạo cửa hàng/đội thợ</p>
+                      <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                        Bạn vẫn giữ vai trò thợ. Đơn vị giúp quản lý đội, phân quyền nhân viên và mở rộng vận hành.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        type="text"
+                        value={unitName}
+                        onChange={(event) => setUnitName(event.target.value)}
+                        className="input-field"
+                        placeholder="Tên cửa hàng/đội thợ"
+                        disabled={unitSaving}
+                      />
+                      <input
+                        type="tel"
+                        value={unitPhone}
+                        onChange={(event) => setUnitPhone(event.target.value)}
+                        className="input-field"
+                        placeholder="SĐT đơn vị"
+                        disabled={unitSaving}
+                      />
+                      <input
+                        type="text"
+                        value={unitAddress}
+                        onChange={(event) => setUnitAddress(event.target.value)}
+                        className="input-field"
+                        placeholder="Địa chỉ đơn vị"
+                        disabled={unitSaving}
+                      />
+                      <input
+                        type="text"
+                        value={teamName}
+                        onChange={(event) => setTeamName(event.target.value)}
+                        className="input-field"
+                        placeholder="Tên đội đầu tiên"
+                        disabled={unitSaving}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCreateUnit}
+                      disabled={unitSaving}
+                      className="btn-primary w-full !py-3 text-sm disabled:opacity-60"
+                    >
+                      {unitSaving ? "Đang tạo đơn vị..." : "Tạo đơn vị"}
+                    </button>
+                  </div>
+
+                  {workerUnits.length > 0 && (
+                    <div className="space-y-3">
+                      {workerUnits.map(unit => (
+                        <div key={unit.id} className="rounded-xl border border-outline-variant/30 bg-white p-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
+                              <UsersIcon size={18} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-extrabold text-on-surface">{unit.name}</p>
+                              <p className="mt-1 text-xs text-on-surface-variant">
+                                {unit.phone || "Chưa có SĐT"} · {unit.address || "Chưa có địa chỉ"}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-primary-container">
+                                {(unit.members || []).length} thành viên · {(unit.teams || []).length} đội
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 space-y-2">
+                            {(unit.members || []).map(member => (
+                              <div key={member.id} className="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2 text-xs">
+                                <span className="min-w-0 truncate font-semibold text-on-surface">
+                                  {member.invited_phone || member.user_id}
+                                </span>
+                                <span className="shrink-0 rounded-full bg-white px-2 py-1 font-bold text-primary-container">
+                                  {roleLabels[member.member_role] || member.member_role}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 rounded-xl border border-outline-variant/25 bg-surface-container-lowest p-3">
+                            <p className="text-xs font-extrabold uppercase text-on-surface-variant">Thêm nhân viên bằng SĐT tài khoản đã đăng ký</p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_0.8fr_0.8fr]">
+                              <input
+                                type="tel"
+                                value={memberPhone}
+                                onChange={(event) => setMemberPhone(event.target.value)}
+                                className="input-field"
+                                placeholder="SĐT nhân viên"
+                                disabled={memberSaving}
+                              />
+                              <select
+                                value={memberRole}
+                                onChange={(event) => setMemberRole(event.target.value as typeof memberRole)}
+                                className="input-field"
+                                disabled={memberSaving}
+                              >
+                                <option value="worker">Thợ</option>
+                                <option value="lead_worker">Trưởng đội</option>
+                                <option value="assistant_worker">Phụ thợ</option>
+                                <option value="manager">Quản lý</option>
+                              </select>
+                              <select
+                                value={memberTeamId}
+                                onChange={(event) => setMemberTeamId(event.target.value)}
+                                className="input-field"
+                                disabled={memberSaving}
+                              >
+                                <option value="">Không gán đội</option>
+                                {(unit.teams || []).map(team => (
+                                  <option key={team.id} value={team.id}>{team.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddMember(unit.id)}
+                              disabled={memberSaving}
+                              className="btn-outline mt-3 !min-h-10 !py-2 text-sm"
+                            >
+                              {memberSaving ? "Đang thêm..." : "Thêm và phân quyền"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {/* Link: Register Specialties */}
           <button
             type="button"

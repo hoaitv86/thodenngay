@@ -281,6 +281,187 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.request_worker_role(TEXT[]) TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.create_worker_unit(
+  p_name TEXT,
+  p_phone TEXT DEFAULT NULL,
+  p_address TEXT DEFAULT NULL,
+  p_team_name TEXT DEFAULT NULL
+)
+RETURNS UUID AS $$
+DECLARE
+  active_worker public.workers;
+  created_unit_id UUID;
+  created_team_id UUID;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  SELECT *
+  INTO active_worker
+  FROM public.workers
+  WHERE user_id = auth.uid()
+    AND status = 'active'
+  ORDER BY created_at ASC
+  LIMIT 1;
+
+  IF active_worker.id IS NULL THEN
+    RAISE EXCEPTION 'Only approved workers can create a worker unit';
+  END IF;
+
+  INSERT INTO public.user_roles (user_id, role, is_active)
+  VALUES (auth.uid(), 'unit_owner', TRUE)
+  ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+
+  INSERT INTO public.worker_units (owner_id, name, phone, normalized_phone, address)
+  VALUES (
+    auth.uid(),
+    NULLIF(trim(p_name), ''),
+    NULLIF(trim(COALESCE(p_phone, '')), ''),
+    public.normalize_phone(p_phone),
+    NULLIF(trim(COALESCE(p_address, '')), '')
+  )
+  RETURNING id INTO created_unit_id;
+
+  IF created_unit_id IS NULL THEN
+    RAISE EXCEPTION 'Could not create worker unit';
+  END IF;
+
+  INSERT INTO public.worker_unit_members (unit_id, user_id, worker_id, member_role, status)
+  VALUES (created_unit_id, auth.uid(), active_worker.id, 'owner', 'active')
+  ON CONFLICT (unit_id, user_id) DO UPDATE
+    SET member_role = 'owner',
+        status = 'active',
+        worker_id = active_worker.id;
+
+  IF NULLIF(trim(COALESCE(p_team_name, '')), '') IS NOT NULL THEN
+    INSERT INTO public.worker_teams (unit_id, lead_user_id, name)
+    VALUES (created_unit_id, auth.uid(), trim(p_team_name))
+    RETURNING id INTO created_team_id;
+
+    UPDATE public.worker_unit_members
+    SET team_id = created_team_id
+    WHERE unit_id = created_unit_id
+      AND user_id = auth.uid();
+  END IF;
+
+  RETURN created_unit_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.create_worker_unit(TEXT, TEXT, TEXT, TEXT) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.add_worker_unit_member_by_phone(
+  p_unit_id UUID,
+  p_phone TEXT,
+  p_member_role TEXT DEFAULT 'worker',
+  p_team_id UUID DEFAULT NULL
+)
+RETURNS UUID AS $$
+DECLARE
+  target_profile public.profiles;
+  target_worker public.workers;
+  created_member_id UUID;
+  normalized_input_phone TEXT := public.normalize_phone(p_phone);
+  safe_member_role TEXT := CASE
+    WHEN p_member_role IN ('manager', 'lead_worker', 'assistant_worker', 'worker') THEN p_member_role
+    ELSE 'worker'
+  END;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  IF NOT public.current_user_owns_unit(p_unit_id) THEN
+    RAISE EXCEPTION 'Only the unit owner can add members';
+  END IF;
+
+  IF normalized_input_phone IS NULL THEN
+    RAISE EXCEPTION 'Phone number is required';
+  END IF;
+
+  SELECT *
+  INTO target_profile
+  FROM public.profiles
+  WHERE normalized_phone = normalized_input_phone
+     OR public.normalize_phone(phone) = normalized_input_phone
+  ORDER BY created_at ASC
+  LIMIT 1;
+
+  IF target_profile.id IS NULL THEN
+    RAISE EXCEPTION 'No existing account found for this phone number';
+  END IF;
+
+  SELECT *
+  INTO target_worker
+  FROM public.workers
+  WHERE user_id = target_profile.id
+  ORDER BY created_at ASC
+  LIMIT 1;
+
+  INSERT INTO public.user_roles (user_id, role, is_active)
+  VALUES (target_profile.id, 'customer', TRUE)
+  ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+
+  IF safe_member_role IN ('worker', 'lead_worker', 'assistant_worker') THEN
+    INSERT INTO public.user_roles (user_id, role, is_active)
+    VALUES (target_profile.id, 'worker', TRUE)
+    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+  END IF;
+
+  IF safe_member_role = 'lead_worker' THEN
+    INSERT INTO public.user_roles (user_id, role, is_active)
+    VALUES (target_profile.id, 'lead_worker', TRUE)
+    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+  END IF;
+
+  IF safe_member_role = 'assistant_worker' THEN
+    INSERT INTO public.user_roles (user_id, role, is_active)
+    VALUES (target_profile.id, 'assistant_worker', TRUE)
+    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+  END IF;
+
+  IF safe_member_role = 'manager' THEN
+    INSERT INTO public.user_roles (user_id, role, is_active)
+    VALUES (target_profile.id, 'unit_owner', TRUE)
+    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+  END IF;
+
+  INSERT INTO public.worker_unit_members (
+    unit_id,
+    team_id,
+    user_id,
+    worker_id,
+    member_role,
+    status,
+    invited_phone,
+    invited_normalized_phone
+  )
+  VALUES (
+    p_unit_id,
+    p_team_id,
+    target_profile.id,
+    target_worker.id,
+    safe_member_role,
+    'active',
+    p_phone,
+    normalized_input_phone
+  )
+  ON CONFLICT (unit_id, user_id) DO UPDATE
+    SET team_id = EXCLUDED.team_id,
+        worker_id = EXCLUDED.worker_id,
+        member_role = EXCLUDED.member_role,
+        status = 'active',
+        invited_phone = EXCLUDED.invited_phone,
+        invited_normalized_phone = EXCLUDED.invited_normalized_phone
+  RETURNING id INTO created_member_id;
+
+  RETURN created_member_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.add_worker_unit_member_by_phone(UUID, TEXT, TEXT, UUID) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
