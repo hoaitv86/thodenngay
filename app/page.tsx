@@ -994,22 +994,34 @@ export default async function HomePage() {
       {/* ===== FOOTER ===== */}
       <footer className="bg-on-surface text-surface py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-10 md:grid-cols-4">
+          <div className="mx-auto grid max-w-4xl grid-cols-2 gap-x-6 gap-y-10 text-center md:max-w-7xl md:grid-cols-4 md:text-left">
             <div className="col-span-2">
-              <div className="flex items-center gap-3 mb-4">
+              <div className="mb-4 flex items-center justify-center gap-3 md:justify-start">
                 <LogoIcon size={32} />
                 <span className="text-xl font-bold">{systemSettings.app_name}</span>
               </div>
-              <p className="text-sm text-surface-container-high max-w-sm">
+              <p className="mx-auto max-w-sm text-sm leading-6 text-surface-container-high md:mx-0">
                 Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Dịch vụ uy tín, giá cả minh bạch.
               </p>
-              <div className="flex items-center gap-2 mt-4 text-surface-container-high">
-                <PhoneIcon size={16} />
-                <span className="text-sm">Hotline: {systemSettings.hotline}</span>
+              <div className="mt-5 grid gap-2 text-sm text-surface-container-high">
+                <div className="flex items-center justify-center gap-2 md:justify-start">
+                  <PhoneIcon size={16} />
+                  <span>Hotline: {systemSettings.hotline}</span>
+                </div>
+                <div className="flex items-center justify-center gap-2 md:justify-start">
+                  <MapPinIcon size={16} />
+                  <span>{systemSettings.company_address}</span>
+                </div>
+                <a
+                  href={`mailto:${systemSettings.support_email}`}
+                  className="hover:text-white transition-colors"
+                >
+                  {systemSettings.support_email}
+                </a>
               </div>
             </div>
 
-            <div>
+            <div className="justify-self-center md:justify-self-auto">
               <h4 className="font-semibold mb-4">Dịch vụ</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Sửa điện</a></li>
@@ -1019,7 +1031,7 @@ export default async function HomePage() {
               </ul>
             </div>
 
-            <div>
+            <div className="justify-self-center md:justify-self-auto">
               <h4 className="font-semibold mb-4">Thông tin</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><a href="#" className="hover:text-white transition-colors">Về chúng tôi</a></li>
