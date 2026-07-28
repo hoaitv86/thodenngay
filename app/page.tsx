@@ -36,6 +36,7 @@ export const dynamic = "force-dynamic";
 
 const apkDownloadUrl = "https://thodenngay.vn/downloads/thodenngay.apk";
 const apkVersion = "0.1.1-beta";
+const apkUpdatedAt = "26/07/2026";
 
 async function getApkDownloadData() {
   const apkPath = path.join(process.cwd(), "public", "downloads", "thodenngay.apk");
@@ -55,11 +56,7 @@ async function getApkDownloadData() {
     downloadUrl: apkDownloadUrl,
     qrCodeDataUrl,
     version: apkVersion,
-    updatedAt: new Intl.DateTimeFormat("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(stat.mtime),
+    updatedAt: apkUpdatedAt,
     fileSize: `${(stat.size / 1024 / 1024).toFixed(2)} MB`,
   };
 }
