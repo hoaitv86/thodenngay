@@ -181,6 +181,22 @@ iframe {
   -webkit-overflow-scrolling: touch;
 }
 
+@media (max-width: 767px) {
+  .worker-profile-shell,
+  .customer-profile-shell {
+    height: auto !important;
+    min-height: 0;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto;
+  }
+
+  .worker-profile-page,
+  .customer-profile-page {
+    min-height: auto;
+    padding-bottom: calc(8.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 .profile-hero,
 .profile-stable-card {
   backface-visibility: hidden;
@@ -192,13 +208,13 @@ iframe {
   .customer-profile-shell {
     height: auto;
     min-height: 0;
-    overflow-y: auto;
+    overflow-y: visible !important;
   }
 
   .worker-profile-page,
   .customer-profile-page {
-    min-height: calc(100svh - 4rem);
-    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    min-height: auto;
+    padding-bottom: calc(8.75rem + env(safe-area-inset-bottom, 0px));
     animation: none !important;
   }
 
