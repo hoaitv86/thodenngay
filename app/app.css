@@ -95,6 +95,13 @@ html {
   font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
 }
 
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   background-color: var(--color-surface);
   color: var(--color-on-surface);
@@ -102,6 +109,63 @@ body {
   line-height: 1.55;
   min-height: 100vh;
   overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+}
+
+/* Mobile/WebView width guard: prevent accidental desktop-width layouts from zooming or creating page-level horizontal scroll. */
+@media (max-width: 767px) {
+  html,
+  body,
+  #__next {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  main,
+  section,
+  article,
+  header,
+  footer,
+  nav,
+  form,
+  aside,
+  .card,
+  .card-elevated,
+  .modal-panel,
+  .admin-table-card,
+  .metric-card,
+  .auth-card {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .overflow-x-auto,
+  [class*="overflow-x-auto"] {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .fixed.inset-0,
+  [class*="w-[calc(100%-"],
+  [class*="w-11/12"] {
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
 }
 
 .worker-profile-page,
