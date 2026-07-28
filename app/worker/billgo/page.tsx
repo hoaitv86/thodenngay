@@ -27,6 +27,7 @@ import {
   getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
+  getBillGoNextPeriodStartDate,
   getBillGoReceivableSummary,
   toBillGoDateInput,
   toMoneyNumber,
@@ -211,6 +212,20 @@ const getNextPeriodStartDisplay = (subscription?: Subscription | null, fallback?
   }
 
   return subscription?.next_period_start || fallback || null;
+};
+const isSettledBillGoRow = (row?: Receivable | null) => {
+  if (!row) return false;
+  const total = toMoneyNumber(row.total_amount);
+  return row.status === "paid" || row.status === "promo" || (total > 0 && toMoneyNumber(row.paid_amount) >= total);
+};
+
+const getPaidThroughDisplay = (row?: Receivable | null) =>
+  row?.subscription?.covered_until || (isSettledBillGoRow(row) ? row?.period_end || null : null);
+
+const getNextPeriodStartForRow = (row?: Receivable | null) => {
+  const paidThrough = getPaidThroughDisplay(row);
+  if (paidThrough) return getBillGoNextPeriodStartDate(paidThrough);
+  return getNextPeriodStartDisplay(row?.subscription, row?.next_period_start || row?.period_start || null);
 };
 const previousMonthFirstInput = () => {
   const today = new Date();
@@ -1855,8 +1870,8 @@ export default function WorkerBillGoPage() {
                   ["Địa chỉ", actionTarget.subscription?.customer_address || "Chưa có"],
                   ["Nhà mạng", actionTarget.subscription?.provider || "Chưa có"],
                   ["Hình thức hiện tại", getBillGoCycleOption(actionTarget.subscription?.current_cycle || actionTarget.subscription?.cycle || "monthly").label],
-                  ["Đã thanh toán đến", actionTarget.subscription?.covered_until || "Chưa có"],
-                  ["Kỳ thu tiếp theo", getNextPeriodStartDisplay(actionTarget.subscription, actionTarget.next_period_start || actionTarget.period_start) ? dateLabel(getNextPeriodStartDisplay(actionTarget.subscription, actionTarget.next_period_start || actionTarget.period_start) || "") : "Chưa có"],
+                  ["Đã thanh toán đến", getPaidThroughDisplay(actionTarget) || "Chưa có"],
+                  ["Kỳ thu tiếp theo", getNextPeriodStartForRow(actionTarget) ? dateLabel(getNextPeriodStartForRow(actionTarget) || "") : "Chưa có"],
                   ["Ghi chú", actionTarget.subscription?.note || actionTarget.note || "Chưa có"],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg bg-surface-container-low p-3">

@@ -642,7 +642,7 @@ export async function GET(request: Request) {
     ? await Promise.all([
         admin
           .from("billgo_receivables")
-          .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id")
+          .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_period_start, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id")
           .eq("worker_id", workerId)
           .in("subscription_id", subscriptionIds)
           .is("deleted_at", null)
