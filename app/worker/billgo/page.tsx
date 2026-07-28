@@ -216,6 +216,10 @@ const previousMonthFirstInput = () => {
   const today = new Date();
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 };
+const currentMonthDayInput = (day: number) => {
+  const today = new Date();
+  return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth(), day));
+};
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 const parseDateInput = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
@@ -612,6 +616,18 @@ const getBillGoRowCycle = (item: Receivable) =>
 const getSignupCycleValues = (allowedCycles?: BillGoCycle[] | null) =>
   new Set([...(allowedCycles || []), ...BILLGO_SIGNUP_CYCLES]);
 
+const upfrontSignupCycles = new Set<BillGoCycle>(["two_months", "three_months", "six_months", "yearly"]);
+
+const applySignupCycleDefaults = <T extends { cycle: BillGoCycle; startDate: string; dueDate: string }>(form: T, cycle: BillGoCycle): T => {
+  if (cycle === "monthly") {
+    return { ...form, cycle, startDate: previousMonthFirstInput(), dueDate: "" };
+  }
+  if (upfrontSignupCycles.has(cycle)) {
+    return { ...form, cycle, startDate: currentMonthDayInput(1), dueDate: currentMonthDayInput(28) };
+  }
+  return { ...form, cycle };
+};
+
 export default function WorkerBillGoPage() {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Receivable[]>([]);
@@ -990,20 +1006,20 @@ export default function WorkerBillGoPage() {
         }
         return { ...prev, address: value };
       }
-      if (key === "cycle" && value === "monthly") return { ...prev, cycle: value as BillGoCycle, startDate: previousMonthFirstInput(), dueDate: "" };
+      if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle);
       if (key === "packageId") {
         const selectedPackage = packages.find(item => item.id === value);
         if (!selectedPackage) return { ...prev, packageId: "", packageName: "", monthlyFee: "" };
         const allowedCycles = getSignupCycleValues(selectedPackage.allowed_cycles);
         const nextCycle = allowedCycles.has(prev.cycle) ? prev.cycle : BILLGO_SIGNUP_CYCLES[0] || "monthly";
-        return {
+        return applySignupCycleDefaults({
           ...prev,
           packageId: selectedPackage.id,
           packageName: selectedPackage.name,
           monthlyFee: String(Number(selectedPackage.monthly_price || 0)),
           provider: selectedPackage.provider || prev.provider,
           cycle: nextCycle,
-        };
+        }, nextCycle);
       }
       if (key !== "packageName") return { ...prev, [key]: value };
       const packageAmount = getNumericPackageAmount(value);
