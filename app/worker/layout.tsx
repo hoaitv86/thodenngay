@@ -13,6 +13,7 @@ import {
 } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoAccount } from "@/lib/demo-accounts";
+import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import {
   BellIcon,
   BriefcaseIcon,
@@ -76,6 +77,12 @@ const mobileMoreGroups: MobileMoreGroup[] = [
   { id: "management", label: "Quản lý", groups: ["work", "communication"] },
   { id: "system", label: "Hệ thống", groups: ["account", "more"] },
 ];
+
+const activeRoleCookieMaxAge = 60 * 60 * 24 * 30;
+
+function setActiveRoleCookie(role: "customer" | "worker") {
+  document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
+}
 
 export default function WorkerLayout({
   children,
@@ -316,10 +323,18 @@ export default function WorkerLayout({
   }, [fetchWorkerNotifications, notificationUserId, supabase]);
 
   const handleLogout = async () => {
+    document.cookie = `${ACTIVE_ROLE_COOKIE}=; path=/; max-age=0; samesite=lax`;
     await supabase.auth.signOut();
     await fetch("/api/auth/signout", { method: "POST" });
     router.replace("/login");
     router.refresh();
+  };
+
+  const handleSwitchToCustomerMode = () => {
+    setActiveRoleCookie("customer");
+    setMoreOpen(false);
+    setNotificationOpen(false);
+    window.location.assign("/customer/home");
   };
 
   const handleCreateJobNav = () => {
@@ -382,13 +397,14 @@ export default function WorkerLayout({
         </nav>
 
         <div className="mt-auto border-t border-outline-variant/20 p-3">
-          <Link
-            href="/customer/home"
+          <button
+            type="button"
+            onClick={handleSwitchToCustomerMode}
             className="mb-2 flex w-full items-center justify-start gap-3 rounded-lg px-4 py-3 text-sm font-extrabold text-primary-container transition-colors hover:bg-primary-fixed"
           >
             <UserIcon size={20} />
             <span>Chế độ Khách hàng</span>
-          </Link>
+          </button>
           <button
             onClick={handleLogout}
             title="Đăng xuất"
@@ -417,21 +433,23 @@ export default function WorkerLayout({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href="/customer/home"
+            <button
+              type="button"
+              onClick={handleSwitchToCustomerMode}
               className="hidden items-center gap-2 rounded-lg border border-primary-container/20 bg-white px-3 py-2.5 text-xs font-extrabold text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:inline-flex"
             >
               <UserIcon size={16} />
               Chế độ Khách hàng
-            </Link>
-            <Link
-              href="/customer/home"
+            </button>
+            <button
+              type="button"
+              onClick={handleSwitchToCustomerMode}
               aria-label="Chế độ Khách hàng"
               title="Chế độ Khách hàng"
               className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary-container/15 bg-white text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
             >
               <UserIcon size={18} />
-            </Link>
+            </button>
             <div
               className="relative"
               onClick={() => {

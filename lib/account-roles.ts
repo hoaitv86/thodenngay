@@ -1,5 +1,6 @@
 export type AccountRole = "customer" | "worker" | "admin" | "unit_owner" | "lead_worker" | "assistant_worker";
 export type LegacyProfileRole = "customer" | "worker" | "admin";
+export const ACTIVE_ROLE_COOKIE = "alo_active_role";
 
 export type WorkerAccountRecord = {
   status?: string | null;
@@ -45,15 +46,58 @@ export function uniqueRoles(legacyRole?: string | null, userRoles: UserRoleRecor
   return [...roles];
 }
 
+export function isAccountRole(role?: string | null): role is AccountRole {
+  return (
+    role === "customer" ||
+    role === "worker" ||
+    role === "admin" ||
+    role === "unit_owner" ||
+    role === "lead_worker" ||
+    role === "assistant_worker"
+  );
+}
+
+export function isWorkerRole(role?: string | null) {
+  return role === "worker" || role === "unit_owner" || role === "lead_worker" || role === "assistant_worker";
+}
+
+export function canUseAccountRole(role: AccountRole, roles: AccountRole[], worker?: WorkerAccountRecord) {
+  if (role === "customer") return roles.includes("customer") || Boolean(worker) || roles.includes("worker");
+  if (role === "admin") return roles.includes("admin");
+  if (isWorkerRole(role)) return Boolean(worker) || roles.includes(role) || roles.includes("worker");
+  return roles.includes(role);
+}
+
+export function resolveActiveRole(params: {
+  legacyRole?: string | null;
+  worker?: WorkerAccountRecord;
+  userRoles?: UserRoleRecord[];
+  preferredRole?: string | null;
+}) {
+  const roles = uniqueRoles(params.legacyRole, params.userRoles);
+  const preferredRole = isAccountRole(params.preferredRole) ? params.preferredRole : null;
+
+  if (preferredRole && canUseAccountRole(preferredRole, roles, params.worker)) {
+    return preferredRole;
+  }
+
+  if (roles.includes("admin")) return "admin";
+  if (params.worker || roles.includes("worker")) return "worker";
+  if (roles.includes("lead_worker")) return "lead_worker";
+  if (roles.includes("assistant_worker")) return "assistant_worker";
+  return "customer";
+}
+
 export function resolvePostLoginDestination(params: {
   legacyRole?: string | null;
   worker?: WorkerAccountRecord;
   userRoles?: UserRoleRecord[];
+  preferredRole?: string | null;
 }) {
-  const roles = uniqueRoles(params.legacyRole, params.userRoles);
+  const activeRole = resolveActiveRole(params);
 
-  if (roles.includes("admin")) return "/admin/dashboard";
-  if (params.worker || roles.includes("worker") || roles.includes("lead_worker") || roles.includes("assistant_worker")) {
+  if (activeRole === "admin") return "/admin/dashboard";
+  if (isWorkerRole(activeRole)) {
     return "/worker";
   }
   return "/customer/home";

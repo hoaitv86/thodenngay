@@ -1,5 +1,10 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import {
+  ACTIVE_ROLE_COOKIE,
+  isWorkerRole,
+  resolveActiveRole,
+} from '@/lib/account-roles';
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -58,15 +63,31 @@ export async function updateSession(request: NextRequest) {
 
   // Role-based route protection
   if (user) {
-    const { data: profile } = await supabase
+    const [{ data: profile }, { data: worker }, { data: userRoles }] = await Promise.all([
+      supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
-      .single();
+        .single(),
+      supabase
+        .from('workers')
+        .select('status')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('user_roles')
+        .select('role, is_active')
+        .eq('user_id', user.id),
+    ]);
 
     if (profile) {
       const path = request.nextUrl.pathname;
-      const role = profile.role;
+      const role = resolveActiveRole({
+        legacyRole: profile.role,
+        worker,
+        userRoles: userRoles || [],
+        preferredRole: request.cookies.get(ACTIVE_ROLE_COOKIE)?.value,
+      });
 
       // 1. Admin protection
       if (path.startsWith('/admin') && role !== 'admin') {
@@ -76,7 +97,7 @@ export async function updateSession(request: NextRequest) {
       }
 
       // 2. Worker protection
-      if (path.startsWith('/worker') && role !== 'worker') {
+      if (path.startsWith('/worker') && !isWorkerRole(role)) {
         const url = request.nextUrl.clone();
         url.pathname = '/redirect';
         return NextResponse.redirect(url);

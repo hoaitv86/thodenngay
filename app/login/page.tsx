@@ -8,13 +8,19 @@ import { useSettings } from "@/lib/settings";
 import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 import { MapPinCheck } from "lucide-react";
 import { saveLoginLocation } from "@/services/locationService";
-import { resolvePostLoginDestination } from "@/lib/account-roles";
+import { ACTIVE_ROLE_COOKIE, resolvePostLoginDestination } from "@/lib/account-roles";
 import {
   DEMO_ACTION_BLOCK_MESSAGE,
   DEMO_SESSION_STORAGE_KEY,
   type DemoRole,
   isDemoAccount,
 } from "@/lib/demo-accounts";
+
+const getPreferredRole = () =>
+  document.cookie
+    .split("; ")
+    .find((item) => item.startsWith(`${ACTIVE_ROLE_COOKIE}=`))
+    ?.split("=")[1];
 
 export default function LoginPage() {
   const [androidStartup] = useState(
@@ -70,6 +76,7 @@ export default function LoginPage() {
         legacyRole: profile.role,
         worker,
         userRoles: userRoles || [],
+        preferredRole: getPreferredRole(),
       });
 
       router.replace(destination);
@@ -132,6 +139,7 @@ export default function LoginPage() {
       legacyRole: profile.role,
       worker,
       userRoles: userRoles || [],
+      preferredRole: getPreferredRole(),
     });
 
     if (profile.role === "worker" || profile.role === "customer") {
@@ -265,6 +273,7 @@ export default function LoginPage() {
         legacyRole: profile.role,
         worker,
         userRoles: userRoles || [],
+        preferredRole: getPreferredRole(),
       });
 
       if (profile.role === "worker" || profile.role === "customer") {

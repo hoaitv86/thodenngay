@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { resolvePostLoginDestination } from "@/lib/account-roles";
+import { ACTIVE_ROLE_COOKIE, resolvePostLoginDestination } from "@/lib/account-roles";
 
 export default function RedirectPage() {
   const router = useRouter();
@@ -47,6 +47,10 @@ export default function RedirectPage() {
         legacyRole: profile.role,
         worker,
         userRoles: userRoles || [],
+        preferredRole: document.cookie
+          .split("; ")
+          .find((item) => item.startsWith(`${ACTIVE_ROLE_COOKIE}=`))
+          ?.split("=")[1],
       }));
     };
 
