@@ -669,7 +669,13 @@ export async function GET(request: Request) {
   }));
   const currentSubscriptionIds = new Set(currentRows.map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
   const notDueRows = hydratedSubscriptions
-    .filter(subscription => subscription.status === "active" && !currentSubscriptionIds.has(subscription.id))
+    .filter(subscription => {
+      if (subscription.status !== "active" || currentSubscriptionIds.has(subscription.id)) return false;
+      const cycle = String(subscription.current_cycle || subscription.cycle || "monthly");
+      if (cycle === "monthly") return true;
+      const periodStart = firstOfMonth(subscription.next_period_start || subscription.start_date || coveredMonth);
+      return getBillGoBillingPeriod(periodStart, cycle).collectionMonth === coveredMonth;
+    })
     .map(subscription => buildNotDueRow(subscription, coverageBySubscription.get(subscription.id)));
 
   const filteredRows = [...currentRows, ...notDueRows]
