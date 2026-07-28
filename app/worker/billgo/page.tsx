@@ -983,7 +983,8 @@ export default function WorkerBillGoPage() {
       }
       if (key === "address") {
         const normalizedValue = value.trim().toLocaleLowerCase("vi");
-        const matchedArea = areas.find(area =>
+        const candidateAreas = prev.areaId ? areas.filter(area => area.id === prev.areaId) : areas;
+        const matchedArea = candidateAreas.find(area =>
           area.sub_areas?.some(subArea =>
             subArea.is_active !== false &&
             subArea.name.trim().toLocaleLowerCase("vi") === normalizedValue
