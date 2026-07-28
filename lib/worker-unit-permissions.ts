@@ -9,11 +9,11 @@ export const WORKER_UNIT_MEMBER_ROLES: WorkerUnitMemberRole[] = [
 ];
 
 export const WORKER_UNIT_ROLE_LABELS: Record<WorkerUnitMemberRole, string> = {
-  owner: "Ch? ??n v?",
-  manager: "Qu?n l?",
-  technician: "Th? k? thu?t",
-  bill_collector: "Nh?n vi?n thu c??c",
-  sales_inventory: "Nh?n vi?n b?n h?ng/kho",
+  owner: "Ch\u1ee7 \u0111\u01a1n v\u1ecb",
+  manager: "Qu\u1ea3n l\u00fd",
+  technician: "Th\u1ee3 k\u1ef9 thu\u1eadt",
+  bill_collector: "Nh\u00e2n vi\u00ean thu c\u01b0\u1edbc",
+  sales_inventory: "Nh\u00e2n vi\u00ean b\u00e1n h\u00e0ng/kho",
 };
 
 export const WORKER_UNIT_ASSIGNABLE_ROLES = WORKER_UNIT_MEMBER_ROLES.filter(
