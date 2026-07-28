@@ -616,6 +616,8 @@ const getBillGoRowCycle = (item: Receivable) =>
 const getSignupCycleValues = (allowedCycles?: BillGoCycle[] | null) =>
   new Set([...(allowedCycles || []), ...BILLGO_SIGNUP_CYCLES]);
 
+const subAreaNameCollator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
+
 const upfrontSignupCycles = new Set<BillGoCycle>(["two_months", "three_months", "six_months", "yearly"]);
 
 const applySignupCycleDefaults = <T extends { cycle: BillGoCycle; startDate: string; dueDate: string }>(form: T, cycle: BillGoCycle): T => {
@@ -859,7 +861,7 @@ export default function WorkerBillGoPage() {
     [areas, selectedAreaId],
   );
   const selectedAreaSubAreas = useMemo(
-    () => selectedArea?.sub_areas?.filter(subArea => subArea.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name)) || [],
+    () => selectedArea?.sub_areas?.filter(subArea => subArea.is_active !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || subAreaNameCollator.compare(a.name, b.name)) || [],
     [selectedArea],
   );
   useEffect(() => {
