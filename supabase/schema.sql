@@ -97,7 +97,7 @@ CREATE TABLE public.worker_unit_members (
   team_id UUID REFERENCES public.worker_teams(id) ON DELETE SET NULL,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   worker_id UUID REFERENCES public.workers(id) ON DELETE SET NULL,
-  member_role TEXT NOT NULL CHECK (member_role IN ('owner', 'manager', 'lead_worker', 'assistant_worker', 'worker')) DEFAULT 'worker',
+  member_role TEXT NOT NULL CHECK (member_role IN ('owner', 'manager', 'technician', 'bill_collector', 'sales_inventory')) DEFAULT 'technician',
   status TEXT NOT NULL CHECK (status IN ('invited', 'active', 'suspended', 'left')) DEFAULT 'active',
   invited_phone TEXT,
   invited_normalized_phone TEXT,
@@ -426,7 +426,7 @@ GRANT EXECUTE ON FUNCTION public.create_worker_unit(TEXT, TEXT, TEXT, TEXT) TO a
 CREATE OR REPLACE FUNCTION public.add_worker_unit_member_by_phone(
   p_unit_id UUID,
   p_phone TEXT,
-  p_member_role TEXT DEFAULT 'worker',
+  p_member_role TEXT DEFAULT 'technician',
   p_team_id UUID DEFAULT NULL
 )
 RETURNS UUID AS $$
@@ -436,8 +436,9 @@ DECLARE
   created_member_id UUID;
   normalized_input_phone TEXT := public.normalize_phone(p_phone);
   safe_member_role TEXT := CASE
-    WHEN p_member_role IN ('manager', 'lead_worker', 'assistant_worker', 'worker') THEN p_member_role
-    ELSE 'worker'
+    WHEN p_member_role IN ('manager', 'technician', 'bill_collector', 'sales_inventory') THEN p_member_role
+    WHEN p_member_role IN ('lead_worker', 'assistant_worker', 'worker') THEN 'technician'
+    ELSE 'technician'
   END;
 BEGIN
   IF auth.uid() IS NULL THEN
@@ -475,23 +476,12 @@ BEGIN
   VALUES (target_profile.id, 'customer', TRUE)
   ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
 
-  IF safe_member_role IN ('worker', 'lead_worker', 'assistant_worker') THEN
+  IF safe_member_role IN ('technician', 'bill_collector', 'sales_inventory') THEN
     INSERT INTO public.user_roles (user_id, role, is_active)
     VALUES (target_profile.id, 'worker', TRUE)
     ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
   END IF;
 
-  IF safe_member_role = 'lead_worker' THEN
-    INSERT INTO public.user_roles (user_id, role, is_active)
-    VALUES (target_profile.id, 'lead_worker', TRUE)
-    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
-  END IF;
-
-  IF safe_member_role = 'assistant_worker' THEN
-    INSERT INTO public.user_roles (user_id, role, is_active)
-    VALUES (target_profile.id, 'assistant_worker', TRUE)
-    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
-  END IF;
 
   IF safe_member_role = 'manager' THEN
     INSERT INTO public.user_roles (user_id, role, is_active)
@@ -533,6 +523,73 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.add_worker_unit_member_by_phone(UUID, TEXT, TEXT, UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.update_worker_unit_member_role(
+  p_member_id UUID,
+  p_member_role TEXT
+)
+RETURNS UUID AS $$
+DECLARE
+  target_member public.worker_unit_members;
+  safe_member_role TEXT := CASE
+    WHEN p_member_role IN ('manager', 'technician', 'bill_collector', 'sales_inventory') THEN p_member_role
+    WHEN p_member_role IN ('lead_worker', 'assistant_worker', 'worker') THEN 'technician'
+    ELSE NULL
+  END;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  IF safe_member_role IS NULL THEN
+    RAISE EXCEPTION 'Invalid member role';
+  END IF;
+
+  SELECT *
+  INTO target_member
+  FROM public.worker_unit_members
+  WHERE id = p_member_id;
+
+  IF target_member.id IS NULL THEN
+    RAISE EXCEPTION 'Member not found';
+  END IF;
+
+  IF target_member.member_role = 'owner' THEN
+    RAISE EXCEPTION 'Owner role cannot be changed';
+  END IF;
+
+  IF NOT public.current_user_owns_unit(target_member.unit_id) THEN
+    RAISE EXCEPTION 'Only the unit owner can update members';
+  END IF;
+
+  UPDATE public.worker_unit_members
+  SET member_role = safe_member_role,
+      updated_at = NOW()
+  WHERE id = p_member_id
+  RETURNING * INTO target_member;
+
+  INSERT INTO public.user_roles (user_id, role, is_active)
+  VALUES (target_member.user_id, 'customer', TRUE)
+  ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+
+  IF safe_member_role IN ('technician', 'bill_collector', 'sales_inventory') THEN
+    INSERT INTO public.user_roles (user_id, role, is_active)
+    VALUES (target_member.user_id, 'worker', TRUE)
+    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+  END IF;
+
+  IF safe_member_role = 'manager' THEN
+    INSERT INTO public.user_roles (user_id, role, is_active)
+    VALUES (target_member.user_id, 'unit_owner', TRUE)
+    ON CONFLICT (user_id, role) DO UPDATE SET is_active = TRUE;
+  END IF;
+
+  RETURN target_member.id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.update_worker_unit_member_role(UUID, TEXT) TO authenticated;
+
 
 -- Services: Everyone can view active services, admins can manage the catalog
 CREATE POLICY "Public view active services" ON public.services FOR SELECT USING (is_active = TRUE);

@@ -58,9 +58,26 @@ type GpsLocation = {
 type WorkerUnitMember = {
   id: string;
   user_id: string;
-  member_role: "owner" | "manager" | "lead_worker" | "assistant_worker" | "worker";
+  member_role: WorkerUnitMemberRole;
   status: string;
   invited_phone?: string | null;
+};
+
+type WorkerUnitMemberRole = "owner" | "manager" | "technician" | "bill_collector" | "sales_inventory";
+
+const memberRoleOptions: Array<{ value: Exclude<WorkerUnitMemberRole, "owner">; label: string }> = [
+  { value: "manager", label: "Quản lý" },
+  { value: "technician", label: "Thợ kỹ thuật" },
+  { value: "bill_collector", label: "Nhân viên thu cước" },
+  { value: "sales_inventory", label: "Nhân viên bán hàng/kho" },
+];
+
+const roleLabels: Record<WorkerUnitMemberRole, string> = {
+  owner: "Chủ đơn vị",
+  manager: "Quản lý",
+  technician: "Thợ kỹ thuật",
+  bill_collector: "Nhân viên thu cước",
+  sales_inventory: "Nhân viên bán hàng/kho",
 };
 
 type WorkerTeam = {
@@ -111,9 +128,10 @@ export default function WorkerProfile() {
   const [unitSaving, setUnitSaving] = useState(false);
   const [unitMsg, setUnitMsg] = useState("");
   const [memberPhone, setMemberPhone] = useState("");
-  const [memberRole, setMemberRole] = useState<"worker" | "lead_worker" | "assistant_worker" | "manager">("worker");
+  const [memberRole, setMemberRole] = useState<Exclude<WorkerUnitMemberRole, "owner">>("technician");
   const [memberTeamId, setMemberTeamId] = useState("");
   const [memberSaving, setMemberSaving] = useState(false);
+  const [roleSavingMemberId, setRoleSavingMemberId] = useState<string | null>(null);
 
   // Password change states
   const [newPassword, setNewPassword] = useState("");
@@ -343,9 +361,32 @@ export default function WorkerProfile() {
     }
 
     setMemberPhone("");
-    setMemberRole("worker");
+    setMemberRole("technician");
     setMemberTeamId("");
     setUnitMsg("Đã thêm nhân viên vào đơn vị.");
+    await loadWorkerUnits();
+  };
+
+  const handleUpdateMemberRole = async (member: WorkerUnitMember, nextRole: WorkerUnitMemberRole) => {
+    if (member.member_role === "owner" || nextRole === "owner" || nextRole === member.member_role) return;
+
+    setRoleSavingMemberId(member.id);
+    setUnitMsg("");
+
+    const { error } = await supabase.rpc("update_worker_unit_member_role", {
+      p_member_id: member.id,
+      p_member_role: nextRole,
+    });
+
+    setRoleSavingMemberId(null);
+
+    if (error) {
+      setUnitMsg("Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt vai tr\u00f2 th\u00e0nh vi\u00ean. Vui l\u00f2ng th\u1eed l\u1ea1i sau.");
+      console.error("update_worker_unit_member_role error:", error);
+      return;
+    }
+
+    setUnitMsg("\u0110\u00e3 c\u1eadp nh\u1eadt vai tr\u00f2 th\u00e0nh vi\u00ean.");
     await loadWorkerUnits();
   };
 
@@ -578,13 +619,6 @@ export default function WorkerProfile() {
 
   const joinedDate = profile.worker?.created_at || profile.created_at;
   const isActive = profile.worker?.status === 'active';
-  const roleLabels: Record<WorkerUnitMember["member_role"], string> = {
-    owner: "Chủ đơn vị",
-    manager: "Quản lý",
-    lead_worker: "Trưởng đội",
-    assistant_worker: "Phụ thợ",
-    worker: "Thợ",
-  };
 
   return (
     <div className="worker-profile-page flex w-full flex-col bg-surface">
@@ -937,13 +971,27 @@ export default function WorkerProfile() {
 
                           <div className="mt-3 space-y-2">
                             {(unit.members || []).map(member => (
-                              <div key={member.id} className="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2 text-xs">
+                              <div key={member.id} className="flex flex-col gap-2 rounded-lg bg-surface-container-low px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
                                 <span className="min-w-0 truncate font-semibold text-on-surface">
                                   {member.invited_phone || member.user_id}
                                 </span>
-                                <span className="shrink-0 rounded-full bg-white px-2 py-1 font-bold text-primary-container">
-                                  {roleLabels[member.member_role] || member.member_role}
-                                </span>
+                                {member.member_role === "owner" ? (
+                                  <span className="shrink-0 rounded-full bg-white px-2 py-1 font-bold text-primary-container">
+                                    {roleLabels[member.member_role]}
+                                  </span>
+                                ) : (
+                                  <select
+                                    value={member.member_role}
+                                    onChange={(event) => void handleUpdateMemberRole(member, event.target.value as WorkerUnitMemberRole)}
+                                    disabled={roleSavingMemberId === member.id}
+                                    className="input-field min-h-9 shrink-0 bg-white py-1 text-xs font-bold sm:w-56"
+                                    aria-label={"Vai tr\u00f2 th\u00e0nh vi\u00ean"}
+                                  >
+                                    {memberRoleOptions.map(option => (
+                                      <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                  </select>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -965,10 +1013,9 @@ export default function WorkerProfile() {
                                 className="input-field"
                                 disabled={memberSaving}
                               >
-                                <option value="worker">Thợ</option>
-                                <option value="lead_worker">Trưởng đội</option>
-                                <option value="assistant_worker">Phụ thợ</option>
-                                <option value="manager">Quản lý</option>
+                                {memberRoleOptions.map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
                               </select>
                               <select
                                 value={memberTeamId}
