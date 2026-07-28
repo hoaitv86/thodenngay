@@ -3239,29 +3239,39 @@ export default function WorkerDashboard() {
               </div>
             )}
 
-            <div className="space-y-2 sm:hidden">
-              {[
-                ["Doanh thu", monthlyRevenueProgress, formatBillGoCurrency(workerStats.monthlyIncome), formatBillGoCurrency(monthlyRevenueTarget)],
-                ["Tổng khách", monthlyTotalCustomerProgress, String(totalCustomers), String(monthlyTotalCustomerTarget)],
-                ["Khách mới", monthlyNewCustomerProgress, String(monthNewCustomers), String(monthlyNewCustomerTarget)],
-              ].map(([label, progress, current, target]) => (
-                <div key={label} className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5">
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</span>
-                    <span className="text-sm font-extrabold text-primary-container">{progress}%</span>
-                  </div>
-                  <div className="progress h-2">
-                    <div className="progress-bar" style={{ width: `${progress}%` }} />
-                  </div>
-                  <p className="mt-1 truncate text-[11px] font-bold text-on-surface-variant">{current} / {target}</p>
-                </div>
-              ))}
+            <div className="sm:hidden">
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  ["Doanh thu", monthlyRevenueProgress, formatBillGoCurrency(workerStats.monthlyIncome), formatBillGoCurrency(monthlyRevenueTarget)],
+                  ["T\u1ed5ng kh\u00e1ch", monthlyTotalCustomerProgress, String(totalCustomers), String(monthlyTotalCustomerTarget)],
+                  ["Kh\u00e1ch m\u1edbi", monthlyNewCustomerProgress, String(monthNewCustomers), String(monthlyNewCustomerTarget)],
+                ].map(([label, progress, current, target]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setMonthlyGoalExpanded(true)}
+                    className="min-w-0 rounded-lg border border-outline-variant bg-surface-container-lowest p-2 text-left"
+                    title={`${label}: ${current} / ${target}`}
+                  >
+                    <div className="flex min-w-0 items-center justify-between gap-1">
+                      <span className="min-w-0 truncate text-[10px] font-bold uppercase leading-none text-on-surface-variant">{label}</span>
+                      <span className="shrink-0 text-[11px] font-extrabold leading-none text-primary-container">{progress}%</span>
+                    </div>
+                    <div className="progress mt-1.5 h-1.5">
+                      <div className="progress-bar" style={{ width: `${progress}%` }} />
+                    </div>
+                    {showMonthlyGoalDetails && (
+                      <p className="mt-1 truncate text-[10px] font-bold leading-none text-on-surface-variant">{current} / {target}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => setMonthlyGoalExpanded(current => !current)}
-                className="w-full rounded-lg border border-primary-container/25 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container"
+                className="mt-1.5 w-full rounded-lg border border-primary-container/25 bg-primary-fixed px-3 py-1.5 text-[11px] font-extrabold text-primary-container"
               >
-                {showMonthlyGoalDetails ? "Thu gọn" : "Xem thêm"}
+                {showMonthlyGoalDetails ? "Thu g\u1ecdn" : "Xem th\u00eam"}
               </button>
             </div>
 
