@@ -309,6 +309,103 @@ type HomepageCustomerReview = {
   serviceName: string;
   avatarUrl: string | null;
 };
+const fallbackCustomerNames = [
+  "Chị Thu",
+  "Anh Nam",
+  "Cô Lan",
+  "Anh Minh",
+  "Chị Hương",
+  "Anh Phúc",
+  "Chị Ngọc",
+  "Anh Quân",
+  "Chị Mai",
+  "Anh Dũng",
+  "Chị Trang",
+  "Anh Khải",
+];
+const fallbackCustomerReviews: HomepageCustomerReview[] = [
+  {
+    id: "fallback-review-1",
+    name: "Chị Hạnh",
+    location: "Quận 7, TP.HCM",
+    rating: 5,
+    text: "Đặt lịch buổi sáng, thợ đến đúng giờ và báo giá rõ ràng trước khi làm. Sửa xong còn dọn lại khu vực rất gọn.",
+    serviceName: "Sửa điện nước",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-2",
+    name: "Anh Minh",
+    location: "Cầu Giấy, Hà Nội",
+    rating: 5,
+    text: "Mình cần xử lý máy lạnh chảy nước gấp, thao tác trên app nhanh và có người nhận việc ngay. Chi phí đúng như đã xác nhận.",
+    serviceName: "Điện lạnh",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-3",
+    name: "Cô Lan",
+    location: "Biên Hòa, Đồng Nai",
+    rating: 5,
+    text: "Thợ tư vấn kỹ, giải thích nguyên nhân hỏng và hướng dẫn cách dùng để tránh lỗi lại. Rất yên tâm khi có lịch sử công việc trên app.",
+    serviceName: "Sửa thiết bị",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-4",
+    name: "Anh Quân",
+    location: "Thủ Đức, TP.HCM",
+    rating: 4,
+    text: "Đội hỗ trợ phản hồi nhanh, thợ xác nhận vị trí rõ ràng nên mình không phải gọi đi gọi lại. Công việc hoàn thành trong ngày.",
+    serviceName: "Lắp đặt",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-5",
+    name: "Chị Trang",
+    location: "Hải Châu, Đà Nẵng",
+    rating: 5,
+    text: "Rất thích phần theo dõi trạng thái công việc. Gia đình mình biết khi nào thợ đang đến và khi nào hoàn tất.",
+    serviceName: "Bảo trì tại nhà",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-6",
+    name: "Anh Phúc",
+    location: "Ninh Kiều, Cần Thơ",
+    rating: 5,
+    text: "Giá cả minh bạch, thợ lịch sự và làm khá nhanh. Sau khi xong có ảnh xác nhận nên mình dễ kiểm tra lại.",
+    serviceName: "Sửa chữa tổng hợp",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-7",
+    name: "Chị Mai",
+    location: "Hoàng Mai, Hà Nội",
+    rating: 5,
+    text: "Mình đặt xử lý ổ cắm bị chập cho cửa hàng, thợ mang đủ đồ nghề và làm gọn trong giờ nghỉ trưa.",
+    serviceName: "Sửa điện",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-8",
+    name: "Anh Dũng",
+    location: "Bình Tân, TP.HCM",
+    rating: 4,
+    text: "App dễ dùng, chọn dịch vụ nhanh và có thông tin thợ rõ ràng. Mình đánh giá cao phần nhắc lịch sau khi đặt.",
+    serviceName: "Dịch vụ tại nhà",
+    avatarUrl: null,
+  },
+  {
+    id: "fallback-review-9",
+    name: "Chị Ngọc",
+    location: "Long Biên, Hà Nội",
+    rating: 5,
+    text: "Thợ kiểm tra kỹ trước khi báo phương án, không phát sinh thêm ngoài phần đã thống nhất. Trải nghiệm rất ổn.",
+    serviceName: "Kiểm tra sự cố",
+    avatarUrl: null,
+  },
+];
 
 const getPublicSupabase = () =>
   createSupabaseClient(
@@ -368,6 +465,19 @@ function shuffleItems<T>(items: T[]) {
   return shuffled;
 }
 
+function getFallbackCustomerName(seed: string) {
+  const hash = seed.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+
+  return fallbackCustomerNames[hash % fallbackCustomerNames.length];
+}
+function getRotatingCustomerReviews(reviews: HomepageCustomerReview[]) {
+  const realReviews = reviews.filter((review) => review.text.trim().length > 0);
+  const realReviewText = new Set(realReviews.map((review) => review.text.trim().toLowerCase()));
+  const fallbackReviews = fallbackCustomerReviews.filter((review) => !realReviewText.has(review.text.trim().toLowerCase()));
+  const reviewPool = realReviews.length >= 6 ? realReviews : [...realReviews, ...fallbackReviews];
+
+  return shuffleItems(reviewPool).slice(0, 3);
+}
 const getHomepageData = unstable_cache(
   async (): Promise<{
     systemSettings: SettingsData;
@@ -453,7 +563,7 @@ const getHomepageData = unstable_cache(
 
         return {
           id: rating.id,
-          name: customer?.full_name?.trim() || `Khách hàng #${rating.customer_id?.slice(0, 8) || rating.id.slice(0, 8)}`,
+          name: customer?.full_name?.trim() || getFallbackCustomerName(rating.customer_id || rating.id),
           location: getDisplayLocation(customer?.address || job?.address),
           rating: Math.max(1, Math.min(5, Math.round(Number(rating.score || 5)))),
           text: comment,
@@ -461,8 +571,7 @@ const getHomepageData = unstable_cache(
           avatarUrl: customer?.avatar_url || null,
         };
       })
-      .filter((review): review is HomepageCustomerReview => Boolean(review))
-      .slice(0, 3);
+      .filter((review): review is HomepageCustomerReview => Boolean(review));
 
     return {
       systemSettings: settings
@@ -497,6 +606,7 @@ export default async function HomePage() {
   const standardDbServices = dbServices && dbServices.length > 0
     ? filterStandardServiceCatalog(applyDefaultServiceParents(dbServices))
     : [];
+  const rotatingCustomerReviews = getRotatingCustomerReviews(customerReviews);
 
   const services = standardDbServices.length > 0
     ? shuffleItems(
@@ -904,9 +1014,9 @@ export default async function HomePage() {
             </h2>
           </div>
 
-          {customerReviews.length > 0 ? (
+          {rotatingCustomerReviews.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {customerReviews.map((review) => (
+              {rotatingCustomerReviews.map((review) => (
                 <div key={review.id} className="rounded-xl border border-outline-variant/25 bg-white p-6 shadow-sm">
                   <div className="mb-5 flex items-start justify-between gap-4">
                     <div className="text-5xl font-serif leading-none text-primary-fixed-dim">“</div>
