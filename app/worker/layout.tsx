@@ -446,9 +446,9 @@ export default function WorkerLayout({
               onClick={handleSwitchToCustomerMode}
               aria-label="Chế độ Khách hàng"
               title="Chế độ Khách hàng"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
             >
-              <UserIcon size={18} />
+              <UserIcon size={16} />
             </button>
             <div
               className="relative"
@@ -458,10 +458,10 @@ export default function WorkerLayout({
                 void markNotificationsRead();
               }}
             >
-            <button className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container" aria-label={"Th\u00f4ng b\u00e1o"}>
-              <BellIcon size={18} />
+            <button className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container" aria-label={"Th\u00f4ng b\u00e1o"}>
+              <BellIcon size={16} />
               {unreadNotificationCount > 0 && (
-                <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-error px-1 text-[10px] font-extrabold leading-none text-white">
+                <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-white bg-error px-1 text-[9px] font-extrabold leading-none text-white">
                   {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
                 </span>
               )}
@@ -528,11 +528,10 @@ export default function WorkerLayout({
             <button
               onClick={handleLogout}
               aria-label="Đăng xuất"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden"
               title="Đăng xuất"
             >
-              <LogOutIcon size={18} />
-              <span className="hidden text-[10px] font-bold uppercase sm:inline">Đăng xuất</span>
+              <LogOutIcon size={16} />
             </button>
           </div>
         </header>

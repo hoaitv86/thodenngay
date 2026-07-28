@@ -186,18 +186,18 @@ export default function CustomerLayout({
                   onClick={handleSwitchToWorkerMode}
                   aria-label="Chế độ Thợ"
                   title="Chế độ Thợ"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/90 p-0 text-primary-container shadow-sm transition-colors hover:border-primary/30 hover:bg-primary-fixed sm:hidden"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/90 p-0 text-primary-container shadow-sm transition-colors hover:border-primary/30 hover:bg-primary-fixed sm:hidden"
                 >
-                  <WrenchIcon size={18} />
+                  <WrenchIcon size={16} />
                 </button>
               )}
               <button
                 onClick={handleLogout}
                 aria-label="Đăng xuất"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/90 p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/30 hover:bg-error-container hover:text-error"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white/90 p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/30 hover:bg-error-container hover:text-error"
                 title="Đăng xuất"
               >
-                <LogOutIcon size={18} />
+                <LogOutIcon size={16} />
               </button>
             </div>
           </div>
