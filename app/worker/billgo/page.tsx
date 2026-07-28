@@ -864,14 +864,9 @@ export default function WorkerBillGoPage() {
   );
   useEffect(() => {
     if (viewMode !== "area") return;
-    const nextSubAreaId =
-      !selectedAreaId || selectedAreaSubAreas.length === 0
-        ? ""
-        : selectedAreaSubAreas.some(subArea => subArea.id === selectedSubAreaId)
-          ? selectedSubAreaId
-          : selectedAreaSubAreas[0].id;
-    if (nextSubAreaId === selectedSubAreaId) return;
-    const timeoutId = window.setTimeout(() => setSelectedSubAreaId(nextSubAreaId), 0);
+    if (!selectedAreaId || !selectedSubAreaId) return;
+    if (selectedAreaSubAreas.some(subArea => subArea.id === selectedSubAreaId)) return;
+    const timeoutId = window.setTimeout(() => setSelectedSubAreaId(""), 0);
     return () => window.clearTimeout(timeoutId);
   }, [selectedAreaId, selectedAreaSubAreas, selectedSubAreaId, viewMode]);
 
