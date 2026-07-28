@@ -769,8 +769,10 @@ export default function WorkerBillGoPage() {
       });
       if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
       params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
-      if (selectedAreaId) params.set("areaId", selectedAreaId);
-      if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
+      if (viewMode === "area") {
+        if (selectedAreaId) params.set("areaId", selectedAreaId);
+        if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
+      }
       const response = await fetch(`/api/worker/billgo?${params.toString()}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
