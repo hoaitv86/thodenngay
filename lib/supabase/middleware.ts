@@ -6,6 +6,23 @@ import {
   resolveActiveRole,
 } from '@/lib/account-roles';
 
+function getWorkerUnitRole(memberships: Array<{ member_role?: string | null }> = []) {
+  const roles = memberships.map((item) => item.member_role).filter(Boolean);
+  for (const role of ['owner', 'manager', 'technician', 'bill_collector', 'sales_inventory']) {
+    if (roles.includes(role)) return role;
+  }
+  return 'worker';
+}
+
+function canOpenWorkerPath(path: string, unitRole: string) {
+  if (path === '/worker' || path.startsWith('/worker/profile')) return true;
+  if (path.startsWith('/worker/billgo')) return ['owner', 'manager', 'bill_collector'].includes(unitRole);
+  if (path.startsWith('/worker/inventory') || path.startsWith('/worker/sales')) return ['owner', 'manager', 'sales_inventory'].includes(unitRole);
+  if (path.startsWith('/worker/jobs') || path.startsWith('/worker/customers') || path.startsWith('/worker/history') || path.startsWith('/worker/chat')) return ['owner', 'manager', 'technician', 'worker'].includes(unitRole);
+  if (path.startsWith('/worker/wallet')) return ['owner', 'manager'].includes(unitRole);
+  return true;
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -63,7 +80,7 @@ export async function updateSession(request: NextRequest) {
 
   // Role-based route protection
   if (user) {
-    const [{ data: profile }, { data: worker }, { data: userRoles }] = await Promise.all([
+    const [{ data: profile }, { data: worker }, { data: userRoles }, { data: memberships }] = await Promise.all([
       supabase
       .from('profiles')
       .select('role')
@@ -78,6 +95,11 @@ export async function updateSession(request: NextRequest) {
         .from('user_roles')
         .select('role, is_active')
         .eq('user_id', user.id),
+      supabase
+        .from('worker_unit_members')
+        .select('member_role')
+        .eq('user_id', user.id)
+        .eq('status', 'active'),
     ]);
 
     if (profile) {
@@ -100,6 +122,12 @@ export async function updateSession(request: NextRequest) {
       if (path.startsWith('/worker') && !isWorkerRole(role)) {
         const url = request.nextUrl.clone();
         url.pathname = '/redirect';
+        return NextResponse.redirect(url);
+      }
+
+      if (path.startsWith('/worker') && !canOpenWorkerPath(path, getWorkerUnitRole(memberships || []))) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/worker/profile';
         return NextResponse.redirect(url);
       }
 

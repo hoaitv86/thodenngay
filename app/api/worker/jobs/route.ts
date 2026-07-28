@@ -7,6 +7,9 @@ import { isLegacyServiceId } from "@/lib/standard-service-catalog";
 import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
 import type { WorkflowData } from "@/config/serviceWorkflows";
 import { DEMO_ACTION_BLOCK_MESSAGE, isDemoAccount } from "@/lib/demo-accounts";
+import { isWorkerRole } from "@/lib/account-roles";
+import { canUseJobs } from "@/lib/worker-unit-permissions";
+import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 
 type CreateWorkerJobRequest = {
   customerId?: string | null;
@@ -149,7 +152,12 @@ async function getActiveWorker() {
     return { error: NextResponse.json({ error: "Chỉ thợ đang hoạt động mới có thể tạo job." }, { status: 403 }) };
   }
 
-  return { supabase, user, worker, isDemo: isDemoAccount(profile) };
+  const scope = await resolveWorkerUnitScope(supabase as SupabaseClient, user.id, worker.id);
+  if (!canUseJobs(scope.role)) {
+    return { error: NextResponse.json({ error: "B?n kh?ng c? quy?n t?o ho?c s?a c?ng vi?c." }, { status: 403 }) };
+  }
+
+  return { supabase, user, worker, scope, isDemo: isDemoAccount(profile) };
 }
 
 async function makeJobCode(supabaseAdmin: SupabaseClient) {

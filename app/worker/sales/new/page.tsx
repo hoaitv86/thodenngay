@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 import {
   isMissingWorkerInventorySchemaError,
   missingWorkerInventorySchemaMessage,
@@ -72,6 +73,8 @@ export default function NewWorkerSalesOrderPage() {
       .select("id")
       .eq("user_id", user.id)
       .single();
+    const scope = worker ? await resolveWorkerUnitScope(supabase, user.id, worker.id) : null;
+    const scopedWorkerId = scope?.scopedWorkerId || worker?.id || "";
 
     if (!worker) {
       setMessage("Không tìm thấy hồ sơ thợ.");
@@ -83,13 +86,13 @@ export default function NewWorkerSalesOrderPage() {
       supabase
         .from("worker_inventory_products")
         .select("*")
-        .eq("worker_id", worker.id)
+        .eq("worker_id", scopedWorkerId)
         .gt("stock_quantity", 0)
         .order("name", { ascending: true }),
       supabase
         .from("jobs")
         .select("customer_id, address, customer:profiles!customer_id(id, full_name, phone, address)")
-        .eq("worker_id", worker.id)
+        .eq("worker_id", scopedWorkerId)
         .order("updated_at", { ascending: false }),
     ]);
 

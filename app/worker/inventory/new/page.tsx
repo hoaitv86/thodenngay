@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 import {
   buildInventoryProductPayload,
   emptyInventoryProductForm,
@@ -39,8 +40,10 @@ export default function NewInventoryProductPage() {
       .eq("user_id", user.id)
       .single();
 
+    if (!worker) return { id: "", specialties: [] as string[] };
+    const scope = await resolveWorkerUnitScope(supabase, user.id, worker.id);
     return {
-      id: worker?.id || "",
+      id: scope.scopedWorkerId || worker.id,
       specialties: Array.isArray(worker?.specialties) ? worker.specialties : [],
     };
   }, [supabase]);

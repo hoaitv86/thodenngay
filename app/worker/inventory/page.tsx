@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, Edit, Package, Plus, Search, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 import {
   formatInventoryCurrency,
   isMissingWorkerInventorySchemaError,
@@ -39,6 +40,8 @@ export default function WorkerInventoryPage() {
       .select("id")
       .eq("user_id", user.id)
       .single();
+    const scope = worker ? await resolveWorkerUnitScope(supabase, user.id, worker.id) : null;
+    const scopedWorkerId = scope?.scopedWorkerId || worker?.id || "";
 
     if (!worker) {
       setMessage("Không tìm thấy hồ sơ thợ.");
@@ -47,12 +50,12 @@ export default function WorkerInventoryPage() {
       setLoading(false);
       return;
     }
-    setWorkerId(worker.id);
+    setWorkerId(scopedWorkerId);
 
     const { data, error } = await supabase
       .from("worker_inventory_products")
       .select("*")
-      .eq("worker_id", worker.id)
+      .eq("worker_id", scopedWorkerId)
       .order("updated_at", { ascending: false });
 
     if (error) {

@@ -19,6 +19,8 @@ import {
 } from "@/lib/billgo";
 import type { BillGoPackage } from "@/lib/billgo-packages";
 import { BILLGO_SIGNUP_CYCLES } from "@/lib/billgo-packages";
+import { canCollectBillGo, canManageBillGo, canUseBillGo } from "@/lib/worker-unit-permissions";
+import { getAssignedBillGoAreaFilters, isBillGoSubscriptionInAssignedArea, resolveWorkerUnitScope, type WorkerUnitScope } from "@/lib/worker-unit-server";
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
@@ -32,6 +34,7 @@ type WorkerContext = {
   userId: string;
   workerId: string;
   isDemo: boolean;
+  scope: WorkerUnitScope;
 };
 
 const jsonError = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -55,7 +58,10 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
   ]);
   if (!worker) return jsonError("Không tìm thấy hồ sơ thợ.", 403);
 
-  return { admin: getAdmin() || supabase, userId: user.id, workerId: worker.id, isDemo: isDemoAccount(profile) };
+  const admin = getAdmin() || supabase;
+  const scope = await resolveWorkerUnitScope(admin, user.id, worker.id);
+
+  return { admin, userId: user.id, workerId: scope.scopedWorkerId, isDemo: isDemoAccount(profile), scope };
 };
 
 const asText = (value: unknown) => String(value || "").trim();
@@ -590,7 +596,8 @@ const ensureDueReceivables = async (
 export async function GET(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
-  const { admin, userId, workerId } = context;
+  const { admin, userId, workerId, scope } = context;
+  if (!canUseBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n truy c?p BillGo c?a ??n v?.", 403);
 
   const { searchParams } = new URL(request.url);
   const monthFilter = searchParams.get("month") || todayInputForServer().slice(0, 7);
@@ -606,8 +613,9 @@ export async function GET(request: Request) {
   const statusFilter = allowedListStatuses.has(requestedStatus) ? requestedStatus : "all";
   const dueFilter = allowedDueFilters.has(requestedDue) ? requestedDue : "all";
   const { year, month } = parseMonthFilter(monthFilter);
-  const ensured = await ensureDueReceivables(admin, workerId, userId, monthFilter);
-  if (ensured.error) return jsonError(ensured.error);
+  const assignedFilters = scope.role === "bill_collector" ? await getAssignedBillGoAreaFilters(admin, userId) : null;
+  const ensured = canManageBillGo(scope.role) ? await ensureDueReceivables(admin, workerId, userId, monthFilter) : { created: 0 };
+  if ("error" in ensured && ensured.error) return jsonError(ensured.error);
 
   let subscriptionQuery = admin
     .from("billgo_subscriptions")
@@ -634,7 +642,9 @@ export async function GET(request: Request) {
   const { data: subscriptions, error: subscriptionError } = await subscriptionQuery.order("customer_name", { ascending: true });
   if (subscriptionError) return jsonError("Không thể tải khách BillGo: " + subscriptionError.message);
 
-  const hydratedSubscriptions = (subscriptions || []).map(subscription => withEffectiveNextPeriodStart(subscription));
+  const hydratedSubscriptions = (subscriptions || [])
+    .map(subscription => withEffectiveNextPeriodStart(subscription))
+    .filter(subscription => !assignedFilters || isBillGoSubscriptionInAssignedArea(subscription, assignedFilters));
   const subscriptionIds = hydratedSubscriptions.map(subscription => subscription.id);
   const coveredMonth = monthStartInput(year, month);
   const nextCoveredMonth = toBillGoDateInput(addMonths(coveredMonth, 1));
@@ -803,7 +813,8 @@ export async function POST(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
   if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
-  const { admin, userId, workerId } = context;
+  const { admin, userId, workerId, scope } = context;
+  if (!canManageBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n t?o kh?ch BillGo cho ??n v?.", 403);
 
   const body = await request.json();
   const customerName = asText(body.customerName);
@@ -1025,10 +1036,13 @@ export async function PATCH(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
   if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
-  const { admin, userId, workerId } = context;
+  const { admin, userId, workerId, scope } = context;
 
   const body = await request.json();
   const action = asText(body.action);
+  const managerActions = new Set(["import_preview", "import_apply", "update_customer", "change_cycle", "pause", "reactivate", "soft_delete", "assign_area_bulk"]);
+  if (managerActions.has(action) && !canManageBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n qu?n l? d? li?u BillGo c?a ??n v?.", 403);
+  if (action === "collect" && !canCollectBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n thu c??c BillGo.", 403);
 
   if (action === "import_preview" || action === "import_apply") {
     const rows = Array.isArray(body.rows) ? body.rows as BillGoImportRow[] : [];
@@ -1458,7 +1472,7 @@ export async function PATCH(request: Request) {
 
   const { data: receivable, error: receivableError } = await admin
     .from("billgo_receivables")
-    .select("id, worker_id, subscription_id, total_amount, due_date, period_start, period_end, cycle_at_collection, billing_months, bonus_months, paid_amount, status, monthly_fee_at_collection, subscription:billgo_subscriptions(current_cycle, cycle, customer_name, phone, internet_account, customer_address, address_detail, legacy_address, package_name)")
+    .select("id, worker_id, subscription_id, total_amount, due_date, period_start, period_end, cycle_at_collection, billing_months, bonus_months, paid_amount, status, monthly_fee_at_collection, subscription:billgo_subscriptions(current_cycle, cycle, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, package_name)")
     .eq("id", receivableId)
     .eq("worker_id", workerId)
     .is("deleted_at", null)
@@ -1466,6 +1480,14 @@ export async function PATCH(request: Request) {
 
   if (receivableError || !receivable) return jsonError("Không tìm thấy kỳ cước.", 404);
   if (receivable.status === "paid" || receivable.status === "promo") return jsonError("Kỳ cước này đã được xử lý.", 409);
+
+  const receivableSubscription = Array.isArray(receivable.subscription) ? receivable.subscription[0] : receivable.subscription;
+  if (scope.role === "bill_collector") {
+    const assignedFilters = await getAssignedBillGoAreaFilters(admin, userId);
+    if (!isBillGoSubscriptionInAssignedArea(receivableSubscription, assignedFilters)) {
+      return jsonError("B?n ch? ???c thu kh?ch trong ??a b?n ???c giao.", 403);
+    }
+  }
 
   const alreadyPaid = toMoneyNumber(receivable.paid_amount);
   const nextPaid = alreadyPaid + paidAmount;
@@ -1502,7 +1524,7 @@ export async function PATCH(request: Request) {
     .eq("id", receivable.id);
   if (updateError) return jsonError(updateError.message);
 
-  const subscriptionRelation = Array.isArray(receivable.subscription) ? receivable.subscription[0] : receivable.subscription;
+  const subscriptionRelation = receivableSubscription;
   const { data: collector } = await admin
     .from("profiles")
     .select("full_name, phone")

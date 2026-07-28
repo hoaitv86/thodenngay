@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getGpsLocationErrorMessage } from "@/lib/location";
 import {
+  WORKER_UNIT_ASSIGNABLE_ROLES,
+  WORKER_UNIT_ROLE_LABELS,
+  type WorkerUnitMemberRole,
+} from "@/lib/worker-unit-permissions";
+import {
   buildWorkerSpecialtyGroups,
   expandWorkerSpecialties,
   inferWorkerSpecialtyChildValues,
@@ -63,22 +68,12 @@ type WorkerUnitMember = {
   invited_phone?: string | null;
 };
 
-type WorkerUnitMemberRole = "owner" | "manager" | "technician" | "bill_collector" | "sales_inventory";
+const memberRoleOptions = WORKER_UNIT_ASSIGNABLE_ROLES.map((role) => ({
+  value: role,
+  label: WORKER_UNIT_ROLE_LABELS[role],
+}));
 
-const memberRoleOptions: Array<{ value: Exclude<WorkerUnitMemberRole, "owner">; label: string }> = [
-  { value: "manager", label: "Quản lý" },
-  { value: "technician", label: "Thợ kỹ thuật" },
-  { value: "bill_collector", label: "Nhân viên thu cước" },
-  { value: "sales_inventory", label: "Nhân viên bán hàng/kho" },
-];
-
-const roleLabels: Record<WorkerUnitMemberRole, string> = {
-  owner: "Chủ đơn vị",
-  manager: "Quản lý",
-  technician: "Thợ kỹ thuật",
-  bill_collector: "Nhân viên thu cước",
-  sales_inventory: "Nhân viên bán hàng/kho",
-};
+const roleLabels = WORKER_UNIT_ROLE_LABELS;
 
 type WorkerTeam = {
   id: string;

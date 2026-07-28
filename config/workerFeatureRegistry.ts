@@ -14,7 +14,7 @@ export type WorkerFeatureId =
   | "profile"
   | "more";
 
-export type WorkerRole = "worker" | "lead_worker" | "assistant_worker" | "admin";
+export type WorkerRole = "owner" | "manager" | "technician" | "bill_collector" | "sales_inventory" | "worker" | "admin";
 
 export type WorkerFeatureIconKey =
   | "dashboard"
@@ -80,7 +80,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobilePrimary"],
     group: "main",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician"],
     exactActive: true,
   },
   {
@@ -93,7 +93,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobilePrimary"],
     group: "main",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician"],
   },
   {
     id: "create_job",
@@ -105,7 +105,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["mobilePrimary"],
     group: "work",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician"],
     exactActive: true,
   },
   {
@@ -118,7 +118,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["mobilePrimary"],
     group: "work",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician"],
   },
   {
     id: "billgo",
@@ -130,7 +130,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "commerce",
-    roles: ["worker", "lead_worker"],
+    roles: ["owner", "manager", "bill_collector"],
     specialtyTags: ["internet", "mạng internet", "mang internet", "wifi", "pppoe"],
     featureFlag: "billgo",
     dataConditions: ["billgoHistory", "billgoAccess"],
@@ -146,7 +146,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "commerce",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "sales_inventory"],
     featureFlag: "inventory",
   },
   {
@@ -159,7 +159,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "commerce",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "sales_inventory"],
     featureFlag: "sales",
   },
   {
@@ -172,7 +172,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "communication",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician"],
     requiresSpecialty: true,
     featureFlag: "chat",
   },
@@ -186,7 +186,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "work",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician"],
     requiresSpecialty: true,
     featureFlag: "history",
   },
@@ -200,7 +200,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "account",
-    roles: ["worker", "lead_worker"],
+    roles: ["owner", "manager"],
     requiresSpecialty: true,
     featureFlag: "wallet",
   },
@@ -214,7 +214,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "account",
-    roles: ["worker", "lead_worker", "assistant_worker"],
+    roles: ["owner", "manager", "technician", "bill_collector", "sales_inventory", "worker"],
     featureFlag: "profile",
   },
 ];
