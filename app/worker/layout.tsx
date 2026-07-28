@@ -446,7 +446,7 @@ export default function WorkerLayout({
               onClick={handleSwitchToCustomerMode}
               aria-label="Chế độ Khách hàng"
               title="Chế độ Khách hàng"
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary-container/15 bg-white text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
             >
               <UserIcon size={18} />
             </button>
@@ -458,8 +458,8 @@ export default function WorkerLayout({
                 void markNotificationsRead();
               }}
             >
-            <button className="relative rounded-lg p-2.5 text-on-surface-variant transition-colors hover:bg-surface-container" aria-label="Thông báo">
-              <BellIcon size={22} />
+            <button className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container" aria-label={"Th\u00f4ng b\u00e1o"}>
+              <BellIcon size={18} />
               {unreadNotificationCount > 0 && (
                 <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-error px-1 text-[10px] font-extrabold leading-none text-white">
                   {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
@@ -528,7 +528,7 @@ export default function WorkerLayout({
             <button
               onClick={handleLogout}
               aria-label="Đăng xuất"
-              className="flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-on-surface-variant transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden"
               title="Đăng xuất"
             >
               <LogOutIcon size={18} />
