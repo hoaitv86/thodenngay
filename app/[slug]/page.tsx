@@ -30,9 +30,10 @@ async function getCmsPost(slug: string) {
   try {
     const { data, error } = await getPublicSupabase()
       .from("cms_posts")
-      .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,is_published,sort_order,created_at,updated_at,published_at")
+      .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,content_type,status,is_published,sort_order,created_at,updated_at,published_at")
       .eq("slug", slug)
       .eq("is_published", true)
+      .eq("status", "published")
       .maybeSingle();
 
     if (error) {
@@ -55,7 +56,9 @@ async function getCmsPost(slug: string) {
     cover_image_url: null,
     image_urls: [],
     display_locations: fallback.displayLocations,
-    is_published: true,
+    content_type: fallback.contentType,
+    status: fallback.status,
+    is_published: fallback.status === "published",
     sort_order: fallback.sortOrder,
   } satisfies CmsPost;
 }

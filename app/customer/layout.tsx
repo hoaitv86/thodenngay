@@ -15,6 +15,7 @@ import {
 } from "@/app/components/icons";
 import { createClient } from "@/lib/supabase/client";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
+import { CmsInfoLinks } from "@/app/components/CmsInfoLinks";
 
 const navItems = [
   { href: "/customer/home", label: "Trang chủ", icon: LayoutDashboardIcon },
@@ -135,6 +136,10 @@ export default function CustomerLayout({
         </nav>
 
         <div className="border-t border-white/12 p-3">
+          <CmsInfoLinks compact />
+        </div>
+
+        <div className="border-t border-white/12 p-3">
           <button
             onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
@@ -205,6 +210,9 @@ export default function CustomerLayout({
 
         <main className={`flex-1 overflow-y-auto pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-8 ${isProfilePage ? "customer-profile-shell" : ""}`}>
           {children}
+          <div className="customer-info-links-mobile px-4 pt-4 lg:hidden">
+            <CmsInfoLinks compact />
+          </div>
         </main>
 
         <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-md -translate-x-1/2 border-t border-white/55 bg-white/82 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_rgba(15,35,66,0.1)] backdrop-blur-xl lg:hidden">

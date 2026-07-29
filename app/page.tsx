@@ -242,6 +242,8 @@ type HomepageCmsPage = {
   slug: string;
   title: string;
   sort_order?: number | null;
+  content_type?: string | null;
+  status?: string | null;
 };
 
 type HomepageService = {
@@ -522,8 +524,10 @@ const getHomepageData = unstable_cache(
         .limit(12),
       supabase
         .from("cms_posts")
-        .select("slug,title,sort_order,display_locations")
+        .select("slug,title,sort_order,display_locations,content_type,status")
         .eq("is_published", true)
+        .eq("status", "published")
+        .eq("content_type", "fixed_page")
         .contains("display_locations", ["footer"])
         .order("sort_order", { ascending: true })
         .order("title", { ascending: true }),
@@ -613,7 +617,7 @@ const getHomepageData = unstable_cache(
       customerReviews,
       cmsPages: cmsPagesResult.data?.length
         ? (cmsPagesResult.data as HomepageCmsPage[])
-        : defaultCmsPages.filter((page) => page.displayLocations.includes("footer")).map((page) => ({
+        : defaultCmsPages.filter((page) => page.contentType === "fixed_page" && page.status === "published" && page.displayLocations.includes("footer")).map((page) => ({
             slug: page.slug,
             title: page.title,
             sort_order: page.sortOrder,

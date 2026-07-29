@@ -132,6 +132,8 @@ CREATE TABLE public.cms_posts (
     cover_image_url TEXT,
     image_urls TEXT[] NOT NULL DEFAULT '{}',
     display_locations TEXT[] NOT NULL DEFAULT '{footer}',
+    content_type TEXT NOT NULL DEFAULT 'article' CHECK (content_type IN ('article', 'fixed_page')),
+    status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published')),
     is_published BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -628,7 +630,7 @@ CREATE POLICY "Admins update services" ON public.services FOR UPDATE USING (publ
 CREATE POLICY "Admins delete services" ON public.services FOR DELETE USING (public.is_admin());
 
 -- CMS posts: Published content is public, admins manage the CMS
-CREATE POLICY "Public view published cms posts" ON public.cms_posts FOR SELECT USING (is_published = TRUE);
+CREATE POLICY "Public view published cms posts" ON public.cms_posts FOR SELECT USING (is_published = TRUE AND status = 'published');
 CREATE POLICY "Admins view all cms posts" ON public.cms_posts FOR SELECT USING (public.is_admin());
 CREATE POLICY "Admins create cms posts" ON public.cms_posts FOR INSERT WITH CHECK (public.is_admin());
 CREATE POLICY "Admins update cms posts" ON public.cms_posts FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());

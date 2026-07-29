@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS public.cms_posts (
   cover_image_url TEXT,
   image_urls TEXT[] NOT NULL DEFAULT '{}',
   display_locations TEXT[] NOT NULL DEFAULT '{footer}',
+  content_type TEXT NOT NULL DEFAULT 'article' CHECK (content_type IN ('article', 'fixed_page')),
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft', 'published')),
   is_published BOOLEAN NOT NULL DEFAULT TRUE,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -32,7 +34,7 @@ ALTER TABLE public.cms_posts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public view published cms posts" ON public.cms_posts;
 CREATE POLICY "Public view published cms posts"
   ON public.cms_posts FOR SELECT
-  USING (is_published = TRUE);
+  USING (is_published = TRUE AND status = 'published');
 
 DROP POLICY IF EXISTS "Admins view all cms posts" ON public.cms_posts;
 CREATE POLICY "Admins view all cms posts"

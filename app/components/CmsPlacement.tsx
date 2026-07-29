@@ -27,7 +27,9 @@ function fallbackPosts(location: CmsDisplayLocation, limit: number) {
       cover_image_url: null,
       image_urls: [],
       display_locations: page.displayLocations,
-      is_published: true,
+      content_type: page.contentType,
+      status: page.status,
+      is_published: page.status === "published",
       sort_order: page.sortOrder,
     } satisfies CmsPost));
 }
@@ -43,8 +45,9 @@ export function CmsPlacement({ location, title, limit = 3, variant = "cards" }: 
     async function loadPosts() {
       const { data, error } = await supabase
         .from("cms_posts")
-        .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,is_published,sort_order,published_at")
+        .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,content_type,status,is_published,sort_order,published_at")
         .eq("is_published", true)
+        .eq("status", "published")
         .contains("display_locations", [location])
         .order("sort_order", { ascending: true })
         .order("published_at", { ascending: false })

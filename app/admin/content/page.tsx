@@ -5,7 +5,7 @@ import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bold, Edit3, Eye, EyeOff, FileText, Heading2, ImagePlus, Italic, Link as LinkIcon, List, Plus, Save, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { cmsDisplayLocationLabels, cmsDisplayLocations, defaultCmsPages, type CmsDisplayLocation, type CmsPost } from "@/lib/cms";
+import { cmsContentTypeLabels, cmsDisplayLocationLabels, cmsDisplayLocations, cmsStatusLabels, defaultCmsPages, type CmsContentType, type CmsDisplayLocation, type CmsPost, type CmsStatus } from "@/lib/cms";
 
 type CmsFormState = {
   id: string | null;
@@ -16,6 +16,8 @@ type CmsFormState = {
   cover_image_url: string;
   image_urls: string[];
   display_locations: CmsDisplayLocation[];
+  content_type: CmsContentType;
+  status: CmsStatus;
   is_published: boolean;
   sort_order: string;
 };
@@ -28,7 +30,9 @@ const emptyForm: CmsFormState = {
   content_html: "<p></p>",
   cover_image_url: "",
   image_urls: [],
-  display_locations: ["footer"],
+  display_locations: ["footer", "app_info"],
+  content_type: "fixed_page",
+  status: "published",
   is_published: true,
   sort_order: "0",
 };
@@ -75,7 +79,7 @@ export default function AdminContentPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("cms_posts")
-      .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,is_published,sort_order,created_at,updated_at,published_at")
+      .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,content_type,status,is_published,sort_order,created_at,updated_at,published_at")
       .order("sort_order", { ascending: true })
       .order("title", { ascending: true });
 
@@ -115,8 +119,10 @@ export default function AdminContentPage() {
       content_html: post.content_html || "<p></p>",
       cover_image_url: post.cover_image_url || "",
       image_urls: post.image_urls || [],
-      display_locations: post.display_locations?.length ? post.display_locations : ["footer"],
-      is_published: post.is_published,
+      display_locations: post.display_locations?.length ? post.display_locations : ["footer", "app_info"],
+      content_type: post.content_type || "article",
+      status: post.status || (post.is_published ? "published" : "draft"),
+      is_published: post.status ? post.status === "published" : post.is_published,
       sort_order: String(post.sort_order || 0),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -132,7 +138,9 @@ export default function AdminContentPage() {
       cover_image_url: null,
       image_urls: [],
       display_locations: page.displayLocations,
-      is_published: true,
+      content_type: page.contentType,
+      status: page.status,
+      is_published: page.status === "published",
       sort_order: page.sortOrder,
       published_at: new Date().toISOString(),
     }));
@@ -238,10 +246,12 @@ export default function AdminContentPage() {
       cover_image_url: form.cover_image_url.trim() || null,
       image_urls: form.image_urls,
       display_locations: form.display_locations,
-      is_published: form.is_published,
+      content_type: form.content_type,
+      status: form.status,
+      is_published: form.status === "published",
       sort_order: Number(form.sort_order) || 0,
       updated_by: user?.id || null,
-      published_at: form.is_published ? new Date().toISOString() : null,
+      published_at: form.status === "published" ? new Date().toISOString() : null,
     };
     const { error } = form.id
       ? await supabase.from("cms_posts").update(payload).eq("id", form.id)
@@ -255,9 +265,9 @@ export default function AdminContentPage() {
 
   const togglePublish = async (post: CmsPost) => {
     const nextPublished = !post.is_published;
-    const { error } = await supabase.from("cms_posts").update({ is_published: nextPublished, published_at: nextPublished ? new Date().toISOString() : null }).eq("id", post.id);
+    const { error } = await supabase.from("cms_posts").update({ is_published: nextPublished, status: nextPublished ? "published" : "draft", published_at: nextPublished ? new Date().toISOString() : null }).eq("id", post.id);
     if (error) return showMessage("error", "Khong doi trang thai duoc: " + error.message);
-    setPosts((current) => current.map((item) => (item.id === post.id ? { ...item, is_published: nextPublished } : item)));
+    setPosts((current) => current.map((item) => (item.id === post.id ? { ...item, is_published: nextPublished, status: nextPublished ? "published" : "draft" } : item)));
   };
 
   const deletePost = async (post: CmsPost) => {
@@ -295,13 +305,17 @@ export default function AdminContentPage() {
             </div>
           </div>
           <label className="relative inline-flex cursor-pointer items-center">
-            <input type="checkbox" className="sr-only peer" checked={form.is_published} onChange={(event) => setForm({ ...form, is_published: event.target.checked })} />
+            <input type="checkbox" className="sr-only peer" checked={form.status === "published"} onChange={(event) => setForm({ ...form, status: event.target.checked ? "published" : "draft", is_published: event.target.checked })} />
             <div className="h-6 w-11 rounded-full bg-surface-container-high after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-success peer-checked:after:translate-x-full" />
           </label>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
           <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-1.5 text-label-sm">{"Lo\u1ea1i n\u1ed9i dung"}<select className="input-field" value={form.content_type} onChange={(event) => setForm({ ...form, content_type: event.target.value as CmsContentType })}>{Object.entries(cmsContentTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label className="space-y-1.5 text-label-sm">{"Tr\u1ea1ng th\u00e1i"}<select className="input-field" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CmsStatus, is_published: event.target.value === "published" })}>{Object.entries(cmsStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-1.5 text-label-sm">{"Tiêu đề"}<input className="input-field" value={form.title} onChange={(event) => { const title = event.target.value; setForm((current) => ({ ...current, title, slug: current.id || current.slug ? current.slug : slugify(title) })); }} required /></label>
               <label className="space-y-1.5 text-label-sm">Slug<input className="input-field" value={form.slug} onChange={(event) => setForm({ ...form, slug: slugify(event.target.value) })} placeholder="duong-dan-bai-viet" required /></label>
@@ -373,7 +387,7 @@ export default function AdminContentPage() {
           <div className="divide-y divide-outline-variant/30">{filteredPosts.map((post) => {
             const locations = post.display_locations || [];
             return <div key={post.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_140px_180px] lg:items-center">
-              <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><span className={"badge " + (post.is_published ? "badge-active" : "badge-inactive")}>{post.is_published ? "Visible" : "Hidden"}</span><span className="text-xs font-semibold text-on-surface-variant">/{post.slug}</span></div><h3 className="truncate font-bold text-on-surface">{post.title}</h3><p className="line-clamp-2 text-sm text-on-surface-variant">{post.excerpt || "No excerpt."}</p><div className="mt-2 flex flex-wrap gap-1">{locations.map((location) => <span key={location} className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-bold text-on-surface-variant">{cmsDisplayLocationLabels[location]}</span>)}</div></div>
+              <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><span className={"badge " + (post.status === "published" ? "badge-active" : "badge-inactive")}>{cmsStatusLabels[post.status || "draft"]}</span><span className="rounded-full bg-primary-fixed px-2 py-0.5 text-[10px] font-bold text-primary-container">{cmsContentTypeLabels[post.content_type || "article"]}</span><span className="text-xs font-semibold text-on-surface-variant">/{post.slug}</span></div><h3 className="truncate font-bold text-on-surface">{post.title}</h3><p className="line-clamp-2 text-sm text-on-surface-variant">{post.excerpt || "No excerpt."}</p><p className="mt-1 text-xs font-semibold text-on-surface-variant">Updated: {post.updated_at ? new Date(post.updated_at).toLocaleString("vi-VN") : "-"}</p><div className="mt-2 flex flex-wrap gap-1">{locations.map((location) => <span key={location} className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-bold text-on-surface-variant">{cmsDisplayLocationLabels[location]}</span>)}</div></div>
               <Link href={"/" + post.slug} target="_blank" className="btn-outline justify-center !py-2 text-sm"><Eye size={16} /> View</Link>
               <div className="flex items-center justify-start gap-1 lg:justify-end"><button type="button" className="h-9 w-9 rounded-lg hover:bg-surface-container" title="Edit" onClick={() => editPost(post)}><Edit3 className="mx-auto h-4 w-4" /></button><button type="button" className="h-9 w-9 rounded-lg hover:bg-surface-container" title="Toggle" onClick={() => togglePublish(post)}>{post.is_published ? <EyeOff className="mx-auto h-4 w-4" /> : <Eye className="mx-auto h-4 w-4" />}</button><button type="button" className="h-9 w-9 rounded-lg hover:bg-error-container" title="Delete" onClick={() => deletePost(post)}><Trash2 className="mx-auto h-4 w-4 text-error" /></button></div>
             </div>;
