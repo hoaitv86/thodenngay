@@ -480,6 +480,32 @@ function getFallbackCustomerName(seed: string) {
 
   return fallbackCustomerNames[hash % fallbackCustomerNames.length];
 }
+
+function getDefaultFooterCmsPages(): HomepageCmsPage[] {
+  return defaultCmsPages
+    .filter((page) => page.contentType === "fixed_page" && page.status === "published" && page.displayLocations.includes("footer"))
+    .map((page) => ({
+      slug: page.slug,
+      title: page.title,
+      sort_order: page.sortOrder,
+      content_type: page.contentType,
+      status: page.status,
+    }));
+}
+
+function mergeFooterCmsPages(dbPages: HomepageCmsPage[] | null | undefined) {
+  const pages = [...(dbPages || [])];
+  const existingSlugs = new Set(pages.map((page) => page.slug));
+
+  for (const page of getDefaultFooterCmsPages()) {
+    if (!existingSlugs.has(page.slug)) {
+      pages.push(page);
+    }
+  }
+
+  return pages.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.title.localeCompare(b.title, "vi"));
+}
+
 function getRotatingCustomerReviews(reviews: HomepageCustomerReview[]) {
   const realReviews = reviews.filter((review) => review.text.trim().length > 0);
   const realReviewText = new Set(realReviews.map((review) => review.text.trim().toLowerCase()));
@@ -615,13 +641,7 @@ const getHomepageData = unstable_cache(
       dbServices: servicesResult.data || [],
       dispatchWorkers,
       customerReviews,
-      cmsPages: cmsPagesResult.data?.length
-        ? (cmsPagesResult.data as HomepageCmsPage[])
-        : defaultCmsPages.filter((page) => page.contentType === "fixed_page" && page.status === "published" && page.displayLocations.includes("footer")).map((page) => ({
-            slug: page.slug,
-            title: page.title,
-            sort_order: page.sortOrder,
-          })),
+      cmsPages: mergeFooterCmsPages(cmsPagesResult.data as HomepageCmsPage[] | null),
     };
   },
   ["homepage-data"],
