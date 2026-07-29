@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { ADMIN_MODULES, DEFAULT_ADMIN_PERMISSIONS, type AdminPermission } from "@/lib/admin-roles";
-import { createServiceSupabaseClient, getAdminPermissions, requireAdmin, syncAdminPermissions, syncAdminRole } from "@/lib/admin-server";
+import { createServiceSupabaseClient, getAdminPermissions, logAdminAction, requireAdmin, syncAdminPermissions, syncAdminRole } from "@/lib/admin-server";
 
 type AdminAccountBody = {
   userId?: string;
@@ -8,6 +8,7 @@ type AdminAccountBody = {
   fullName?: string;
   password?: string;
   isSuperAdmin?: boolean;
+  status?: "active" | "blocked";
   permissions?: AdminPermission[];
 };
 
@@ -109,6 +110,14 @@ export async function POST(request: Request) {
 
     await syncAdminRole(service, created.user.id, auth.profile.id);
     await syncAdminPermissions(service, created.user.id, permissions, auth.profile.id);
+    await logAdminAction(service, {
+      actorId: auth.profile.id,
+      targetAdminId: created.user.id,
+      action: "admin.create",
+      module: "security",
+      summary: `Tạo tài khoản admin ${email}`,
+      metadata: { email, isSuperAdmin: Boolean(body.isSuperAdmin), permissions },
+    });
 
     return NextResponse.json({ success: true, userId: created.user.id });
   } catch (error: unknown) {
@@ -147,6 +156,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Chỉ Super Admin được thay đổi phân quyền module." }, { status: 403 });
   }
 
+  if (body.status === "blocked" && updatingSelf) {
+    return NextResponse.json({ error: "Không thể tự khóa tài khoản đang đăng nhập." }, { status: 400 });
+  }
+
+  if (body.status && body.status !== "active" && body.status !== "blocked") {
+    return NextResponse.json({ error: "Trạng thái admin không hợp lệ." }, { status: 400 });
+  }
+
+  if (body.status && !auth.profile.is_super_admin) {
+    return NextResponse.json({ error: "Chỉ Super Admin được khóa hoặc mở khóa admin." }, { status: 403 });
+  }
+
   if (password && password.length < 6) {
     return NextResponse.json({ error: "Mật khẩu mới phải có tối thiểu 6 ký tự." }, { status: 400 });
   }
@@ -173,9 +194,8 @@ export async function PATCH(request: Request) {
       full_name: fullName,
       role: "admin",
     };
-    if (typeof body.isSuperAdmin === "boolean") {
-      profilePayload.is_super_admin = body.isSuperAdmin;
-    }
+    if (typeof body.isSuperAdmin === "boolean") profilePayload.is_super_admin = body.isSuperAdmin;
+    if (body.status) profilePayload.status = body.status;
 
     const { error: profileError } = await service.from("profiles").update(profilePayload).eq("id", userId).eq("role", "admin");
     if (profileError) {
@@ -186,6 +206,21 @@ export async function PATCH(request: Request) {
     if (body.permissions && auth.profile.is_super_admin) {
       await syncAdminPermissions(service, userId, permissions, auth.profile.id);
     }
+
+    await logAdminAction(service, {
+      actorId: auth.profile.id,
+      targetAdminId: userId,
+      action: password ? "admin.update_with_password" : "admin.update",
+      module: "security",
+      summary: `Cập nhật tài khoản admin ${email}`,
+      metadata: {
+        email,
+        status: body.status,
+        isSuperAdmin: body.isSuperAdmin,
+        changedPassword: Boolean(password),
+        permissionsChanged: Boolean(body.permissions),
+      },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

@@ -1,4 +1,4 @@
-﻿import { createServerClient } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -169,4 +169,25 @@ export async function syncAdminPermissions(
     })),
     { onConflict: "admin_id,module" },
   );
+}
+
+export async function logAdminAction(
+  serviceClient: SupabaseClient,
+  params: {
+    actorId?: string | null;
+    targetAdminId?: string | null;
+    action: string;
+    module?: string | null;
+    summary: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await serviceClient.from("admin_audit_logs").insert({
+    actor_id: params.actorId || null,
+    target_admin_id: params.targetAdminId || null,
+    action: params.action,
+    module: params.module || null,
+    summary: params.summary,
+    metadata: params.metadata || {},
+  });
 }

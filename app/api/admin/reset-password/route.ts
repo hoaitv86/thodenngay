@@ -1,5 +1,5 @@
 ﻿import { NextResponse } from "next/server";
-import { createServiceSupabaseClient, requireAdminPermission } from "@/lib/admin-server";
+import { createServiceSupabaseClient, logAdminAction, requireAdminPermission } from "@/lib/admin-server";
 
 export async function POST(request: Request) {
   try {
@@ -25,6 +25,15 @@ export async function POST(request: Request) {
     if (resetError) {
       return NextResponse.json({ error: "Lỗi Supabase Admin: " + resetError.message }, { status: 500 });
     }
+
+    await logAdminAction(supabaseAdmin, {
+      actorId: auth.profile.id,
+      targetAdminId: userId,
+      action: "account.password_reset",
+      module: "security",
+      summary: "Đặt lại mật khẩu tài khoản",
+      metadata: { targetUserId: userId },
+    });
 
     return NextResponse.json({ success: true, message: "Đã thiết lập lại mật khẩu thành công." });
   } catch (error: unknown) {
