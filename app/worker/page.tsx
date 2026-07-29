@@ -2293,13 +2293,13 @@ export default function WorkerDashboard() {
         data.defaultPassword
           ? {
               durationMs: null,
-              customerLogin: data.loginPhone ? `${data.loginPhone}@thodenngay.vn` : null,
+              customerLogin: data.loginPhone || null,
               customerPassword: data.defaultPassword,
             }
           : data.customerAlreadyExists
             ? {
                 durationMs: null,
-                customerLogin: data.loginPhone ? `${data.loginPhone}@thodenngay.vn` : null,
+                customerLogin: data.loginPhone || null,
                 customerPassword: "Giữ nguyên mật khẩu đã tạo trước",
               }
           : undefined

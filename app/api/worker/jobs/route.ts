@@ -48,16 +48,17 @@ const removeVietnameseMarks = (value: string) =>
     .replace(/đ/g, "d")
     .replace(/Đ/g, "D");
 
-const makeDefaultPassword = (customerName: string) => {
+const makeDefaultPassword = (customerName: string, customerPhone: string) => {
   const lastNamePart = customerName.trim().split(/\s+/).pop() || "KHACH";
   const cleanNamePart = removeVietnameseMarks(lastNamePart)
     .replace(/[^a-zA-Z0-9]/g, "")
     .toLowerCase();
   const passwordPrefix = cleanNamePart
     ? `${cleanNamePart.charAt(0).toUpperCase()}${cleanNamePart.slice(1)}`
-    : "Khách";
+    : "Khach";
+  const phoneSuffix = normalizePhone(customerPhone).slice(-6) || "123456";
 
-  return `${passwordPrefix}@123456`;
+  return `${passwordPrefix}@${phoneSuffix}`;
 };
 
 const makeMockQuickJob = ({
@@ -390,7 +391,7 @@ export async function POST(request: Request) {
 
         if (canReturnMockQuickJob()) {
           const mockCustomerId = `mock-customer-${customerPhone}`;
-          const defaultPassword = makeDefaultPassword(customerName);
+          const defaultPassword = makeDefaultPassword(customerName, customerPhone);
 
           return NextResponse.json({
             job: makeMockQuickJob({
@@ -566,7 +567,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     } else {
-      defaultPassword = makeDefaultPassword(customerName);
+      defaultPassword = makeDefaultPassword(customerName, customerPhone);
 
       const { data: authData, error: createUserError } =
         await supabaseAdmin.auth.admin.createUser({
