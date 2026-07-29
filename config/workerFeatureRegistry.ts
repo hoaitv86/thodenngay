@@ -122,7 +122,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
   },
   {
     id: "billgo",
-    label: "BillGo",
+    label: "Thu Cước Cố Định Ftth",
     route: "/worker/billgo",
     href: "/worker/billgo",
     icon: "money",
