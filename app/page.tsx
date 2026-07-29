@@ -30,6 +30,7 @@ import {
 import { DEFAULT_SETTINGS, type SettingsData } from "@/lib/settings-types";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
+import { defaultCmsPages } from "@/lib/cms";
 
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
@@ -235,6 +236,12 @@ const steps = [
     desc: "Thanh toán sau khi hoàn tất, đánh giá chất lượng dịch vụ",
   },
 ];
+
+type HomepageCmsPage = {
+  slug: string;
+  title: string;
+  sort_order?: number | null;
+};
 
 type HomepageService = {
   id: string;
@@ -484,10 +491,11 @@ const getHomepageData = unstable_cache(
     dbServices: HomepageService[];
     dispatchWorkers: HomepageDispatchWorker[];
     customerReviews: HomepageCustomerReview[];
+    cmsPages: HomepageCmsPage[];
   }> => {
     const supabase = getPublicSupabase();
 
-    const [settingsResult, servicesResult, workersResult, ratingsResult] = await Promise.all([
+    const [settingsResult, servicesResult, workersResult, ratingsResult, cmsPagesResult] = await Promise.all([
       supabase
         .from("system_settings")
         .select("app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url, apk_backup_download_url")
@@ -511,6 +519,12 @@ const getHomepageData = unstable_cache(
         .not("comment", "is", null)
         .order("created_at", { ascending: false })
         .limit(12),
+      supabase
+        .from("cms_posts")
+        .select("slug,title,sort_order")
+        .eq("is_published", true)
+        .order("sort_order", { ascending: true })
+        .order("title", { ascending: true }),
     ]);
 
     if (settingsResult.error) {
@@ -527,6 +541,10 @@ const getHomepageData = unstable_cache(
 
     if (ratingsResult.error) {
       console.warn("Could not load homepage customer reviews:", ratingsResult.error.message);
+    }
+
+    if (cmsPagesResult.error) {
+      console.warn("Could not load CMS footer pages:", cmsPagesResult.error.message);
     }
 
     const settings = settingsResult.data;
@@ -591,6 +609,13 @@ const getHomepageData = unstable_cache(
       dbServices: servicesResult.data || [],
       dispatchWorkers,
       customerReviews,
+      cmsPages: cmsPagesResult.data?.length
+        ? (cmsPagesResult.data as HomepageCmsPage[])
+        : defaultCmsPages.map((page) => ({
+            slug: page.slug,
+            title: page.title,
+            sort_order: page.sortOrder,
+          })),
     };
   },
   ["homepage-data"],
@@ -598,7 +623,7 @@ const getHomepageData = unstable_cache(
 );
 
 export default async function HomePage() {
-  const [{ systemSettings, dbServices, dispatchWorkers, customerReviews }, apkDownloadData] = await Promise.all([
+  const [{ systemSettings, dbServices, dispatchWorkers, customerReviews, cmsPages }, apkDownloadData] = await Promise.all([
     getHomepageData(),
     getApkDownloadData(),
   ]);
@@ -1133,22 +1158,26 @@ export default async function HomePage() {
             </div>
 
             <div className="justify-self-center md:justify-self-auto">
-              <h4 className="font-semibold mb-4">Dịch vụ</h4>
+              <h4 className="font-semibold mb-4">{"D\u1ecbch v\u1ee5"}</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
-                <li><a href="#" className="hover:text-white transition-colors">Sửa điện</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Sửa nước</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Lắp camera</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Cơ khí</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">{"S\u1eeda \u0111i\u1ec7n"}</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">{"S\u1eeda n\u01b0\u1edbc"}</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">{"L\u1eafp camera"}</a></li>
+                <li><a href="#" className="hover:text-white transition-colors">{"C\u01a1 kh\u00ed"}</a></li>
               </ul>
             </div>
 
             <div className="justify-self-center md:justify-self-auto">
-              <h4 className="font-semibold mb-4">Thông tin</h4>
+              <h4 className="font-semibold mb-4">{"Th\u00f4ng tin"}</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
-                <li><a href="#" className="hover:text-white transition-colors">Về chúng tôi</a></li>
-                <li><a href={systemSettings.terms_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Điều khoản</a></li>
-                <li><a href={systemSettings.privacy_url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Chính sách</a></li>
-                <li><Link href="/login" className="hover:text-white transition-colors">Đăng nhập</Link></li>
+                {cmsPages.map((page) => (
+                  <li key={page.slug}>
+                    <Link href={`/${page.slug}`} className="hover:text-white transition-colors">
+                      {page.title}
+                    </Link>
+                  </li>
+                ))}
+                <li><Link href="/login" className="hover:text-white transition-colors">{"\u0110\u0103ng nh\u1eadp"}</Link></li>
               </ul>
             </div>
           </div>

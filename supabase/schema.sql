@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS public.job_logs CASCADE;
 DROP TABLE IF EXISTS public.payments CASCADE;
 DROP TABLE IF EXISTS public.ratings CASCADE;
 DROP TABLE IF EXISTS public.jobs CASCADE;
+DROP TABLE IF EXISTS public.cms_posts CASCADE;
 DROP TABLE IF EXISTS public.services CASCADE;
 DROP TABLE IF EXISTS public.worker_unit_members CASCADE;
 DROP TABLE IF EXISTS public.worker_teams CASCADE;
@@ -120,6 +121,29 @@ CREATE TABLE public.services (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+
+
+CREATE TABLE public.cms_posts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    excerpt TEXT,
+    content_html TEXT NOT NULL DEFAULT '',
+    cover_image_url TEXT,
+    is_published BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    updated_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    published_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX cms_posts_published_sort_idx
+  ON public.cms_posts (is_published, sort_order, title);
+CREATE INDEX cms_posts_slug_idx
+  ON public.cms_posts (slug);
+
 -- 4. JOBS (Transactions)
 CREATE TABLE public.jobs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -204,6 +228,7 @@ ALTER TABLE public.worker_units ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.worker_teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.worker_unit_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cms_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ratings ENABLE ROW LEVEL SECURITY;
@@ -598,6 +623,13 @@ CREATE POLICY "Admins create services" ON public.services FOR INSERT WITH CHECK 
 CREATE POLICY "Admins update services" ON public.services FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "Admins delete services" ON public.services FOR DELETE USING (public.is_admin());
 
+-- CMS posts: Published content is public, admins manage the CMS
+CREATE POLICY "Public view published cms posts" ON public.cms_posts FOR SELECT USING (is_published = TRUE);
+CREATE POLICY "Admins view all cms posts" ON public.cms_posts FOR SELECT USING (public.is_admin());
+CREATE POLICY "Admins create cms posts" ON public.cms_posts FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY "Admins update cms posts" ON public.cms_posts FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Admins delete cms posts" ON public.cms_posts FOR DELETE USING (public.is_admin());
+
 -- Jobs: Customers view/create/update own jobs, Workers view assigned jobs, Admins manage all
 CREATE POLICY "Customers view own jobs" ON public.jobs FOR SELECT USING (customer_id = auth.uid());
 CREATE POLICY "Customers create jobs" ON public.jobs FOR INSERT WITH CHECK (auth.uid() = customer_id);
@@ -633,6 +665,7 @@ $$ language 'plpgsql';
 
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_services_updated_at BEFORE UPDATE ON public.services FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+CREATE TRIGGER update_cms_posts_updated_at BEFORE UPDATE ON public.cms_posts FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON public.jobs FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 /*
