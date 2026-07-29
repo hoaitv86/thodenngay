@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS public.cms_posts (
   excerpt TEXT,
   content_html TEXT NOT NULL DEFAULT '',
   cover_image_url TEXT,
+  image_urls TEXT[] NOT NULL DEFAULT '{}',
+  display_locations TEXT[] NOT NULL DEFAULT '{footer}',
   is_published BOOLEAN NOT NULL DEFAULT TRUE,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -21,6 +23,9 @@ CREATE INDEX IF NOT EXISTS cms_posts_published_sort_idx
 
 CREATE INDEX IF NOT EXISTS cms_posts_slug_idx
   ON public.cms_posts (slug);
+
+CREATE INDEX IF NOT EXISTS cms_posts_display_locations_idx
+  ON public.cms_posts USING GIN (display_locations);
 
 ALTER TABLE public.cms_posts ENABLE ROW LEVEL SECURITY;
 

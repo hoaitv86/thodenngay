@@ -130,6 +130,8 @@ CREATE TABLE public.cms_posts (
     excerpt TEXT,
     content_html TEXT NOT NULL DEFAULT '',
     cover_image_url TEXT,
+    image_urls TEXT[] NOT NULL DEFAULT '{}',
+    display_locations TEXT[] NOT NULL DEFAULT '{footer}',
     is_published BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -143,6 +145,8 @@ CREATE INDEX cms_posts_published_sort_idx
   ON public.cms_posts (is_published, sort_order, title);
 CREATE INDEX cms_posts_slug_idx
   ON public.cms_posts (slug);
+CREATE INDEX cms_posts_display_locations_idx
+  ON public.cms_posts USING GIN (display_locations);
 
 -- 4. JOBS (Transactions)
 CREATE TABLE public.jobs (

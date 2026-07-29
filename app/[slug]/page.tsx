@@ -30,7 +30,7 @@ async function getCmsPost(slug: string) {
   try {
     const { data, error } = await getPublicSupabase()
       .from("cms_posts")
-      .select("id,slug,title,excerpt,content_html,cover_image_url,is_published,sort_order,created_at,updated_at,published_at")
+      .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,is_published,sort_order,created_at,updated_at,published_at")
       .eq("slug", slug)
       .eq("is_published", true)
       .maybeSingle();
@@ -53,6 +53,8 @@ async function getCmsPost(slug: string) {
     excerpt: fallback.excerpt,
     content_html: fallback.contentHtml,
     cover_image_url: null,
+    image_urls: [],
+    display_locations: fallback.displayLocations,
     is_published: true,
     sort_order: fallback.sortOrder,
   } satisfies CmsPost;
@@ -113,6 +115,16 @@ export default async function CmsPublicPage({ params }: PageProps) {
           className="cms-editor rounded-lg border border-outline-variant/30 bg-white p-5 text-base leading-8 text-on-surface shadow-card sm:p-8"
           dangerouslySetInnerHTML={{ __html: post.content_html }}
         />
+
+        {post.image_urls?.length ? (
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {post.image_urls.map((url) => (
+              <div key={url} className="relative aspect-video overflow-hidden rounded-lg border border-outline-variant/30 bg-white">
+                <Image src={url} alt="" fill sizes="(min-width: 640px) 50vw, 100vw" className="object-cover" unoptimized />
+              </div>
+            ))}
+          </div>
+        ) : null}
       </article>
     </main>
   );

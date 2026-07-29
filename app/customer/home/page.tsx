@@ -22,6 +22,7 @@ import {
 } from "@/app/components/icons";
 import { createClient } from "@/lib/supabase/client";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
+import { CmsPlacement } from "@/app/components/CmsPlacement";
 
 interface Service {
   id: string;
@@ -281,6 +282,10 @@ export default function CustomerHome() {
 
   return (
     <div className="relative min-h-full overflow-hidden bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35">
+      <div className="relative z-10 pt-4">
+        <CmsPlacement location="featured_notice" variant="banner" limit={1} />
+      </div>
+      <CmsPlacement location="popup" variant="popup" limit={1} />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-linear-to-br from-primary/12 via-primary-fixed/80 to-secondary-container/14" />
       <div className="relative mx-auto w-full max-w-md space-y-5 px-4 pb-5 pt-4 lg:max-w-6xl lg:px-8 lg:py-8">
         <section className="relative overflow-hidden rounded-xl border border-white/25 bg-linear-to-br from-primary via-primary-container to-secondary-container text-white shadow-[0_18px_46px_rgba(37,99,235,0.2)] lg:min-h-[330px]">

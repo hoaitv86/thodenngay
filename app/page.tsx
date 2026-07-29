@@ -7,6 +7,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import type { ReactElement } from "react";
 import ApkDownloadSection from "./components/ApkDownloadSection";
+import { CmsPlacement } from "./components/CmsPlacement";
 import {
   LogoIcon,
   ZapIcon,
@@ -521,8 +522,9 @@ const getHomepageData = unstable_cache(
         .limit(12),
       supabase
         .from("cms_posts")
-        .select("slug,title,sort_order")
+        .select("slug,title,sort_order,display_locations")
         .eq("is_published", true)
+        .contains("display_locations", ["footer"])
         .order("sort_order", { ascending: true })
         .order("title", { ascending: true }),
     ]);
@@ -611,7 +613,7 @@ const getHomepageData = unstable_cache(
       customerReviews,
       cmsPages: cmsPagesResult.data?.length
         ? (cmsPagesResult.data as HomepageCmsPage[])
-        : defaultCmsPages.map((page) => ({
+        : defaultCmsPages.filter((page) => page.displayLocations.includes("footer")).map((page) => ({
             slug: page.slug,
             title: page.title,
             sort_order: page.sortOrder,
@@ -703,6 +705,9 @@ export default async function HomePage() {
           </div>
         </div>
       </header>
+
+      <CmsPlacement location="featured_notice" variant="banner" limit={2} />
+      <CmsPlacement location="popup" variant="popup" limit={1} />
 
       {/* ===== HERO SECTION ===== */}
       <section className="relative min-h-[700px] overflow-hidden bg-primary text-on-primary sm:min-h-[760px]">
@@ -835,6 +840,9 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      <CmsPlacement location="home" title={"N\u1ed9i dung n\u1ed5i b\u1eadt"} limit={3} />
+      <CmsPlacement location="news" title={"Tin t\u1ee9c"} limit={3} />
 
       {/* ===== SERVICES SECTION ===== */}
       <section id="services" className="py-16 sm:py-24 lg:py-32">

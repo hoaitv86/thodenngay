@@ -60,6 +60,7 @@ import {
 import { getJobServices, isMissingWorkflowColumn, normalizeServiceIds, type JobWithWorkflow } from "@/lib/job-workflow";
 import { isDemoAccount } from "@/lib/demo-accounts";
 import { readVietnameseMoney } from "@/lib/vietnamese-money";
+import { CmsPlacement } from "@/app/components/CmsPlacement";
 
 const DynamicServiceWorkflowForm = dynamic(() =>
   import("@/app/components/DynamicServiceWorkflowForm").then(mod => mod.DynamicServiceWorkflowForm)
@@ -3082,6 +3083,10 @@ export default function WorkerDashboard() {
 
   return (
     <div className="flex flex-col w-full relative">
+      <div className="py-3">
+        <CmsPlacement location="featured_notice" variant="banner" limit={1} />
+      </div>
+      <CmsPlacement location="popup" variant="popup" limit={1} />
       {/* Toast Notification */}
       {toast.type && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md rounded-xl border px-4 py-3 shadow-lg animate-fade-in ${toast.type === 'success' ? 'bg-success-container text-on-success-container border-success/30' :
