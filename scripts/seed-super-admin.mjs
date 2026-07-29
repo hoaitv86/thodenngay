@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
@@ -74,33 +74,40 @@ async function demoteOtherSuperAdmins(supabase, superAdminId) {
 }
 
 async function disableLegacyAdmin(supabase, superAdminId) {
-  const legacyEmail = process.env.LEGACY_ADMIN_EMAIL?.trim().toLowerCase() || "admin@alotho.local";
-  const legacyAuthUser = await findAuthUserByEmail(supabase, legacyEmail);
+  const legacyEmails = (process.env.LEGACY_ADMIN_EMAILS || "admin@alotho.local,admin@thodenngay.vn")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const disabled = [];
 
-  if (!legacyAuthUser || legacyAuthUser.id === superAdminId) return { disabled: false, reason: "not_found_or_same_user" };
+  for (const legacyEmail of legacyEmails) {
+    const legacyAuthUser = await findAuthUserByEmail(supabase, legacyEmail);
+    if (!legacyAuthUser || legacyAuthUser.id === superAdminId) continue;
 
-  await supabase.auth.admin.updateUserById(legacyAuthUser.id, {
-    ban_duration: "876000h",
-    user_metadata: {
-      ...(legacyAuthUser.user_metadata || {}),
-      disabled_reason: "Migrated to official Super Admin",
-    },
-  });
+    await supabase.auth.admin.updateUserById(legacyAuthUser.id, {
+      ban_duration: "876000h",
+      user_metadata: {
+        ...(legacyAuthUser.user_metadata || {}),
+        disabled_reason: "Migrated to official Super Admin",
+      },
+    });
 
-  await supabase
-    .from("profiles")
-    .update({ status: "blocked", is_super_admin: false, requires_password_change: false })
-    .eq("id", legacyAuthUser.id);
+    await supabase
+      .from("profiles")
+      .update({ status: "blocked", is_super_admin: false, requires_password_change: false })
+      .eq("id", legacyAuthUser.id);
 
-  await supabase
-    .from("user_roles")
-    .update({ is_active: false })
-    .eq("user_id", legacyAuthUser.id)
-    .eq("role", "admin");
+    await supabase
+      .from("user_roles")
+      .update({ is_active: false })
+      .eq("user_id", legacyAuthUser.id)
+      .eq("role", "admin");
 
-  return { disabled: true, email: legacyEmail };
+    disabled.push(legacyEmail);
+  }
+
+  return { disabled: disabled.length > 0, emails: disabled };
 }
-
 async function verifyLogin(url, anonKey, email, password) {
   const anon = createClient(url, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },

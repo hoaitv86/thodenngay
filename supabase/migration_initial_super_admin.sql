@@ -1,4 +1,4 @@
-﻿-- Initial official Super Admin metadata and first-login password change flag.
+-- Initial official Super Admin metadata and first-login password change flag.
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS requires_password_change BOOLEAN NOT NULL DEFAULT FALSE;
 
@@ -24,7 +24,7 @@ WHERE role = 'admin'
 
 UPDATE public.profiles
 SET status = 'blocked'
-WHERE email = 'admin@alotho.local'
+WHERE email IN ('admin@alotho.local', 'admin@thodenngay.vn')
   AND EXISTS (
     SELECT 1
     FROM public.profiles official_super_admin
@@ -38,5 +38,5 @@ UPDATE public.user_roles
 SET is_active = FALSE
 WHERE role = 'admin'
   AND user_id IN (
-    SELECT id FROM public.profiles WHERE email = 'admin@alotho.local' AND status = 'blocked'
+    SELECT id FROM public.profiles WHERE email IN ('admin@alotho.local', 'admin@thodenngay.vn') AND status = 'blocked'
   );
