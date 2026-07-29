@@ -31,7 +31,7 @@ import {
 import { DEFAULT_SETTINGS, type SettingsData } from "@/lib/settings-types";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
-import { defaultCmsPages } from "@/lib/cms";
+import { defaultCmsPages, defaultCmsSlugs } from "@/lib/cms";
 
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
@@ -494,7 +494,8 @@ function getDefaultFooterCmsPages(): HomepageCmsPage[] {
 }
 
 function mergeFooterCmsPages(dbPages: HomepageCmsPage[] | null | undefined) {
-  const pages = [...(dbPages || [])];
+  const canonicalSlugs = new Set(defaultCmsSlugs);
+  const pages = (dbPages || []).filter((page) => canonicalSlugs.has(page.slug));
   const existingSlugs = new Set(pages.map((page) => page.slug));
 
   for (const page of getDefaultFooterCmsPages()) {

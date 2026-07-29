@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { defaultCmsPages, type CmsPost } from "@/lib/cms";
+import { defaultCmsPages, defaultCmsSlugs, type CmsPost } from "@/lib/cms";
 
 type CmsInfoLinksProps = {
   className?: string;
@@ -29,6 +29,20 @@ function fallbackInfoPages() {
     } satisfies CmsPost));
 }
 
+function mergeInfoPages(dbPages: CmsPost[] | null | undefined) {
+  const canonicalSlugs = new Set(defaultCmsSlugs);
+  const pages = (dbPages || []).filter((page) => canonicalSlugs.has(page.slug));
+  const existingSlugs = new Set(pages.map((page) => page.slug));
+
+  for (const page of fallbackInfoPages()) {
+    if (!existingSlugs.has(page.slug)) {
+      pages.push(page);
+    }
+  }
+
+  return pages.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.title.localeCompare(b.title, "vi"));
+}
+
 export function CmsInfoLinks({ className = "", compact = false }: CmsInfoLinksProps) {
   const supabase = useMemo(() => createClient(), []);
   const [pages, setPages] = useState<CmsPost[]>([]);
@@ -48,7 +62,7 @@ export function CmsInfoLinks({ className = "", compact = false }: CmsInfoLinksPr
         .order("title", { ascending: true });
 
       if (!mounted) return;
-      setPages(error || !data?.length ? fallbackInfoPages() : data as CmsPost[]);
+      setPages(error ? fallbackInfoPages() : mergeInfoPages(data as CmsPost[] | null));
     }
 
     void loadPages();
