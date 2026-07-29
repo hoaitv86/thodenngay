@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "android:add": "npx cap add android",
     "android:sync": "npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "admin:seed-super": "node scripts/seed-super-admin.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
