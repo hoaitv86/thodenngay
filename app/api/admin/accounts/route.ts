@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { ADMIN_MODULES, DEFAULT_ADMIN_PERMISSIONS, type AdminPermission } from "@/lib/admin-roles";
 import { createServiceSupabaseClient, getAdminPermissions, logAdminAction, requireAdmin, syncAdminPermissions, syncAdminRole } from "@/lib/admin-server";
 
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
       role: "admin",
       status: "active",
       is_super_admin: Boolean(body.isSuperAdmin),
-          requires_password_change: true,
+      requires_password_change: true,
     });
 
     if (profileError) {
@@ -139,22 +139,15 @@ export async function PATCH(request: Request) {
   const fullName = cleanName(body.fullName);
   const password = body.password || "";
   const updatingSelf = userId === auth.profile.id;
+  const isSuperAdmin = Boolean(auth.profile.is_super_admin);
   const permissions = normalizePermissions(body.permissions);
 
   if (!userId || !email || !fullName) {
     return NextResponse.json({ error: "Thiếu thông tin tài khoản admin." }, { status: 400 });
   }
 
-  if (!auth.profile.is_super_admin && !updatingSelf) {
+  if (!isSuperAdmin && !updatingSelf) {
     return NextResponse.json({ error: "Chỉ Super Admin được sửa tài khoản admin khác." }, { status: 403 });
-  }
-
-  if (typeof body.isSuperAdmin === "boolean" && !auth.profile.is_super_admin) {
-    return NextResponse.json({ error: "Chỉ Super Admin được thay đổi quyền Super Admin." }, { status: 403 });
-  }
-
-  if (body.permissions && !auth.profile.is_super_admin) {
-    return NextResponse.json({ error: "Chỉ Super Admin được thay đổi phân quyền module." }, { status: 403 });
   }
 
   if (body.status === "blocked" && updatingSelf) {
@@ -163,10 +156,6 @@ export async function PATCH(request: Request) {
 
   if (body.status && body.status !== "active" && body.status !== "blocked") {
     return NextResponse.json({ error: "Trạng thái admin không hợp lệ." }, { status: 400 });
-  }
-
-  if (body.status && !auth.profile.is_super_admin) {
-    return NextResponse.json({ error: "Chỉ Super Admin được khóa hoặc mở khóa admin." }, { status: 403 });
   }
 
   if (password && password.length < 6) {
@@ -195,17 +184,20 @@ export async function PATCH(request: Request) {
       full_name: fullName,
       role: "admin",
     };
-    if (typeof body.isSuperAdmin === "boolean") profilePayload.is_super_admin = body.isSuperAdmin;
-    if (body.status) profilePayload.status = body.status;
 
-        if (password) profilePayload.requires_password_change = updatingSelf ? false : true;
-const { error: profileError } = await service.from("profiles").update(profilePayload).eq("id", userId).eq("role", "admin");
+    if (isSuperAdmin) {
+      if (typeof body.isSuperAdmin === "boolean") profilePayload.is_super_admin = body.isSuperAdmin;
+      if (body.status) profilePayload.status = body.status;
+    }
+    if (password) profilePayload.requires_password_change = updatingSelf ? false : true;
+
+    const { error: profileError } = await service.from("profiles").update(profilePayload).eq("id", userId).eq("role", "admin");
     if (profileError) {
       return NextResponse.json({ error: "Không thể cập nhật hồ sơ admin: " + profileError.message }, { status: 500 });
     }
 
     await syncAdminRole(service, userId, auth.profile.id);
-    if (body.permissions && auth.profile.is_super_admin) {
+    if (body.permissions && isSuperAdmin) {
       await syncAdminPermissions(service, userId, permissions, auth.profile.id);
     }
 
@@ -217,10 +209,11 @@ const { error: profileError } = await service.from("profiles").update(profilePay
       summary: `Cập nhật tài khoản admin ${email}`,
       metadata: {
         email,
-        status: body.status,
-        isSuperAdmin: body.isSuperAdmin,
         changedPassword: Boolean(password),
-        permissionsChanged: Boolean(body.permissions),
+        selfUpdate: updatingSelf,
+        status: isSuperAdmin ? body.status : undefined,
+        isSuperAdmin: isSuperAdmin ? body.isSuperAdmin : undefined,
+        permissionsChanged: Boolean(body.permissions && isSuperAdmin),
       },
     });
 

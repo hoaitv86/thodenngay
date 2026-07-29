@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CheckCircle, Crown, LockKeyhole, Mail, Plus, ShieldCheck, UserCog, XCircle } from "lucide-react";
