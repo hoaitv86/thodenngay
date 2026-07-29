@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -51,6 +51,7 @@ function getModuleForPath(pathname: string) {
     .sort((a, b) => b.href.length - a.href.length)[0];
   return matched?.module || null;
 }
+
 function SidebarContent({
   pathname,
   userName,
@@ -110,11 +111,7 @@ function SidebarContent({
   );
 }
 
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [userName, setUserName] = useState("Admin");
@@ -125,32 +122,40 @@ export default function AdminLayout({
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const supabase = createClient();
 
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (!item.module) return true;
+    return isSuperAdmin || allowedModules.has(item.module);
+  });
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", user.id)
-          .single();
-        if (profile) setUserName(profile.full_name);
+      if (!user) return;
 
-        const permissionRes = await fetch("/api/admin/me/permissions", { cache: "no-store" });
-        if (permissionRes.ok) {
-          const permissionData = await permissionRes.json();
-          setIsSuperAdmin(Boolean(permissionData.isSuperAdmin));
-          setRequiresPasswordChange(Boolean(permissionData.admin?.requires_password_change));
-          setAllowedModules(
-            new Set(
-              (permissionData.permissions || [])
-                .filter((item: { can_view?: boolean; can_manage?: boolean }) => item.can_view || item.can_manage)
-                .map((item: { module: AdminModule }) => item.module),
-            ),
-          );
-        }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", user.id)
+        .single();
+      if (profile) setUserName(profile.full_name);
+
+      const permissionRes = await fetch("/api/admin/me/permissions", { cache: "no-store" });
+      if (permissionRes.ok) {
+        const permissionData = await permissionRes.json();
+        setIsSuperAdmin(Boolean(permissionData.isSuperAdmin));
+        setRequiresPasswordChange(Boolean(permissionData.admin?.requires_password_change));
+        setAllowedModules(
+          new Set(
+            (permissionData.permissions || [])
+              .filter((item: { can_view?: boolean; can_manage?: boolean }) => item.can_view || item.can_manage)
+              .map((item: { module: AdminModule }) => item.module),
+          ),
+        );
       }
+      setPermissionsLoaded(true);
     };
+
     getUser();
   }, [supabase]);
 
@@ -165,12 +170,7 @@ export default function AdminLayout({
     if (module && !isSuperAdmin && !allowedModules.has(module)) {
       router.replace(visibleNavItems[0]?.href || "/admin/admins");
     }
-  }, [allowedModules, isSuperAdmin, pathname, permissionsLoaded, requiresPasswordChange, router]);
-  const visibleNavItems = navItems.filter((item) => {
-    if (item.superAdminOnly) return isSuperAdmin;
-    if (!item.module) return true;
-    return isSuperAdmin || allowedModules.has(item.module);
-  });
+  }, [allowedModules, isSuperAdmin, pathname, permissionsLoaded, requiresPasswordChange, router, visibleNavItems]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -192,10 +192,7 @@ export default function AdminLayout({
       </aside>
 
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
       <aside
         className={`fixed inset-y-0 left-0 w-64 bg-linear-to-b from-primary via-primary-container to-secondary-container z-50 flex flex-col transform transition-transform md:hidden ${
@@ -232,9 +229,7 @@ export default function AdminLayout({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 bg-surface-container-low">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto p-6 bg-surface-container-low">{children}</main>
       </div>
     </div>
   );
