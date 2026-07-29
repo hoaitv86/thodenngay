@@ -1,0 +1,109 @@
+import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+
+export type AdminProfile = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  status?: string | null;
+  is_super_admin?: boolean | null;
+};
+
+export async function createCookieSupabaseClient() {
+  const cookieStore = await cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+          } catch {
+            // Route handlers can ignore cookie write races.
+          }
+        },
+      },
+    },
+  );
+}
+
+export function createServiceSupabaseClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  return createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+export async function getCurrentAdminProfile(supabase?: Awaited<ReturnType<typeof createCookieSupabaseClient>>) {
+  const client = supabase || await createCookieSupabaseClient();
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+
+  if (!user) return { user: null, profile: null };
+
+  const { data: profile } = await client
+    .from("profiles")
+    .select("id, email, full_name, role, status, is_super_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return { user, profile: (profile || null) as AdminProfile | null };
+}
+
+export async function requireAdmin() {
+  const supabase = await createCookieSupabaseClient();
+  const { user, profile } = await getCurrentAdminProfile(supabase);
+
+  if (!user || !profile) {
+    return {
+      ok: false as const,
+      response: NextResponse.json({ error: "Chưa đăng nhập." }, { status: 401 }),
+    };
+  }
+
+  if (profile.role !== "admin") {
+    return {
+      ok: false as const,
+      response: NextResponse.json({ error: "Không có quyền quản trị." }, { status: 403 }),
+    };
+  }
+
+  if (profile.status === "blocked") {
+    return {
+      ok: false as const,
+      response: NextResponse.json({ error: "Tài khoản admin đang bị khóa." }, { status: 403 }),
+    };
+  }
+
+  return { ok: true as const, supabase, user, profile };
+}
+
+export async function syncAdminRole(serviceClient: SupabaseClient, userId: string, grantedBy?: string) {
+  await serviceClient
+    .from("user_roles")
+    .upsert(
+      {
+        user_id: userId,
+        role: "admin",
+        is_active: true,
+        granted_by: grantedBy || null,
+      },
+      { onConflict: "user_id,role" },
+    );
+}

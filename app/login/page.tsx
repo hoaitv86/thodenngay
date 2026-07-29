@@ -453,8 +453,8 @@ export default function LoginPage() {
                 <p className="mb-2 text-xs font-bold uppercase tracking-wider text-primary">Tài khoản dùng thử (Pass: 123456)</p>
                 <div className="grid grid-cols-1 gap-2 text-xs text-on-surface-variant">
                   <div className="grid gap-1 sm:flex sm:justify-between">
-                    <span>Admin:</span>
-                    <span className="break-all font-mono font-bold">admin@alotho.local</span>
+                    <span>Super Admin:</span>
+                    <span className="break-all font-mono font-bold">superadmin@alotho.local</span>
                   </div>
                   <div className="grid gap-1 sm:flex sm:justify-between">
                     <span>Thợ:</span>

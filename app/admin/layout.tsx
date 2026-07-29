@@ -16,6 +16,7 @@ import {
   MessageCircle,
   FileText,
   MapPin,
+  UserCog,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/admin/payments", label: "BillGo", icon: CreditCard },
   { href: "/admin/areas", label: "Địa bàn", icon: MapPin },
   { href: "/admin/content", label: "Qu\u1ea3n l\u00fd n\u1ed9i dung", icon: FileText },
+  { href: "/admin/admins", label: "Super Admin", icon: UserCog },
   { href: "/admin/settings", label: "Cài đặt", icon: Settings },
 ];
 
