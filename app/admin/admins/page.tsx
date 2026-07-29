@@ -45,10 +45,21 @@ const emptyForm: AdminForm = {
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Không xác định");
 
+const formFromAccount = (account: AdminAccount): AdminForm => ({
+  userId: account.id,
+  email: account.email || "",
+  fullName: account.full_name || "",
+  password: "",
+  isSuperAdmin: Boolean(account.is_super_admin),
+  status: account.status === "blocked" ? "blocked" : "active",
+  permissions: account.permissions || DEFAULT_ADMIN_PERMISSIONS,
+});
+
 export default function AdminAccountsPage() {
   const [accounts, setAccounts] = useState<AdminAccount[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [currentAdminId, setCurrentAdminId] = useState("");
+  const [canManageAdmins, setCanManageAdmins] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<AdminForm>(emptyForm);
@@ -56,7 +67,7 @@ export default function AdminAccountsPage() {
 
   const selectedAccount = useMemo(() => accounts.find((account) => account.id === form.userId) || null, [accounts, form.userId]);
   const currentAccount = accounts.find((account) => account.id === currentAdminId);
-  const currentIsSuperAdmin = Boolean(currentAccount?.is_super_admin);
+  const currentIsSuperAdmin = canManageAdmins;
   const editing = Boolean(form.userId);
 
   const showMessage = (type: "success" | "error", text: string) => {
@@ -70,8 +81,18 @@ export default function AdminAccountsPage() {
       const response = await fetch("/api/admin/accounts", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Không thể tải danh sách admin.");
-      setAccounts(data.accounts || []);
+      const nextAccounts = data.accounts || [];
+      const nextCanManageAdmins = Boolean(data.canManageAdmins);
+      setAccounts(nextAccounts);
       setCurrentAdminId(data.currentAdminId || "");
+      setCanManageAdmins(nextCanManageAdmins);
+
+      if (!nextCanManageAdmins) {
+        const self = nextAccounts.find((account: AdminAccount) => account.id === data.currentAdminId) || nextAccounts[0];
+        if (self) setForm(formFromAccount(self));
+        setAuditLogs([]);
+        return;
+      }
 
       const logResponse = await fetch("/api/admin/audit-logs", { cache: "no-store" });
       if (logResponse.ok) {
@@ -89,18 +110,13 @@ export default function AdminAccountsPage() {
     void loadAccounts();
   }, []);
 
-  const startCreate = () => setForm(emptyForm);
+  const startCreate = () => {
+    if (!currentIsSuperAdmin) return;
+    setForm(emptyForm);
+  };
 
   const startEdit = (account: AdminAccount) => {
-    setForm({
-      userId: account.id,
-      email: account.email || "",
-      fullName: account.full_name || "",
-      password: "",
-      isSuperAdmin: Boolean(account.is_super_admin),
-      status: account.status === "blocked" ? "blocked" : "active",
-      permissions: account.permissions || DEFAULT_ADMIN_PERMISSIONS,
-    });
+    setForm(formFromAccount(account));
   };
 
   const updatePermission = (module: AdminModule, next: Partial<AdminPermission>) => {
@@ -132,10 +148,13 @@ export default function AdminAccountsPage() {
 
     setSaving(true);
     try {
+      const payload = currentIsSuperAdmin
+        ? form
+        : { userId: currentAdminId, email: form.email, fullName: form.fullName, password: form.password };
       const response = await fetch("/api/admin/accounts", {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Không thể lưu tài khoản admin.");
@@ -160,25 +179,31 @@ export default function AdminAccountsPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-headline-md font-bold text-on-surface">Super Admin</h1>
-          <p className="mt-1 text-body-sm text-on-surface-variant">Quản lý tài khoản admin, phân quyền module, khóa/mở và nhật ký bảo mật.</p>
+          <h1 className="text-headline-md font-bold text-on-surface">{currentIsSuperAdmin ? "Quản trị Admin" : "Tài khoản của tôi"}</h1>
+          <p className="mt-1 text-body-sm text-on-surface-variant">
+            {currentIsSuperAdmin
+              ? "Quản lý tài khoản admin, phân quyền module, khóa/mở và nhật ký bảo mật."
+              : "Cập nhật email đăng nhập, tên hiển thị và đổi mật khẩu tài khoản admin của bạn."}
+          </p>
         </div>
-        <button type="button" onClick={startCreate} className="btn-primary !w-auto !px-5 !py-2.5">
-          <Plus className="h-4 w-4" />
-          Thêm admin
-        </button>
+        {currentIsSuperAdmin && (
+          <button type="button" onClick={startCreate} className="btn-primary !w-auto !px-5 !py-2.5">
+            <Plus className="h-4 w-4" />
+            Thêm admin
+          </button>
+        )}
       </div>
 
       {currentAccount?.requires_password_change && (
         <div className="rounded-lg border border-warning/30 bg-warning-container p-4 text-sm font-bold leading-6 text-warning">
-          Bạn cần đổi mật khẩu ban đầu trước khi sử dụng các module quản trị khác. Chọn tài khoản của bạn, nhập mật khẩu mới rồi bấm Lưu thay đổi.
+          Bạn cần đổi mật khẩu ban đầu trước khi sử dụng các module quản trị khác. Nhập mật khẩu mới rồi bấm Lưu thay đổi.
         </div>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
         <section className="rounded-lg border border-outline-variant/30 bg-white">
           <div className="border-b border-outline-variant/30 p-4">
-            <h2 className="text-lg font-extrabold text-on-surface">Tài khoản quản trị</h2>
+            <h2 className="text-lg font-extrabold text-on-surface">{currentIsSuperAdmin ? "Tài khoản quản trị" : "Tài khoản của tôi"}</h2>
           </div>
           {loading ? (
             <div className="p-6 text-sm text-on-surface-variant">Đang tải danh sách admin...</div>
@@ -211,8 +236,8 @@ export default function AdminAccountsPage() {
           <div className="flex items-center gap-3 border-b border-outline-variant/30 pb-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed text-primary">{editing ? <UserCog className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</div>
             <div>
-              <h2 className="font-extrabold text-on-surface">{editing ? "Cập nhật admin" : "Tạo admin mới"}</h2>
-              <p className="text-xs text-on-surface-variant">Đổi email, tên hiển thị, mật khẩu, trạng thái và phân quyền.</p>
+              <h2 className="font-extrabold text-on-surface">{editing ? "Cập nhật tài khoản" : "Tạo admin mới"}</h2>
+              <p className="text-xs text-on-surface-variant">{currentIsSuperAdmin ? "Đổi email, tên hiển thị, mật khẩu, trạng thái và phân quyền." : "Đổi email, tên hiển thị hoặc mật khẩu của chính bạn."}</p>
             </div>
           </div>
 
@@ -237,10 +262,12 @@ export default function AdminAccountsPage() {
               </label>
             )}
 
-            <label className="flex items-start gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low p-3 text-sm">
-              <input type="checkbox" className="mt-1" checked={form.isSuperAdmin} onChange={(event) => setForm((prev) => ({ ...prev, isSuperAdmin: event.target.checked }))} disabled={!currentIsSuperAdmin} />
-              <span><span className="flex items-center gap-2 font-extrabold text-on-surface"><Crown className="h-4 w-4 text-primary" />Super Admin</span><span className="mt-1 block text-xs leading-5 text-on-surface-variant">Super Admin có toàn quyền quản lý admin khác và các thiết lập bảo mật.</span></span>
-            </label>
+            {currentIsSuperAdmin && (
+              <label className="flex items-start gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low p-3 text-sm">
+                <input type="checkbox" className="mt-1" checked={form.isSuperAdmin} onChange={(event) => setForm((prev) => ({ ...prev, isSuperAdmin: event.target.checked }))} />
+                <span><span className="flex items-center gap-2 font-extrabold text-on-surface"><Crown className="h-4 w-4 text-primary" />Super Admin</span><span className="mt-1 block text-xs leading-5 text-on-surface-variant">Super Admin có toàn quyền quản lý admin khác và các thiết lập bảo mật.</span></span>
+              </label>
+            )}
 
             {currentIsSuperAdmin && (
               <div className="space-y-3 rounded-lg border border-outline-variant/30 p-3">
@@ -262,23 +289,25 @@ export default function AdminAccountsPage() {
           </div>
 
           <div className="mt-5 flex justify-end gap-3 border-t border-outline-variant/30 pt-4">
-            {editing && <button type="button" onClick={startCreate} className="btn-outline !w-auto !px-4 !py-2" disabled={saving}>Hủy</button>}
-            <button className="btn-primary !w-auto !px-5 !py-2" disabled={saving}>{saving ? "Đang lưu..." : <><LockKeyhole className="h-4 w-4" />{editing ? "Lưu thay đổi" : "Tạo admin"}</>}</button>
+            {editing && currentIsSuperAdmin && <button type="button" onClick={startCreate} className="btn-outline !w-auto !px-4 !py-2" disabled={saving}>Hủy</button>}
+            <button className="btn-primary !w-auto !px-5 !py-2" disabled={saving || (!editing && !currentIsSuperAdmin)}>{saving ? "Đang lưu..." : <><LockKeyhole className="h-4 w-4" />{editing ? "Lưu thay đổi" : "Tạo admin"}</>}</button>
           </div>
         </form>
       </div>
 
-      <section className="rounded-lg border border-outline-variant/30 bg-white">
-        <div className="border-b border-outline-variant/30 p-4"><h2 className="text-lg font-extrabold text-on-surface">Nhật ký thao tác</h2><p className="mt-1 text-xs text-on-surface-variant">50 hành động admin gần nhất liên quan đến tài khoản, bảo mật và phân quyền.</p></div>
-        <div className="divide-y divide-outline-variant/20">
-          {auditLogs.length === 0 ? <div className="p-4 text-sm text-on-surface-variant">Chưa có nhật ký thao tác.</div> : auditLogs.map((log) => (
-            <div key={log.id} className="p-4 text-sm">
-              <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-extrabold text-on-surface">{log.summary}</p><p className="mt-1 text-xs text-on-surface-variant">{log.actor?.full_name || log.actor?.email || "Admin"} → {log.target?.full_name || log.target?.email || "Hệ thống"}</p></div><span className="rounded-full bg-surface-container-high px-2 py-1 text-[10px] font-extrabold uppercase text-on-surface-variant">{log.action}</span></div>
-              <p className="mt-2 text-xs text-on-surface-variant">{log.created_at ? new Date(log.created_at).toLocaleString("vi-VN") : "Chưa có thời gian"}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {currentIsSuperAdmin && (
+        <section className="rounded-lg border border-outline-variant/30 bg-white">
+          <div className="border-b border-outline-variant/30 p-4"><h2 className="text-lg font-extrabold text-on-surface">Nhật ký thao tác</h2><p className="mt-1 text-xs text-on-surface-variant">50 hành động admin gần nhất liên quan đến tài khoản, bảo mật và phân quyền.</p></div>
+          <div className="divide-y divide-outline-variant/20">
+            {auditLogs.length === 0 ? <div className="p-4 text-sm text-on-surface-variant">Chưa có nhật ký thao tác.</div> : auditLogs.map((log) => (
+              <div key={log.id} className="p-4 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-extrabold text-on-surface">{log.summary}</p><p className="mt-1 text-xs text-on-surface-variant">{log.actor?.full_name || log.actor?.email || "Admin"} → {log.target?.full_name || log.target?.email || "Hệ thống"}</p></div><span className="rounded-full bg-surface-container-high px-2 py-1 text-[10px] font-extrabold uppercase text-on-surface-variant">{log.action}</span></div>
+                <p className="mt-2 text-xs text-on-surface-variant">{log.created_at ? new Date(log.created_at).toLocaleString("vi-VN") : "Chưa có thời gian"}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

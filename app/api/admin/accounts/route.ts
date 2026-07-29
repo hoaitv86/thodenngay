@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { ADMIN_MODULES, DEFAULT_ADMIN_PERMISSIONS, type AdminPermission } from "@/lib/admin-roles";
 import { createServiceSupabaseClient, getAdminPermissions, logAdminAction, requireAdmin, syncAdminPermissions, syncAdminRole } from "@/lib/admin-server";
 
@@ -33,12 +33,18 @@ export async function GET() {
 
   try {
     const service = createServiceSupabaseClient();
-    const { data, error } = await service
+    let query = service
       .from("profiles")
       .select("id, email, full_name, role, status, is_super_admin, requires_password_change, created_at, updated_at")
-      .eq("role", "admin")
-      .order("is_super_admin", { ascending: false })
-      .order("created_at", { ascending: true });
+      .eq("role", "admin");
+
+    if (auth.profile.is_super_admin) {
+      query = query.order("is_super_admin", { ascending: false }).order("created_at", { ascending: true });
+    } else {
+      query = query.eq("id", auth.profile.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: "Không thể tải danh sách admin: " + error.message }, { status: 500 });
@@ -51,7 +57,12 @@ export async function GET() {
       })),
     );
 
-    return NextResponse.json({ accounts, currentAdminId: auth.profile.id, modules: ADMIN_MODULES });
+    return NextResponse.json({
+      accounts,
+      currentAdminId: auth.profile.id,
+      canManageAdmins: Boolean(auth.profile.is_super_admin),
+      modules: ADMIN_MODULES,
+    });
   } catch (error: unknown) {
     return NextResponse.json(
       { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },

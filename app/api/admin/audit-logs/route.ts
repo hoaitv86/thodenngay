@@ -1,9 +1,13 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createServiceSupabaseClient, requireAdmin } from "@/lib/admin-server";
 
 export async function GET() {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
+
+  if (!auth.profile.is_super_admin) {
+    return NextResponse.json({ logs: [] });
+  }
 
   try {
     const service = createServiceSupabaseClient();
