@@ -14,7 +14,6 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { isDemoAccount } from "@/lib/demo-accounts";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
-import { CmsInfoLinks } from "@/app/components/CmsInfoLinks";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
 import {
   BellIcon,
@@ -400,10 +399,6 @@ export default function WorkerLayout({
           {sidebarItems.map((item) => renderNavLink(item, true))}
         </nav>
 
-        <div className="border-t border-outline-variant/20 p-3">
-          <CmsInfoLinks compact />
-        </div>
-
         <div className="mt-auto border-t border-outline-variant/20 p-3">
           <button
             type="button"
@@ -591,7 +586,6 @@ export default function WorkerLayout({
                 </button>
               </div>
               <div className="max-h-[min(28rem,65dvh)] overflow-y-auto px-3 pb-4">
-                <CmsInfoLinks compact className="border-t border-outline-variant/15 py-3 first:border-t-0 first:pt-1" />
                 {groupedMobileMoreItems.map((group) => (
                   <section key={group.id} className="border-t border-outline-variant/15 py-3 first:border-t-0 first:pt-1">
                     <h2 className="px-1 pb-2 text-[11px] font-extrabold uppercase tracking-wide text-on-surface-variant/70">
