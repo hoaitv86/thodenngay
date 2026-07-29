@@ -454,7 +454,7 @@ export default function LoginPage() {
                 <div className="grid grid-cols-1 gap-2 text-xs text-on-surface-variant">
                   <div className="grid gap-1 sm:flex sm:justify-between">
                     <span>Super Admin:</span>
-                    <span className="break-all font-mono font-bold">superadmin@alotho.local</span>
+                    <span className="break-all font-mono font-bold">superadmin@thodenngay.vn</span>
                   </div>
                   <div className="grid gap-1 sm:flex sm:justify-between">
                     <span>Thợ:</span>

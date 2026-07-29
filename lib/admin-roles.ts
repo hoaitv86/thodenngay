@@ -1,4 +1,4 @@
-export const SUPER_ADMIN_FALLBACK_EMAIL = "superadmin@alotho.local";
+export const SUPER_ADMIN_FALLBACK_EMAIL = "superadmin@thodenngay.vn";
 
 export type AdminModule =
   | "workers"

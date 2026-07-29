@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -45,6 +45,12 @@ const navItems: NavItem[] = [
   { href: "/admin/settings", label: "Cài đặt", icon: Settings, superAdminOnly: true },
 ];
 
+function getModuleForPath(pathname: string) {
+  const matched = navItems
+    .filter((item) => item.module && pathname.startsWith(item.href))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  return matched?.module || null;
+}
 function SidebarContent({
   pathname,
   userName,
@@ -115,6 +121,8 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [allowedModules, setAllowedModules] = useState<Set<AdminModule>>(() => new Set());
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -132,6 +140,7 @@ export default function AdminLayout({
         if (permissionRes.ok) {
           const permissionData = await permissionRes.json();
           setIsSuperAdmin(Boolean(permissionData.isSuperAdmin));
+          setRequiresPasswordChange(Boolean(permissionData.admin?.requires_password_change));
           setAllowedModules(
             new Set(
               (permissionData.permissions || [])
@@ -145,6 +154,18 @@ export default function AdminLayout({
     getUser();
   }, [supabase]);
 
+  useEffect(() => {
+    if (!permissionsLoaded) return;
+    if (requiresPasswordChange && !pathname.startsWith("/admin/admins")) {
+      router.replace("/admin/admins?password=required");
+      return;
+    }
+
+    const module = getModuleForPath(pathname);
+    if (module && !isSuperAdmin && !allowedModules.has(module)) {
+      router.replace(visibleNavItems[0]?.href || "/admin/admins");
+    }
+  }, [allowedModules, isSuperAdmin, pathname, permissionsLoaded, requiresPasswordChange, router]);
   const visibleNavItems = navItems.filter((item) => {
     if (item.superAdminOnly) return isSuperAdmin;
     if (!item.module) return true;

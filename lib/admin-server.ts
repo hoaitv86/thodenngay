@@ -60,7 +60,7 @@ export async function getCurrentAdminProfile(supabase?: Awaited<ReturnType<typeo
 
   const { data: profile } = await client
     .from("profiles")
-    .select("id, email, full_name, role, status, is_super_admin")
+    .select("id, email, full_name, role, status, is_super_admin, requires_password_change")
     .eq("id", user.id)
     .maybeSingle();
 

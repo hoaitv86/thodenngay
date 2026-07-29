@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { ADMIN_MODULES, DEFAULT_ADMIN_PERMISSIONS, type AdminPermission } from "@/lib/admin-roles";
 import { createServiceSupabaseClient, getAdminPermissions, logAdminAction, requireAdmin, syncAdminPermissions, syncAdminRole } from "@/lib/admin-server";
 
@@ -35,7 +35,7 @@ export async function GET() {
     const service = createServiceSupabaseClient();
     const { data, error } = await service
       .from("profiles")
-      .select("id, email, full_name, role, status, is_super_admin, created_at, updated_at")
+      .select("id, email, full_name, role, status, is_super_admin, requires_password_change, created_at, updated_at")
       .eq("role", "admin")
       .order("is_super_admin", { ascending: false })
       .order("created_at", { ascending: true });
@@ -102,6 +102,7 @@ export async function POST(request: Request) {
       role: "admin",
       status: "active",
       is_super_admin: Boolean(body.isSuperAdmin),
+          requires_password_change: true,
     });
 
     if (profileError) {
@@ -197,7 +198,8 @@ export async function PATCH(request: Request) {
     if (typeof body.isSuperAdmin === "boolean") profilePayload.is_super_admin = body.isSuperAdmin;
     if (body.status) profilePayload.status = body.status;
 
-    const { error: profileError } = await service.from("profiles").update(profilePayload).eq("id", userId).eq("role", "admin");
+        if (password) profilePayload.requires_password_change = updatingSelf ? false : true;
+const { error: profileError } = await service.from("profiles").update(profilePayload).eq("id", userId).eq("role", "admin");
     if (profileError) {
       return NextResponse.json({ error: "Không thể cập nhật hồ sơ admin: " + profileError.message }, { status: 500 });
     }
