@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
 import type { WorkflowData } from "@/config/serviceWorkflows";
+import { requireAdminPermission } from "@/lib/admin-server";
 
 type CreateJobRequest = {
   customerMode?: "existing" | "new";
@@ -68,8 +69,8 @@ async function getAdminUser() {
 
 export async function POST(request: Request) {
   try {
-    const adminCheck = await getAdminUser();
-    if (adminCheck.error) return adminCheck.error;
+    const adminCheck = await requireAdminPermission("jobs", "manage");
+    if (!adminCheck.ok) return adminCheck.response;
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {

@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Briefcase,
@@ -20,37 +20,46 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import type { AdminModule } from "@/lib/admin-roles";
 
-const navItems = [
-  { href: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard },
-  { href: "/admin/jobs", label: "Quản lý Job", icon: Briefcase },
-  { href: "/admin/workers", label: "Quản lý Thợ", icon: UserCheck },
-  { href: "/admin/services", label: "Dịch vụ & Giá", icon: WrenchIcon },
-  { href: "/admin/customers", label: "Khách hàng", icon: Users },
-  { href: "/admin/chat", label: "Chat", icon: MessageCircle },
-  { href: "/admin/notifications", label: "Thông báo", icon: Bell },
-  { href: "/admin/payments", label: "BillGo", icon: CreditCard },
-  { href: "/admin/areas", label: "Địa bàn", icon: MapPin },
-  { href: "/admin/content", label: "Qu\u1ea3n l\u00fd n\u1ed9i dung", icon: FileText },
-  { href: "/admin/admins", label: "Super Admin", icon: UserCog },
-  { href: "/admin/settings", label: "Cài đặt", icon: Settings },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  module?: AdminModule;
+  superAdminOnly?: boolean;
+};
+
+const navItems: NavItem[] = [
+  { href: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, module: "analytics" },
+  { href: "/admin/jobs", label: "Quản lý Job", icon: Briefcase, module: "jobs" },
+  { href: "/admin/workers", label: "Quản lý Thợ", icon: UserCheck, module: "workers" },
+  { href: "/admin/services", label: "Dịch vụ & Giá", icon: WrenchIcon, module: "services" },
+  { href: "/admin/customers", label: "Khách hàng", icon: Users, module: "customers" },
+  { href: "/admin/chat", label: "Chat", icon: MessageCircle, module: "customers" },
+  { href: "/admin/notifications", label: "Thông báo", icon: Bell, module: "analytics" },
+  { href: "/admin/payments", label: "BillGo", icon: CreditCard, module: "billgo" },
+  { href: "/admin/areas", label: "Địa bàn", icon: MapPin, module: "services" },
+  { href: "/admin/content", label: "Quản lý nội dung", icon: FileText, module: "content" },
+  { href: "/admin/admins", label: "Super Admin", icon: UserCog, superAdminOnly: true },
+  { href: "/admin/settings", label: "Cài đặt", icon: Settings, superAdminOnly: true },
 ];
 
 function SidebarContent({
   pathname,
   userName,
+  items,
   onLogout,
   onNavigate,
 }: {
   pathname: string;
   userName: string;
+  items: NavItem[];
   onLogout: () => void;
   onNavigate: () => void;
 }) {
   return (
     <>
-      {/* Logo */}
       <div className="h-16 flex items-center gap-2 px-5 border-b border-on-primary/10">
         <div className="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center">
           <WrenchIcon className="w-4.5 h-4.5 text-on-secondary" />
@@ -61,9 +70,8 @@ function SidebarContent({
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
             <Link
@@ -83,7 +91,6 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Logout */}
       <div className="px-3 py-4 border-t border-on-primary/10">
         <button
           onClick={onLogout}
@@ -106,6 +113,8 @@ export default function AdminLayout({
   const router = useRouter();
   const [userName, setUserName] = useState("Admin");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [allowedModules, setAllowedModules] = useState<Set<AdminModule>>(() => new Set());
   const supabase = createClient();
 
   useEffect(() => {
@@ -113,15 +122,34 @@ export default function AdminLayout({
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
+          .from("profiles")
+          .select("full_name")
+          .eq("id", user.id)
           .single();
         if (profile) setUserName(profile.full_name);
+
+        const permissionRes = await fetch("/api/admin/me/permissions", { cache: "no-store" });
+        if (permissionRes.ok) {
+          const permissionData = await permissionRes.json();
+          setIsSuperAdmin(Boolean(permissionData.isSuperAdmin));
+          setAllowedModules(
+            new Set(
+              (permissionData.permissions || [])
+                .filter((item: { can_view?: boolean; can_manage?: boolean }) => item.can_view || item.can_manage)
+                .map((item: { module: AdminModule }) => item.module),
+            ),
+          );
+        }
       }
     };
     getUser();
   }, [supabase]);
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (!item.module) return true;
+    return isSuperAdmin || allowedModules.has(item.module);
+  });
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -132,17 +160,16 @@ export default function AdminLayout({
 
   return (
     <div className="admin-shell flex h-screen bg-surface">
-      {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 flex-col bg-linear-to-b from-primary via-primary-container to-secondary-container shrink-0">
         <SidebarContent
           pathname={pathname}
           userName={userName}
+          items={visibleNavItems}
           onLogout={handleLogout}
           onNavigate={() => setSidebarOpen(false)}
         />
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
@@ -157,14 +184,13 @@ export default function AdminLayout({
         <SidebarContent
           pathname={pathname}
           userName={userName}
+          items={visibleNavItems}
           onLogout={handleLogout}
           onNavigate={() => setSidebarOpen(false)}
         />
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Bar */}
         <header className="h-16 bg-white border-b border-outline-variant flex items-center justify-between px-6 shrink-0 shadow-card">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -185,7 +211,6 @@ export default function AdminLayout({
           </div>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-6 bg-surface-container-low">
           {children}
         </main>

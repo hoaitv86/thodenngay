@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CheckCircle, Crown, LockKeyhole, Mail, Plus, ShieldCheck, UserCog, XCircle } from "lucide-react";
+import { ADMIN_MODULES, DEFAULT_ADMIN_PERMISSIONS, type AdminModule, type AdminPermission } from "@/lib/admin-roles";
 
 type AdminAccount = {
   id: string;
@@ -11,6 +12,7 @@ type AdminAccount = {
   is_super_admin?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
+  permissions?: AdminPermission[];
 };
 
 type AdminForm = {
@@ -19,6 +21,7 @@ type AdminForm = {
   fullName: string;
   password: string;
   isSuperAdmin: boolean;
+  permissions: AdminPermission[];
 };
 
 const emptyForm: AdminForm = {
@@ -27,6 +30,7 @@ const emptyForm: AdminForm = {
   fullName: "",
   password: "",
   isSuperAdmin: false,
+  permissions: DEFAULT_ADMIN_PERMISSIONS,
 };
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Không xác định");
@@ -80,6 +84,7 @@ export default function AdminAccountsPage() {
       fullName: account.full_name || "",
       password: "",
       isSuperAdmin: Boolean(account.is_super_admin),
+      permissions: account.permissions || DEFAULT_ADMIN_PERMISSIONS,
     });
   };
 
@@ -261,7 +266,60 @@ export default function AdminAccountsPage() {
                 </span>
               </span>
             </label>
+            {currentIsSuperAdmin && (
+              <div className="space-y-3 rounded-lg border border-outline-variant/30 p-3">
+                <div>
+                  <p className="text-sm font-extrabold text-on-surface">Phân quyền module</p>
+                  <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                    Quyền xem cho phép mở menu/trang. Quyền thao tác cho phép tạo, sửa, duyệt hoặc ghi nhận dữ liệu trong module.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {ADMIN_MODULES.map((module) => {
+                    const permission = form.permissions.find((item) => item.module === module.key) || {
+                      module: module.key,
+                      can_view: true,
+                      can_manage: true,
+                    };
+                    const updatePermission = (next: Partial<AdminPermission>) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        permissions: ADMIN_MODULES.map((item) => {
+                          const current = prev.permissions.find((saved) => saved.module === item.key) || {
+                            module: item.key as AdminModule,
+                            can_view: true,
+                            can_manage: true,
+                          };
+                          if (item.key !== module.key) return current;
+                          const nextPermission = { ...current, ...next };
+                          return {
+                            ...nextPermission,
+                            can_view: nextPermission.can_view || nextPermission.can_manage,
+                          };
+                        }),
+                      }));
+                    };
 
+                    return (
+                      <div key={module.key} className="grid grid-cols-[minmax(0,1fr)_72px_72px] items-center gap-2 rounded-lg bg-surface-container-low px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-on-surface">{module.label}</p>
+                          <p className="truncate text-xs text-on-surface-variant">{module.description}</p>
+                        </div>
+                        <label className="flex items-center justify-center gap-1 text-xs font-bold text-on-surface-variant">
+                          <input type="checkbox" checked={permission.can_view || permission.can_manage} onChange={(event) => updatePermission({ can_view: event.target.checked })} />
+                          Xem
+                        </label>
+                        <label className="flex items-center justify-center gap-1 text-xs font-bold text-on-surface-variant">
+                          <input type="checkbox" checked={permission.can_manage} onChange={(event) => updatePermission({ can_manage: event.target.checked, can_view: event.target.checked ? true : permission.can_view })} />
+                          Sửa
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {editing && form.userId === currentAdminId && (
               <div className="rounded-lg bg-warning-container p-3 text-xs font-bold leading-5 text-warning">
                 Bạn đang sửa chính tài khoản đang đăng nhập. Nếu đổi email hoặc mật khẩu, lần đăng nhập sau sẽ dùng thông tin mới.

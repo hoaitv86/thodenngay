@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { createServiceSupabaseClient, requireAdmin, syncAdminRole } from "@/lib/admin-server";
+﻿import { NextResponse } from "next/server";
+import { ADMIN_MODULES, DEFAULT_ADMIN_PERMISSIONS, type AdminPermission } from "@/lib/admin-roles";
+import { createServiceSupabaseClient, getAdminPermissions, requireAdmin, syncAdminPermissions, syncAdminRole } from "@/lib/admin-server";
 
 type AdminAccountBody = {
   userId?: string;
@@ -7,27 +8,55 @@ type AdminAccountBody = {
   fullName?: string;
   password?: string;
   isSuperAdmin?: boolean;
+  permissions?: AdminPermission[];
 };
 
 const cleanEmail = (value?: string) => value?.trim().toLowerCase() || "";
 const cleanName = (value?: string) => value?.trim() || "";
 
+function normalizePermissions(input?: AdminPermission[]) {
+  return DEFAULT_ADMIN_PERMISSIONS.map((fallback) => {
+    const saved = input?.find((item) => item.module === fallback.module);
+    const canManage = Boolean(saved?.can_manage);
+    return {
+      module: fallback.module,
+      can_view: Boolean(saved?.can_view) || canManage,
+      can_manage: canManage,
+    };
+  });
+}
+
 export async function GET() {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
-  const { data, error } = await auth.supabase
-    .from("profiles")
-    .select("id, email, full_name, role, status, is_super_admin, created_at, updated_at")
-    .eq("role", "admin")
-    .order("is_super_admin", { ascending: false })
-    .order("created_at", { ascending: true });
+  try {
+    const service = createServiceSupabaseClient();
+    const { data, error } = await service
+      .from("profiles")
+      .select("id, email, full_name, role, status, is_super_admin, created_at, updated_at")
+      .eq("role", "admin")
+      .order("is_super_admin", { ascending: false })
+      .order("created_at", { ascending: true });
 
-  if (error) {
-    return NextResponse.json({ error: "Không thể tải danh sách admin: " + error.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: "Không thể tải danh sách admin: " + error.message }, { status: 500 });
+    }
+
+    const accounts = await Promise.all(
+      (data || []).map(async (account) => ({
+        ...account,
+        permissions: await getAdminPermissions(service, account.id, account.is_super_admin),
+      })),
+    );
+
+    return NextResponse.json({ accounts, currentAdminId: auth.profile.id, modules: ADMIN_MODULES });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: "Lỗi hệ thống: " + (error instanceof Error ? error.message : "Không xác định") },
+      { status: 500 },
+    );
   }
-
-  return NextResponse.json({ accounts: data || [], currentAdminId: auth.profile.id });
 }
 
 export async function POST(request: Request) {
@@ -42,6 +71,7 @@ export async function POST(request: Request) {
   const email = cleanEmail(body.email);
   const fullName = cleanName(body.fullName);
   const password = body.password || "";
+  const permissions = normalizePermissions(body.permissions);
 
   if (!email || !fullName || password.length < 6) {
     return NextResponse.json({ error: "Vui lòng nhập email, tên hiển thị và mật khẩu tối thiểu 6 ký tự." }, { status: 400 });
@@ -78,6 +108,7 @@ export async function POST(request: Request) {
     }
 
     await syncAdminRole(service, created.user.id, auth.profile.id);
+    await syncAdminPermissions(service, created.user.id, permissions, auth.profile.id);
 
     return NextResponse.json({ success: true, userId: created.user.id });
   } catch (error: unknown) {
@@ -98,6 +129,7 @@ export async function PATCH(request: Request) {
   const fullName = cleanName(body.fullName);
   const password = body.password || "";
   const updatingSelf = userId === auth.profile.id;
+  const permissions = normalizePermissions(body.permissions);
 
   if (!userId || !email || !fullName) {
     return NextResponse.json({ error: "Thiếu thông tin tài khoản admin." }, { status: 400 });
@@ -109,6 +141,10 @@ export async function PATCH(request: Request) {
 
   if (typeof body.isSuperAdmin === "boolean" && !auth.profile.is_super_admin) {
     return NextResponse.json({ error: "Chỉ Super Admin được thay đổi quyền Super Admin." }, { status: 403 });
+  }
+
+  if (body.permissions && !auth.profile.is_super_admin) {
+    return NextResponse.json({ error: "Chỉ Super Admin được thay đổi phân quyền module." }, { status: 403 });
   }
 
   if (password && password.length < 6) {
@@ -147,6 +183,9 @@ export async function PATCH(request: Request) {
     }
 
     await syncAdminRole(service, userId, auth.profile.id);
+    if (body.permissions && auth.profile.is_super_admin) {
+      await syncAdminPermissions(service, userId, permissions, auth.profile.id);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
