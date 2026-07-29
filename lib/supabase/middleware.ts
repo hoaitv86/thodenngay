@@ -60,7 +60,16 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Public routes that don't require auth
-  const publicPaths = ['/login', '/register', '/'];
+  const publicPaths = [
+    '/login',
+    '/register',
+    '/',
+    '/ve-chung-toi',
+    '/dieu-khoan-su-dung',
+    '/chinh-sach-bao-mat',
+    '/chinh-sach-tho',
+    '/chinh-sach-khach-hang',
+  ];
   const isPublicPath = publicPaths.some((path) =>
     request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith('/api/auth')
   );
