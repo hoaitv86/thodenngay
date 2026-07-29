@@ -623,7 +623,6 @@ export default function WorkerDashboard() {
   const [creatingQuickJob, setCreatingQuickJob] = useState(false);
   const [expandedQuickServiceGroup, setExpandedQuickServiceGroup] = useState("internet");
   const [quickServiceSearch, setQuickServiceSearch] = useState("");
-  const [quickCustomerQuery, setQuickCustomerQuery] = useState("");
   const [quickJob, setQuickJob] = useState({
     customerId: "",
     customerName: "",
@@ -788,7 +787,7 @@ export default function WorkerDashboard() {
   }, [activeJobs, newJobs, pendingApprovalJobs, workerBillGoReceivables]);
 
   const quickCustomerResults = React.useMemo(() => {
-    const query = normalizeServiceText(quickCustomerQuery);
+    const query = normalizeServiceText(quickJob.customerName);
     if (!query) return quickCustomerOptions.slice(0, 6);
     const queryParts: string[] = query.split(/\s+/).filter(Boolean);
     return quickCustomerOptions
@@ -802,7 +801,7 @@ export default function WorkerDashboard() {
         return queryParts.every(part => searchText.includes(part));
       })
       .slice(0, 8);
-  }, [quickCustomerOptions, quickCustomerQuery]);
+  }, [quickCustomerOptions, quickJob.customerName]);
 
   const editQuickCustomerResults = React.useMemo(() => {
     const query = normalizeServiceText(editQuickCustomerQuery);
@@ -1809,11 +1808,6 @@ export default function WorkerDashboard() {
       customerPhone: customer.phone || prev.customerPhone,
       address: customer.address || prev.address,
     }));
-    setQuickCustomerQuery([
-      customer.name,
-      customer.phone,
-      customer.account ? `Account ${customer.account}` : "",
-    ].filter(Boolean).join(" - "));
   };
 
   const selectEditQuickCustomer = (customer: QuickCustomerOption) => {
@@ -2256,7 +2250,6 @@ export default function WorkerDashboard() {
         quotedPrice: prev.quotedPrice,
         description: "",
       }));
-      setQuickCustomerQuery("");
       setQuickWorkflowData({});
       setQuickFormOpen(false);
       const createdJob = data.job;
@@ -3443,18 +3436,15 @@ export default function WorkerDashboard() {
             <form onSubmit={handleCreateQuickJob} className="mt-4 space-y-3 rounded-lg border border-primary-container/15 bg-white/85 p-3 shadow-sm">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-                  Tìm khách đã có
+                  Tên khách hàng
                 </label>
                 <input
-                  value={quickCustomerQuery}
-                  onChange={(e) => {
-                    setQuickCustomerQuery(e.target.value);
-                    if (quickJob.customerId) setQuickJob(prev => ({ ...prev, customerId: "" }));
-                  }}
-                  placeholder="Tìm theo tên, SĐT hoặc account"
+                  value={quickJob.customerName}
+                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerId: "", customerName: e.target.value }))}
+                  placeholder="Gõ tên khách, chọn nếu đã có hoặc nhập mới"
                   className="input-field !py-2.5"
                 />
-                {quickCustomerQuery.trim() && quickCustomerResults.length > 0 && (
+                {quickJob.customerName.trim() && !quickJob.customerId && quickCustomerResults.length > 0 && (
                   <div className="max-h-56 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white shadow-sm">
                     {quickCustomerResults.map(customer => (
                       <button
@@ -3476,18 +3466,6 @@ export default function WorkerDashboard() {
                     Đang dùng khách đã có: {quickJob.customerName}
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-                  Tên khách hàng
-                </label>
-                <input
-                  value={quickJob.customerName}
-                  onChange={(e) => setQuickJob(prev => ({ ...prev, customerId: "", customerName: e.target.value }))}
-                  placeholder="VD: Nguyễn Văn A"
-                  className="input-field !py-2.5"
-                />
               </div>
 
               <div className="space-y-1.5">
