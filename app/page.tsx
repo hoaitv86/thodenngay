@@ -241,7 +241,6 @@ const steps = [
 type HomepageCmsPage = {
   slug: string;
   title: string;
-  excerpt?: string | null;
   sort_order?: number | null;
   content_type?: string | null;
   status?: string | null;
@@ -488,7 +487,6 @@ function getDefaultFooterCmsPages(): HomepageCmsPage[] {
     .map((page) => ({
       slug: page.slug,
       title: page.title,
-      excerpt: page.excerpt,
       sort_order: page.sortOrder,
       content_type: page.contentType,
       status: page.status,
@@ -553,7 +551,7 @@ const getHomepageData = unstable_cache(
         .limit(12),
       supabase
         .from("cms_posts")
-        .select("slug,title,excerpt,sort_order,display_locations,content_type,status")
+        .select("slug,title,sort_order,display_locations,content_type,status")
         .eq("is_published", true)
         .eq("status", "published")
         .eq("content_type", "fixed_page")
@@ -709,9 +707,6 @@ export default async function HomePage() {
               </a>
               <a href="#download-app" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
                 Tải app
-              </a>
-              <a href="#information" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
-                {"Th\u00f4ng tin"}
               </a>
             </nav>
 
@@ -1161,48 +1156,6 @@ export default async function HomePage() {
             >
               Đăng ký làm thợ
             </Link>
-          </div>
-        </div>
-      </section>
-
-
-      {/* ===== FIXED INFORMATION PAGES ===== */}
-      <section id="information" className="bg-white py-16 sm:py-20 lg:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mx-auto mb-10 max-w-3xl text-center">
-            <span className="section-eyebrow">
-              {"Th\u00f4ng tin"}
-            </span>
-            <h2 className="mt-4 text-3xl sm:text-4xl font-bold text-on-surface">
-              {"Th\u00f4ng tin v\u00e0 ch\u00ednh s\u00e1ch"}
-            </h2>
-            <p className="mt-4 text-body-lg text-on-surface-variant">
-              {"T\u00ecm hi\u1ec3u v\u1ec1 Th\u1ee3 \u0110\u1ebfn Ngay, quy\u1ec1n l\u1ee3i, \u0111i\u1ec1u kho\u1ea3n v\u00e0 c\u00e1c ch\u00ednh s\u00e1ch quan tr\u1ecdng tr\u01b0\u1edbc khi s\u1eed d\u1ee5ng d\u1ecbch v\u1ee5."}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            {cmsPages.map((page) => (
-              <Link
-                key={page.slug}
-                href={`/${page.slug}`}
-                className="group flex min-h-[180px] flex-col justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest p-5 shadow-sm transition-all hover:-translate-y-1 hover:border-primary/30 hover:shadow-card-hover"
-              >
-                <div>
-                  <h3 className="text-base font-extrabold text-on-surface transition-colors group-hover:text-primary-container">
-                    {page.title}
-                  </h3>
-                  {page.excerpt ? (
-                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-on-surface-variant">
-                      {page.excerpt}
-                    </p>
-                  ) : null}
-                </div>
-                <span className="mt-5 text-sm font-bold text-primary-container">
-                  {"Xem chi ti\u1ebft"}
-                </span>
-              </Link>
-            ))}
           </div>
         </div>
       </section>
