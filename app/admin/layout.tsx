@@ -17,6 +17,7 @@ import {
   FileText,
   MapPin,
   UserCog,
+  DatabaseBackup,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -42,6 +43,7 @@ const navItems: NavItem[] = [
   { href: "/admin/areas", label: "Địa bàn", icon: MapPin, module: "services" },
   { href: "/admin/content", label: "Quản lý nội dung", icon: FileText, module: "content" },
   { href: "/admin/admins", label: "Super Admin", icon: UserCog, superAdminOnly: true },
+  { href: "/admin/backups", label: "Sao lưu & Khôi phục", icon: DatabaseBackup, superAdminOnly: true },
   { href: "/admin/settings", label: "Cài đặt", icon: Settings, superAdminOnly: true },
 ];
 
