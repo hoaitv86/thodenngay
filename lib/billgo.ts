@@ -45,7 +45,7 @@ export const BILLGO_CYCLE_OPTIONS: Array<{
 ];
 
 export const BILLGO_ALL_TAB = "all";
-export const BILLGO_ACCOUNT_SUGGESTIONS = ["vt", "n350_gmts2_", "n350_gftth_", "nbh_gftth_"];
+export const BILLGO_ACCOUNT_SUGGESTIONS = ["n350_gftth_", "nbh_gftth_", "n350_gmts2_", "vt"];
 
 export const buildBillGoReceiptCode = (paymentId: string, paidAt: string | Date = new Date()) => {
   const date = paidAt instanceof Date ? paidAt : new Date(paidAt);
