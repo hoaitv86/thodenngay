@@ -2,10 +2,12 @@
 -- Stores PostgreSQL snapshots in database tables instead of exporting JSON/CSV files.
 
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+SET search_path = public, extensions;
 
 CREATE TABLE IF NOT EXISTS public.admin_database_backups (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   label TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed', 'failed')),
   table_count INTEGER NOT NULL DEFAULT 0,
@@ -27,6 +29,9 @@ CREATE TABLE IF NOT EXISTS public.admin_database_backup_tables (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (backup_id, schema_name, table_name)
 );
+
+ALTER TABLE public.admin_database_backups
+  ALTER COLUMN id SET DEFAULT gen_random_uuid();
 
 CREATE INDEX IF NOT EXISTS admin_database_backups_created_at_idx
   ON public.admin_database_backups(created_at DESC);
@@ -69,10 +74,10 @@ CREATE OR REPLACE FUNCTION public.create_admin_database_backup(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
-  v_backup_id UUID := uuid_generate_v4();
+  v_backup_id UUID := gen_random_uuid();
   v_table_count INTEGER := 0;
   v_row_count BIGINT := 0;
   v_table_rows BIGINT := 0;
@@ -150,7 +155,7 @@ CREATE OR REPLACE FUNCTION public.restore_admin_database_backup(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   v_backup public.admin_database_backups%ROWTYPE;
@@ -265,3 +270,5 @@ REVOKE ALL ON FUNCTION public.create_admin_database_backup(TEXT, UUID) FROM PUBL
 REVOKE ALL ON FUNCTION public.restore_admin_database_backup(UUID, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_admin_database_backup(TEXT, UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION public.restore_admin_database_backup(UUID, UUID) TO service_role;
+
+NOTIFY pgrst, 'reload schema';
