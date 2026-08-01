@@ -35,7 +35,6 @@ type MobileMoreGroup = {
 
 type WorkerMembershipRow = {
   member_role?: string | null;
-  unit?: { module_flags?: unknown } | Array<{ module_flags?: unknown }> | null;
 };
 
 type WorkerNotification = {
@@ -91,14 +90,6 @@ function setActiveRoleCookie(role: "customer" | "worker") {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
 }
 
-function firstMembershipUnit(row?: WorkerMembershipRow | null) {
-  if (!row?.unit) return null;
-  return Array.isArray(row.unit) ? row.unit[0] : row.unit;
-}
-
-function isMissingModuleFlagsError(message?: string) {
-  return Boolean(message && message.includes("module_flags"));
-}
 
 export default function WorkerLayout({
   children,
@@ -223,31 +214,18 @@ export default function WorkerLayout({
     let isMounted = true;
 
     const loadMemberships = async (userId: string) => {
-      const withModules = await supabase
-        .from("worker_unit_members")
-        .select("member_role, unit:worker_units(module_flags)")
-        .eq("user_id", userId)
-        .eq("status", "active");
-
-      if (!withModules.error) return (withModules.data || []) as WorkerMembershipRow[];
-
-      if (!isMissingModuleFlagsError(withModules.error.message)) {
-        console.warn("Could not load worker unit modules:", withModules.error.message);
-        return [];
-      }
-
-      const fallback = await supabase
+      const { data, error } = await supabase
         .from("worker_unit_members")
         .select("member_role")
         .eq("user_id", userId)
         .eq("status", "active");
 
-      if (fallback.error) {
-        console.warn("Could not load worker unit memberships:", fallback.error.message);
+      if (error) {
+        console.warn("Could not load worker unit memberships:", error.message);
         return [];
       }
 
-      return (fallback.data || []) as WorkerMembershipRow[];
+      return (data || []) as WorkerMembershipRow[];
     };
 
     const getUser = async () => {
@@ -293,14 +271,9 @@ export default function WorkerLayout({
       const unitRole = rolePriority.find((item) => membershipRoles.includes(item));
       const legacyRole = typeof profile?.role === "string" ? profile.role : "worker";
       const role: WorkerRole = unitRole || (legacyRole === "admin" ? "admin" : "technician");
-      const selectedMembership = rolePriority
-        .map((item) => membershipRows.find((membership) => membership.member_role === item))
-        .find(Boolean);
-      const unitFlags = firstMembershipUnit(selectedMembership)?.module_flags;
       const enabledFeatures = resolveWorkerFeatureModuleState({
-        accountFlags: worker?.module_flags,
-        unitFlags,
         role,
+        specialties,
       });
 
       if (!isMounted) return;
@@ -717,4 +690,3 @@ export default function WorkerLayout({
     </div>
   );
 }
-

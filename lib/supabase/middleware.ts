@@ -9,19 +9,10 @@ import { resolveWorkerFeatureModuleState, type WorkerFeatureModuleState, type Wo
 
 type WorkerMembershipForAccess = {
   member_role?: string | null;
-  unit?: { module_flags?: unknown } | Array<{ module_flags?: unknown }> | null;
 };
 
 const workerRolePriority: WorkerModuleRole[] = ['owner', 'manager', 'technician', 'bill_collector', 'sales_inventory'];
 
-function firstMembershipUnit(row?: WorkerMembershipForAccess | null) {
-  if (!row?.unit) return null;
-  return Array.isArray(row.unit) ? row.unit[0] : row.unit;
-}
-
-function isMissingModuleFlagsError(message?: string) {
-  return Boolean(message && message.includes('module_flags'));
-}
 
 function getWorkerUnitRole(memberships: WorkerMembershipForAccess[] = []): WorkerModuleRole {
   const roles = memberships.map((item) => item.member_role).filter(Boolean);
@@ -31,12 +22,6 @@ function getWorkerUnitRole(memberships: WorkerMembershipForAccess[] = []): Worke
   return 'worker';
 }
 
-function getWorkerUnitModuleFlags(memberships: WorkerMembershipForAccess[] = []) {
-  const selectedMembership = workerRolePriority
-    .map((role) => memberships.find((item) => item.member_role === role))
-    .find(Boolean);
-  return firstMembershipUnit(selectedMembership)?.module_flags;
-}
 
 function canOpenWorkerPath(path: string, unitRole: WorkerModuleRole, enabledFeatures: WorkerFeatureModuleState) {
   if (path === '/worker' || path.startsWith('/worker/profile')) return true;
@@ -110,47 +95,27 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user) {
-    const [{ data: profile }, { data: userRoles }] = await Promise.all([
+    const [{ data: profile }, { data: worker }, { data: userRoles }, { data: memberships }] = await Promise.all([
       supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single(),
       supabase
-        .from('user_roles')
-        .select('role, is_active')
-        .eq('user_id', user.id),
-    ]);
-
-    let workerResult = await supabase
-      .from('workers')
-      .select('status, specialties, module_flags')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (workerResult.error && isMissingModuleFlagsError(workerResult.error.message)) {
-      workerResult = await supabase
         .from('workers')
         .select('status, specialties')
         .eq('user_id', user.id)
-        .maybeSingle();
-    }
-    const worker = workerResult.data;
-
-    const membershipsWithModules = await supabase
-      .from('worker_unit_members')
-      .select('member_role, unit:worker_units(module_flags)')
-      .eq('user_id', user.id)
-      .eq('status', 'active');
-    let memberships: unknown[] | null = membershipsWithModules.data;
-    if (membershipsWithModules.error && isMissingModuleFlagsError(membershipsWithModules.error.message)) {
-      const fallbackMemberships = await supabase
+        .maybeSingle(),
+      supabase
+        .from('user_roles')
+        .select('role, is_active')
+        .eq('user_id', user.id),
+      supabase
         .from('worker_unit_members')
         .select('member_role')
         .eq('user_id', user.id)
-        .eq('status', 'active');
-      memberships = fallbackMemberships.data;
-    }
-
+        .eq('status', 'active'),
+    ]);
     if (profile) {
       const path = request.nextUrl.pathname;
       const role = resolveActiveRole({
@@ -175,8 +140,6 @@ export async function updateSession(request: NextRequest) {
       const workerMemberships = ((memberships || []) as WorkerMembershipForAccess[]);
       const workerUnitRole = getWorkerUnitRole(workerMemberships);
       const enabledWorkerFeatures = resolveWorkerFeatureModuleState({
-        accountFlags: worker?.module_flags,
-        unitFlags: getWorkerUnitModuleFlags(workerMemberships),
         role: workerUnitRole,
         specialties: worker?.specialties,
       });
