@@ -74,7 +74,7 @@ async function demoteOtherSuperAdmins(supabase, superAdminId) {
 }
 
 async function disableLegacyAdmin(supabase, superAdminId) {
-  const legacyEmails = (process.env.LEGACY_ADMIN_EMAILS || "admin@alotho.local,admin@thodenngay.vn")
+  const legacyEmails = (process.env.LEGACY_ADMIN_EMAILS || "admin@thodenngay.vn")
     .split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
