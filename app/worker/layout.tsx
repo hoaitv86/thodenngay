@@ -12,9 +12,9 @@ import {
   type WorkerRole,
 } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
-import { isDemoAccount } from "@/lib/demo-accounts";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
+import { resolveWorkerFeatureModuleState } from "@/lib/worker-modules";
 import {
   BellIcon,
   BriefcaseIcon,
@@ -31,6 +31,11 @@ type MobileMoreGroup = {
   id: string;
   label: string;
   groups: WorkerFeatureDefinition["group"][];
+};
+
+type WorkerMembershipRow = {
+  member_role?: string | null;
+  unit?: { module_flags?: unknown } | Array<{ module_flags?: unknown }> | null;
 };
 
 type WorkerNotification = {
@@ -59,6 +64,7 @@ const defaultMenuContext: WorkerFeatureContext = {
   role: "technician",
   specialties: [],
   data: { billgoHistory: false, billgoAccess: false },
+  enabledFeatures: resolveWorkerFeatureModuleState({ role: "technician" }),
 };
 
 const mobileMoreItem: WorkerFeatureDefinition = {
@@ -83,6 +89,15 @@ const activeRoleCookieMaxAge = 60 * 60 * 24 * 30;
 
 function setActiveRoleCookie(role: "customer" | "worker") {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
+}
+
+function firstMembershipUnit(row?: WorkerMembershipRow | null) {
+  if (!row?.unit) return null;
+  return Array.isArray(row.unit) ? row.unit[0] : row.unit;
+}
+
+function isMissingModuleFlagsError(message?: string) {
+  return Boolean(message && message.includes("module_flags"));
 }
 
 export default function WorkerLayout({
@@ -207,20 +222,32 @@ export default function WorkerLayout({
   useEffect(() => {
     let isMounted = true;
 
-    const hasBillGoData = async (workerId: string) => {
-      const [subscriptionResult, receivableResult] = await Promise.all([
-        supabase
-          .from("billgo_subscriptions")
-          .select("id", { count: "exact", head: true })
-          .eq("worker_id", workerId),
-        supabase
-          .from("billgo_receivables")
-          .select("id", { count: "exact", head: true })
-          .eq("worker_id", workerId)
-          .not("subscription_id", "is", null),
-      ]);
+    const loadMemberships = async (userId: string) => {
+      const withModules = await supabase
+        .from("worker_unit_members")
+        .select("member_role, unit:worker_units(module_flags)")
+        .eq("user_id", userId)
+        .eq("status", "active");
 
-      return (subscriptionResult.count || 0) > 0 || (receivableResult.count || 0) > 0;
+      if (!withModules.error) return (withModules.data || []) as WorkerMembershipRow[];
+
+      if (!isMissingModuleFlagsError(withModules.error.message)) {
+        console.warn("Could not load worker unit modules:", withModules.error.message);
+        return [];
+      }
+
+      const fallback = await supabase
+        .from("worker_unit_members")
+        .select("member_role")
+        .eq("user_id", userId)
+        .eq("status", "active");
+
+      if (fallback.error) {
+        console.warn("Could not load worker unit memberships:", fallback.error.message);
+        return [];
+      }
+
+      return (fallback.data || []) as WorkerMembershipRow[];
     };
 
     const getUser = async () => {
@@ -230,7 +257,7 @@ export default function WorkerLayout({
       if (!user) return;
       if (isMounted) setNotificationUserId(user.id);
 
-      const [{ data: profile }, { data: worker }, { data: memberships }] = await Promise.all([
+      const [{ data: profile }, { data: worker }, memberships] = await Promise.all([
         supabase
           .from("profiles")
           .select("full_name, role, phone, email")
@@ -241,11 +268,7 @@ export default function WorkerLayout({
           .select("*")
           .eq("user_id", user.id)
           .maybeSingle(),
-        supabase
-          .from("worker_unit_members")
-          .select("member_role")
-          .eq("user_id", user.id)
-          .eq("status", "active"),
+        loadMemberships(user.id),
       ]);
 
       if (!isMounted) return;
@@ -262,16 +285,23 @@ export default function WorkerLayout({
       const specialties = workerSpecialties.length > 0
         ? workerSpecialties.filter((item): item is string => typeof item === "string")
         : [];
-      const isDemoWorker = isDemoAccount(profile);
-      const billgoHistory = worker?.id ? await hasBillGoData(worker.id) : false;
-      const billgoAccess = isDemoWorker || billgoHistory || Boolean((memberships || []).some((item) => item.member_role === "bill_collector" || item.member_role === "manager" || item.member_role === "owner"));
-      const membershipRoles = (memberships || [])
+      const membershipRows = memberships || [];
+      const membershipRoles = membershipRows
         .map((item) => item.member_role)
         .filter(isWorkerUnitMemberRole);
       const rolePriority: WorkerUnitMemberRole[] = ["owner", "manager", "technician", "bill_collector", "sales_inventory"];
       const unitRole = rolePriority.find((item) => membershipRoles.includes(item));
       const legacyRole = typeof profile?.role === "string" ? profile.role : "worker";
       const role: WorkerRole = unitRole || (legacyRole === "admin" ? "admin" : "technician");
+      const selectedMembership = rolePriority
+        .map((item) => membershipRows.find((membership) => membership.member_role === item))
+        .find(Boolean);
+      const unitFlags = firstMembershipUnit(selectedMembership)?.module_flags;
+      const enabledFeatures = resolveWorkerFeatureModuleState({
+        accountFlags: worker?.module_flags,
+        unitFlags,
+        role,
+      });
 
       if (!isMounted) return;
 
@@ -279,9 +309,10 @@ export default function WorkerLayout({
         role,
         specialties,
         data: {
-          billgoHistory,
-          billgoAccess,
+          billgoHistory: false,
+          billgoAccess: enabledFeatures.billgo,
         },
+        enabledFeatures,
       });
     };
 

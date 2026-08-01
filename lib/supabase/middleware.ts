@@ -5,19 +5,39 @@ import {
   isWorkerRole,
   resolveActiveRole,
 } from '@/lib/account-roles';
+import { resolveWorkerFeatureModuleState, type WorkerFeatureModuleState, type WorkerModuleRole } from '@/lib/worker-modules';
 
-function getWorkerUnitRole(memberships: Array<{ member_role?: string | null }> = []) {
+type WorkerMembershipForAccess = {
+  member_role?: string | null;
+  unit?: { module_flags?: unknown } | Array<{ module_flags?: unknown }> | null;
+};
+
+const workerRolePriority: WorkerModuleRole[] = ['owner', 'manager', 'technician', 'bill_collector', 'sales_inventory'];
+
+function firstMembershipUnit(row?: WorkerMembershipForAccess | null) {
+  if (!row?.unit) return null;
+  return Array.isArray(row.unit) ? row.unit[0] : row.unit;
+}
+
+function getWorkerUnitRole(memberships: WorkerMembershipForAccess[] = []): WorkerModuleRole {
   const roles = memberships.map((item) => item.member_role).filter(Boolean);
-  for (const role of ['owner', 'manager', 'technician', 'bill_collector', 'sales_inventory']) {
+  for (const role of workerRolePriority) {
     if (roles.includes(role)) return role;
   }
   return 'worker';
 }
 
-function canOpenWorkerPath(path: string, unitRole: string) {
+function getWorkerUnitModuleFlags(memberships: WorkerMembershipForAccess[] = []) {
+  const selectedMembership = workerRolePriority
+    .map((role) => memberships.find((item) => item.member_role === role))
+    .find(Boolean);
+  return firstMembershipUnit(selectedMembership)?.module_flags;
+}
+
+function canOpenWorkerPath(path: string, unitRole: WorkerModuleRole, enabledFeatures: WorkerFeatureModuleState) {
   if (path === '/worker' || path.startsWith('/worker/profile')) return true;
-  if (path.startsWith('/worker/billgo')) return ['owner', 'manager', 'bill_collector'].includes(unitRole);
-  if (path.startsWith('/worker/inventory') || path.startsWith('/worker/sales')) return ['owner', 'manager', 'sales_inventory'].includes(unitRole);
+  if (path.startsWith('/worker/billgo')) return enabledFeatures.billgo;
+  if (path.startsWith('/worker/inventory') || path.startsWith('/worker/sales')) return enabledFeatures.sales;
   if (path.startsWith('/worker/jobs') || path.startsWith('/worker/customers') || path.startsWith('/worker/history') || path.startsWith('/worker/chat')) return ['owner', 'manager', 'technician', 'worker'].includes(unitRole);
   if (path.startsWith('/worker/wallet')) return ['owner', 'manager'].includes(unitRole);
   return true;
@@ -97,7 +117,7 @@ export async function updateSession(request: NextRequest) {
         .single(),
       supabase
         .from('workers')
-        .select('status')
+        .select('status, module_flags')
         .eq('user_id', user.id)
         .maybeSingle(),
       supabase
@@ -106,7 +126,7 @@ export async function updateSession(request: NextRequest) {
         .eq('user_id', user.id),
       supabase
         .from('worker_unit_members')
-        .select('member_role')
+        .select('member_role, unit:worker_units(module_flags)')
         .eq('user_id', user.id)
         .eq('status', 'active'),
     ]);
@@ -134,7 +154,15 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url);
       }
 
-      if (path.startsWith('/worker') && !canOpenWorkerPath(path, getWorkerUnitRole(memberships || []))) {
+      const workerMemberships = ((memberships || []) as WorkerMembershipForAccess[]);
+      const workerUnitRole = getWorkerUnitRole(workerMemberships);
+      const enabledWorkerFeatures = resolveWorkerFeatureModuleState({
+        accountFlags: worker?.module_flags,
+        unitFlags: getWorkerUnitModuleFlags(workerMemberships),
+        role: workerUnitRole,
+      });
+
+      if (path.startsWith('/worker') && !canOpenWorkerPath(path, workerUnitRole, enabledWorkerFeatures)) {
         const url = request.nextUrl.clone();
         url.pathname = '/worker/profile';
         return NextResponse.redirect(url);

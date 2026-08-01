@@ -53,6 +53,7 @@ CREATE TABLE public.workers (
     avg_rating DECIMAL(3,2) DEFAULT 0,
     total_jobs INTEGER DEFAULT 0,
     certificates TEXT,
+    module_flags JSONB NOT NULL DEFAULT '{"billgo": false, "sales": false}'::jsonb,
     approved_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
@@ -77,6 +78,7 @@ CREATE TABLE public.worker_units (
   gps_location JSONB,
   status TEXT NOT NULL CHECK (status IN ('active', 'pending', 'blocked')) DEFAULT 'active',
   metadata JSONB DEFAULT '{}'::jsonb NOT NULL,
+  module_flags JSONB NOT NULL DEFAULT '{"billgo": false, "sales": false}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );

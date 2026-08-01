@@ -60,9 +60,9 @@ export type WorkerFeatureContext = {
 };
 
 const defaultEnabledFeatures: Record<WorkerFeatureFlag, boolean> = {
-  inventory: true,
-  sales: true,
-  billgo: true,
+  inventory: false,
+  sales: false,
+  billgo: false,
   chat: true,
   history: true,
   wallet: true,
@@ -130,11 +130,8 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "commerce",
-    roles: ["owner", "manager", "bill_collector"],
-    specialtyTags: ["internet", "mạng internet", "mang internet", "wifi", "pppoe"],
+    roles: ["owner", "manager", "technician", "bill_collector", "sales_inventory", "worker"],
     featureFlag: "billgo",
-    dataConditions: ["billgoHistory", "billgoAccess"],
-    accessMode: "any",
   },
   {
     id: "inventory",
@@ -146,7 +143,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "commerce",
-    roles: ["owner", "manager", "sales_inventory"],
+    roles: ["owner", "manager", "technician", "bill_collector", "sales_inventory", "worker"],
     featureFlag: "inventory",
   },
   {
@@ -159,7 +156,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     enabled: true,
     placements: ["sidebar", "mobileMore"],
     group: "commerce",
-    roles: ["owner", "manager", "sales_inventory"],
+    roles: ["owner", "manager", "technician", "bill_collector", "sales_inventory", "worker"],
     featureFlag: "sales",
   },
   {
@@ -173,7 +170,6 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     placements: ["sidebar", "mobileMore"],
     group: "communication",
     roles: ["owner", "manager", "technician"],
-    requiresSpecialty: true,
     featureFlag: "chat",
   },
   {
@@ -187,7 +183,6 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     placements: ["sidebar", "mobileMore"],
     group: "work",
     roles: ["owner", "manager", "technician"],
-    requiresSpecialty: true,
     featureFlag: "history",
   },
   {
@@ -201,7 +196,6 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     placements: ["sidebar", "mobileMore"],
     group: "account",
     roles: ["owner", "manager"],
-    requiresSpecialty: true,
     featureFlag: "wallet",
   },
   {
