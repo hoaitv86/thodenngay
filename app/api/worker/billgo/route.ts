@@ -65,15 +65,15 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
 };
 
 function canUseBillGoScope(scope: WorkerUnitScope) {
-  return canUseBillGo(scope.role) || scope.enabledFeatures.billgo;
+  return scope.enabledFeatures.billgo;
 }
 
 function canManageBillGoScope(scope: WorkerUnitScope) {
-  return canManageBillGo(scope.role) || (scope.enabledFeatures.billgo && scope.unitOwnerId === scope.userId);
+  return scope.enabledFeatures.billgo && (canManageBillGo(scope.role) || scope.unitOwnerId === scope.userId);
 }
 
 function canCollectBillGoScope(scope: WorkerUnitScope) {
-  return canCollectBillGo(scope.role) || scope.enabledFeatures.billgo;
+  return scope.enabledFeatures.billgo && (canCollectBillGo(scope.role) || scope.unitOwnerId === scope.userId);
 }
 
 const asText = (value: unknown) => String(value || "").trim();

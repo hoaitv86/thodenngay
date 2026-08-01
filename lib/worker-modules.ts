@@ -8,8 +8,6 @@ export type WorkerModuleRole = "owner" | "manager" | "technician" | "bill_collec
 
 export type WorkerFeatureModuleState = Record<WorkerFeatureModuleFlag, boolean>;
 
-const unitBillGoRoles = new Set<WorkerModuleRole>(["owner", "manager", "bill_collector"]);
-const unitSalesRoles = new Set<WorkerModuleRole>(["owner", "manager", "sales_inventory"]);
 const internetSpecialtyTokens = ["internet", "mang internet", "wifi", "pppoe"];
 
 function normalizeFlags(flags: unknown): WorkerModuleFlags {
@@ -42,9 +40,6 @@ export function isWorkerModuleEnabled(flags: unknown, key: WorkerFeatureModuleFl
 }
 
 export function resolveWorkerFeatureModuleState({
-  accountFlags,
-  unitFlags,
-  role,
   specialties,
 }: {
   accountFlags?: unknown;
@@ -52,16 +47,9 @@ export function resolveWorkerFeatureModuleState({
   role: WorkerModuleRole;
   specialties?: unknown;
 }): WorkerFeatureModuleState {
-  const internetSpecialty = hasInternetWorkerSpecialty(specialties);
-  const accountBillGo = isWorkerModuleEnabled(accountFlags, "billgo") || internetSpecialty;
-  const accountSales = isWorkerModuleEnabled(accountFlags, "sales") || internetSpecialty;
-  const unitBillGo = unitBillGoRoles.has(role) && isWorkerModuleEnabled(unitFlags, "billgo");
-  const unitSales = unitSalesRoles.has(role) && isWorkerModuleEnabled(unitFlags, "sales");
-  const salesEnabled = accountSales || unitSales;
-
   return {
-    billgo: accountBillGo || unitBillGo,
-    sales: salesEnabled,
-    inventory: salesEnabled,
+    billgo: hasInternetWorkerSpecialty(specialties),
+    sales: true,
+    inventory: true,
   };
 }
