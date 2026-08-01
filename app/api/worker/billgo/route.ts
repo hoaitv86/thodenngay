@@ -584,10 +584,11 @@ const ensureDueReceivables = async (
 
   const { data: subscriptions, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start, covered_until")
+    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start, next_due_date, covered_until")
     .eq("worker_id", workerId)
     .eq("status", "active")
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .or(`next_period_start.is.null,next_period_start.lte.${targetCollectionMonth}`);
   if (subscriptionError) return { error: subscriptionError.message };
   if (!subscriptions || subscriptions.length === 0) return { created: 0 };
 
@@ -650,7 +651,12 @@ const ensureDueReceivables = async (
     if (insertError && insertError.code !== "23505") return { error: insertError.message };
   }
 
-  await Promise.all(Array.from(nextPointers.entries()).map(([subscriptionId, pointer]) =>
+  const subscriptionsById = new Map((subscriptions || []).map(subscription => [subscription.id, subscription]));
+  const pointerUpdates = Array.from(nextPointers.entries()).filter(([subscriptionId, pointer]) => {
+    const subscription = subscriptionsById.get(subscriptionId);
+    return subscription?.next_period_start !== pointer.next_period_start || subscription?.next_due_date !== pointer.next_due_date;
+  });
+  await Promise.all(pointerUpdates.map(([subscriptionId, pointer]) =>
     admin
       .from("billgo_subscriptions")
       .update({ ...pointer, last_changed_by: userId })
