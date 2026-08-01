@@ -19,6 +19,10 @@ function firstMembershipUnit(row?: WorkerMembershipForAccess | null) {
   return Array.isArray(row.unit) ? row.unit[0] : row.unit;
 }
 
+function isMissingModuleFlagsError(message?: string) {
+  return Boolean(message && message.includes('module_flags'));
+}
+
 function getWorkerUnitRole(memberships: WorkerMembershipForAccess[] = []): WorkerModuleRole {
   const roles = memberships.map((item) => item.member_role).filter(Boolean);
   for (const role of workerRolePriority) {
@@ -69,17 +73,16 @@ export async function updateSession(request: NextRequest) {
         },
       },
       cookieOptions: {
-        maxAge: 60 * 60 * 24 * 30, // 30 ngày (tính bằng giây)
+        maxAge: 60 * 60 * 24 * 30, // 30 ngay (tinh bang giay)
       },
     }
   );
 
-  // Refresh session — IMPORTANT: avoid writing logic between createServerClient and getUser()
+  // Refresh session. Avoid writing logic between createServerClient and getUser().
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Public routes that don't require auth
   const publicPaths = [
     '/login',
     '/register',
@@ -95,7 +98,6 @@ export async function updateSession(request: NextRequest) {
   );
 
   if (!user && !isPublicPath) {
-    // Redirect to login if not authenticated
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
@@ -107,29 +109,47 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Role-based route protection
   if (user) {
-    const [{ data: profile }, { data: worker }, { data: userRoles }, { data: memberships }] = await Promise.all([
+    const [{ data: profile }, { data: userRoles }] = await Promise.all([
       supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
         .single(),
-      supabase
-        .from('workers')
-        .select('status, module_flags')
-        .eq('user_id', user.id)
-        .maybeSingle(),
       supabase
         .from('user_roles')
         .select('role, is_active')
         .eq('user_id', user.id),
-      supabase
-        .from('worker_unit_members')
-        .select('member_role, unit:worker_units(module_flags)')
-        .eq('user_id', user.id)
-        .eq('status', 'active'),
     ]);
+
+    let workerResult = await supabase
+      .from('workers')
+      .select('status, specialties, module_flags')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (workerResult.error && isMissingModuleFlagsError(workerResult.error.message)) {
+      workerResult = await supabase
+        .from('workers')
+        .select('status, specialties')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    }
+    const worker = workerResult.data;
+
+    const membershipsWithModules = await supabase
+      .from('worker_unit_members')
+      .select('member_role, unit:worker_units(module_flags)')
+      .eq('user_id', user.id)
+      .eq('status', 'active');
+    let memberships: unknown[] | null = membershipsWithModules.data;
+    if (membershipsWithModules.error && isMissingModuleFlagsError(membershipsWithModules.error.message)) {
+      const fallbackMemberships = await supabase
+        .from('worker_unit_members')
+        .select('member_role')
+        .eq('user_id', user.id)
+        .eq('status', 'active');
+      memberships = fallbackMemberships.data;
+    }
 
     if (profile) {
       const path = request.nextUrl.pathname;
@@ -140,14 +160,12 @@ export async function updateSession(request: NextRequest) {
         preferredRole: request.cookies.get(ACTIVE_ROLE_COOKIE)?.value,
       });
 
-      // 1. Admin protection
       if (path.startsWith('/admin') && role !== 'admin') {
         const url = request.nextUrl.clone();
         url.pathname = '/redirect';
         return NextResponse.redirect(url);
       }
 
-      // 2. Worker protection
       if (path.startsWith('/worker') && !isWorkerRole(role)) {
         const url = request.nextUrl.clone();
         url.pathname = '/redirect';
@@ -160,6 +178,7 @@ export async function updateSession(request: NextRequest) {
         accountFlags: worker?.module_flags,
         unitFlags: getWorkerUnitModuleFlags(workerMemberships),
         role: workerUnitRole,
+        specialties: worker?.specialties,
       });
 
       if (path.startsWith('/worker') && !canOpenWorkerPath(path, workerUnitRole, enabledWorkerFeatures)) {
@@ -168,7 +187,6 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url);
       }
 
-      // 3. Customer protection (dashboard)
       if ((path.startsWith('/dashboard') || path.startsWith('/customer')) && role !== 'customer') {
         const url = request.nextUrl.clone();
         url.pathname = '/redirect';

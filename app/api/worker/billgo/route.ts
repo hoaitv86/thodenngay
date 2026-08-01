@@ -64,6 +64,18 @@ const getWorkerContext = async (): Promise<WorkerContext | NextResponse> => {
   return { admin, userId: user.id, workerId: scope.scopedWorkerId, isDemo: isDemoAccount(profile), scope };
 };
 
+function canUseBillGoScope(scope: WorkerUnitScope) {
+  return canUseBillGo(scope.role) || scope.enabledFeatures.billgo;
+}
+
+function canManageBillGoScope(scope: WorkerUnitScope) {
+  return canManageBillGo(scope.role) || (scope.enabledFeatures.billgo && scope.unitOwnerId === scope.userId);
+}
+
+function canCollectBillGoScope(scope: WorkerUnitScope) {
+  return canCollectBillGo(scope.role) || scope.enabledFeatures.billgo;
+}
+
 const asText = (value: unknown) => String(value || "").trim();
 
 const getCollectionMonthFromDueDate = (dueDate: string) => {
@@ -597,7 +609,7 @@ export async function GET(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
   const { admin, userId, workerId, scope } = context;
-  if (!canUseBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n truy c?p BillGo c?a ??n v?.", 403);
+  if (!canUseBillGoScope(scope)) return jsonError("Bạn không có quyền truy cập BillGo.", 403);
 
   const { searchParams } = new URL(request.url);
   const monthFilter = searchParams.get("month") || todayInputForServer().slice(0, 7);
@@ -614,7 +626,7 @@ export async function GET(request: Request) {
   const dueFilter = allowedDueFilters.has(requestedDue) ? requestedDue : "all";
   const { year, month } = parseMonthFilter(monthFilter);
   const assignedFilters = scope.role === "bill_collector" ? await getAssignedBillGoAreaFilters(admin, userId) : null;
-  const ensured = canManageBillGo(scope.role) ? await ensureDueReceivables(admin, workerId, userId, monthFilter) : { created: 0 };
+  const ensured = canManageBillGoScope(scope) ? await ensureDueReceivables(admin, workerId, userId, monthFilter) : { created: 0 };
   if ("error" in ensured && ensured.error) return jsonError(ensured.error);
 
   let subscriptionQuery = admin
@@ -814,7 +826,7 @@ export async function POST(request: Request) {
   if (context instanceof NextResponse) return context;
   if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
   const { admin, userId, workerId, scope } = context;
-  if (!canManageBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n t?o kh?ch BillGo cho ??n v?.", 403);
+  if (!canManageBillGoScope(scope)) return jsonError("Bạn không có quyền tạo khách BillGo.", 403);
 
   const body = await request.json();
   const customerName = asText(body.customerName);
@@ -1041,8 +1053,8 @@ export async function PATCH(request: Request) {
   const body = await request.json();
   const action = asText(body.action);
   const managerActions = new Set(["import_preview", "import_apply", "update_customer", "change_cycle", "pause", "reactivate", "soft_delete", "assign_area_bulk"]);
-  if (managerActions.has(action) && !canManageBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n qu?n l? d? li?u BillGo c?a ??n v?.", 403);
-  if (action === "collect" && !canCollectBillGo(scope.role)) return jsonError("B?n kh?ng c? quy?n thu c??c BillGo.", 403);
+  if (managerActions.has(action) && !canManageBillGoScope(scope)) return jsonError("Bạn không có quyền quản lý dữ liệu BillGo.", 403);
+  if (action === "collect" && !canCollectBillGoScope(scope)) return jsonError("Bạn không có quyền thu cước BillGo.", 403);
 
   if (action === "import_preview" || action === "import_apply") {
     const rows = Array.isArray(body.rows) ? body.rows as BillGoImportRow[] : [];

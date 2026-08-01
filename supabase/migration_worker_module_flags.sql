@@ -1,4 +1,4 @@
--- Worker menu module flags. Specialties stay technical-only; BillGo/Sales/Inventory are toggled here.
+﻿-- Worker menu module flags. Specialties stay technical-only; BillGo/Sales/Inventory are toggled here.
 
 ALTER TABLE public.workers
   ADD COLUMN IF NOT EXISTS module_flags JSONB NOT NULL DEFAULT '{"billgo": false, "sales": false}'::jsonb;
@@ -7,11 +7,22 @@ ALTER TABLE public.worker_units
   ADD COLUMN IF NOT EXISTS module_flags JSONB NOT NULL DEFAULT '{"billgo": false, "sales": false}'::jsonb;
 
 UPDATE public.workers
-SET module_flags = COALESCE(module_flags, '{}'::jsonb) || '{"billgo": true, "sales": true}'::jsonb
-WHERE user_id IN (
-  SELECT id
-  FROM public.profiles
-  WHERE normalized_phone = '0912345679' OR phone = '0912345679'
+SET specialties = CASE
+  WHEN 'Mạng internet' = ANY(COALESCE(specialties, '{}'::text[])) THEN specialties
+  ELSE array_append(COALESCE(specialties, '{}'::text[]), 'Mạng internet')
+END
+WHERE id = '22222222-0000-0000-0000-000000000001';
+
+UPDATE public.workers worker
+SET module_flags = COALESCE(worker.module_flags, '{}'::jsonb) || '{"billgo": true, "sales": true}'::jsonb
+WHERE EXISTS (
+  SELECT 1
+  FROM unnest(COALESCE(worker.specialties, '{}'::text[])) specialty
+  WHERE lower(specialty) LIKE '%internet%'
+    OR lower(specialty) LIKE '%mạng internet%'
+    OR lower(specialty) LIKE '%mang internet%'
+    OR lower(specialty) LIKE '%wifi%'
+    OR lower(specialty) LIKE '%pppoe%'
 );
 
 UPDATE public.workers worker

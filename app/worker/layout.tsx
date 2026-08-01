@@ -64,7 +64,7 @@ const defaultMenuContext: WorkerFeatureContext = {
   role: "technician",
   specialties: [],
   data: { billgoHistory: false, billgoAccess: false },
-  enabledFeatures: resolveWorkerFeatureModuleState({ role: "technician" }),
+  enabledFeatures: resolveWorkerFeatureModuleState({ role: "technician", specialties: [] }),
 };
 
 const mobileMoreItem: WorkerFeatureDefinition = {

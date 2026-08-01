@@ -27,7 +27,7 @@ VALUES ('6b41871d-78b3-4961-b75d-d810fdb437e8', 'worker@alotho.vn', 'Nguyễn V�
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.workers (id, user_id, specialties, status, avg_rating, total_jobs)
-VALUES ('22222222-0000-0000-0000-000000000001', '6b41871d-78b3-4961-b75d-d810fdb437e8', ARRAY['Sửa điện', 'Sửa nước'], 'active', 4.9, 12)
+VALUES ('22222222-0000-0000-0000-000000000001', '6b41871d-78b3-4961-b75d-d810fdb437e8', ARRAY['Sửa điện', 'Sửa nước', 'Mạng internet'], 'active', 4.9, 12)
 ON CONFLICT (id) DO NOTHING;
 
 -- CUSTOMER (Lê Thị Khách)
