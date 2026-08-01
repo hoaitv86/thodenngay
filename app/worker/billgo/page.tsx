@@ -1475,11 +1475,11 @@ export default function WorkerBillGoPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={submitCustomer} className="mt-4 flex h-[calc(100dvh-12rem)] max-h-[calc(100dvh-12rem)] flex-col overflow-hidden rounded-lg border border-outline-variant/50 bg-white shadow-sm">
+        <form onSubmit={submitCustomer} className="mt-4 flex max-h-[calc(100dvh-12rem)] flex-col overflow-hidden rounded-lg border border-outline-variant/50 bg-white shadow-sm">
           <div className="border-b border-outline-variant/25 bg-white px-4 py-3">
             <h2 className="text-base font-extrabold">Thêm khách hàng</h2>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="overflow-y-auto p-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
@@ -1550,11 +1550,9 @@ export default function WorkerBillGoPage() {
               Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(formDueDate)}. {form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo kỳ cước hiện tại ở trạng thái Chưa thu."} {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
             </p>
           </div>
-          <div className="shrink-0 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowForm(false)} className="btn-outline !w-auto">Hủy</button>
-              <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Đang lưu..." : "Thêm vào BillGo"}</button>
-            </div>
+          <div className="sticky bottom-0 flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
+            <button type="button" onClick={() => setShowForm(false)} className="btn-outline !w-auto">Hủy</button>
+            <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Đang lưu..." : "Thêm vào BillGo"}</button>
           </div>
         </form>
       )}
