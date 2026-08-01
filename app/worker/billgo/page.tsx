@@ -992,6 +992,13 @@ export default function WorkerBillGoPage() {
     () => packages.find(item => item.id === form.packageId) || null,
     [form.packageId, packages],
   );
+  const formPackagePriceFilter = toMoneyNumber(form.monthlyFee);
+  const formPackageOptions = useMemo(
+    () => formPackagePriceFilter > 0
+      ? packages.filter(item => toMoneyNumber(item.monthly_price) === formPackagePriceFilter)
+      : packages,
+    [formPackagePriceFilter, packages],
+  );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
       if (key === "areaId") {
@@ -1505,11 +1512,14 @@ export default function WorkerBillGoPage() {
               </datalist>
               <select required className="input-field" value={form.packageId} onChange={e => updateForm("packageId", e.target.value)}>
                 <option value="">Chọn gói cước</option>
-                {packages.map(packageOption => (
+                {formPackageOptions.map(packageOption => (
                   <option key={packageOption.id} value={packageOption.id}>
                     {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
                   </option>
                 ))}
+                {formPackageOptions.length === 0 && formPackagePriceFilter > 0 && (
+                  <option value="" disabled>Không có gói cước đúng giá {formatBillGoCurrency(formPackagePriceFilter)}</option>
+                )}
               </select>
               <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder="Tên gói tại thời điểm đăng ký" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
               <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
