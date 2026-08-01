@@ -14,6 +14,7 @@ type ProfileRow = {
   email: string | null;
   phone: string | null;
   role: ProfileRole;
+  is_super_admin?: boolean | null;
 };
 
 type Participant = ProfileRow & {
@@ -57,6 +58,8 @@ type WorkerJobRow = {
   worker?: { profiles?: ProfileRow | ProfileRow[] | null } | { profiles?: ProfileRow | ProfileRow[] | null }[] | null;
 };
 
+const CHAT_RECIPIENT_ROLES: ProfileRole[] = ["admin", "worker", "customer"];
+
 const modeCopy: Record<ChatMode, { title: string; description: string; empty: string }> = {
   admin: {
     title: "Tin nhắn",
@@ -99,6 +102,10 @@ function buildPresenceIds(state: Record<string, PresenceMeta[]>) {
   );
 }
 
+function isChatRecipient(profile?: Pick<ProfileRow, "role" | "is_super_admin"> | null) {
+  return Boolean(profile && CHAT_RECIPIENT_ROLES.includes(profile.role) && !profile.is_super_admin);
+}
+
 function getConversationType(currentRole: ProfileRole, participantRole: ProfileRole): ConversationType | null {
   if (currentRole === "admin" && participantRole === "worker") return "admin_worker";
   if (currentRole === "admin" && participantRole === "customer") return "admin_customer";
@@ -114,6 +121,8 @@ function getConversationType(currentRole: ProfileRole, participantRole: ProfileR
 }
 
 function buildConversationPayload(currentUser: ProfileRow, participant: Participant) {
+  if (currentUser.is_super_admin || !isChatRecipient(participant)) return null;
+
   const type = getConversationType(currentUser.role, participant.role);
   if (!type) return null;
 
@@ -136,6 +145,8 @@ function buildConversationPayload(currentUser: ProfileRow, participant: Particip
 }
 
 function conversationMatchesParticipant(conversation: ConversationRow, currentUser: ProfileRow, participant: Participant) {
+  if (currentUser.is_super_admin) return superAdminConversationMatchesParticipant(conversation, participant);
+
   const payload = buildConversationPayload(currentUser, participant);
   if (!payload || conversation.type !== payload.type) return false;
   return (
@@ -145,9 +156,17 @@ function conversationMatchesParticipant(conversation: ConversationRow, currentUs
   );
 }
 
+function superAdminConversationMatchesParticipant(conversation: ConversationRow, participant: Participant) {
+  if (!isChatRecipient(participant)) return false;
+  if (participant.role === "worker") return conversation.worker_id === participant.id;
+  if (participant.role === "customer") return conversation.customer_id === participant.id;
+  return conversation.admin_id === participant.id;
+}
+
 function uniqueParticipants(participants: Participant[]) {
   const map = new Map<string, Participant>();
   participants.forEach((participant) => {
+    if (!isChatRecipient(participant)) return;
     if (!map.has(participant.id)) map.set(participant.id, participant);
   });
   return Array.from(map.values()).sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "vi"));
@@ -246,18 +265,21 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
   const selectedParticipant = participants.find((participant) => participant.id === selectedParticipantId) || null;
   const filteredParticipants = participants.filter((participant) => activeRole === "all" || participant.role === activeRole);
   const onlineParticipantCount = participants.filter((participant) => onlineProfileIds.has(participant.id)).length;
+  const isSuperAdminViewer = Boolean(currentUser?.is_super_admin);
 
-  const fetchConversations = async (profileId: string) => {
-    const { data, error: conversationsError } = await supabase
-      .from("conversations")
-      .select("*")
-      .or(`customer_id.eq.${profileId},worker_id.eq.${profileId},admin_id.eq.${profileId}`)
-      .order("updated_at", { ascending: false });
+  const fetchConversations = async (profile: ProfileRow) => {
+    let query = supabase.from("conversations").select("*").order("updated_at", { ascending: false });
+
+    if (!profile.is_super_admin) {
+      query = query.or(`customer_id.eq.${profile.id},worker_id.eq.${profile.id},admin_id.eq.${profile.id}`);
+    }
+
+    const { data, error: conversationsError } = await query;
 
     if (conversationsError) {
       if (isMissingChatTables(conversationsError)) {
         setMigrationNeeded(true);
-        return getLocalConversationsForProfile(profileId);
+        return getLocalConversationsForProfile(profile.id);
       }
       else setError("Không thể tải cuộc trò chuyện: " + conversationsError.message);
       return [];
@@ -270,7 +292,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
     if (mode === "admin") {
       const { data, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name, email, phone, role")
+        .select("id, full_name, email, phone, role, is_super_admin")
         .in("role", ["worker", "customer"])
         .order("full_name", { ascending: true });
 
@@ -282,8 +304,9 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
 
     const { data: admins, error: adminError } = await supabase
       .from("profiles")
-      .select("id, full_name, email, phone, role")
-      .eq("role", "admin");
+      .select("id, full_name, email, phone, role, is_super_admin")
+      .eq("role", "admin")
+      .eq("is_super_admin", false);
 
     if (!adminError) {
       participantRows.push(
@@ -304,7 +327,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
       if (workerRecord?.id) {
         const { data: jobs } = await supabase
           .from("jobs")
-          .select("customer:profiles!customer_id(id, full_name, email, phone, role)")
+          .select("customer:profiles!customer_id(id, full_name, email, phone, role, is_super_admin)")
           .eq("worker_id", workerRecord.id);
 
         ((jobs || []) as CustomerJobRow[]).forEach((job) => {
@@ -317,7 +340,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
     if (mode === "customer") {
       const { data: jobs } = await supabase
         .from("jobs")
-        .select("worker:workers(user_id, profiles(id, full_name, email, phone, role))")
+        .select("worker:workers(user_id, profiles(id, full_name, email, phone, role, is_super_admin))")
         .eq("customer_id", profile.id)
         .not("worker_id", "is", null);
 
@@ -346,7 +369,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("id, full_name, email, phone, role")
+        .select("id, full_name, email, phone, role, is_super_admin")
         .eq("id", userId)
         .single();
 
@@ -360,7 +383,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
 
       const [nextParticipants, nextConversations] = await Promise.all([
         fetchParticipants(typedProfile),
-        fetchConversations(typedProfile.id),
+        fetchConversations(typedProfile),
       ]);
 
       setParticipants(nextParticipants);
@@ -416,7 +439,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
 
     const payload = buildConversationPayload(currentUser, participant);
     if (!payload) {
-      setError("Chưa hỗ trợ kiểu chat này.");
+      setError(currentUser.is_super_admin ? "Super Admin chi xem va kiem tra cac cuoc tro chuyen da co, khong tao doi tuong chat rieng." : "Chưa hỗ trợ kiểu chat này.");
       return null;
     }
 
@@ -457,6 +480,10 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
   const sendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!currentUser || !selectedParticipant || !draft.trim() || sending) return;
+    if (currentUser.is_super_admin) {
+      setError("Super Admin chi xem va kiem tra chat, khong gui tin nhan nhu mot doi tuong chat.");
+      return;
+    }
 
     let conversation =
       activeConversation && conversationMatchesParticipant(activeConversation, currentUser, selectedParticipant)
@@ -510,7 +537,7 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
       setError("Không thể gửi tin nhắn: " + sendError.message);
     } else if (data) {
       setMessages((prev) => [...prev, data as MessageRow]);
-      const refreshed = await fetchConversations(currentUser.id);
+      const refreshed = await fetchConversations(currentUser);
       setConversations(refreshed);
     }
 
@@ -772,13 +799,14 @@ export default function ChatWorkspace({ mode }: { mode: ChatMode }) {
                   <textarea
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    placeholder="Nhập tin nhắn..."
+                    placeholder={isSuperAdminViewer ? "Super Admin chi xem/kiem tra, khong gui tin nhan" : "Nhập tin nhắn..."}
                     rows={2}
-                    className="input-field min-h-[48px] flex-1 resize-none !rounded-lg !py-3 text-sm"
+                    disabled={isSuperAdminViewer}
+                    className="input-field min-h-[48px] flex-1 resize-none !rounded-lg !py-3 text-sm disabled:cursor-not-allowed disabled:opacity-70"
                   />
                   <button
                     type="submit"
-                    disabled={sending || !draft.trim()}
+                    disabled={isSuperAdminViewer || sending || !draft.trim()}
                     className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-container text-white transition-all hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
                     aria-label="Gửi tin nhắn"
                   >
