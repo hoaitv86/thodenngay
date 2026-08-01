@@ -177,6 +177,9 @@ const firstOfMonth = (value: string | Date) => {
   return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth(), 1));
 };
 
+const compareBillGoMonth = (left: string, right: string) =>
+  firstOfMonth(left).localeCompare(firstOfMonth(right));
+
 const addMonths = (value: string | Date, months: number) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return new Date();
@@ -566,11 +569,21 @@ const ensureDueReceivables = async (
 ) => {
   const { year, month } = parseMonthFilter(monthFilter);
   const collectionMonth = monthStartInput(year, month);
-  const billingParts = getBillingParts(collectionMonth);
+  const todayInput = todayInputForServer();
+  const todayMonth = firstOfMonth(todayInput);
+  const targetCollectionMonth = compareBillGoMonth(collectionMonth, todayMonth) < 0 ? collectionMonth : todayMonth;
+
+  await admin
+    .from("billgo_receivables")
+    .update({ status: "overdue" })
+    .eq("worker_id", workerId)
+    .lt("due_date", todayInput)
+    .is("deleted_at", null)
+    .in("status", ["unpaid", "partial", "due", "not_due"]);
 
   const { data: subscriptions, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start")
+    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start, covered_until")
     .eq("worker_id", workerId)
     .eq("status", "active")
     .is("deleted_at", null);
@@ -579,32 +592,74 @@ const ensureDueReceivables = async (
 
   const { data: existing, error: existingError } = await admin
     .from("billgo_receivables")
-    .select("subscription_id, period_start, cycle_at_collection")
+    .select("subscription_id, period_start, period_end, cycle_at_collection")
     .eq("worker_id", workerId)
-    .eq("billing_month", billingParts.billingMonth)
-    .eq("billing_year", billingParts.billingYear)
     .is("deleted_at", null)
     .not("subscription_id", "is", null);
   if (existingError) return { error: existingError.message };
 
-  const existingPeriodKeys = new Set((existing || []).map(row =>
-    `${row.subscription_id || ""}:${firstOfMonth(row.period_start || collectionMonth)}:${row.cycle_at_collection || "monthly"}`
-  ));
+  const existingBySubscription = new Map<string, NonNullable<typeof existing>>();
+  const existingPeriodKeys = new Set<string>();
+  for (const row of existing || []) {
+    const subscriptionId = String(row.subscription_id || "");
+    if (!subscriptionId) continue;
+    existingPeriodKeys.add(`${subscriptionId}:${firstOfMonth(row.period_start || collectionMonth)}`);
+    const rows = existingBySubscription.get(subscriptionId) || [];
+    rows.push(row);
+    existingBySubscription.set(subscriptionId, rows);
+  }
+
+  const nextPointers = new Map<string, { next_period_start: string; next_due_date: string }>();
   const rowsToCreate = (subscriptions || []).flatMap(subscription => {
     const cycle = String(subscription.current_cycle || subscription.cycle || "monthly");
-    const periodStart = firstOfMonth(subscription.next_period_start || subscription.start_date || collectionMonth);
-    if (existingPeriodKeys.has(`${subscription.id}:${periodStart}:${cycle}`)) return [];
-    const billing = getBillGoBillingPeriod(periodStart, cycle);
-    if (billing.collectionMonth !== collectionMonth) return [];
-    return [buildReceivableDraft(subscription, userId, periodStart)];
+    const subscriptionRows = existingBySubscription.get(subscription.id) || [];
+    const latestRow = subscriptionRows
+      .filter(row => row.period_start)
+      .sort((a, b) => String(b.period_start || "").localeCompare(String(a.period_start || "")))[0];
+    const seedStart = latestRow?.period_end
+      ? getBillGoNextPeriodStartDate(latestRow.period_end)
+      : subscription.covered_until
+        ? getBillGoNextPeriodStartDate(subscription.covered_until)
+        : subscription.next_period_start || subscription.start_date || targetCollectionMonth;
+    let periodStart = firstOfMonth(seedStart);
+    const drafts = [];
+
+    for (let guard = 0; guard < 60; guard += 1) {
+      const billing = getBillGoBillingPeriod(periodStart, cycle);
+      if (compareBillGoMonth(billing.collectionMonth, targetCollectionMonth) > 0) {
+        nextPointers.set(subscription.id, { next_period_start: billing.periodStart, next_due_date: billing.dueDate });
+        break;
+      }
+
+      if (!existingPeriodKeys.has(`${subscription.id}:${billing.periodStart}`)) {
+        drafts.push(buildReceivableDraft(subscription, userId, billing.periodStart));
+        existingPeriodKeys.add(`${subscription.id}:${billing.periodStart}`);
+      }
+
+      periodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
+      const nextBilling = getBillGoBillingPeriod(periodStart, cycle);
+      nextPointers.set(subscription.id, { next_period_start: nextBilling.periodStart, next_due_date: nextBilling.dueDate });
+    }
+
+    return drafts;
   });
 
-  if (rowsToCreate.length === 0) return { created: 0 };
-  const { error: insertError } = await admin.from("billgo_receivables").insert(rowsToCreate);
-  if (insertError && insertError.code !== "23505") return { error: insertError.message };
-  return { created: insertError?.code === "23505" ? 0 : rowsToCreate.length };
-};
+  if (rowsToCreate.length > 0) {
+    const { error: insertError } = await admin.from("billgo_receivables").insert(rowsToCreate);
+    if (insertError && insertError.code !== "23505") return { error: insertError.message };
+  }
 
+  await Promise.all(Array.from(nextPointers.entries()).map(([subscriptionId, pointer]) =>
+    admin
+      .from("billgo_subscriptions")
+      .update({ ...pointer, last_changed_by: userId })
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+  ));
+
+  return { created: rowsToCreate.length };
+};
 export async function GET(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
@@ -668,7 +723,7 @@ export async function GET(request: Request) {
           .eq("worker_id", workerId)
           .in("subscription_id", subscriptionIds)
           .is("deleted_at", null)
-          .or(`and(cycle_at_collection.eq.monthly,billing_month.eq.${month},billing_year.eq.${year}),and(cycle_at_collection.in.(two_months,three_months,six_months,yearly),period_start.gte.${coveredMonth},period_start.lt.${nextCoveredMonth})`),
+          .or(`and(billing_month.eq.${month},billing_year.eq.${year}),and(status.in.(unpaid,partial,overdue,due),due_date.lt.${nextCoveredMonth})`),
         admin
           .from("billgo_payment_coverages")
           .select("subscription_id, coverage_type")
@@ -689,18 +744,7 @@ export async function GET(request: Request) {
     subscription: subscriptionsById.get(row.subscription_id || "") || null,
     payments: [],
   }));
-  const currentSubscriptionIds = new Set(currentRows.map(row => row.subscription_id).filter((id): id is string => Boolean(id)));
-  const notDueRows = hydratedSubscriptions
-    .filter(subscription => {
-      if (subscription.status !== "active" || currentSubscriptionIds.has(subscription.id)) return false;
-      const cycle = String(subscription.current_cycle || subscription.cycle || "monthly");
-      if (cycle === "monthly") return true;
-      const periodStart = firstOfMonth(subscription.next_period_start || subscription.start_date || coveredMonth);
-      return getBillGoBillingPeriod(periodStart, cycle).collectionMonth === coveredMonth;
-    })
-    .map(subscription => buildNotDueRow(subscription, coverageBySubscription.get(subscription.id)));
-
-  const filteredRows = [...currentRows, ...notDueRows]
+  const filteredRows = currentRows
     .filter(row => {
       const status = getComputedListStatus(row);
       if (cycleFilter !== BILLGO_ALL_TAB && getBillGoRowCycle(row) !== cycleFilter) return false;
