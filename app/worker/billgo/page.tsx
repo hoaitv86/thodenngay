@@ -236,6 +236,8 @@ const currentMonthDayInput = (day: number) => {
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth(), day));
 };
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const isBeforeMonthFilter = (dateValue: string | null | undefined, monthValue: string) =>
+  !!dateValue && !!monthValue && dateValue.slice(0, 7) < monthValue;
 const parseDateInput = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return null;
@@ -245,6 +247,11 @@ const monthLabel = (value: string) => {
   const date = parseDateInput(value);
   if (!date) return "tháng cước";
   return `tháng ${date.month}/${date.year}`;
+};
+const monthYearLabel = (value: string) => {
+  const date = parseDateInput(value);
+  if (!date) return "th?ng c??c";
+  return `th?ng ${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const dateLabel = (value: string) => {
   const date = parseDateInput(value);
@@ -295,7 +302,6 @@ const billGoImportHeaders = [
 const emptyImportSummary = { created: 0, updated: 0, skipped: 0, errors: 0 };
 
 const statusOptions = [
-  { value: "not_due", label: "Chưa đến kỳ" },
   { value: "all", label: "Tất cả trạng thái" },
   { value: "unpaid", label: "Chưa thu" },
   { value: "paid", label: "Đã thu" },
@@ -307,7 +313,6 @@ const statusOptions = [
 const dueFilterOptions = [
   { value: "all", label: "Tất cả hạn thu" },
   { value: "due_this_month", label: "Đến hạn tháng này" },
-  { value: "not_due", label: "Chưa đến hạn" },
 ];
 
 const normalizeImportHeader = (value: string) =>
@@ -721,10 +726,10 @@ export default function WorkerBillGoPage() {
         }>;
         if (saved.viewMode) setViewMode(saved.viewMode);
         if (saved.activeTab) setActiveTab(saved.activeTab);
-        if (saved.monthFilter) setMonthFilter(saved.monthFilter);
-        if (saved.statusFilter) setStatusFilter(saved.statusFilter);
-        if (saved.dueFilter) setDueFilter(saved.dueFilter);
-        if (saved.areaStatusFilter) setAreaStatusFilter(saved.areaStatusFilter);
+        if (saved.monthFilter === monthInput()) setMonthFilter(saved.monthFilter);
+        if (saved.statusFilter && saved.statusFilter !== "not_due") setStatusFilter(saved.statusFilter);
+        if (saved.dueFilter && saved.dueFilter !== "not_due") setDueFilter(saved.dueFilter);
+        if (saved.areaStatusFilter && saved.areaStatusFilter !== "not_due") setAreaStatusFilter(saved.areaStatusFilter);
         if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
         if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
         if (typeof saved.query === "string") setQuery(saved.query);
@@ -925,6 +930,12 @@ export default function WorkerBillGoPage() {
     paidAmount: serverTotals.totalPaid,
     debt: serverTotals.totalDebt,
   }), [serverTotals]);
+  const visibleRows = viewMode === "area" ? areaRows : filteredRows;
+  const overduePeriodLabels = useMemo(() => Array.from(new Set(visibleRows
+    .filter(row => row.summary.debt > 0 && isBeforeMonthFilter(row.item.period_start || row.item.collection_month, monthFilter))
+    .map(row => monthYearLabel(row.item.period_start || row.item.collection_month || `${monthFilter}-01`))))
+    .sort((a, b) => a.localeCompare(b, "vi")), [monthFilter, visibleRows]);
+
   const processedCount = areaStats.paid;
   const remainingCount = areaStats.unpaid + areaStats.partial + areaStats.overdue;
 
@@ -1321,6 +1332,7 @@ export default function WorkerBillGoPage() {
     const cycle = getBillGoCycleOption(row.cycle);
     const canCollect = summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
+    const hasPreviousUnpaidPeriod = summary.debt > 0 && isBeforeMonthFilter(item.period_start || item.collection_month, monthFilter);
 
     return (
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
@@ -1329,6 +1341,11 @@ export default function WorkerBillGoPage() {
             <h3 className="truncate text-base font-extrabold text-on-surface">{row.customerName}</h3>
             <p className="mt-1 text-sm text-on-surface-variant">{row.account}</p>
             <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "Chưa có số điện thoại"}</p>
+            {hasPreviousUnpaidPeriod && (
+              <p className="mt-2 rounded-lg bg-error-container/60 px-2.5 py-1.5 text-xs font-extrabold text-error">
+                Còn kỳ cước {monthYearLabel(item.period_start || item.collection_month || `${monthFilter}-01`)} chưa thu
+              </p>
+            )}
           </div>
           <div className="relative flex shrink-0 items-center justify-end gap-2 text-right">
             <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${summary.status === "paid" ? "bg-success-container text-success" : summary.status === "partial" ? "bg-warning-container text-warning" : summary.status === "overdue" ? "bg-error-container text-error" : summary.status === "promo" ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant"}`}>
@@ -1434,6 +1451,11 @@ export default function WorkerBillGoPage() {
 
       {message && <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">{message}</div>}
       {importError && <div className="mt-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">{importError}</div>}
+      {overduePeriodLabels.length > 0 && (
+        <div className="mt-4 rounded-lg border border-error/30 bg-error-container/60 p-3 text-sm font-extrabold text-error">
+          {overduePeriodLabels.map(label => `Còn kỳ cước ${label} chưa thu`).join(" ; ")}
+        </div>
+      )}
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[
           { value: "cycle", label: "Thu theo chu kỳ" },
@@ -1583,7 +1605,12 @@ export default function WorkerBillGoPage() {
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
         </label>
-        <input type="month" className="input-field" value={monthFilter} onChange={e => setMonthFilter(e.target.value || monthInput())} />
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <input type="month" className="input-field" value={monthFilter} onChange={e => setMonthFilter(e.target.value || monthInput())} />
+          <button type="button" title="Tháng hiện tại" onClick={() => setMonthFilter(monthInput())} className="btn-outline !w-auto !px-3">
+            <RotateCcw size={16} />
+          </button>
+        </div>
         <label className="relative block">
           <select className="input-field appearance-none pr-10" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -1631,7 +1658,7 @@ export default function WorkerBillGoPage() {
 
       {loading ? (
         <div className="py-16 text-center text-sm text-on-surface-variant">Đang tải BillGo...</div>
-      ) : (viewMode === "area" ? areaRows : filteredRows).length === 0 ? (
+      ) : visibleRows.length === 0 ? (
         <div className="mt-5 rounded-lg border border-dashed border-outline-variant bg-white p-8 text-center text-sm text-on-surface-variant">
           Chưa có khách hàng phù hợp bộ lọc tháng, trạng thái hoặc địa bàn.
         </div>
@@ -1645,7 +1672,7 @@ export default function WorkerBillGoPage() {
             <span>Còn lại</span>
             <span>Kỳ cước</span>
           </div>
-          {(viewMode === "area" ? areaRows : filteredRows).map(renderRow)}
+          {visibleRows.map(renderRow)}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 text-sm text-on-surface-variant">
             <span>Trang {page}/{pageCount} · {totalRows} khách</span>
             <div className="flex gap-2">
