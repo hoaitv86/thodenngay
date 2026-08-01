@@ -1,6 +1,9 @@
 ﻿-- Super Admin database backup and restore manager.
 -- Stores PostgreSQL snapshots in database tables instead of exporting JSON/CSV files.
 
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 CREATE TABLE IF NOT EXISTS public.admin_database_backups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   label TEXT NOT NULL,
