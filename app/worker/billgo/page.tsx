@@ -250,8 +250,8 @@ const monthLabel = (value: string) => {
 };
 const monthYearLabel = (value: string) => {
   const date = parseDateInput(value);
-  if (!date) return "th?ng c??c";
-  return `th?ng ${String(date.month).padStart(2, "0")}/${date.year}`;
+  if (!date) return "tháng cước";
+  return `tháng ${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const dateLabel = (value: string) => {
   const date = parseDateInput(value);

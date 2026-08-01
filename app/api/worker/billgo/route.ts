@@ -1541,7 +1541,7 @@ export async function PATCH(request: Request) {
   if (scope.role === "bill_collector") {
     const assignedFilters = await getAssignedBillGoAreaFilters(admin, userId);
     if (!isBillGoSubscriptionInAssignedArea(receivableSubscription, assignedFilters)) {
-      return jsonError("B?n ch? ???c thu kh?ch trong ??a b?n ???c giao.", 403);
+      return jsonError("Bạn chỉ được thu khách trong địa bàn được giao.", 403);
     }
   }
 
