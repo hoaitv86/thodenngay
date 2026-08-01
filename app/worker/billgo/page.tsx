@@ -681,6 +681,7 @@ export default function WorkerBillGoPage() {
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState("");
   const [form, setForm] = useState(initialForm);
+  const [packageSearch, setPackageSearch] = useState("");
   const [collecting, setCollecting] = useState<Receivable | null>(null);
   const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
@@ -992,12 +993,20 @@ export default function WorkerBillGoPage() {
     () => packages.find(item => item.id === form.packageId) || null,
     [form.packageId, packages],
   );
-  const formPackagePriceFilter = toMoneyNumber(form.monthlyFee);
+  const packageSearchPrice = toMoneyNumber(packageSearch);
+  const packageSearchText = packageSearch.trim().toLocaleLowerCase("vi");
   const formPackageOptions = useMemo(
-    () => formPackagePriceFilter > 0
-      ? packages.filter(item => toMoneyNumber(item.monthly_price) === formPackagePriceFilter)
-      : packages,
-    [formPackagePriceFilter, packages],
+    () => {
+      if (packageSearchPrice > 0) return packages.filter(item => toMoneyNumber(item.monthly_price) === packageSearchPrice);
+      if (!packageSearchText) return packages;
+      return packages.filter(item => {
+        const label = [getBillGoPackageTypeLabel(item.type), item.name, item.provider, formatBillGoCurrency(item.monthly_price)]
+          .join(" ")
+          .toLocaleLowerCase("vi");
+        return label.includes(packageSearchText);
+      });
+    },
+    [packageSearchPrice, packageSearchText, packages],
   );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
@@ -1060,6 +1069,16 @@ export default function WorkerBillGoPage() {
       const packageAmount = getNumericPackageAmount(value);
       return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
     });
+  };
+
+  const selectFormPackage = (packageOption: BillGoPackage) => {
+    setPackageSearch(formatBillGoCurrency(packageOption.monthly_price) + " - " + packageOption.name);
+    updateForm("packageId", packageOption.id);
+  };
+
+  const updatePackageSearch = (value: string) => {
+    setPackageSearch(value);
+    if (form.packageId) updateForm("packageId", "");
   };
 
   const updateEditAreaName = (value: string) => {
@@ -1181,6 +1200,7 @@ export default function WorkerBillGoPage() {
       setStatusFilter("all");
       setDueFilter("all");
       setForm(initialForm());
+      setPackageSearch("");
       setShowForm(false);
       setMessage("Đã thêm khách hàng BillGo.");
       await fetchAreas();
@@ -1452,7 +1472,7 @@ export default function WorkerBillGoPage() {
               }}
             />
           </label>
-          <button type="button" onClick={() => setShowForm(value => !value)} className="btn-primary !w-auto flex-1 sm:flex-none">
+          <button type="button" onClick={() => { if (showForm) setPackageSearch(""); setShowForm(value => !value); }} className="btn-primary !w-auto flex-1 sm:flex-none">
             <Plus size={18} /> Thêm khách hàng
           </button>
         </div>
@@ -1510,17 +1530,34 @@ export default function WorkerBillGoPage() {
               <datalist id="billgo-legacy-address-suggestions">
                 {legacyAddressSuggestions.map(address => <option key={address} value={address} />)}
               </datalist>
-              <select required className="input-field" value={form.packageId} onChange={e => updateForm("packageId", e.target.value)}>
-                <option value="">Chọn gói cước</option>
-                {formPackageOptions.map(packageOption => (
-                  <option key={packageOption.id} value={packageOption.id}>
-                    {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
-                  </option>
-                ))}
-                {formPackageOptions.length === 0 && formPackagePriceFilter > 0 && (
-                  <option value="" disabled>Không có gói cước đúng giá {formatBillGoCurrency(formPackagePriceFilter)}</option>
+              <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
+                Chọn gói cước
+                <input
+                  required
+                  inputMode="numeric"
+                  className="input-field"
+                  placeholder="Nhập giá tiền để tìm gói cước"
+                  value={packageSearch}
+                  onChange={e => updatePackageSearch(e.target.value)}
+                />
+                {packageSearch.trim() && (
+                  <div className="max-h-36 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white p-1 shadow-sm">
+                    {formPackageOptions.map(packageOption => (
+                      <button
+                        key={packageOption.id}
+                        type="button"
+                        onClick={() => selectFormPackage(packageOption)}
+                        className={`w-full rounded-md px-3 py-2 text-left text-sm font-bold ${form.packageId === packageOption.id ? "bg-primary text-white" : "hover:bg-surface-container-low"}`}
+                      >
+                        {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
+                      </button>
+                    ))}
+                    {formPackageOptions.length === 0 && packageSearchPrice > 0 && (
+                      <p className="px-3 py-2 text-sm text-on-surface-variant">Không có gói cước đúng giá {formatBillGoCurrency(packageSearchPrice)}</p>
+                    )}
+                  </div>
                 )}
-              </select>
+              </div>
               <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder="Tên gói tại thời điểm đăng ký" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
               <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
               <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
@@ -1561,7 +1598,7 @@ export default function WorkerBillGoPage() {
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-outline !w-auto">Hủy</button>
+            <button type="button" onClick={() => { setPackageSearch(""); setShowForm(false); }} className="btn-outline !w-auto">Hủy</button>
             <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Đang lưu..." : "Thêm vào BillGo"}</button>
           </div>
         </form>
