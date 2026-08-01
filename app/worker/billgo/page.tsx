@@ -563,7 +563,7 @@ const initialForm = () => ({
   startDate: previousMonthFirstInput(),
   dueDate: "",
   note: "",
-  initialPaidAmount: "",
+  paidThroughMonth: "",
   initialPaidAt: todayInput(),
   initialPaymentMethod: "cash",
 });
@@ -1525,7 +1525,10 @@ export default function WorkerBillGoPage() {
                 Hạn nộp tiền
                 <input type="date" className="input-field" value={formDueDate} onChange={e => updateForm("dueDate", e.target.value)} />
               </label>
-              <input type="number" min="0" inputMode="numeric" className="input-field" placeholder="Tổng tiền đã thu ban đầu" value={form.initialPaidAmount} onChange={e => updateForm("initialPaidAmount", e.target.value)} />
+              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                Đã thu đến kỳ
+                <input type="month" className="input-field" value={form.paidThroughMonth} onChange={e => updateForm("paidThroughMonth", e.target.value)} />
+              </label>
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
                 Ngày nhập khách hàng
                 <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />

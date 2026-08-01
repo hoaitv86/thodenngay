@@ -256,6 +256,7 @@ const isFutureBillGoDate = (value?: string | null) => {
   return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
 };
 
+const normalizeMonthInput = (value: string) => /^\d{4}-\d{2}$/.test(value) ? `${value}-01` : "";
 const buildReceivableDraft = (
   subscription: {
     id: string;
@@ -870,7 +871,7 @@ export async function POST(request: Request) {
   if (context instanceof NextResponse) return context;
   if (context.isDemo) return jsonError(DEMO_ACTION_BLOCK_MESSAGE, 403);
   const { admin, userId, workerId, scope } = context;
-  if (!canManageBillGoScope(scope)) return jsonError("Bạn không có quyền tạo khách BillGo.", 403);
+  if (!canManageBillGoScope(scope)) return jsonError("B\u1ea1n kh\u00f4ng c\u00f3 quy\u1ec1n t\u1ea1o kh\u00e1ch BillGo.", 403);
 
   const body = await request.json();
   const customerName = asText(body.customerName);
@@ -893,10 +894,10 @@ export async function POST(request: Request) {
       .eq("is_active", true)
       .maybeSingle();
     if (packageError) return jsonError(packageError.message);
-    if (!packageRow) return jsonError("Gói cước không còn áp dụng.", 404);
+    if (!packageRow) return jsonError("G\u00f3i c\u01b0\u1edbc kh\u00f4ng c\u00f2n \u00e1p d\u1ee5ng.", 404);
     selectedPackage = packageRow as BillGoPackageSelection;
   }
-  const packageName = selectedPackage?.name || asText(body.packageName) || "Cước Internet";
+  const packageName = selectedPackage?.name || asText(body.packageName) || "C\u01b0\u1edbc Internet";
   const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
   const cycle = asText(body.cycle) || "monthly";
   const allowedPackageCycles = selectedPackage?.allowed_cycles?.length
@@ -905,12 +906,12 @@ export async function POST(request: Request) {
   const startDate = asText(body.startDate);
   const dueDate = asText(body.dueDate);
   const note = asText(body.note);
-  const initialPaidAmount = toMoneyNumber(body.initialPaidAmount);
-  const initialPaidAt = asText(body.initialPaidAt) || new Date().toISOString();
-  const initialPaymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
+  const paidThroughMonth = normalizeMonthInput(asText(body.paidThroughMonth));
+  const paidAt = asText(body.initialPaidAt) || new Date().toISOString();
+  const paymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
 
   if (!customerName || !account || (!address && !addressDetail) || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle) || !allowedPackageCycles.includes(cycle as BillGoCycle)) {
-    return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
+    return jsonError("Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7 th\u00f4ng tin h\u1ee3p l\u1ec7.");
   }
 
   const { data: duplicate } = await admin
@@ -921,173 +922,80 @@ export async function POST(request: Request) {
     .is("deleted_at", null)
     .not("status", "in", "(cancelled,deleted)")
     .maybeSingle();
-  if (duplicate) return jsonError("Account này đã có trong BillGo.", 409);
+  if (duplicate) return jsonError("Account n\u00e0y \u0111\u00e3 c\u00f3 trong BillGo.", 409);
 
-  const billing = getBillGoBillingPeriod(startDate, cycle);
-  const effectiveDueDate = dueDate || billing.dueDate;
-  const collectionMonth = getCollectionMonthFromDueDate(effectiveDueDate);
-  const billingParts = getBillingParts(collectionMonth);
-  const billingOption = getBillGoCycleOption(cycle);
-  const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
-  const nextBilling = getBillGoBillingPeriod(nextPeriodStart, cycle);
-  const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
-  const paidAmount = Math.min(Math.max(initialPaidAmount, 0), totalAmount);
-  const receivableStatus = getBillGoStoredStatus(totalAmount, paidAmount, effectiveDueDate);
+  const firstBilling = getBillGoBillingPeriod(startDate, cycle);
   const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
-  if ("error" in location) return jsonError(location.error || "Không thể tạo địa bàn khách hàng.");
+  if ("error" in location) return jsonError(location.error || "Kh\u00f4ng th\u1ec3 t\u1ea1o \u0111\u1ecba b\u00e0n kh\u00e1ch h\u00e0ng.");
 
   const { data: subscription, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
     .insert({
-      customer_id: null,
-      worker_id: workerId,
-      customer_name: customerName,
-      phone,
-      internet_account: account,
-      customer_address: address,
-      area_id: location.areaId,
-      sub_area_id: location.subAreaId,
-      address_detail: addressDetail,
-      legacy_address: address || null,
-      provider: selectedPackage?.provider || provider || null,
-      package_id: selectedPackage?.id || null,
-      package_name: packageName,
-      service_type: selectedPackage?.type || "internet",
-      cycle,
-      current_cycle: cycle,
-      amount_per_cycle: monthlyFee,
-      monthly_fee: monthlyFee,
-      start_date: billing.periodStart,
-      next_due_date: effectiveDueDate,
-      next_period_start: billing.periodStart,
-      status: "active",
-      note,
-      created_by: userId,
-      last_changed_by: userId,
+      customer_id: null, worker_id: workerId, customer_name: customerName, phone, internet_account: account, customer_address: address,
+      area_id: location.areaId, sub_area_id: location.subAreaId, address_detail: addressDetail, legacy_address: address || null,
+      provider: selectedPackage?.provider || provider || null, package_id: selectedPackage?.id || null, package_name: packageName,
+      service_type: selectedPackage?.type || "internet", cycle, current_cycle: cycle, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
+      start_date: firstBilling.periodStart, next_due_date: firstBilling.dueDate, next_period_start: firstBilling.periodStart,
+      status: "active", note, created_by: userId, last_changed_by: userId,
     })
     .select("id")
     .single();
   if (subscriptionError) return jsonError(subscriptionError.message);
 
-  const { data: receivable, error: receivableError } = await admin
-    .from("billgo_receivables")
-    .insert({
-      customer_id: null,
-      worker_id: workerId,
-      subscription_id: subscription.id,
-      type: "subscription_fee",
-      package_id: selectedPackage?.id || null,
-      package_name_at_collection: packageName,
-      title: `Thu cước ${packageName}`,
-      total_amount: totalAmount,
-      due_date: effectiveDueDate,
-      period_start: billing.periodStart,
-      period_end: billing.periodEnd,
-      collection_month: collectionMonth,
-      usage_month: billing.usageMonth,
-      billing_month: billingParts.billingMonth,
-      billing_year: billingParts.billingYear,
-      cycle_at_collection: cycle,
-      billing_months: billing.billingMonths,
-      bonus_months: billing.bonusMonths,
-      service_months: billingOption.paidMonths + billingOption.bonusMonths,
-      paid_amount: paidAmount,
-      monthly_fee_at_collection: monthlyFee,
-      paid_at: paidAmount > 0 ? initialPaidAt : null,
-      payment_method: paidAmount > 0 ? initialPaymentMethod : null,
-      collected_by: paidAmount > 0 ? userId : null,
-      next_period_start: nextPeriodStart,
-      next_due_date: nextBilling.dueDate,
-      status: receivableStatus,
-      note,
-      created_by: userId,
-    })
-    .select("id, period_start, period_end, billing_months, bonus_months")
-    .single();
+  const subscriptionDraft = { id: subscription.id, customer_id: null, worker_id: workerId, package_id: selectedPackage?.id || null, package_name: packageName, current_cycle: cycle, cycle, monthly_fee: monthlyFee, amount_per_cycle: monthlyFee };
+  const rowsToInsert = [];
+  const paidThroughStart = paidThroughMonth ? firstOfMonth(paidThroughMonth) : "";
+  let nextPeriodStart = firstBilling.periodStart;
+  let nextDueDate = firstBilling.dueDate;
+  let coveredUntil: string | null = null;
+  let collectionMonth = firstBilling.collectionMonth;
 
+  if (paidThroughStart && compareBillGoMonth(paidThroughStart, firstBilling.periodStart) >= 0) {
+    let periodStart = firstBilling.periodStart;
+    for (let guard = 0; guard < 240 && compareBillGoMonth(periodStart, paidThroughStart) <= 0; guard += 1) {
+      const draft = buildReceivableDraft(subscriptionDraft, userId, periodStart);
+      rowsToInsert.push({ ...draft, paid_amount: draft.total_amount, paid_at: paidAt, payment_method: paymentMethod, collected_by: userId, status: "paid", note });
+      coveredUntil = draft.period_end;
+      nextPeriodStart = draft.next_period_start;
+      nextDueDate = draft.next_due_date;
+      collectionMonth = draft.collection_month;
+      periodStart = draft.next_period_start;
+    }
+  } else {
+    const draft = buildReceivableDraft(subscriptionDraft, userId, firstBilling.periodStart);
+    const effectiveDueDate = dueDate || draft.due_date;
+    const effectiveCollectionMonth = getCollectionMonthFromDueDate(effectiveDueDate);
+    rowsToInsert.push({ ...draft, due_date: effectiveDueDate, collection_month: effectiveCollectionMonth, billing_month: getBillingParts(effectiveCollectionMonth).billingMonth, billing_year: getBillingParts(effectiveCollectionMonth).billingYear, note });
+  }
+
+  const { data: receivables, error: receivableError } = await admin
+    .from("billgo_receivables")
+    .insert(rowsToInsert)
+    .select("id, total_amount, period_start, period_end, billing_months, bonus_months, paid_amount, status");
   if (receivableError) {
     await admin.from("billgo_subscriptions").delete().eq("id", subscription.id);
     return jsonError(receivableError.message);
   }
 
-  let initialReceipt: { receipt_code: string; lookup_code: string; qr_payload: string } | null = null;
-
-  if (paidAmount > 0) {
-    const { data: payment, error: paymentError } = await admin
+  const paidReceivables = (receivables || []).filter(row => row.status === "paid" && toMoneyNumber(row.paid_amount) > 0);
+  if (paidReceivables.length > 0) {
+    const { data: payments, error: paymentError } = await admin
       .from("payments")
-      .insert({
-        job_id: null,
-        receivable_id: receivable.id,
-        amount: paidAmount,
-        method: initialPaymentMethod,
-        status: "paid",
-        paid_at: initialPaidAt,
-        collected_by: userId,
-        note: "Thanh toán ban đầu khi tạo khách BillGo",
-      })
-      .select("id")
-      .single();
+      .insert(paidReceivables.map(row => ({ job_id: null, receivable_id: row.id, amount: row.total_amount, method: paymentMethod, status: "paid", paid_at: paidAt, collected_by: userId, note: "\u0110\u00e3 thu \u0111\u1ebfn k\u1ef3 khi t\u1ea1o kh\u00e1ch BillGo" })))
+      .select("id, receivable_id");
     if (paymentError) return jsonError(paymentError.message);
-
-    const { data: collector } = await admin
-      .from("profiles")
-      .select("full_name, phone")
-      .eq("id", userId)
-      .maybeSingle();
-    const receiptCode = buildBillGoReceiptCode(payment.id, initialPaidAt);
-    const lookupCode = buildBillGoReceiptLookupCode(receiptCode);
-    const receiptUrl = new URL(`/billgo/receipt/${lookupCode}`, request.url).toString();
-    const { data: receipt, error: receiptError } = await admin
-      .from("billgo_receipts")
-      .insert({
-        receipt_code: receiptCode,
-        lookup_code: lookupCode,
-        qr_payload: receiptUrl,
-        payment_id: payment.id,
-        receivable_id: receivable.id,
-        subscription_id: subscription.id,
-        worker_id: workerId,
-        collected_by: userId,
-        customer_name: customerName,
-        customer_phone: phone || null,
-        internet_account: account,
-        customer_address: addressDetail || address || null,
-        package_name: packageName,
-        cycle_at_collection: cycle,
-        period_start: receivable.period_start,
-        period_end: receivable.period_end,
-        total_amount: totalAmount,
-        paid_amount: paidAmount,
-        remaining_amount: Math.max(totalAmount - paidAmount, 0),
-        payment_method: initialPaymentMethod,
-        paid_at: initialPaidAt,
-        collector_name: collector?.full_name || collector?.phone || null,
-        note: "Phiếu thu lắp mới Internet",
-      })
-      .select("receipt_code, lookup_code, qr_payload")
-      .single();
-    if (receiptError) return jsonError("Không thể tạo phiếu thu lắp mới: " + receiptError.message);
-    initialReceipt = receipt;
-
-    if (paidAmount >= totalAmount) {
-      await admin.from("billgo_payment_coverages").insert(
-        buildBillGoCoverageMonths(receivable.period_start, receivable.billing_months, receivable.bonus_months).map(month => ({
-          ...month,
-          payment_id: payment?.id || null,
-          receivable_id: receivable.id,
-          subscription_id: subscription.id,
-        })),
-      );
-      await admin
-        .from("billgo_subscriptions")
-        .update({ covered_until: receivable.period_end, next_period_start: nextPeriodStart, next_due_date: nextBilling.dueDate })
-        .eq("id", subscription.id);
+    const paymentByReceivable = new Map((payments || []).map(payment => [payment.receivable_id, payment.id]));
+    const coverageRows = paidReceivables.flatMap(row => buildBillGoCoverageMonths(row.period_start, row.billing_months, row.bonus_months).map(month => ({ ...month, payment_id: paymentByReceivable.get(row.id) || null, receivable_id: row.id, subscription_id: subscription.id })));
+    if (coverageRows.length > 0) {
+      const { error: coverageError } = await admin.from("billgo_payment_coverages").insert(coverageRows);
+      if (coverageError && coverageError.code !== "23505") return jsonError("Kh\u00f4ng th\u1ec3 l\u01b0u th\u00e1ng \u0111\u00e3 thu BillGo: " + coverageError.message, 409);
     }
   }
 
-  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivable.id, collectionMonth, receipt: initialReceipt }, { status: 201 });
-}
+  await admin.from("billgo_subscriptions").update({ covered_until: coveredUntil, next_period_start: nextPeriodStart, next_due_date: nextDueDate, last_changed_by: userId }).eq("id", subscription.id);
 
+  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivables?.[receivables.length - 1]?.id || null, collectionMonth, nextPeriodStart, coveredUntil, receipt: null }, { status: 201 });
+}
 export async function PATCH(request: Request) {
   const context = await getWorkerContext();
   if (context instanceof NextResponse) return context;
