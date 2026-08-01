@@ -906,7 +906,8 @@ export async function POST(request: Request) {
   const startDate = asText(body.startDate);
   const dueDate = asText(body.dueDate);
   const note = asText(body.note);
-  const paidThroughMonth = normalizeMonthInput(asText(body.paidThroughMonth));
+  const isLegacyCustomer = body.isLegacyCustomer === true;
+  const paidThroughMonth = isLegacyCustomer ? normalizeMonthInput(asText(body.paidThroughMonth)) : "";
   const paidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const paymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
 
