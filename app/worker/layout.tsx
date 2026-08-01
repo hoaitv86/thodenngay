@@ -56,7 +56,7 @@ const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
 };
 
 const defaultMenuContext: WorkerFeatureContext = {
-  role: "worker" as WorkerRole,
+  role: "technician",
   specialties: [],
   data: { billgoHistory: false, billgoAccess: false },
 };
@@ -230,7 +230,7 @@ export default function WorkerLayout({
       if (!user) return;
       if (isMounted) setNotificationUserId(user.id);
 
-      const [{ data: profile }, { data: worker }, { data: userRoles }, { data: memberships }] = await Promise.all([
+      const [{ data: profile }, { data: worker }, { data: memberships }] = await Promise.all([
         supabase
           .from("profiles")
           .select("full_name, role, phone, email")
@@ -241,10 +241,6 @@ export default function WorkerLayout({
           .select("*")
           .eq("user_id", user.id)
           .maybeSingle(),
-        supabase
-          .from("user_roles")
-          .select("role, is_active")
-          .eq("user_id", user.id),
         supabase
           .from("worker_unit_members")
           .select("member_role")
@@ -269,20 +265,18 @@ export default function WorkerLayout({
       const isDemoWorker = isDemoAccount(profile);
       const billgoHistory = worker?.id ? await hasBillGoData(worker.id) : false;
       const billgoAccess = isDemoWorker || billgoHistory || Boolean((memberships || []).some((item) => item.member_role === "bill_collector" || item.member_role === "manager" || item.member_role === "owner"));
-      const activeRoles = (userRoles || [])
-        .filter((item) => item.is_active !== false)
-        .map((item) => item.role);
       const membershipRoles = (memberships || [])
         .map((item) => item.member_role)
         .filter(isWorkerUnitMemberRole);
       const rolePriority: WorkerUnitMemberRole[] = ["owner", "manager", "technician", "bill_collector", "sales_inventory"];
       const unitRole = rolePriority.find((item) => membershipRoles.includes(item));
-      const role = unitRole || (typeof profile?.role === "string" ? profile.role : "worker");
+      const legacyRole = typeof profile?.role === "string" ? profile.role : "worker";
+      const role: WorkerRole = unitRole || (legacyRole === "admin" ? "admin" : "technician");
 
       if (!isMounted) return;
 
       setMenuContext({
-        role: role as WorkerRole,
+        role,
         specialties,
         data: {
           billgoHistory,
