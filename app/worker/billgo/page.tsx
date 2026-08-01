@@ -993,11 +993,13 @@ export default function WorkerBillGoPage() {
     () => packages.find(item => item.id === form.packageId) || null,
     [form.packageId, packages],
   );
-  const packageSearchPrice = toMoneyNumber(packageSearch);
+  const packageSearchDigits = packageSearch.replace(/\D/g, "");
   const packageSearchText = packageSearch.trim().toLocaleLowerCase("vi");
   const formPackageOptions = useMemo(
     () => {
-      if (packageSearchPrice > 0) return packages.filter(item => toMoneyNumber(item.monthly_price) === packageSearchPrice);
+      if (packageSearchDigits) {
+        return packages.filter(item => String(Number(item.monthly_price || 0)).startsWith(packageSearchDigits));
+      }
       if (!packageSearchText) return packages;
       return packages.filter(item => {
         const label = [getBillGoPackageTypeLabel(item.type), item.name, item.provider, formatBillGoCurrency(item.monthly_price)]
@@ -1006,7 +1008,7 @@ export default function WorkerBillGoPage() {
         return label.includes(packageSearchText);
       });
     },
-    [packageSearchPrice, packageSearchText, packages],
+    [packageSearchDigits, packageSearchText, packages],
   );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
@@ -1552,8 +1554,8 @@ export default function WorkerBillGoPage() {
                         {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
                       </button>
                     ))}
-                    {formPackageOptions.length === 0 && packageSearchPrice > 0 && (
-                      <p className="px-3 py-2 text-sm text-on-surface-variant">Không có gói cước đúng giá {formatBillGoCurrency(packageSearchPrice)}</p>
+                    {formPackageOptions.length === 0 && packageSearchDigits && (
+                      <p className="px-3 py-2 text-sm text-on-surface-variant">Không có gói cước bắt đầu bằng giá {packageSearchDigits}</p>
                     )}
                   </div>
                 )}
