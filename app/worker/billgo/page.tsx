@@ -563,6 +563,7 @@ const initialForm = () => ({
   startDate: previousMonthFirstInput(),
   dueDate: "",
   note: "",
+  isLegacyCustomer: false,
   paidThroughMonth: "",
   initialPaidAt: todayInput(),
   initialPaymentMethod: "cash",
@@ -1032,6 +1033,7 @@ export default function WorkerBillGoPage() {
         }
         return { ...prev, address: value };
       }
+      if (key === "isLegacyCustomer") return { ...prev, isLegacyCustomer: value === "true", paidThroughMonth: value === "true" ? prev.paidThroughMonth : "" };
       if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle);
       if (key === "packageId") {
         const selectedPackage = packages.find(item => item.id === value);
@@ -1160,7 +1162,7 @@ export default function WorkerBillGoPage() {
       const response = await fetch("/api/worker/billgo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, dueDate: formDueDate }),
+        body: JSON.stringify({ ...form, paidThroughMonth: form.isLegacyCustomer ? form.paidThroughMonth : "", dueDate: formDueDate }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể thêm khách hàng BillGo.");
@@ -1517,6 +1519,10 @@ export default function WorkerBillGoPage() {
                   .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
+              <label className="flex items-center gap-3 rounded-lg border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface sm:col-span-2 xl:col-span-3">
+                <input type="checkbox" checked={form.isLegacyCustomer} onChange={e => updateForm("isLegacyCustomer", e.target.checked ? "true" : "false")} className="h-5 w-5 accent-primary" />
+                Nhập khách hàng cũ
+              </label>
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
                 Kỳ cước {monthLabel(form.startDate)}
                 <input required type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
@@ -1525,10 +1531,12 @@ export default function WorkerBillGoPage() {
                 Hạn nộp tiền
                 <input type="date" className="input-field" value={formDueDate} onChange={e => updateForm("dueDate", e.target.value)} />
               </label>
-              <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                Đã thu đến kỳ
-                <input type="month" className="input-field" value={form.paidThroughMonth} onChange={e => updateForm("paidThroughMonth", e.target.value)} />
-              </label>
+              {form.isLegacyCustomer && (
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                  Đã thu đến kỳ
+                  <input type="month" className="input-field" value={form.paidThroughMonth} onChange={e => updateForm("paidThroughMonth", e.target.value)} />
+                </label>
+              )}
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
                 Ngày nhập khách hàng
                 <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />
@@ -1539,7 +1547,7 @@ export default function WorkerBillGoPage() {
               <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
             </div>
             <p className="mt-3 text-xs text-on-surface-variant">
-              Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(formDueDate)}. {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+              Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(formDueDate)}. {form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo kỳ cước hiện tại ở trạng thái Chưa thu."} {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
             </p>
           </div>
           <div className="sticky bottom-0 flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
