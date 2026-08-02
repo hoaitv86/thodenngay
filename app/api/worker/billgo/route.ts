@@ -226,6 +226,8 @@ const matchesBillGoStatusFilter = (status: string, filter: string) => {
   return status === filter;
 };
 
+const previousUnpaidReceivableSelect = "id, subscription_id, total_amount, paid_amount, due_date, period_start, period_end, collection_month, billing_month, billing_year, status";
+
 const getRowSearchText = (row: {
   subscription?: {
     customer_name?: string | null;
@@ -516,6 +518,7 @@ const buildNotDueRow = (
     start_date?: string | null;
   },
   coverageType?: string | null,
+  coveredMonth?: string | null,
 ) => {
   const cycle = String(subscription.current_cycle || subscription.cycle || "monthly") as BillGoCycle;
   const option = getBillGoCycleOption(cycle);
@@ -528,10 +531,10 @@ const buildNotDueRow = (
     subscription_id: subscription.id,
     total_amount: 0,
     due_date: subscription.next_due_date,
-    period_start: subscription.next_period_start || subscription.start_date,
-    period_end: null,
-    collection_month: null,
-    usage_month: null,
+    period_start: coveredMonth || subscription.next_period_start || subscription.start_date,
+    period_end: coveredMonth ? endOfMonth(coveredMonth) : null,
+    collection_month: coveredMonth || null,
+    usage_month: coveredMonth || null,
     billing_month: null,
     billing_year: null,
     cycle_at_collection: cycle,
@@ -721,8 +724,8 @@ export async function GET(request: Request) {
     .filter(subscription => !assignedFilters || isBillGoSubscriptionInAssignedArea(subscription, assignedFilters));
   const subscriptionIds = hydratedSubscriptions.map(subscription => subscription.id);
   const coveredMonth = monthStartInput(year, month);
-  const nextCoveredMonth = toBillGoDateInput(addMonths(coveredMonth, 1));
-  const [receivableResult, coverageResult] = subscriptionIds.length > 0
+  const coveredMonthEnd = endOfMonth(coveredMonth);
+  const [receivableResult, coverageResult, previousUnpaidResult] = subscriptionIds.length > 0
     ? await Promise.all([
         admin
           .from("billgo_receivables")
@@ -730,27 +733,58 @@ export async function GET(request: Request) {
           .eq("worker_id", workerId)
           .in("subscription_id", subscriptionIds)
           .is("deleted_at", null)
-          .or(`and(billing_month.eq.${month},billing_year.eq.${year}),and(status.in.(unpaid,partial,overdue,due),due_date.lt.${nextCoveredMonth})`),
+          .or(`and(billing_month.eq.${month},billing_year.eq.${year}),and(period_start.lte.${coveredMonthEnd},period_end.gte.${coveredMonth})`),
         admin
           .from("billgo_payment_coverages")
           .select("subscription_id, coverage_type")
           .in("subscription_id", subscriptionIds)
           .eq("covered_month", coveredMonth),
+        admin
+          .from("billgo_receivables")
+          .select(previousUnpaidReceivableSelect)
+          .eq("worker_id", workerId)
+          .in("subscription_id", subscriptionIds)
+          .is("deleted_at", null)
+          .in("status", ["unpaid", "partial", "overdue", "due"])
+          .or(`period_end.lt.${coveredMonth},and(period_end.is.null,billing_year.lt.${year}),and(period_end.is.null,billing_year.eq.${year},billing_month.lt.${month})`)
+          .order("billing_year", { ascending: false })
+          .order("billing_month", { ascending: false }),
       ])
-    : [{ data: [], error: null }, { data: [], error: null }];
+    : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   const { data: currentRowsData, error: receivableError } = receivableResult;
   if (receivableError) return jsonError("Không thể tải kỳ thu BillGo: " + receivableError.message);
   if (coverageResult.error) return jsonError("Không thể tải tháng đã thanh toán BillGo: " + coverageResult.error.message);
+  if (previousUnpaidResult.error) return jsonError("Không thể tải kỳ cước còn nợ BillGo: " + previousUnpaidResult.error.message);
 
   const subscriptionsById = new Map(hydratedSubscriptions.map(subscription => [subscription.id, subscription]));
   const coverageBySubscription = new Map(
     (coverageResult.data || []).map(coverage => [coverage.subscription_id, coverage.coverage_type])
   );
-  const currentRows = (currentRowsData || []).map(row => ({
-    ...row,
-    subscription: subscriptionsById.get(row.subscription_id || "") || null,
-    payments: [],
-  }));
+  const previousUnpaidBySubscription = new Map<string, unknown[]>();
+  for (const previousRow of previousUnpaidResult.data || []) {
+    const key = String(previousRow.subscription_id || "");
+    if (!key) continue;
+    const items = previousUnpaidBySubscription.get(key) || [];
+    items.push(previousRow);
+    previousUnpaidBySubscription.set(key, items);
+  }
+  const currentRowSubscriptionIds = new Set((currentRowsData || []).map(row => String(row.subscription_id || "")).filter(Boolean));
+  const coveredRows = hydratedSubscriptions
+    .filter(subscription => !currentRowSubscriptionIds.has(subscription.id))
+    .filter(subscription => coverageBySubscription.has(subscription.id))
+    .map(subscription => ({
+      ...buildNotDueRow(subscription, coverageBySubscription.get(subscription.id), coveredMonth),
+      previous_unpaid_receivables: previousUnpaidBySubscription.get(subscription.id) || [],
+    }));
+  const currentRows = [
+    ...(currentRowsData || []).map(row => ({
+      ...row,
+      subscription: subscriptionsById.get(row.subscription_id || "") || null,
+      previous_unpaid_receivables: previousUnpaidBySubscription.get(row.subscription_id || "") || [],
+      payments: [],
+    })),
+    ...coveredRows,
+  ];
   const filteredRows = currentRows
     .filter(row => {
       const status = getComputedListStatus(row);

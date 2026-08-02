@@ -84,6 +84,18 @@ type Receivable = {
   note?: string | null;
   subscription?: Subscription | null;
   payments?: Payment[] | null;
+  previous_unpaid_receivables?: Array<{
+    id: string;
+    total_amount?: number | string | null;
+    paid_amount?: number | string | null;
+    due_date?: string | null;
+    period_start?: string | null;
+    period_end?: string | null;
+    collection_month?: string | null;
+    billing_month?: number | null;
+    billing_year?: number | null;
+    status?: string | null;
+  }> | null;
 };
 
 type Subscription = {
@@ -236,8 +248,12 @@ const currentMonthDayInput = (day: number) => {
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth(), day));
 };
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-const isBeforeMonthFilter = (dateValue: string | null | undefined, monthValue: string) =>
-  !!dateValue && !!monthValue && dateValue.slice(0, 7) < monthValue;
+
+const getPreviousUnpaidReceivables = (item: Receivable) =>
+  (item.previous_unpaid_receivables || []).filter(previous => {
+    const total = toMoneyNumber(previous.total_amount);
+    return total > 0 && toMoneyNumber(previous.paid_amount) < total;
+  });
 const parseDateInput = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return null;
@@ -934,8 +950,8 @@ export default function WorkerBillGoPage() {
   }), [serverTotals]);
   const visibleRows = viewMode === "area" ? areaRows : filteredRows;
   const overduePeriodLabels = useMemo(() => Array.from(new Set(visibleRows
-    .filter(row => row.summary.debt > 0 && isBeforeMonthFilter(row.item.period_start || row.item.collection_month, monthFilter))
-    .map(row => monthYearLabel(row.item.period_start || row.item.collection_month || `${monthFilter}-01`))))
+    .flatMap(row => getPreviousUnpaidReceivables(row.item))
+    .map(previous => monthYearLabel(previous.period_start || previous.collection_month || `${monthFilter}-01`))))
     .sort((a, b) => a.localeCompare(b, "vi")), [monthFilter, visibleRows]);
 
   const processedCount = areaStats.paid;
@@ -1363,7 +1379,9 @@ export default function WorkerBillGoPage() {
     const cycle = getBillGoCycleOption(row.cycle);
     const canCollect = summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
-    const hasPreviousUnpaidPeriod = summary.debt > 0 && isBeforeMonthFilter(item.period_start || item.collection_month, monthFilter);
+    const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
+    const hasPreviousUnpaidPeriod = previousUnpaidReceivables.length > 0;
+    const firstPreviousUnpaid = previousUnpaidReceivables[0];
 
     return (
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
@@ -1374,7 +1392,7 @@ export default function WorkerBillGoPage() {
             <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "Chưa có số điện thoại"}</p>
             {hasPreviousUnpaidPeriod && (
               <p className="mt-2 rounded-lg bg-error-container/60 px-2.5 py-1.5 text-xs font-extrabold text-error">
-                Còn kỳ cước {monthYearLabel(item.period_start || item.collection_month || `${monthFilter}-01`)} chưa thu
+                Còn kỳ cước {monthYearLabel(firstPreviousUnpaid?.period_start || firstPreviousUnpaid?.collection_month || `${monthFilter}-01`)} chưa thu
               </p>
             )}
           </div>
