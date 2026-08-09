@@ -4306,6 +4306,37 @@ export default function WorkerDashboard() {
         </section>
       </div>
 
+      <div className="worker-mobile-tabs mx-3 mb-2 grid grid-cols-4 gap-1 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm md:hidden">
+        {[
+          { id: "new" as const, label: "Vi\u1ec7c m\u1edbi", count: newJobs.length, tone: "error" },
+          { id: "pending" as const, label: "Ch\u1edd duy\u1ec7t", count: pendingApprovalJobs.length, tone: "warning" },
+          { id: "active" as const, label: "\u0110ang l\u00e0m", count: activeJobs.length, tone: "success" },
+          { id: "billgo" as const, label: "BillGo", count: billGoTotals.debtItems, tone: "error" },
+        ].map(item => {
+          const isActiveTab = tab === item.id;
+          const countClass = item.tone === "warning"
+            ? "bg-warning text-white"
+            : item.tone === "success"
+              ? "bg-success text-white"
+              : "bg-error text-white";
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              className={`min-w-0 rounded-lg px-1.5 py-2 text-[11px] font-extrabold transition-all ${isActiveTab ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
+            >
+              <span className="block truncate">{item.label}</span>
+              {item.count > 0 && (
+                <span className={`mx-auto mt-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] leading-none ${isActiveTab ? "bg-white text-primary" : countClass}`}>
+                  {item.count > 99 ? "99+" : item.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
       {/* Tabs */}
       <div className="worker-desktop-tabs mx-4 hidden grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm md:grid sm:mx-6 lg:mx-8">
         <button
