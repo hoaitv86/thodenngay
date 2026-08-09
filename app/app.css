@@ -969,13 +969,6 @@ textarea {
     border-radius: 1rem;
   }
 
-  .worker-mobile-tabs {
-    position: sticky;
-    top: 0.5rem;
-    z-index: 25;
-    backdrop-filter: blur(14px);
-  }
-
   .worker-job-feed {
     padding: 0.75rem 0.75rem 1rem;
   }
