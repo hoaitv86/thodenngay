@@ -120,7 +120,23 @@ export default function WorkerLayout({
     () => resolveWorkerMenuByPlacement(menuContext, "mobileMore"),
     [menuContext]
   );
-  const mobileItems = [...mobilePrimaryItems, mobileMoreItem];
+  const mobileItems = useMemo(() => {
+    const allMobileItems = [...mobilePrimaryItems, ...mobileMoreItems];
+    const findItem = (id: string) => allMobileItems.find((item) => item.id === id);
+    const createItem = findItem("create_job");
+    return [
+      findItem("home"),
+      findItem("jobs"),
+      createItem,
+      findItem("customers"),
+      findItem("profile") || mobileMoreItem,
+    ].filter(Boolean).map((item) => {
+      if (!item) return item;
+      if (item.id === "jobs") return { ...item, label: "Việc của tôi" };
+      if (item.id === "profile") return { ...item, label: "Cá nhân" };
+      return item;
+    }) as WorkerFeatureDefinition[];
+  }, [mobileMoreItems, mobilePrimaryItems]);
   const groupedMobileMoreItems = useMemo(
     () =>
       mobileMoreGroups
@@ -647,12 +663,12 @@ export default function WorkerLayout({
         )}
 
         <nav
-          className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-outline-variant/25 bg-white/95 px-2 pt-2 shadow-[0_-10px_30px_rgba(15,23,42,0.10)] backdrop-blur-xl md:hidden"
+          className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 rounded-t-xl border border-outline-variant/20 bg-white/95 px-3 pt-2 shadow-[0_-14px_38px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden"
           style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
           data-worker-bottom-nav
           aria-label="Điều hướng chính trên mobile"
         >
-          <div className="grid h-20 grid-cols-5 items-end gap-1">
+          <div className="grid h-20 grid-cols-5 items-end gap-1.5">
             {mobileItems.map((item) => {
               const isMore = item.id === "more";
               const isCreateJob = item.id === "create_job";
@@ -694,14 +710,14 @@ export default function WorkerLayout({
                   <span
                     className={`flex items-center justify-center rounded-xl ${
                       isCreateJob
-                        ? "h-12 w-12 bg-primary text-white shadow-[0_8px_18px_rgba(22,90,88,0.24)]"
+                        ? "h-14 w-14 rounded-full bg-primary text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)]"
                         : `h-10 w-10 ${isActive ? "bg-primary-fixed shadow-sm" : ""}`
                     }`}
                   >
-                    <Icon size={isCreateJob ? 23 : 21} className={isActive || isCreateJob ? "stroke-[2.5px]" : ""} />
+                    <Icon size={isCreateJob ? 28 : 21} className={isActive || isCreateJob ? "stroke-[2.5px]" : ""} />
                   </span>
                   <span
-                    className={`max-w-full truncate text-[10px] font-extrabold uppercase leading-none ${
+                    className={`max-w-full truncate text-[11px] font-extrabold leading-none ${
                       isActive || isCreateJob ? "opacity-100" : "opacity-70"
                     }`}
                   >

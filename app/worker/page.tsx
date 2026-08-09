@@ -3581,33 +3581,33 @@ export default function WorkerDashboard() {
       </section>
 
       {/* Quick Job Creation */}
-      <section id="worker-quick-job" className="scroll-mt-20 px-4 py-4 sm:px-6 lg:px-8">
-        <div className="rounded-xl border border-primary-container/35 bg-sky-50 p-4 shadow-[0_14px_34px_rgba(14,116,144,0.12)] ring-1 ring-white/70">
+      <section id="worker-quick-job" className="scroll-mt-24 px-3 py-3 sm:px-6 md:py-4 lg:px-8">
+        <div className="overflow-hidden rounded-xl border border-primary-container/35 bg-primary p-0 text-white shadow-[0_14px_34px_rgba(37,99,235,0.22)] ring-1 ring-white/70 md:bg-sky-50 md:p-4 md:text-on-surface">
           <button
             type="button"
             onClick={() => setQuickFormOpen(open => !open)}
-            className="flex w-full items-center justify-between gap-3 text-left"
+            className="flex w-full items-center justify-between gap-3 p-4 text-left md:p-0"
           >
             <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary text-white shadow-md shadow-cyan-900/15 ring-2 ring-white">
-                <BriefcaseIcon size={24} strokeWidth={2.6} />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-md shadow-cyan-900/15 ring-2 ring-white md:h-12 md:w-12 md:rounded-lg md:bg-primary md:text-white">
+                <PlusIcon size={30} strokeWidth={2.6} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-base font-extrabold leading-tight text-primary-container">Tạo việc nhanh cho khách quen</h2>
-                <p className="mt-1 text-xs font-semibold leading-5 text-on-surface-variant">
-                  Thợ nhập thông tin, tạo tài khoản khách nếu cần và lưu việc ngay.
+                <h2 className="text-xl font-extrabold leading-tight text-white md:text-primary-container">Tạo việc nhanh</h2>
+                <p className="mt-1 text-sm font-semibold leading-5 text-white/85 md:text-on-surface-variant">
+                  Tạo việc mới cho khách hàng
                 </p>
               </div>
             </div>
             <ChevronRightIcon
               size={22}
               strokeWidth={2.5}
-              className={`shrink-0 rounded-full bg-white p-1 text-primary shadow-sm transition-transform ${quickFormOpen ? "rotate-90" : ""}`}
+              className={`shrink-0 rounded-full bg-white/95 p-1 text-primary shadow-sm transition-transform ${quickFormOpen ? "rotate-90" : ""}`}
             />
           </button>
 
           {quickFormOpen && (
-            <form onSubmit={handleCreateQuickJob} className="mt-4 space-y-3 rounded-lg border border-primary-container/15 bg-white/85 p-3 shadow-sm">
+            <form onSubmit={handleCreateQuickJob} className="m-3 mt-0 space-y-3 rounded-lg border border-primary-container/15 bg-white p-3 text-on-surface shadow-sm md:m-0 md:mt-4 md:bg-white/85">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
                   Tên khách hàng
