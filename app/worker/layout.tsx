@@ -100,6 +100,7 @@ export default function WorkerLayout({
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [userName, setUserName] = useState("Thợ");
+  const [userAddress, setUserAddress] = useState("");
   const [isAvailable, setIsAvailable] = useState(true);
   const [menuContext, setMenuContext] = useState(defaultMenuContext);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -132,6 +133,7 @@ export default function WorkerLayout({
   );
   const unreadNotificationCount = notifications.filter((notification) => !notification.read_at).length;
   const isProfilePage = pathname === "/worker/profile";
+  const isWorkerHomePage = pathname === "/worker";
 
   const fetchWorkerNotifications = useCallback(async (userId: string) => {
     const { data: notificationRows, error: notificationError } = await supabase
@@ -238,7 +240,7 @@ export default function WorkerLayout({
       const [{ data: profile }, { data: worker }, memberships] = await Promise.all([
         supabase
           .from("profiles")
-          .select("full_name, role, phone, email")
+          .select("full_name, role, phone, email, address")
           .eq("id", user.id)
           .single(),
         supabase
@@ -252,6 +254,7 @@ export default function WorkerLayout({
       if (!isMounted) return;
 
       if (profile?.full_name) setUserName(profile.full_name);
+      setUserAddress(typeof profile?.address === "string" ? profile.address : "");
       setIsAvailable(worker?.is_available !== false);
       if (worker?.status === "active") {
         void fetchWorkerNotifications(user.id);
@@ -418,26 +421,40 @@ export default function WorkerLayout({
       </aside>
 
       <div className="flex min-h-dvh w-full flex-col md:pl-64">
-        <header className="sticky top-0 z-40 glass flex h-16 items-center justify-between px-4 sm:px-6 lg:h-20 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm md:hidden">
+        <header className={`sticky top-0 z-40 ${isWorkerHomePage ? "bg-primary text-white md:glass md:bg-white/90 md:text-on-surface" : "glass"} flex ${isWorkerHomePage ? "min-h-44 items-start px-4 pb-10 pt-[calc(1rem+env(safe-area-inset-top))] md:h-20 md:min-h-0 md:items-center md:px-8 md:py-0" : "h-16 items-center px-4 sm:px-6 lg:h-20 lg:px-8"} justify-between`}>
+          <div className={`flex items-center gap-3 ${isWorkerHomePage ? "min-w-0 flex-1 md:flex-none" : ""}`}>
+            <div className={`${isWorkerHomePage ? "hidden" : "flex"} h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm md:hidden`}>
               <LogoIcon size={24} />
             </div>
-            <div>
-              <span className="block max-w-[180px] truncate text-base font-bold leading-tight text-primary lg:max-w-none lg:text-lg">Trang thợ</span>
+            {isWorkerHomePage && (
+              <div className="relative mr-1 flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-2 border-white/80 bg-white shadow-lg md:hidden">
+                <LogoIcon size={48} />
+                <span className={`absolute bottom-1 right-0 h-5 w-5 rounded-full border-[3px] border-white ${isAvailable ? "bg-success" : "bg-outline-variant"}`} />
+              </div>
+            )}
+            <div className="min-w-0">
+              <span className={`block truncate font-bold leading-tight ${isWorkerHomePage ? "max-w-[13rem] text-2xl text-white md:text-primary" : "max-w-[180px] text-base text-primary lg:max-w-none lg:text-lg"}`}>
+                {isWorkerHomePage ? `Xin chào, ${userName}!` : "Trang thợ"}
+              </span>
               <div className="flex items-center gap-1.5">
                 <span className={`h-2 w-2 rounded-full ${isAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
-                <span className={`max-w-[180px] truncate text-[10px] font-bold uppercase sm:max-w-none ${isAvailable ? "text-success" : "text-on-surface-variant"}`}>
+                <span className={`max-w-[180px] truncate text-[10px] font-bold uppercase sm:max-w-none ${isWorkerHomePage ? "text-white/90 md:text-success" : isAvailable ? "text-success" : "text-on-surface-variant"}`}>
                   {userName} {isAvailable ? "đang online" : "đang offline"}
                 </span>
               </div>
+              {isWorkerHomePage && userAddress && (
+                <div className="mt-2 flex min-w-0 items-center gap-1.5 text-sm font-bold text-white/90 md:hidden">
+                  <span className="text-white">•</span>
+                  <span className="truncate">{userAddress}</span>
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className={`flex items-center ${isWorkerHomePage ? "gap-3 md:gap-2" : "gap-2"}`}>
             <button
               type="button"
               onClick={handleSwitchToCustomerMode}
-              className="hidden items-center gap-2 rounded-lg border border-primary-container/20 bg-white px-3 py-2.5 text-xs font-extrabold text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:inline-flex"
+              className={`${isWorkerHomePage ? "hidden md:inline-flex" : "hidden sm:inline-flex"} items-center gap-2 rounded-lg border border-primary-container/20 bg-white px-3 py-2.5 text-xs font-extrabold text-primary-container shadow-sm transition-colors hover:bg-primary-fixed`}
             >
               <UserIcon size={16} />
               Chế độ Khách hàng
@@ -447,7 +464,7 @@ export default function WorkerLayout({
               onClick={handleSwitchToCustomerMode}
               aria-label="Chế độ Khách hàng"
               title="Chế độ Khách hàng"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden"
+              className={`${isWorkerHomePage ? "hidden" : "flex"} h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-primary-container shadow-sm transition-colors hover:bg-primary-fixed sm:hidden`}
             >
               <UserIcon size={16} />
             </button>
@@ -459,10 +476,10 @@ export default function WorkerLayout({
                 void markNotificationsRead();
               }}
             >
-            <button className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container" aria-label={"Th\u00f4ng b\u00e1o"}>
-              <BellIcon size={16} />
+            <button className={`relative flex shrink-0 items-center justify-center border bg-white p-0 shadow-sm transition-colors hover:bg-surface-container ${isWorkerHomePage ? "h-14 w-14 rounded-full border-white/40 text-on-surface md:h-9 md:w-9 md:rounded-lg md:border-primary-container/15" : "h-9 w-9 rounded-lg border-primary-container/15 text-on-surface-variant"}`} aria-label={"Th\u00f4ng b\u00e1o"}>
+              <BellIcon size={isWorkerHomePage ? 23 : 16} />
               {unreadNotificationCount > 0 && (
-                <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-white bg-error px-1 text-[9px] font-extrabold leading-none text-white">
+                <span className={`absolute flex items-center justify-center rounded-full border-2 border-white bg-error px-1 font-extrabold leading-none text-white ${isWorkerHomePage ? "-right-0.5 -top-0.5 h-6 min-w-6 text-xs" : "right-0.5 top-0.5 h-4 min-w-4 text-[9px]"}`}>
                   {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
                 </span>
               )}
@@ -526,10 +543,19 @@ export default function WorkerLayout({
               </div>
             )}
             </div>
+            {isWorkerHomePage && (
+              <Link
+                href="/worker/chat"
+                aria-label="Tin nhắn"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white p-0 text-on-surface shadow-sm transition-colors hover:bg-surface-container md:hidden"
+              >
+                <MessageCircle size={24} />
+              </Link>
+            )}
             <button
               onClick={handleLogout}
               aria-label="Đăng xuất"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden"
+              className={`${isWorkerHomePage ? "hidden" : "flex"} h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary-container/15 bg-white p-0 text-on-surface-variant shadow-sm transition-colors hover:border-error/20 hover:bg-error-container hover:text-error md:hidden`}
               title="Đăng xuất"
             >
               <LogOutIcon size={16} />
