@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import {
+  BellIcon,
   BriefcaseIcon,
   CalendarIcon,
   LayoutDashboardIcon,
   LogOutIcon,
-  SearchIcon,
+  MapPinIcon,
+  PlusIcon,
   UserIcon,
   WrenchIcon,
 } from "@/app/components/icons";
@@ -18,9 +20,9 @@ import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 
 const navItems = [
   { href: "/customer/home", label: "Trang chủ", icon: LayoutDashboardIcon },
-  { href: "/customer/booking", label: "Đặt lịch", icon: SearchIcon },
-  { href: "/customer/jobs", label: "Đơn của tôi", icon: BriefcaseIcon },
-  { href: "/customer/chat", label: "Chat", icon: MessageCircle },
+  { href: "/customer/jobs", label: "Công việc", icon: BriefcaseIcon },
+  { href: "/customer/booking", label: "Đặt thợ", icon: PlusIcon, isPrimary: true },
+  { href: "/customer/chat", label: "Tin nhắn", icon: MessageCircle },
   { href: "/customer/profile", label: "Tài khoản", icon: UserIcon },
 ];
 
@@ -80,9 +82,10 @@ export default function CustomerLayout({
   const currentItem = navItems.find((item) => pathname.startsWith(item.href));
   const pageLabel = currentItem?.label || "Khách hàng";
   const isProfilePage = pathname === "/customer/profile";
+  const isCustomerHomePage = pathname === "/customer/home";
 
   return (
-    <div className="min-h-dvh w-full bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35 lg:flex">
+    <div className={`customer-app-shell min-h-dvh w-full bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35 lg:flex ${isCustomerHomePage ? "customer-home-shell" : ""}`}>
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:flex lg:w-72 lg:flex-col lg:border-r lg:border-primary-container/10 lg:bg-linear-to-b lg:from-primary lg:via-primary-container lg:to-secondary-container lg:text-white">
         <div className="border-b border-white/12 p-5">
           <div className="flex items-center gap-3">
@@ -146,7 +149,7 @@ export default function CustomerLayout({
       </aside>
 
       <div className="flex min-h-dvh w-full flex-col lg:pl-72">
-        <header className="sticky top-0 z-30 border-b border-white/45 bg-white/72 backdrop-blur-xl">
+        <header className={`customer-app-header sticky top-0 z-30 border-b border-white/45 bg-white/72 backdrop-blur-xl ${isCustomerHomePage ? "customer-home-header" : ""}`}>
           <div className="mx-auto flex h-16 w-full max-w-md items-center justify-between px-4 lg:h-20 lg:max-w-6xl lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-primary-container to-secondary-container text-white shadow-sm lg:hidden">
@@ -157,12 +160,23 @@ export default function CustomerLayout({
                   Xin chào, {userName}
                 </span>
                 <span className="mt-0.5 block truncate text-lg font-bold leading-tight text-primary-container">
-                  {pageLabel}
+                  {isCustomerHomePage ? userName : pageLabel}
                 </span>
+                {isCustomerHomePage && (
+                  <span className="customer-location-row mt-1 flex min-w-0 items-center gap-1.5 truncate text-sm font-bold text-white/90">
+                    <MapPinIcon size={16} />
+                    Chọn vị trí của bạn
+                  </span>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {isCustomerHomePage && (
+                <Link href="/customer/jobs" aria-label="Thông báo" className="customer-bell-button relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white/95 p-0 text-primary shadow-sm sm:h-10 sm:w-10">
+                  <BellIcon size={21} />
+                </Link>
+              )}
               <Link
                 href="/customer/booking"
                 className="hidden items-center gap-2 rounded-lg bg-secondary-container px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-primary active:scale-[0.98] sm:inline-flex"
@@ -207,7 +221,7 @@ export default function CustomerLayout({
           {children}
         </main>
 
-        <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-md -translate-x-1/2 border-t border-white/55 bg-white/82 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_rgba(15,35,66,0.1)] backdrop-blur-xl lg:hidden">
+        <nav className="customer-bottom-nav fixed bottom-0 left-1/2 z-30 w-full max-w-md -translate-x-1/2 border-t border-white/55 bg-white/82 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_rgba(15,35,66,0.1)] backdrop-blur-xl lg:hidden">
           <div className="grid h-[4.5rem] grid-cols-5 gap-1">
             {navItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
@@ -215,7 +229,7 @@ export default function CustomerLayout({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-all ${
+                  className={`customer-nav-item ${item.isPrimary ? "customer-nav-primary" : ""} flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-all ${
                     isActive
                       ? "bg-primary-container text-white shadow-sm"
                       : "text-on-surface-variant hover:bg-primary-fixed hover:text-primary-container"

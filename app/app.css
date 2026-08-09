@@ -1166,3 +1166,144 @@ textarea {
     width: 2.55rem;
   }
 }
+/* ===== Customer mobile mockup alignment ===== */
+@media (max-width: 767px) {
+  .customer-home-shell {
+    background: #ffffff;
+  }
+
+  .customer-home-header {
+    min-height: 12.5rem;
+    overflow: hidden;
+    border: 0 !important;
+    background:
+      radial-gradient(circle at 82% 104%, rgb(56 189 248 / 0.38) 0 4rem, transparent 4.1rem),
+      radial-gradient(circle at 86% 24%, rgb(59 130 246 / 0.32) 0 8rem, transparent 8.1rem),
+      linear-gradient(135deg, #0874ff 0%, #0059f7 52%, #0759df 100%) !important;
+    border-radius: 0 0 1.75rem 1.75rem;
+    box-shadow: none;
+  }
+
+  .customer-home-header > div {
+    height: auto;
+    min-height: 8.25rem;
+    align-items: flex-start;
+    padding-top: calc(1.15rem + env(safe-area-inset-top));
+  }
+
+  .customer-home-header .bg-linear-to-br {
+    height: 4rem;
+    width: 4rem;
+    border-radius: 9999px;
+    border: 2px solid rgb(255 255 255 / 0.8);
+    background: #ffffff !important;
+    color: var(--color-primary);
+  }
+
+  .customer-home-header span {
+    color: #ffffff !important;
+  }
+
+  .customer-home-header .customer-bell-button {
+    margin-top: 0.25rem;
+    color: var(--color-primary) !important;
+  }
+
+  .customer-home-header button[aria-label="Đăng xuất"],
+  .customer-home-header a[href="/customer/booking"],
+  .customer-home-header button[title="Chế độ Thợ"] {
+    display: none;
+  }
+
+  .customer-home-page {
+    margin-top: -3.35rem;
+  }
+
+  .customer-home-content {
+    padding-inline: 1rem;
+  }
+
+  .customer-request-card {
+    border-radius: 1.45rem !important;
+  }
+
+  .customer-chip-row {
+    scrollbar-width: none;
+  }
+
+  .customer-chip-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .customer-service-grid > a,
+  .customer-section .grid > a {
+    min-width: 0;
+  }
+
+  .customer-active-job {
+    min-height: 8.6rem;
+  }
+
+  .customer-bottom-nav {
+    max-width: none;
+    border-color: rgb(15 23 42 / 0.08);
+    background: rgb(255 255 255 / 0.94);
+    box-shadow: 0 -14px 34px rgb(15 23 42 / 0.12);
+  }
+
+  .customer-bottom-nav .grid {
+    height: 5.35rem;
+    align-items: end;
+  }
+
+  .customer-bottom-nav .customer-nav-item {
+    height: 4.2rem;
+    border-radius: 1rem;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .customer-bottom-nav .customer-nav-primary {
+    height: 5.15rem;
+    transform: translateY(-0.55rem);
+  }
+
+  .customer-bottom-nav .customer-nav-primary svg {
+    height: 2rem;
+    width: 2rem;
+  }
+
+  .customer-bottom-nav .customer-nav-primary > svg {
+    border-radius: 9999px;
+  }
+
+  .customer-bottom-nav .customer-nav-primary {
+    color: var(--color-primary) !important;
+  }
+
+  .customer-bottom-nav .customer-nav-primary svg {
+    box-sizing: content-box;
+    border-radius: 9999px;
+    background: var(--color-primary);
+    color: #ffffff;
+    padding: 0.85rem;
+    box-shadow: 0 14px 30px rgb(37 99 235 / 0.30);
+  }
+}
+
+@media (max-width: 380px) {
+  .customer-home-content {
+    padding-inline: 0.75rem;
+  }
+
+  .customer-service-grid,
+  .customer-section .grid-cols-4 {
+    gap: 0.55rem;
+  }
+
+  .customer-service-card,
+  .customer-section .grid-cols-4 > a {
+    min-height: 6.45rem;
+    padding: 0.55rem;
+  }
+}

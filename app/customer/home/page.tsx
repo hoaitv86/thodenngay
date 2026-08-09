@@ -1,24 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
-  getCustomerServiceBasePrice,
   getCustomerServiceDisplayName,
   getCustomerServiceGroups,
 } from "@/lib/customer-service-catalog";
 import {
-  ArrowRightIcon,
   BarChartIcon,
   BriefcaseIcon,
-  CalendarIcon,
+  CameraIcon,
+  ChevronRightIcon,
   ClockIcon,
+  CogIcon,
+  DropletIcon,
   MapPinIcon,
+  PhoneIcon,
+  SearchIcon,
   ShieldCheckIcon,
   StarIcon,
+  WrenchIcon,
+  ZapIcon,
 } from "@/app/components/icons";
 import { createClient } from "@/lib/supabase/client";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
@@ -57,15 +61,7 @@ const serviceStyles: Record<string, Pick<Service, "color" | "accent">> = {
   CameraIcon: { color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary" },
   CogIcon: { color: "bg-primary-fixed text-primary-container", accent: "from-primary to-secondary-container" },
   WrenchIcon: { color: "bg-secondary-fixed text-primary-container", accent: "from-primary-container to-secondary-container" },
-  ShieldCheckIcon: { color: "bg-primary-fixed text-primary", accent: "from-primary to-secondary-container" },
-  StarIcon: { color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary" },
-  ClockIcon: { color: "bg-primary-fixed text-primary-container", accent: "from-primary-container to-primary" },
-  MapPinIcon: { color: "bg-secondary-fixed text-primary-container", accent: "from-primary to-secondary-container" },
   BriefcaseIcon: { color: "bg-surface-container text-on-surface-variant", accent: "from-primary to-secondary-container" },
-  BarChartIcon: { color: "bg-primary-fixed text-primary", accent: "from-secondary-container to-primary" },
-  CalendarIcon: { color: "bg-secondary-fixed text-primary-container", accent: "from-primary-container to-secondary-container" },
-  PhoneIcon: { color: "bg-primary-fixed text-primary", accent: "from-primary to-secondary-container" },
-  UsersIcon: { color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary" },
 };
 
 const defaultServices: Service[] = [
@@ -73,18 +69,6 @@ const defaultServices: Service[] = [
   { id: "camera", iconName: "CameraIcon", name: "Lắp đặt Camera", price: "500.000đ", color: "bg-secondary-fixed text-primary", accent: "from-secondary-container to-primary", base_price: 500000 },
   { id: "computer", iconName: "BriefcaseIcon", name: "Sửa Máy Tính", price: "150.000đ", color: "bg-surface-container text-on-surface-variant", accent: "from-primary-container to-primary", base_price: 150000 },
   { id: "printer", iconName: "BriefcaseIcon", name: "Sửa Máy In", price: "150.000đ", color: "bg-primary-fixed text-primary", accent: "from-primary to-secondary-container", base_price: 150000 },
-];
-
-const customerPromise = [
-  { label: "Có thợ trong", value: "30 phút", icon: ClockIcon, tone: "bg-primary text-white" },
-  { label: "Bảo hành", value: "7 ngày", icon: ShieldCheckIcon, tone: "bg-success text-white" },
-  { label: "Báo giá rõ", value: "Trước khi làm", icon: BriefcaseIcon, tone: "bg-secondary-container text-white" },
-];
-
-const quickActions = [
-  { href: "/customer/booking", label: "Đặt lịch mới", note: "Gửi yêu cầu trong 1 phút", icon: CalendarIcon, color: "bg-primary-fixed text-primary-container" },
-  { href: "/customer/jobs", label: "Theo dõi đơn", note: "Xem tiến độ thợ nhận việc", icon: BarChartIcon, color: "bg-secondary-fixed text-on-secondary-container" },
-  { href: "/customer/profile", label: "Địa chỉ của tôi", note: "Cập nhật thông tin liên hệ", icon: MapPinIcon, color: "bg-success-container text-success" },
 ];
 
 const mockDispatchMeta = [
@@ -108,19 +92,11 @@ export default function CustomerHome() {
 
   useEffect(() => {
     if (customerServiceGroups.length <= 1) return;
-
     const timer = window.setInterval(() => {
       setFeaturedServiceGroupIndex((current) => (current + 1) % customerServiceGroups.length);
     }, 4200);
-
     return () => window.clearInterval(timer);
   }, [customerServiceGroups.length]);
-
-  useEffect(() => {
-    if (featuredServiceGroupIndex >= customerServiceGroups.length) {
-      setFeaturedServiceGroupIndex(0);
-    }
-  }, [customerServiceGroups.length, featuredServiceGroupIndex]);
 
   useEffect(() => {
     async function fetchServices() {
@@ -132,10 +108,7 @@ export default function CustomerHome() {
       if (data && !error) {
         const formattedServices = filterStandardServiceCatalog(applyDefaultServiceParents(data)).map((svc) => {
           const iconName = svc.icon || "WrenchIcon";
-          const visual = serviceStyles[iconName] || {
-            color: "bg-primary-fixed text-primary-container",
-            accent: "from-primary to-secondary-container",
-          };
+          const visual = serviceStyles[iconName] || serviceStyles.WrenchIcon;
           const formattedPrice = svc.base_price
             ? `${Number(svc.base_price).toLocaleString("vi-VN")}đ`
             : "Miễn phí";
@@ -175,30 +148,20 @@ export default function CustomerHome() {
         .limit(3);
 
       if (data && !error && data.length > 0) {
-        const formattedWorkers = data.map((worker, index) => {
+        setTopWorkers(data.map((worker, index) => {
           const workerProfile = Array.isArray(worker.profiles) ? worker.profiles[0] : worker.profiles;
           const specialty = worker.specialties?.[0] || "Sửa chữa";
           const rating = worker.avg_rating && Number(worker.avg_rating) > 0 ? Number(worker.avg_rating) : 5;
-          const name = workerProfile?.full_name || `Anh thợ ${specialty}`;
-          const specialtyLower = specialty.toLowerCase();
-          const dispatchMeta = mockDispatchMeta[index % mockDispatchMeta.length];
           const route = getRouteEstimate(customerGps, workerProfile?.gps_location);
-          let color = "bg-secondary-fixed text-primary";
-
-          if (specialtyLower.includes("điện") || specialtyLower.includes("dien")) color = "bg-primary-fixed text-primary-container";
-          else if (specialtyLower.includes("nước") || specialtyLower.includes("nuoc")) color = "bg-primary-fixed text-primary";
-          else if (specialtyLower.includes("camera") || specialtyLower.includes("cam")) color = "bg-secondary-fixed text-primary";
-          else if (specialtyLower.includes("cơ khí") || specialtyLower.includes("co khi")) color = "bg-secondary-fixed text-primary-container";
-
           return {
             id: worker.id,
-            name,
+            name: workerProfile?.full_name || `Anh thợ ${specialty}`,
             specialty,
             rating: rating.toFixed(1),
             jobs: worker.total_jobs || 0,
-            color,
+            color: "bg-primary-fixed text-primary",
             status: "Sẵn sàng",
-            ...dispatchMeta,
+            ...mockDispatchMeta[index % mockDispatchMeta.length],
             distance: route.hasGps ? route.distance : "Chưa có GPS",
             eta: route.hasGps ? route.eta : "Chưa rõ",
             area: route.hasGps ? "Theo GPS đã lưu" : "Chưa cập nhật tọa độ",
@@ -206,58 +169,10 @@ export default function CustomerHome() {
             signal: route.hasGps ? "Dữ liệu GPS thật" : "Cần lưu vị trí",
             hasGpsEstimate: route.hasGps,
           };
-        });
-        setTopWorkers(formattedWorkers);
+        }));
       } else {
         setTopWorkers([
-          {
-            id: "fallback-electric",
-            name: "Anh Tuấn",
-            specialty: "Điện",
-            rating: "4.9",
-            jobs: 230,
-            color: "bg-primary-fixed text-primary-container",
-            status: "Phản hồi nhanh",
-            ...mockDispatchMeta[0],
-            distance: "Chưa có GPS",
-            eta: "Chưa rõ",
-            area: "Chưa cập nhật tọa độ",
-            highlight: "Cập nhật GPS để tính khoảng cách",
-            signal: "Cần lưu vị trí",
-            hasGpsEstimate: false,
-          },
-          {
-            id: "fallback-water",
-            name: "Anh Phát",
-            specialty: "Nước",
-            rating: "4.8",
-            jobs: 185,
-            color: "bg-primary-fixed text-primary",
-            status: "Gần bạn",
-            ...mockDispatchMeta[1],
-            distance: "Chưa có GPS",
-            eta: "Chưa rõ",
-            area: "Chưa cập nhật tọa độ",
-            highlight: "Cập nhật GPS để tính khoảng cách",
-            signal: "Cần lưu vị trí",
-            hasGpsEstimate: false,
-          },
-          {
-            id: "fallback-camera",
-            name: "Anh Minh",
-            specialty: "Camera",
-            rating: "4.7",
-            jobs: 142,
-            color: "bg-secondary-fixed text-primary",
-            status: "Được yêu thích",
-            ...mockDispatchMeta[2],
-            distance: "Chưa có GPS",
-            eta: "Chưa rõ",
-            area: "Chưa cập nhật tọa độ",
-            highlight: "Cập nhật GPS để tính khoảng cách",
-            signal: "Cần lưu vị trí",
-            hasGpsEstimate: false,
-          },
+          { id: "fallback-electric", name: "Nguyễn Văn A", specialty: "Mạng Internet", rating: "4.9", jobs: 12, color: "bg-primary-fixed text-primary", status: "Đã phục vụ", ...mockDispatchMeta[0], distance: "Chưa có GPS", eta: "Chưa rõ", area: "Chưa cập nhật tọa độ", highlight: "Cập nhật GPS để tính khoảng cách", signal: "Cần lưu vị trí", hasGpsEstimate: false },
         ]);
       }
     }
@@ -265,13 +180,11 @@ export default function CustomerHome() {
     async function fetchActiveJobs() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const { count } = await supabase
         .from("jobs")
         .select("id", { count: "exact", head: true })
         .eq("customer_id", user.id)
         .in("status", ["pending", "confirmed", "assigned", "in_progress", "cancel_requested"]);
-
       setActiveJobs(count || 0);
     }
 
@@ -280,249 +193,69 @@ export default function CustomerHome() {
     fetchActiveJobs();
   }, [supabase]);
 
+  const getServiceVisual = (service: Service) => {
+    const name = `${service.name} ${service.iconName}`.toLowerCase();
+    if (name.includes("camera")) return { Icon: CameraIcon, className: "text-slate-700", bg: "bg-slate-50" };
+    if (name.includes("internet") || name.includes("wifi") || name.includes("mạng")) return { Icon: BarChartIcon, className: "text-primary", bg: "bg-primary-fixed/55" };
+    if (name.includes("điện") || name.includes("dien")) return { Icon: ZapIcon, className: "text-warning", bg: "bg-warning-container/70" };
+    if (name.includes("nước") || name.includes("nuoc")) return { Icon: DropletIcon, className: "text-sky-500", bg: "bg-sky-50" };
+    if (name.includes("máy") || name.includes("computer") || name.includes("printer")) return { Icon: WrenchIcon, className: "text-slate-700", bg: "bg-slate-50" };
+    if (name.includes("điều hòa") || name.includes("lạnh")) return { Icon: CogIcon, className: "text-sky-500", bg: "bg-sky-50" };
+    return { Icon: BriefcaseIcon, className: "text-primary", bg: "bg-primary-fixed/55" };
+  };
+
+  const popularServices = displayedServices.slice(0, 7);
+  const recentServices = displayedServices.slice(0, 4);
+  const primaryWorker = topWorkers[0];
+
   return (
-    <div className="relative min-h-full overflow-hidden bg-linear-to-b from-primary-fixed via-surface to-secondary-fixed/35">
-      <div className="relative z-10 pt-4">
-        <CmsPlacement location="featured_notice" variant="banner" limit={1} />
-      </div>
+    <div className="customer-home-page min-h-full bg-white">
+      <div className="relative z-10 pt-2"><CmsPlacement location="featured_notice" variant="banner" limit={1} /></div>
       <CmsPlacement location="popup" variant="popup" limit={1} />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-linear-to-br from-primary/12 via-primary-fixed/80 to-secondary-container/14" />
-      <div className="relative mx-auto w-full max-w-md space-y-5 px-4 pb-5 pt-4 lg:max-w-6xl lg:px-8 lg:py-8">
-        <section className="relative overflow-hidden rounded-xl border border-white/25 bg-linear-to-br from-primary via-primary-container to-secondary-container text-white shadow-[0_18px_46px_rgba(37,99,235,0.2)] lg:min-h-[330px]">
-          <Image
-            src="/hero-technician.webp"
-            alt=""
-            width={1774}
-            height={887}
-            sizes="(min-width: 1024px) 47vw, 12rem"
-            className="absolute bottom-0 right-0 h-40 w-40 object-contain object-bottom opacity-18 sm:h-48 sm:w-48 lg:h-full lg:w-[47%] lg:object-cover lg:object-center lg:opacity-85"
-          />
-          <div className="absolute inset-y-0 right-0 hidden w-3/5 bg-linear-to-r from-primary via-primary/80 to-transparent lg:block" />
-          <div className="absolute inset-x-0 bottom-0 h-1 bg-secondary-container" />
+      <div className="customer-home-content relative mx-auto w-full max-w-md space-y-6 px-4 pb-6 lg:max-w-6xl lg:px-8 lg:py-8">
+        <section className="customer-request-card rounded-[1.45rem] border border-white/80 bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.14)] lg:rounded-xl">
+          <h1 className="text-2xl font-extrabold leading-tight text-on-surface">Hôm nay bạn cần hỗ trợ gì?</h1>
+          <p className="mt-2 text-sm font-semibold leading-5 text-on-surface-variant">Mô tả sự cố để chúng tôi tìm thợ phù hợp cho bạn</p>
+          <Link href="/customer/booking" className="mt-5 flex min-h-[4.25rem] items-center gap-3 rounded-[1.15rem] border border-outline-variant bg-white px-4 text-on-surface-variant shadow-sm">
+            <SearchIcon size={28} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-base font-semibold">Bạn muốn sửa gì ngày hôm nay?</span>
+            <span className="flex items-center gap-3 text-on-surface-variant"><PhoneIcon size={23} /><CameraIcon size={23} /></span>
+          </Link>
+          <div className="customer-chip-row mt-4 flex gap-2 overflow-x-auto pb-1">
+            {[{ label: "Mất mạng Internet", icon: BarChartIcon }, { label: "Camera lỗi", icon: CameraIcon }, { label: "Máy tính", icon: WrenchIcon }, { label: "Xem thêm", icon: CogIcon }].map((chip) => (
+              <Link key={chip.label} href="/customer/booking" className="flex shrink-0 items-center gap-2 rounded-full bg-surface-container px-3.5 py-2 text-sm font-bold text-on-surface"><chip.icon size={17} />{chip.label}</Link>
+            ))}
+          </div>
+          <Link href="/customer/booking" className="mt-4 flex min-h-[4.75rem] items-center justify-center gap-3 rounded-[1.15rem] bg-primary px-4 text-center text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)]">
+            <ZapIcon size={24} className="fill-current" />
+            <span><span className="block text-xl font-extrabold leading-tight">ĐẶT THỢ NGAY</span><span className="mt-1 block text-sm font-semibold text-white/85">Mô tả sự cố, chọn dịch vụ và tìm thợ phù hợp</span></span>
+          </Link>
+        </section>
 
-          <div className="relative p-5 sm:p-6 lg:max-w-[58%] lg:p-8">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1.5 text-xs font-bold text-white ring-1 ring-white/20">
-              <ShieldCheckIcon size={14} />
-              Thợ xác thực, báo giá trước khi làm
-            </div>
-            <h1 className="mt-4 max-w-sm text-3xl font-bold leading-tight text-white lg:text-4xl">
-              Sửa nhà gọn hơn, đặt thợ nhanh hơn
-            </h1>
-            <p className="mt-3 max-w-md text-sm leading-6 text-white/82 lg:text-base">
-              Chọn dịch vụ, gửi mô tả hiện trạng và theo dõi tiến độ ngay trên điện thoại.
-            </p>
-
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/customer/booking"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-secondary-container px-5 py-3 text-sm font-bold text-white shadow-[0_10px_24px_rgba(232,102,36,0.28)] transition-all hover:brightness-105 active:scale-[0.98]"
-              >
-                Đặt dịch vụ ngay
-                <ArrowRightIcon size={17} />
-              </Link>
-              <Link
-                href="/customer/jobs"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/12 px-5 py-3 text-sm font-bold text-white transition-all hover:bg-white/18 active:scale-[0.98]"
-              >
-                Xem đơn của tôi
-              </Link>
-            </div>
-
-            <div className="mt-6 grid grid-cols-3 gap-2">
-              {customerPromise.map((item) => (
-                <div key={item.label} className="rounded-lg bg-white/10 p-3 ring-1 ring-white/12">
-                  <div className={`mb-2 flex h-8 w-8 items-center justify-center rounded-md ${item.tone}`}>
-                    <item.icon size={16} />
-                  </div>
-                  <p className="text-[10px] font-bold uppercase text-white/65">{item.label}</p>
-                  <p className="mt-0.5 text-sm font-bold leading-tight text-white">{item.value}</p>
-                </div>
-              ))}
-            </div>
+        <section className="customer-section">
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-base font-extrabold uppercase text-on-surface">Dịch vụ phổ biến</h2><Link href="/customer/booking" className="flex items-center gap-1 text-sm font-extrabold text-primary">Xem tất cả <ChevronRightIcon size={17} /></Link></div>
+          <div className="customer-service-grid grid grid-cols-4 gap-3">
+            {[...popularServices, { id: "all", name: "Xem tất cả", price: "", iconName: "all", color: "", accent: "" } as Service].slice(0, 8).map((service) => {
+              const visual = service.id === "all" ? { Icon: CogIcon, className: "text-primary", bg: "bg-primary-fixed/55" } : getServiceVisual(service);
+              const href = service.id === "all" ? "/customer/booking" : `/customer/booking?service=${service.id}`;
+              return <Link key={service.id} href={href} className="customer-service-card flex min-h-[7.1rem] flex-col items-center justify-center rounded-[1.05rem] border border-outline-variant/80 bg-white p-2 text-center shadow-sm"><span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${visual.bg} ${visual.className}`}><visual.Icon size={30} /></span><span className="mt-2 line-clamp-2 text-xs font-extrabold leading-4 text-on-surface">{service.id === "all" ? "Xem tất cả" : getCustomerServiceDisplayName(service)}</span></Link>;
+            })}
           </div>
         </section>
 
-        <section className="grid gap-3 lg:grid-cols-3">
-          {quickActions.map((action) => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className="group flex items-center gap-3 rounded-lg border border-outline-variant bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover active:scale-[0.99]"
-            >
-              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${action.color}`}>
-                <action.icon size={22} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-on-surface">{action.label}</p>
-                <p className="mt-0.5 text-xs leading-5 text-on-surface-variant">{action.note}</p>
-              </div>
-              <ArrowRightIcon size={17} className="text-on-surface-variant transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          ))}
+        <section className="customer-section">
+          <h2 className="mb-3 text-base font-extrabold uppercase text-on-surface">Công việc của tôi</h2>
+          <Link href="/customer/jobs" className="customer-active-job flex items-center gap-3 rounded-[1.2rem] border border-success/30 bg-success-container/35 p-3 shadow-sm"><div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-sky-50 text-success"><MapPinIcon size={38} /></div><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="truncate text-base font-extrabold text-success">{activeJobs > 0 ? "Thợ đang đến" : "Chưa có việc đang xử lý"}</p><span className="shrink-0 rounded-full border border-success/30 bg-white/80 px-3 py-1 text-xs font-extrabold text-success">{activeJobs > 0 ? "Đang đến" : "Mới"}</span></div><p className="mt-1 truncate text-lg font-extrabold text-on-surface">{activeJobs > 0 ? `${activeJobs} công việc đang theo dõi` : "Đặt thợ khi bạn cần hỗ trợ"}</p><div className="mt-2 flex items-center gap-3 text-sm font-semibold text-on-surface-variant"><span className="inline-flex items-center gap-1"><ClockIcon size={16} /> Dự kiến: cập nhật trong đơn</span></div></div><ChevronRightIcon size={24} className="shrink-0 text-primary" /></Link>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[1.45fr_0.85fr]">
-          <div>
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase text-secondary-container">Dịch vụ phổ biến</p>
-                <h2 className="mt-1 text-xl font-bold text-on-surface">
-                  Đa dạng dịch vụ {featuredServiceGroup?.category.name || "sửa chữa"}
-                </h2>
-                <p className="mt-1 text-xs leading-5 text-on-surface-variant">
-                  Nhóm dịch vụ nổi bật tự đổi để bạn thấy thêm lựa chọn phù hợp.
-                </p>
-              </div>
-              <Link href="/customer/booking" className="shrink-0 text-xs font-bold text-primary-container">
-                Xem tất cả
-              </Link>
-            </div>
+        <section className="customer-section">
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-base font-extrabold uppercase text-on-surface">Dịch vụ gần đây</h2><Link href="/customer/booking" className="flex items-center gap-1 text-sm font-extrabold text-primary">Xem tất cả <ChevronRightIcon size={17} /></Link></div>
+          <div className="grid grid-cols-4 gap-3">{recentServices.map((service) => { const visual = getServiceVisual(service); return <Link key={`recent-${service.id}`} href={`/customer/booking?service=${service.id}`} className="rounded-[1.05rem] border border-outline-variant/80 bg-white p-3 text-center shadow-sm"><span className={`mx-auto flex h-11 w-11 items-center justify-center rounded-2xl ${visual.bg} ${visual.className}`}><visual.Icon size={26} /></span><span className="mt-2 block line-clamp-2 min-h-8 text-xs font-extrabold leading-4 text-on-surface">{getCustomerServiceDisplayName(service)}</span><span className="mt-1 block text-xs font-extrabold text-primary">Đặt lại</span></Link>; })}</div>
+        </section>
 
-            {customerServiceGroups.length > 1 && (
-              <div className="mb-3 flex gap-1.5">
-                {customerServiceGroups.map((group, index) => (
-                  <button
-                    key={group.category.id}
-                    type="button"
-                    onClick={() => setFeaturedServiceGroupIndex(index)}
-                    className={`h-1.5 rounded-full transition-all ${
-                      index === featuredServiceGroupIndex % customerServiceGroups.length
-                        ? "w-8 bg-secondary-container"
-                        : "w-3 bg-outline-variant/50"
-                    }`}
-                    aria-label={`Xem nhóm ${group.category.name}`}
-                  />
-                ))}
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-              {displayedServices.map((service) => {
-                const servicePrice = getCustomerServiceBasePrice(service, services);
-                const displayPrice = servicePrice > 0
-                  ? `${servicePrice.toLocaleString("vi-VN")}đ`
-                  : service.price;
-                const categoryId = featuredServiceGroup?.category.id;
-                const href = categoryId
-                  ? `/customer/booking?category=${categoryId}&service=${service.id}`
-                  : `/customer/booking?service=${service.id}`;
-
-                return (
-                  <Link
-                    key={service.id}
-                    href={href}
-                    className="group relative min-h-[142px] overflow-hidden rounded-lg border border-outline-variant bg-white p-3.5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover active:scale-[0.98] sm:min-h-[150px] sm:p-4"
-                  >
-                    <div className={`absolute inset-x-0 top-0 h-1.5 bg-linear-to-r ${service.accent}`} />
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${service.color} sm:h-12 sm:w-12`}>
-                      <BriefcaseIcon size={20} />
-                    </div>
-                    <p className="mt-3 min-h-10 text-sm font-bold leading-5 text-on-surface">
-                      {getCustomerServiceDisplayName(service)}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-on-surface-variant">Từ {displayPrice}</p>
-                    <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-primary-fixed px-2.5 py-1 text-[11px] font-bold text-primary-container">
-                      Chọn
-                      <ArrowRightIcon size={12} />
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <aside className="space-y-3">
-            <div className="rounded-lg border border-outline-variant bg-white p-4 shadow-card">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase text-on-surface-variant">Đang theo dõi</p>
-                  <p className="mt-1 text-3xl font-bold text-primary-container">{activeJobs}</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
-                  <BarChartIcon size={23} />
-                </div>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-on-surface-variant">
-                Các đơn đang chờ thợ nhận, đang đến nơi hoặc đang thực hiện.
-              </p>
-              <Link href="/customer/jobs" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-bold text-white transition-all hover:bg-primary-container active:scale-[0.98]">
-                Kiểm tra tiến độ
-                <ArrowRightIcon size={16} />
-              </Link>
-            </div>
-
-            <div className="overflow-hidden rounded-lg border border-outline-variant bg-white shadow-card">
-              <div className="border-b border-primary/10 bg-linear-to-r from-primary-fixed/70 via-white/70 to-secondary-fixed/70 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold uppercase text-secondary-container">Thợ điều phối gần bạn</p>
-                    <h2 className="mt-1 text-lg font-bold leading-tight text-on-surface">Đội sẵn sàng quanh khu vực</h2>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase text-primary-container ring-1 ring-primary/10">
-                    {topWorkers.some(worker => worker.hasGpsEstimate) ? "GPS thật" : "Thiếu GPS"}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-on-surface-variant">
-                  Khoảng cách được tính khi hồ sơ khách và thợ đã lưu vị trí GPS.
-                </p>
-              </div>
-
-              <div className="space-y-3 p-3">
-                {topWorkers.map((worker) => (
-                  <div key={worker.id} className="rounded-lg border border-white/70 bg-surface-container-low/80 p-3 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-base font-extrabold ${worker.color}`}>
-                        {worker.name.split(" ").pop()?.charAt(0)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-bold text-on-surface">{worker.name}</p>
-                            <p className="mt-0.5 text-xs text-on-surface-variant">{worker.specialty} · {worker.jobs} việc</p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1 rounded-full bg-warning-container px-2 py-1 text-xs font-bold text-warning">
-                            <StarIcon size={13} />
-                            {worker.rating}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <div className="rounded-md bg-white/76 px-2.5 py-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-primary-container">
-                              <MapPinIcon size={13} />
-                              {worker.distance}
-                            </div>
-                            <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">{worker.area}</p>
-                          </div>
-                          <div className="rounded-md bg-white/76 px-2.5 py-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-secondary-container">
-                              <ClockIcon size={13} />
-                              {worker.eta}
-                            </div>
-                            <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">{worker.signal}</p>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className="min-w-0 truncate rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-on-surface-variant ring-1 ring-white/80">
-                            {worker.highlight}
-                          </span>
-                          <span className="shrink-0 rounded-full bg-success-container px-2.5 py-1 text-[11px] font-bold text-success">
-                            {worker.status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Link href="/customer/booking" className="flex items-center justify-center gap-2 border-t border-primary/10 bg-white/72 px-4 py-3 text-sm font-bold text-primary-container transition-colors hover:bg-primary-fixed">
-                Đặt thợ gần nhất
-                <ArrowRightIcon size={16} />
-              </Link>
-            </div>
-          </aside>
+        <section className="customer-section">
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-base font-extrabold uppercase text-on-surface">Thợ đã từng phục vụ</h2><Link href="/customer/booking" className="flex items-center gap-1 text-sm font-extrabold text-primary">Xem tất cả <ChevronRightIcon size={17} /></Link></div>
+          <div className="space-y-3">{topWorkers.slice(0, 2).map((worker) => (<article key={worker.id} className="flex items-center gap-3 rounded-[1.15rem] border border-outline-variant bg-white p-3 shadow-sm"><div className={`relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-extrabold ${worker.color}`}>{worker.name.split(" ").pop()?.charAt(0)}<span className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-success text-white"><ShieldCheckIcon size={14} /></span></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h3 className="truncate text-lg font-extrabold text-on-surface">{worker.name}</h3><span className="flex shrink-0 items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-extrabold text-white"><StarIcon size={13} />{worker.rating}</span></div><p className="mt-1 truncate text-sm text-on-surface-variant">Chuyên: {worker.specialty}</p><p className="mt-1 text-xs font-semibold text-on-surface-variant">Đã phục vụ {worker.jobs} lần</p></div><Link href="/customer/booking" className="hidden shrink-0 items-center gap-2 rounded-xl border border-primary px-4 py-3 text-sm font-extrabold text-primary sm:inline-flex"><PhoneIcon size={17} /> Gọi lại thợ này</Link></article>))}{primaryWorker && <Link href="/customer/booking" className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary px-4 py-3 text-sm font-extrabold text-primary sm:hidden"><PhoneIcon size={17} /> Gọi lại thợ này</Link>}</div>
         </section>
       </div>
     </div>
