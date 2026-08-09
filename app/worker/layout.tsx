@@ -124,12 +124,13 @@ export default function WorkerLayout({
     const allMobileItems = [...mobilePrimaryItems, ...mobileMoreItems];
     const findItem = (id: string) => allMobileItems.find((item) => item.id === id);
     const createItem = findItem("create_job");
+    const trailingItem = mobileMoreItems.length > 0 ? mobileMoreItem : findItem("profile");
     return [
       findItem("home"),
       findItem("jobs"),
       createItem,
       findItem("customers"),
-      findItem("profile") || mobileMoreItem,
+      trailingItem,
     ].filter(Boolean).map((item) => {
       if (!item) return item;
       if (item.id === "jobs") return { ...item, label: "Việc của tôi" };
