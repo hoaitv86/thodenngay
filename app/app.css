@@ -887,3 +887,125 @@ textarea {
   margin: 1rem auto;
   border-radius: 0.5rem;
 }
+
+/* ===== Technician mobile dashboard rebuild ===== */
+@media (max-width: 767px) {
+  .worker-home-layout {
+    background: #eef6ff;
+  }
+
+  .worker-home-layout .worker-app-main {
+    background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 42%, #ffffff 100%);
+  }
+
+  .worker-home-header {
+    min-height: 10.25rem !important;
+    border-bottom: 0 !important;
+    border-radius: 0 0 1.5rem 1.5rem;
+    box-shadow: 0 18px 42px rgb(37 99 235 / 0.18);
+  }
+
+  .worker-home-header::after {
+    content: "";
+    position: absolute;
+    inset: auto 1rem 0;
+    height: 1px;
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  .worker-dashboard-page {
+    margin-top: -1.55rem;
+    padding-inline: 0;
+  }
+
+  .worker-dashboard-page > .py-3 {
+    padding: 0 0.75rem 0.25rem;
+  }
+
+  .worker-mobile-dashboard {
+    margin-top: 0;
+    padding-inline: 0.75rem;
+  }
+
+  .worker-mobile-dashboard > div,
+  .worker-priority-section > div,
+  .worker-quick-create > div,
+  .worker-job-feed > div {
+    border-radius: 1.125rem;
+    border-color: rgb(37 99 235 / 0.10);
+    box-shadow: 0 14px 34px rgb(15 23 42 / 0.08);
+  }
+
+  .worker-mobile-dashboard > div:first-child {
+    border-color: rgb(255 255 255 / 0.85);
+    background: rgb(255 255 255 / 0.98);
+    box-shadow: 0 18px 42px rgb(15 23 42 / 0.12);
+  }
+
+  .worker-mobile-dashboard .grid.grid-cols-3 > button {
+    min-height: 7.25rem;
+    border-radius: 1rem;
+    box-shadow: 0 8px 20px rgb(15 23 42 / 0.07);
+  }
+
+  .worker-priority-section {
+    padding-inline: 0.75rem;
+    padding-top: 0.25rem;
+  }
+
+  .worker-priority-section article {
+    min-height: 7rem;
+  }
+
+  .worker-quick-create {
+    padding-inline: 0.75rem;
+  }
+
+  .worker-quick-create > div {
+    border-radius: 1.25rem;
+  }
+
+  .worker-quick-create form {
+    border-radius: 1rem;
+  }
+
+  .worker-job-feed {
+    padding: 0.75rem 0.75rem 1rem;
+  }
+
+  .worker-job-feed > div {
+    border-radius: 1.125rem;
+    overflow: hidden;
+  }
+
+  .worker-job-feed button,
+  .worker-job-feed a,
+  .worker-priority-section button,
+  .worker-priority-section a,
+  .worker-quick-create button,
+  .worker-quick-create a {
+    min-height: 2.75rem;
+  }
+
+  .worker-bottom-nav {
+    max-width: none;
+    border-radius: 1.25rem 1.25rem 0 0;
+    border-color: rgb(37 99 235 / 0.10);
+    box-shadow: 0 -18px 44px rgb(15 23 42 / 0.14);
+  }
+
+  .worker-bottom-nav .grid {
+    height: 4.75rem;
+  }
+
+  .worker-bottom-nav a,
+  .worker-bottom-nav button {
+    border-radius: 1rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .worker-home-layout .worker-app-main {
+    background: var(--color-surface);
+  }
+}

@@ -436,8 +436,8 @@ export default function WorkerLayout({
         </div>
       </aside>
 
-      <div className="flex min-h-dvh w-full flex-col md:pl-64">
-        <header className={`sticky top-0 z-40 ${isWorkerHomePage ? "bg-primary text-white md:glass md:bg-white/90 md:text-on-surface" : "glass"} flex ${isWorkerHomePage ? "min-h-44 items-start px-4 pb-10 pt-[calc(1rem+env(safe-area-inset-top))] md:h-20 md:min-h-0 md:items-center md:px-8 md:py-0" : "h-16 items-center px-4 sm:px-6 lg:h-20 lg:px-8"} justify-between`}>
+      <div className={`flex min-h-dvh w-full flex-col md:pl-64 ${isWorkerHomePage ? "worker-home-layout" : ""}`}>
+        <header className={`worker-app-header sticky top-0 z-40 ${isWorkerHomePage ? "worker-home-header bg-primary text-white md:glass md:bg-white/90 md:text-on-surface" : "glass"} flex ${isWorkerHomePage ? "min-h-44 items-start px-4 pb-10 pt-[calc(1rem+env(safe-area-inset-top))] md:h-20 md:min-h-0 md:items-center md:px-8 md:py-0" : "h-16 items-center px-4 sm:px-6 lg:h-20 lg:px-8"} justify-between`}>
           <div className={`flex items-center gap-3 ${isWorkerHomePage ? "min-w-0 flex-1 md:flex-none" : ""}`}>
             <div className={`${isWorkerHomePage ? "hidden" : "flex"} h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm md:hidden`}>
               <LogoIcon size={24} />
@@ -593,7 +593,7 @@ export default function WorkerLayout({
           }
         `}</style>
 
-        <main className={`worker-mobile-content flex-1 overflow-y-auto bg-surface ${isProfilePage ? "worker-profile-shell" : ""}`}>
+        <main className={`worker-app-main worker-mobile-content flex-1 overflow-y-auto bg-surface ${isProfilePage ? "worker-profile-shell" : ""}`}>
           <div className="w-full lg:mx-auto lg:max-w-6xl">
             {children}
           </div>
@@ -663,7 +663,7 @@ export default function WorkerLayout({
         )}
 
         <nav
-          className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 rounded-t-xl border border-outline-variant/20 bg-white/95 px-3 pt-2 shadow-[0_-14px_38px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden"
+          className="worker-bottom-nav fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 rounded-t-xl border border-outline-variant/20 bg-white/95 px-3 pt-2 shadow-[0_-14px_38px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden"
           style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
           data-worker-bottom-nav
           aria-label="Điều hướng chính trên mobile"
