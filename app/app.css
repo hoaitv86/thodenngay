@@ -1016,3 +1016,60 @@ textarea {
     background: var(--color-surface);
   }
 }
+/* ===== Technician mobile responsive polish ===== */
+@media (max-width: 767px) {
+  .worker-mobile-dashboard h1,
+  .worker-priority-section h2,
+  .worker-job-feed h3 {
+    text-wrap: auto;
+  }
+
+  .worker-mobile-dashboard button:active,
+  .worker-mobile-tabs button:active,
+  .worker-priority-section button:active,
+  .worker-job-feed button:active,
+  .worker-bottom-nav a:active,
+  .worker-bottom-nav button:active {
+    transform: scale(0.98);
+  }
+
+  .worker-job-feed .grid,
+  .worker-job-feed article,
+  .worker-priority-section article {
+    min-width: 0;
+  }
+
+  .worker-job-feed [class*="grid-cols-[1fr_auto_1fr]"] {
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .worker-mobile-dashboard {
+    padding-inline: 0.625rem;
+  }
+
+  .worker-mobile-dashboard .grid.grid-cols-3 {
+    gap: 0.375rem;
+  }
+
+  .worker-mobile-dashboard .grid.grid-cols-3 > button {
+    min-height: 6.75rem;
+    padding: 0.625rem;
+  }
+
+  .worker-mobile-tabs {
+    margin-inline: 0.625rem;
+  }
+
+  .worker-mobile-tabs button {
+    font-size: 10px;
+    padding-inline: 0.25rem;
+  }
+
+  .worker-job-feed,
+  .worker-priority-section,
+  .worker-quick-create {
+    padding-inline: 0.625rem;
+  }
+}
