@@ -17,7 +17,10 @@ import {
   CameraIcon,
   CogIcon,
   BellIcon,
-  DollarSignIcon
+  CalendarIcon,
+  DollarSignIcon,
+  PlusIcon,
+  UsersIcon
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
@@ -377,6 +380,7 @@ const initialWorkerDashboardData: WorkerDashboardData = {
 };
 
 const WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS = 450;
+const MOBILE_FEW_JOBS_THRESHOLD = 1;
 const INTERNET_INSTALL_FEE_OPTIONS = [300000, 400000];
 const VIETTEL_GIFT_CAMERA_OPTIONS = [
   "Camera Viettel trong nhà",
@@ -3080,6 +3084,20 @@ export default function WorkerDashboard() {
   const monthlyNewCustomerProgress = Math.min(100, Math.round((monthNewCustomers / monthlyNewCustomerTarget) * 100));
   const returningCustomers = Math.max(totalCustomers - monthNewCustomers, 0);
   const showMonthlyGoalDetails = monthlyGoalExpanded || monthlyGoalFormOpen || Boolean(monthlyGoalError);
+  const mobileDashboardJobs = [...newJobs, ...pendingApprovalJobs, ...activeJobs];
+  const mobileTodoCount = mobileDashboardJobs.length;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+  const mobileTodayBacklogCount = mobileDashboardJobs.filter(job => {
+    const jobDate = getJobCreatedDate(job);
+    return jobDate ? jobDate >= todayStart : false;
+  }).length;
+  const mobileMonthBacklogCount = mobileDashboardJobs.filter(job => {
+    const jobDate = getJobCreatedDate(job);
+    return jobDate ? jobDate >= monthStart : false;
+  }).length;
+  const mobileGoalOffset = 100 - monthlyRevenueProgress;
 
   return (
     <div className="flex flex-col w-full relative">
@@ -3131,8 +3149,100 @@ export default function WorkerDashboard() {
         </div>
       )}
 
+
+      <section className="relative z-10 -mt-6 space-y-4 px-3 pb-2 md:hidden">
+        <div className="rounded-xl border border-primary/10 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.10)]">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+                <ZapIcon size={22} />
+              </span>
+              <h1 className="truncate text-xl font-extrabold text-on-surface">Mục tiêu tháng</h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMonthlyGoalExpanded(current => !current)}
+              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-extrabold text-primary"
+            >
+              Xem chi tiết
+              <ChevronRightIcon size={16} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-[7.25rem_1fr] items-center gap-3">
+            <div className="relative mx-auto h-28 w-28">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="50" fill="none" stroke="rgb(219 234 254)" strokeWidth="12" />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="50"
+                  fill="none"
+                  stroke="rgb(37 99 235)"
+                  strokeLinecap="round"
+                  strokeWidth="12"
+                  strokeDasharray="314"
+                  strokeDashoffset={String((mobileGoalOffset / 100) * 314)}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <strong className="text-3xl leading-none text-on-surface">{monthlyRevenueProgress}%</strong>
+                <span className="mt-1 text-[11px] font-bold text-on-surface-variant">Đã hoàn thành</span>
+              </div>
+            </div>
+            <div className="min-w-0 rounded-lg border border-outline-variant/50 bg-primary-fixed/35 p-3">
+              <div className="flex items-center gap-2 text-sm font-extrabold text-on-surface">
+                <DollarSignIcon size={18} className="text-primary" />
+                Doanh thu tháng
+              </div>
+              <p className="mt-2 truncate text-2xl font-extrabold text-on-surface">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
+              <div className="progress mt-3 h-2">
+                <div className="progress-bar" style={{ width: monthlyRevenueProgress + "%" }} />
+              </div>
+              {showMonthlyGoalDetails && (
+                <p className="mt-2 truncate text-xs font-bold text-on-surface-variant">Mục tiêu: {formatBillGoCurrency(monthlyRevenueTarget)}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Cần làm", value: mobileTodoCount, tone: "error", icon: BellIcon, nextTab: "new" as const },
+            { label: "Tồn hôm nay", value: mobileTodayBacklogCount, tone: "warning", icon: CalendarIcon, nextTab: "active" as const },
+            { label: "Tồn tháng", value: mobileMonthBacklogCount, tone: "primary", icon: CalendarIcon, nextTab: "active" as const },
+          ].map(item => {
+            const Icon = item.icon;
+            const toneClass = item.tone === "error"
+              ? "border-error/30 bg-error-container/45 text-error"
+              : item.tone === "warning"
+                ? "border-warning/30 bg-warning-container/45 text-warning"
+                : "border-primary/30 bg-primary-fixed/65 text-primary";
+
+            return (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => setTab(item.nextTab)}
+                className={"min-h-32 rounded-xl border p-3 text-left shadow-sm " + toneClass}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70">
+                    <Icon size={20} />
+                  </span>
+                  <ChevronRightIcon size={18} className="rounded-full bg-white/80 p-0.5 text-on-surface-variant shadow-sm" />
+                </div>
+                <p className="mt-2 text-xs font-extrabold uppercase leading-tight">{item.label}</p>
+                <p className="mt-1 text-5xl font-extrabold leading-none">{item.value}</p>
+                <p className="mt-1 text-base font-extrabold leading-none">việc</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {/* Monthly Goal */}
-      <section className="px-3 pt-3 sm:px-6 sm:pt-4 lg:px-8">
+      <section className="hidden px-3 pt-3 md:block sm:px-6 sm:pt-4 lg:px-8">
         <div className="overflow-hidden rounded-lg border border-primary/10 bg-white shadow-sm sm:rounded-xl">
           <div className="hero-gradient px-4 py-3 text-white sm:px-6 sm:py-5">
             <div className="flex items-start justify-between gap-3">
