@@ -3088,16 +3088,10 @@ export default function WorkerDashboard() {
   const mobileTodoCount = mobileDashboardJobs.length;
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
   const mobileTodayBacklogCount = mobileDashboardJobs.filter(job => {
     const jobDate = getJobCreatedDate(job);
     return jobDate ? jobDate >= todayStart : false;
   }).length;
-  const mobileMonthBacklogCount = mobileDashboardJobs.filter(job => {
-    const jobDate = getJobCreatedDate(job);
-    return jobDate ? jobDate >= monthStart : false;
-  }).length;
-  const mobileGoalOffset = 100 - monthlyRevenueProgress;
   const mobilePriorityJobs = sortJobsNewestFirst(mobileDashboardJobs).slice(0, mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD ? 2 : 1);
   const showMobilePriorityJobs = mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD && mobilePriorityJobs.length > 0;
 
@@ -3152,97 +3146,142 @@ export default function WorkerDashboard() {
       )}
 
 
-      <section className="worker-mobile-dashboard relative z-10 -mt-6 space-y-4 px-3 pb-2 md:hidden">
-        <div className="rounded-xl border border-primary/10 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.10)]">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary">
-                <ZapIcon size={22} />
-              </span>
-              <h1 className="truncate text-xl font-extrabold text-on-surface">Mục tiêu tháng</h1>
+      <section className="worker-mobile-dashboard relative z-10 space-y-5 px-3 pb-2 md:hidden">
+        <div className="worker-support-card overflow-hidden rounded-[1.35rem] border border-white/80 bg-white p-4 shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-[1.35rem] font-extrabold leading-tight text-on-surface">Hôm nay bạn cần xử lý gì?</h1>
+              <p className="mt-1 text-sm font-semibold leading-5 text-on-surface-variant">Theo dõi việc mới, tạo việc nhanh và chăm sóc khách đang chờ.</p>
             </div>
             <button
               type="button"
-              onClick={() => setMonthlyGoalExpanded(current => !current)}
-              className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-extrabold text-primary"
+              onClick={handleToggleAvailability}
+              disabled={availabilitySaving}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-extrabold shadow-sm ${isWorkerAvailable ? "bg-success-container text-success" : "bg-surface-container text-on-surface-variant"}`}
+              aria-pressed={isWorkerAvailable}
             >
-              Xem chi tiết
-              <ChevronRightIcon size={16} />
+              {availabilitySaving ? "Đang lưu" : isWorkerAvailable ? "Online" : "Offline"}
             </button>
           </div>
 
-          <div className="grid grid-cols-[6.75rem_1fr] items-center gap-3 min-[390px]:grid-cols-[7.25rem_1fr]">
-            <div className="relative mx-auto h-24 w-24 min-[390px]:h-28 min-[390px]:w-28">
-              <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120" aria-hidden="true">
-                <circle cx="60" cy="60" r="50" fill="none" stroke="rgb(219 234 254)" strokeWidth="12" />
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="50"
-                  fill="none"
-                  stroke="rgb(37 99 235)"
-                  strokeLinecap="round"
-                  strokeWidth="12"
-                  strokeDasharray="314"
-                  strokeDashoffset={String((mobileGoalOffset / 100) * 314)}
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <strong className="text-2xl leading-none text-on-surface min-[390px]:text-3xl">{monthlyRevenueProgress}%</strong>
-                <span className="mt-1 text-[11px] font-bold text-on-surface-variant">Đã hoàn thành</span>
-              </div>
-            </div>
-            <div className="min-w-0 rounded-lg border border-outline-variant/50 bg-primary-fixed/35 p-3">
-              <div className="flex items-center gap-2 text-sm font-extrabold text-on-surface">
-                <DollarSignIcon size={18} className="text-primary" />
-                Doanh thu tháng
-              </div>
-              <p className="mt-2 truncate text-xl font-extrabold text-on-surface min-[390px]:text-2xl">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
-              <div className="progress mt-3 h-2">
-                <div className="progress-bar" style={{ width: monthlyRevenueProgress + "%" }} />
-              </div>
-              {showMonthlyGoalDetails && (
-                <p className="mt-2 truncate text-xs font-bold text-on-surface-variant">Mục tiêu: {formatBillGoCurrency(monthlyRevenueTarget)}</p>
-              )}
-            </div>
+          <button
+            type="button"
+            onClick={() => setQuickFormOpen(true)}
+            className="mt-5 flex min-h-[4.25rem] w-full items-center gap-3 rounded-[1.15rem] border border-outline-variant/70 bg-white px-4 text-left text-on-surface-variant shadow-[inset_0_1px_0_rgba(15,23,42,0.02)]"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-container-low text-on-surface-variant">
+              <BriefcaseIcon size={22} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm font-bold">Tạo việc, tìm khách hoặc ghi chú sự cố</span>
+            <PlusIcon size={22} className="shrink-0 text-primary" />
+          </button>
+
+          <div className="worker-quick-chip-row mt-4 flex gap-2 overflow-x-auto pb-1">
+            {[
+              { label: "Việc mới", icon: BellIcon, action: () => setTab("new") },
+              { label: "Đang làm", icon: BriefcaseIcon, action: () => setTab("active") },
+              { label: "BillGo", icon: DollarSignIcon, action: () => setTab("billgo") },
+              { label: "Tạo nhanh", icon: PlusIcon, action: () => setQuickFormOpen(true) },
+            ].map(item => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={item.action}
+                  className="flex shrink-0 items-center gap-2 rounded-full bg-surface-container px-3.5 py-2 text-sm font-extrabold text-on-surface shadow-sm"
+                >
+                  <Icon size={17} className="text-primary" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setQuickFormOpen(true)}
+            className="mt-4 flex min-h-[4.9rem] w-full items-center justify-center gap-3 rounded-[1.15rem] bg-primary px-4 text-center text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)]"
+          >
+            <ZapIcon size={24} className="fill-current" />
+            <span>
+              <span className="block text-xl font-extrabold leading-tight">TẠO VIỆC NGAY</span>
+              <span className="mt-1 block text-sm font-semibold text-white/85">Khách quen, khách mới và công việc phát sinh</span>
+            </span>
+          </button>
+        </div>
+
+        <div className="worker-tool-section space-y-3">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <h2 className="text-base font-extrabold uppercase text-on-surface">Công cụ thợ</h2>
+            <button type="button" onClick={() => setTab("active")} className="flex items-center gap-1 text-sm font-extrabold text-primary">
+              Xem tất cả
+              <ChevronRightIcon size={17} />
+            </button>
+          </div>
+          <div className="worker-tool-grid grid grid-cols-4 gap-3">
+            {[
+              { label: "Việc mới", value: newJobs.length, icon: BellIcon, tone: "blue", action: () => setTab("new") },
+              { label: "Đang làm", value: activeJobs.length, icon: BriefcaseIcon, tone: "green", action: () => setTab("active") },
+              { label: "Chờ duyệt", value: pendingApprovalJobs.length, icon: ClockIcon, tone: "amber", action: () => setTab("pending") },
+              { label: "BillGo", value: billGoTotals.debtItems, icon: DollarSignIcon, tone: "blue", action: () => setTab("billgo") },
+              { label: "Doanh thu", value: formatCompactCurrency(workerStats.monthlyIncome), icon: DollarSignIcon, tone: "green", action: () => setMonthlyGoalExpanded(true) },
+              { label: "Khách", value: workerStats.monthlyCustomers, icon: StarIcon, tone: "blue", action: () => setTab("active") },
+              { label: "Tồn ngày", value: mobileTodayBacklogCount, icon: CalendarIcon, tone: "amber", action: () => setTab("active") },
+              { label: "Tạo việc", value: "+", icon: PlusIcon, tone: "blue", action: () => setQuickFormOpen(true) },
+            ].map(item => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={item.action}
+                  className="min-w-0 rounded-[1.05rem] border border-outline-variant/70 bg-white p-3 text-center shadow-sm"
+                >
+                  <span className={`mx-auto flex h-12 w-12 items-center justify-center rounded-2xl ${item.tone === "green" ? "bg-success-container text-success" : item.tone === "amber" ? "bg-warning-container text-warning" : "bg-primary-fixed text-primary"}`}>
+                    <Icon size={24} />
+                  </span>
+                  <span className="mt-2 block truncate text-xs font-extrabold text-on-surface">{item.label}</span>
+                  <span className="mt-0.5 block truncate text-[11px] font-bold text-primary">{item.value}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: "Cần làm", value: mobileTodoCount, tone: "error", icon: BellIcon, nextTab: "new" as const },
-            { label: "Tồn hôm nay", value: mobileTodayBacklogCount, tone: "warning", icon: CalendarIcon, nextTab: "active" as const },
-            { label: "Tồn tháng", value: mobileMonthBacklogCount, tone: "primary", icon: CalendarIcon, nextTab: "active" as const },
-          ].map(item => {
-            const Icon = item.icon;
-            const toneClass = item.tone === "error"
-              ? "border-error/30 bg-error-container/45 text-error"
-              : item.tone === "warning"
-                ? "border-warning/30 bg-warning-container/45 text-warning"
-                : "border-primary/30 bg-primary-fixed/65 text-primary";
-
-            return (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => setTab(item.nextTab)}
-                className={"min-h-32 rounded-xl border p-2.5 text-left shadow-sm min-[390px]:p-3 " + toneClass}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70">
-                    <Icon size={20} />
-                  </span>
-                  <ChevronRightIcon size={18} className="rounded-full bg-white/80 p-0.5 text-on-surface-variant shadow-sm" />
-                </div>
-                <p className="mt-2 text-xs font-extrabold uppercase leading-tight">{item.label}</p>
-                <p className="mt-1 text-4xl font-extrabold leading-none min-[390px]:text-5xl">{item.value}</p>
-                <p className="mt-1 text-base font-extrabold leading-none">việc</p>
+        <div className="worker-goal-strip rounded-[1.15rem] border border-primary/10 bg-white p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold uppercase text-on-surface-variant">Mục tiêu tháng</p>
+              <p className="mt-1 truncate text-lg font-extrabold text-on-surface">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-2.5 w-24 overflow-hidden rounded-full bg-primary-fixed">
+                <div className="h-full rounded-full bg-primary" style={{ width: monthlyRevenueProgress + "%" }} />
+              </div>
+              <button type="button" onClick={() => setMonthlyGoalExpanded(current => !current)} className="rounded-full bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary">
+                {monthlyRevenueProgress}%
               </button>
-            );
-          })}
+            </div>
+          </div>
+          {showMonthlyGoalDetails && (
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-surface-container-low p-2">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Chỉ tiêu</p>
+                <p className="mt-1 truncate text-xs font-extrabold text-on-surface">{formatBillGoCurrency(monthlyRevenueTarget)}</p>
+              </div>
+              <div className="rounded-xl bg-surface-container-low p-2">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Khách</p>
+                <p className="mt-1 text-xs font-extrabold text-on-surface">{totalCustomers}/{monthlyTotalCustomerTarget}</p>
+              </div>
+              <div className="rounded-xl bg-surface-container-low p-2">
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Mới</p>
+                <p className="mt-1 text-xs font-extrabold text-on-surface">{monthNewCustomers}/{monthlyNewCustomerTarget}</p>
+              </div>
+            </div>
+          )}
         </div>
       </section>
-
       {/* Monthly Goal */}
       <section className="hidden px-3 pt-3 md:block sm:px-6 sm:pt-4 lg:px-8">
         <div className="overflow-hidden rounded-lg border border-primary/10 bg-white shadow-sm sm:rounded-xl">
