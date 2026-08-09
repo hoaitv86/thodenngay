@@ -449,9 +449,20 @@ export default function WorkerLayout({
               </div>
             )}
             <div className="min-w-0">
-              <span className={`block truncate font-bold leading-tight ${isWorkerHomePage ? "max-w-[9.5rem] text-xl text-white min-[390px]:max-w-[13rem] min-[390px]:text-2xl md:text-primary" : "max-w-[180px] text-base text-primary lg:max-w-none lg:text-lg"}`}>
-                {isWorkerHomePage ? `Xin chào, ${userName}!` : "Trang thợ"}
-              </span>
+              {isWorkerHomePage ? (
+                <>
+                  <span className="block truncate text-sm font-bold leading-tight text-white/90 md:text-on-surface-variant">
+                    Xin chào,
+                  </span>
+                  <span className="mt-0.5 block truncate text-xl font-bold leading-tight text-white min-[390px]:text-2xl md:text-primary">
+                    {userName}!
+                  </span>
+                </>
+              ) : (
+                <span className="block max-w-[180px] truncate text-base font-bold leading-tight text-primary lg:max-w-none lg:text-lg">
+                  Trang thợ
+                </span>
+              )}
               <div className="flex items-center gap-1.5">
                 <span className={`h-2 w-2 rounded-full ${isAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
                 <span className={`max-w-[180px] truncate text-[10px] font-bold uppercase sm:max-w-none ${isWorkerHomePage ? "text-white/90 md:text-success" : isAvailable ? "text-success" : "text-on-surface-variant"}`}>

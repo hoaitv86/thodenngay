@@ -157,7 +157,7 @@ export default function CustomerLayout({
               </div>
               <div className="min-w-0">
                 <span className="block truncate text-sm font-bold text-on-surface-variant lg:text-xs lg:uppercase">
-                  Xin chào, {userName}
+                  Xin chào,
                 </span>
                 <span className="mt-0.5 block truncate text-lg font-bold leading-tight text-primary-container">
                   {isCustomerHomePage ? userName : pageLabel}
