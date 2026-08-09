@@ -1323,7 +1323,7 @@ export default function WorkerBillGoPage() {
         monthlyFee: selectedPackage ? String(Number(selectedPackage.monthly_price || 0)) : getNumericPackageAmount(packageText),
         cycle: normalizeBulkCycle(String(cells[6] || "monthly")),
         startMonth: normalizeBulkStartMonth(String(cells[7] || monthInput())),
-        note: String(cells[8] || "").trim(),
+        note: "",
       };
     });
     setBulkRows(prev => prev.length === 1 && !prev[0].customerName && !prev[0].account ? pastedRows : [...prev, ...pastedRows]);
@@ -1380,7 +1380,7 @@ export default function WorkerBillGoPage() {
   }));
 
   const saveBulkRows = async () => {
-    const activeRows = bulkRows.filter(row => [row.customerName, row.phone, row.address, row.account, row.packageName, row.note].some(value => value.trim()));
+    const activeRows = bulkRows.filter(row => [row.customerName, row.phone, row.address, row.account, row.packageName].some(value => value.trim()));
     const nextRows = activeRows.length > 0 ? activeRows : bulkRows;
     const validationErrors = validateBulkRows(nextRows);
     if (validationErrors.length > 0) {
@@ -1747,7 +1747,7 @@ export default function WorkerBillGoPage() {
           <div className="flex flex-col gap-3 border-b border-outline-variant/25 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-base font-extrabold text-on-surface">Thêm nhiều khách hàng</h2>
-              <p className="mt-1 text-xs font-semibold text-on-surface-variant">Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Tài khoản, Gói cước, Chu kỳ, Tháng bắt đầu, Ghi chú.</p>
+              <p className="mt-1 text-xs font-semibold text-on-surface-variant">Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Tài khoản, Gói cước, Chu kỳ, Tháng bắt đầu.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={addBulkRow} className="btn-outline !w-auto !px-3 !py-2"><Plus size={16} /> Thêm dòng</button>
@@ -1759,12 +1759,12 @@ export default function WorkerBillGoPage() {
               {bulkErrors.map(error => <p key={error.rowNumber || error.messages.join("-")}>Dòng {error.rowNumber}: {error.messages.join("; ")}</p>)}
             </div>
           )}
-          <div className="hidden border-b border-outline-variant/25 bg-surface-container-low px-4 py-2 text-[11px] font-extrabold uppercase text-on-surface-variant md:grid md:grid-cols-[1.2fr_.9fr_1.4fr_.8fr_1fr_1fr_.85fr_.9fr_1fr_auto] md:gap-2">
-            <span>Tên khách hàng</span><span>Số điện thoại</span><span>Địa chỉ</span><span>Nhà mạng</span><span>Tài khoản Internet</span><span>Gói cước</span><span>Chu kỳ</span><span>Tháng bắt đầu</span><span>Ghi chú</span><span></span>
+          <div className="hidden border-b border-outline-variant/25 bg-surface-container-low px-4 py-2 text-[11px] font-extrabold uppercase text-on-surface-variant md:grid md:grid-cols-[1.45fr_1.1fr_2fr_.8fr_1.15fr_1.2fr_.7fr_.72fr_auto] md:gap-2">
+            <span>Tên khách hàng</span><span>Số điện thoại</span><span>Địa chỉ</span><span>Nhà mạng</span><span>Tài khoản Internet</span><span>Gói cước</span><span>Chu kỳ</span><span>Tháng</span><span></span>
           </div>
           <div className="grid gap-3 p-4 md:gap-2">
             {bulkRows.map((row, index) => (
-              <div key={row.id} className="rounded-lg border border-outline-variant/50 p-3 md:grid md:grid-cols-[1.2fr_.9fr_1.4fr_.8fr_1fr_1fr_.85fr_.9fr_1fr_auto] md:items-start md:gap-2 md:border-0 md:p-0">
+              <div key={row.id} className="rounded-lg border border-outline-variant/50 p-3 md:grid md:grid-cols-[1.45fr_1.1fr_2fr_.8fr_1.15fr_1.2fr_.7fr_.72fr_auto] md:items-start md:gap-2 md:border-0 md:p-0">
                 <label className="grid gap-1 text-xs font-bold text-on-surface-variant md:block"><span className="md:hidden">Tên khách hàng</span><input className="input-field" value={row.customerName} onChange={e => updateBulkRow(row.id, { customerName: e.target.value })} /></label>
                 <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Số điện thoại</span><input className="input-field" inputMode="tel" value={row.phone} onChange={e => updateBulkRow(row.id, { phone: e.target.value })} /></label>
                 <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Địa chỉ</span><input className="input-field" value={row.address} onChange={e => updateBulkRow(row.id, { address: e.target.value })} /></label>
@@ -1773,12 +1773,11 @@ export default function WorkerBillGoPage() {
                 <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Gói cước</span><select className="input-field" value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói</option>{packages.map(item => <option key={item.id} value={item.id}>{item.name} - {formatBillGoCurrency(item.monthly_price)}</option>)}</select></label>
                 <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Chu kỳ</span><select className="input-field" value={row.cycle} onChange={e => updateBulkRow(row.id, { cycle: e.target.value as BillGoCycle })}>{signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.shortLabel}</option>)}</select></label>
                 <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Tháng bắt đầu</span><input type="month" className="input-field" value={row.startMonth} onChange={e => updateBulkRow(row.id, { startMonth: e.target.value })} /></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Ghi chú</span><input className="input-field" value={row.note} onChange={e => updateBulkRow(row.id, { note: e.target.value })} /></label>
                 <div className="mt-3 flex gap-2 md:mt-0 md:justify-end">
                   <button type="button" title="Nhân bản dòng" onClick={() => duplicateBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-primary hover:bg-primary-fixed"><Copy size={16} /></button>
                   <button type="button" title="Xóa dòng" onClick={() => removeBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-error hover:bg-error-container"><Trash2 size={16} /></button>
                 </div>
-                <p className="mt-2 text-xs font-bold text-on-surface-variant md:col-span-10 md:mt-1">Dòng {index + 1}: {row.packageId ? `Cước ${formatBillGoCurrency(toMoneyNumber(row.monthlyFee))}` : "Chưa chọn gói cước"}</p>
+                <p className="mt-2 text-xs font-bold text-on-surface-variant md:col-span-9 md:mt-1">Dòng {index + 1}: {row.packageId ? `Cước ${formatBillGoCurrency(toMoneyNumber(row.monthlyFee))}` : "Chưa chọn gói cước"}</p>
               </div>
             ))}
           </div>
