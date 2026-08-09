@@ -449,7 +449,7 @@ export default function WorkerLayout({
               </div>
             )}
             <div className="min-w-0">
-              <span className={`block truncate font-bold leading-tight ${isWorkerHomePage ? "max-w-[13rem] text-2xl text-white md:text-primary" : "max-w-[180px] text-base text-primary lg:max-w-none lg:text-lg"}`}>
+              <span className={`block truncate font-bold leading-tight ${isWorkerHomePage ? "max-w-[9.5rem] text-xl text-white min-[390px]:max-w-[13rem] min-[390px]:text-2xl md:text-primary" : "max-w-[180px] text-base text-primary lg:max-w-none lg:text-lg"}`}>
                 {isWorkerHomePage ? `Xin chào, ${userName}!` : "Trang thợ"}
               </span>
               <div className="flex items-center gap-1.5">
@@ -668,7 +668,7 @@ export default function WorkerLayout({
           data-worker-bottom-nav
           aria-label="Điều hướng chính trên mobile"
         >
-          <div className="grid h-20 grid-cols-5 items-end gap-1.5">
+          <div className="grid h-20 grid-cols-5 items-end gap-1">
             {mobileItems.map((item) => {
               const isMore = item.id === "more";
               const isCreateJob = item.id === "create_job";
@@ -717,7 +717,7 @@ export default function WorkerLayout({
                     <Icon size={isCreateJob ? 28 : 21} className={isActive || isCreateJob ? "stroke-[2.5px]" : ""} />
                   </span>
                   <span
-                    className={`max-w-full truncate text-[11px] font-extrabold leading-none ${
+                    className={`max-w-full truncate text-[10px] font-extrabold leading-none min-[390px]:text-[11px] ${
                       isActive || isCreateJob ? "opacity-100" : "opacity-70"
                     }`}
                   >

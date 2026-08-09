@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
   BriefcaseIcon,
@@ -19,8 +20,7 @@ import {
   BellIcon,
   CalendarIcon,
   DollarSignIcon,
-  PlusIcon,
-  UsersIcon
+  PlusIcon
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
@@ -3171,8 +3171,8 @@ export default function WorkerDashboard() {
             </button>
           </div>
 
-          <div className="grid grid-cols-[7.25rem_1fr] items-center gap-3">
-            <div className="relative mx-auto h-28 w-28">
+          <div className="grid grid-cols-[6.75rem_1fr] items-center gap-3 min-[390px]:grid-cols-[7.25rem_1fr]">
+            <div className="relative mx-auto h-24 w-24 min-[390px]:h-28 min-[390px]:w-28">
               <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120" aria-hidden="true">
                 <circle cx="60" cy="60" r="50" fill="none" stroke="rgb(219 234 254)" strokeWidth="12" />
                 <circle
@@ -3188,7 +3188,7 @@ export default function WorkerDashboard() {
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <strong className="text-3xl leading-none text-on-surface">{monthlyRevenueProgress}%</strong>
+                <strong className="text-2xl leading-none text-on-surface min-[390px]:text-3xl">{monthlyRevenueProgress}%</strong>
                 <span className="mt-1 text-[11px] font-bold text-on-surface-variant">Đã hoàn thành</span>
               </div>
             </div>
@@ -3197,7 +3197,7 @@ export default function WorkerDashboard() {
                 <DollarSignIcon size={18} className="text-primary" />
                 Doanh thu tháng
               </div>
-              <p className="mt-2 truncate text-2xl font-extrabold text-on-surface">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
+              <p className="mt-2 truncate text-xl font-extrabold text-on-surface min-[390px]:text-2xl">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
               <div className="progress mt-3 h-2">
                 <div className="progress-bar" style={{ width: monthlyRevenueProgress + "%" }} />
               </div>
@@ -3226,7 +3226,7 @@ export default function WorkerDashboard() {
                 key={item.label}
                 type="button"
                 onClick={() => setTab(item.nextTab)}
-                className={"min-h-32 rounded-xl border p-3 text-left shadow-sm " + toneClass}
+                className={"min-h-32 rounded-xl border p-2.5 text-left shadow-sm min-[390px]:p-3 " + toneClass}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70">
@@ -3235,7 +3235,7 @@ export default function WorkerDashboard() {
                   <ChevronRightIcon size={18} className="rounded-full bg-white/80 p-0.5 text-on-surface-variant shadow-sm" />
                 </div>
                 <p className="mt-2 text-xs font-extrabold uppercase leading-tight">{item.label}</p>
-                <p className="mt-1 text-5xl font-extrabold leading-none">{item.value}</p>
+                <p className="mt-1 text-4xl font-extrabold leading-none min-[390px]:text-5xl">{item.value}</p>
                 <p className="mt-1 text-base font-extrabold leading-none">việc</p>
               </button>
             );
@@ -3557,8 +3557,8 @@ export default function WorkerDashboard() {
                       <div className="mt-1 flex items-start gap-1.5 text-xs font-semibold text-on-surface-variant"><MapPinIcon size={13} className="mt-0.5 shrink-0 text-primary" /><span className="line-clamp-1">{job.address || "Chưa có địa chỉ"}</span></div>
                       <div className="mt-1 flex items-center gap-1.5 text-xs font-bold text-error"><ClockIcon size={13} /><span>{job.time || "Chưa hẹn giờ"}</span></div>
                     </div>
-                    <div className="flex min-w-[6.8rem] flex-col items-end justify-between gap-2 text-right">
-                      <strong className="text-base text-error">{job.price || formatCurrency(Number(job.quoted_price || 0))}</strong>
+                    <div className="flex min-w-[6rem] flex-col items-end justify-between gap-2 text-right min-[390px]:min-w-[6.8rem]">
+                      <strong className="max-w-[6.8rem] truncate text-sm text-error min-[390px]:text-base">{job.price || formatCurrency(Number(job.quoted_price || 0))}</strong>
                       <div className="flex items-center gap-2">
                         {canCall && <a href={"tel:" + job.customer?.phone} className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/20 bg-white text-primary shadow-sm" aria-label="Gọi khách"><PhoneIcon size={18} /></a>}
                         {isNewJob ? <button type="button" onClick={() => handleAcceptJob(job.id)} className="rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white shadow-sm">Nhận</button> : isPendingJob ? <button type="button" onClick={() => setTab("pending")} className="rounded-lg border border-warning/30 bg-warning-container px-3 py-2 text-xs font-extrabold text-warning">Xem</button> : <button type="button" onClick={() => openDirections(job)} className="rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white shadow-sm">Đi ngay</button>}
@@ -3577,7 +3577,7 @@ export default function WorkerDashboard() {
             <button type="button" onClick={() => setQuickFormOpen(true)} className="mt-4 flex w-full items-center justify-between rounded-full bg-primary px-4 py-3 text-left text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)]"><span className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-primary"><PlusIcon size={28} /></span><span><span className="block text-base font-extrabold leading-tight">Tạo việc nhanh</span><span className="block text-xs font-semibold text-white/80">Khách quen · Khách mới</span></span></span><ChevronRightIcon size={24} /></button>
           </div>
         )}
-        {billGoTotals.debtItems > 0 && <a href="/worker/billgo" className="flex items-center justify-between rounded-xl border border-success/15 bg-success-container/55 px-4 py-3 text-success shadow-sm"><span className="flex min-w-0 items-center gap-3"><DollarSignIcon size={22} className="shrink-0" /><span className="truncate text-xs font-extrabold uppercase">Khách BillGo cần thu hôm nay</span></span><span className="shrink-0 text-base font-extrabold">{billGoTotals.debtItems} khách</span></a>}
+        {billGoTotals.debtItems > 0 && <Link href="/worker/billgo" className="flex items-center justify-between rounded-xl border border-success/15 bg-success-container/55 px-4 py-3 text-success shadow-sm"><span className="flex min-w-0 items-center gap-3"><DollarSignIcon size={22} className="shrink-0" /><span className="truncate text-xs font-extrabold uppercase">Khách BillGo cần thu hôm nay</span></span><span className="shrink-0 text-base font-extrabold">{billGoTotals.debtItems} khách</span></Link>}
       </section>
 
       {/* Quick Job Creation */}
