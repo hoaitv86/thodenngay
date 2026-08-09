@@ -1422,33 +1422,104 @@ export async function PATCH(request: Request) {
 
     const { data: subscription, error: subscriptionError } = await admin
       .from("billgo_subscriptions")
-      .select("id, current_cycle, cycle, covered_until, next_period_start")
+      .select("id, customer_id, worker_id, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, covered_until, next_period_start, status")
       .eq("id", subscriptionId)
       .eq("worker_id", workerId)
       .is("deleted_at", null)
       .single();
     if (subscriptionError || !subscription) return jsonError("Không tìm thấy khách hàng BillGo.", 404);
 
-    const effectivePeriodStart = asText(body.effectivePeriodStart)
+    const effectivePeriodStart = firstOfMonth(
+      asText(body.effectivePeriodStart)
       || (subscription.covered_until ? getBillGoNextPeriodStartDate(subscription.covered_until) : subscription.next_period_start)
-      || todayInputForServer();
-    const oldCycle = String(subscription.current_cycle || subscription.cycle || "monthly");
+      || todayInputForServer()
+    );
+    const oldCycle = String(subscription.current_cycle || subscription.cycle || "pending_cycle");
+    const cycleOption = getBillGoCycleOption(newCycle);
+    const billing = getBillGoBillingPeriod(effectivePeriodStart, newCycle);
+    const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
+    const nextBilling = getBillGoBillingPeriod(nextPeriodStart, newCycle);
+    const billingParts = getBillingParts(billing.collectionMonth);
+    const monthlyFee = toMoneyNumber(subscription.monthly_fee ?? subscription.amount_per_cycle);
+    const totalAmount = getBillGoCollectableAmount(monthlyFee, newCycle);
 
     const { error: updateError } = await admin
       .from("billgo_subscriptions")
-      .update({ current_cycle: newCycle, cycle: newCycle, next_period_start: effectivePeriodStart, last_changed_by: userId })
-      .eq("id", subscriptionId);
+      .update({
+        current_cycle: newCycle,
+        cycle: newCycle,
+        status: "active",
+        start_date: subscription.status === "pending_cycle" ? billing.periodStart : undefined,
+        next_period_start: billing.periodStart,
+        next_due_date: billing.dueDate,
+        last_changed_by: userId,
+      })
+      .eq("id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null);
     if (updateError) return jsonError(updateError.message);
+
+    const deletedAt = new Date().toISOString();
+    await admin
+      .from("billgo_receivables")
+      .update({ status: "deleted", deleted_at: deletedAt, deleted_by: userId })
+      .eq("subscription_id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .eq("paid_amount", 0)
+      .in("status", ["unpaid", "overdue", "not_due", "due"])
+      .gte("period_start", billing.periodStart);
+
+    const { data: existingReceivable } = await admin
+      .from("billgo_receivables")
+      .select("id")
+      .eq("subscription_id", subscriptionId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .eq("period_start", billing.periodStart)
+      .maybeSingle();
+
+    if (!existingReceivable) {
+      const { error: insertError } = await admin.from("billgo_receivables").insert({
+        customer_id: subscription.customer_id,
+        worker_id: subscription.worker_id,
+        subscription_id: subscriptionId,
+        type: "subscription_fee",
+        package_id: subscription.package_id,
+        package_name_at_collection: subscription.package_name || "Internet",
+        title: `Thu cước ${subscription.package_name || "Internet"}`,
+        total_amount: totalAmount,
+        due_date: billing.dueDate,
+        period_start: billing.periodStart,
+        period_end: billing.periodEnd,
+        collection_month: billing.collectionMonth,
+        usage_month: billing.usageMonth,
+        billing_month: billingParts.billingMonth,
+        billing_year: billingParts.billingYear,
+        cycle_at_collection: newCycle,
+        billing_months: cycleOption.paidMonths,
+        bonus_months: cycleOption.bonusMonths,
+        service_months: cycleOption.paidMonths + cycleOption.bonusMonths,
+        paid_amount: 0,
+        monthly_fee_at_collection: monthlyFee,
+        next_period_start: nextPeriodStart,
+        next_due_date: nextBilling.dueDate,
+        status: getBillGoStoredStatus(totalAmount, 0, billing.dueDate),
+        note,
+        created_by: userId,
+      });
+      if (insertError && insertError.code !== "23505") return jsonError("Không thể tạo kỳ thu theo chu kỳ mới: " + insertError.message);
+    }
 
     await admin.from("billgo_cycle_changes").insert({
       subscription_id: subscriptionId,
       old_cycle: oldCycle,
       new_cycle: newCycle,
-      effective_period_start: effectivePeriodStart,
+      effective_period_start: billing.periodStart,
       changed_by: userId,
       note,
     });
-    return NextResponse.json({ ok: true, effectivePeriodStart });
+    return NextResponse.json({ ok: true, effectivePeriodStart: billing.periodStart, nextDueDate: billing.dueDate });
   }
 
   if (action === "pause" || action === "reactivate") {
