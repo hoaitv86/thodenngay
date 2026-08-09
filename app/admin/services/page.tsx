@@ -7,9 +7,12 @@ import { getCanonicalServiceCategories } from "@/lib/service-categories";
 import { getDefaultServiceParentId } from "@/lib/service-hierarchy";
 import {
   AirVent,
+  Blocks,
+  Bolt,
   Bath,
   Briefcase,
   Cable,
+  Cpu,
   Calendar,
   Camera,
   Cctv,
@@ -22,10 +25,13 @@ import {
   Fan,
   Hammer,
   HousePlug,
+  HouseWifi,
   Layers,
+  Laptop,
   Lightbulb,
   MapPin,
   Monitor,
+  Network,
   Paintbrush,
   PaintRoller,
   Phone,
@@ -34,15 +40,18 @@ import {
   Printer,
   Refrigerator,
   Router,
+  Smartphone,
   Settings,
   ShieldCheck,
   Snowflake,
   Sofa,
   Star,
+  Tv,
   Toilet,
   Trash2,
   Truck,
   Users,
+  Wind,
   WashingMachine,
   Wifi,
   Wrench,
@@ -127,6 +136,15 @@ type ServiceIconOption = {
 };
 
 const serviceIconOptions: ServiceIconOption[] = [
+  { name: "HouseWifi", label: "Internet nhà", icon: HouseWifi, className: "bg-primary-fixed text-primary" },
+  { name: "Network", label: "Mạng Internet", icon: Network, className: "bg-primary-fixed text-primary" },
+  { name: "Laptop", label: "Laptop", icon: Laptop, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Tv", label: "Thiết bị màn hình", icon: Tv, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Bolt", label: "Điện nhanh", icon: Bolt, className: "bg-warning-container text-warning" },
+  { name: "Wind", label: "Máy lạnh", icon: Wind, className: "bg-sky-50 text-sky-500" },
+  { name: "Blocks", label: "Xem tất cả", icon: Blocks, className: "bg-primary-fixed text-primary" },
+  { name: "Cpu", label: "Linh kiện", icon: Cpu, className: "bg-surface-container text-on-surface-variant" },
+  { name: "Smartphone", label: "Điện thoại", icon: Smartphone, className: "bg-primary-fixed text-primary-container" },
   { name: "Lightbulb", label: "Điện", icon: Lightbulb, className: "bg-primary-fixed text-primary-container" },
   { name: "HousePlug", label: "Ổ cắm", icon: HousePlug, className: "bg-secondary-fixed text-primary" },
   { name: "Plug", label: "Thiết bị điện", icon: Plug, className: "bg-primary-fixed-dim text-primary-container" },
@@ -164,21 +182,29 @@ const serviceIconOptions: ServiceIconOption[] = [
   { name: "Users", label: "Đội thợ", icon: Users, className: "bg-primary-fixed-dim text-primary-container" },
 ];
 
+const getServiceIconOption = (name: string, fallback = "Wrench") =>
+  serviceIconOptions.find(option => option.name === name)
+  || serviceIconOptions.find(option => option.name === fallback)
+  || serviceIconOptions[0];
+
 const legacyIconAliases: Record<string, ServiceIconOption> = {
-  ZapIcon: serviceIconOptions[0],
-  DropletIcon: serviceIconOptions[3],
-  CameraIcon: serviceIconOptions[7],
-  CogIcon: serviceIconOptions[31],
-  WrenchIcon: serviceIconOptions[10],
-  ShieldCheckIcon: serviceIconOptions[28],
-  StarIcon: serviceIconOptions[29],
-  ClockIcon: serviceIconOptions[27],
-  MapPinIcon: serviceIconOptions[26],
-  BriefcaseIcon: serviceIconOptions[30],
-  BarChartIcon: serviceIconOptions[30],
-  CalendarIcon: serviceIconOptions[32],
-  PhoneIcon: serviceIconOptions[33],
-  UsersIcon: serviceIconOptions[34],
+  ZapIcon: getServiceIconOption("Bolt", "Lightbulb"),
+  DropletIcon: getServiceIconOption("Droplets"),
+  CameraIcon: getServiceIconOption("Camera", "Cctv"),
+  CogIcon: getServiceIconOption("Settings"),
+  WrenchIcon: getServiceIconOption("Wrench"),
+  ShieldCheckIcon: getServiceIconOption("ShieldCheck"),
+  StarIcon: getServiceIconOption("Star"),
+  ClockIcon: getServiceIconOption("Clock"),
+  MapPinIcon: getServiceIconOption("MapPin"),
+  BriefcaseIcon: getServiceIconOption("Briefcase"),
+  BarChartIcon: getServiceIconOption("Network", "Briefcase"),
+  CalendarIcon: getServiceIconOption("Calendar"),
+  PhoneIcon: getServiceIconOption("Phone"),
+  UsersIcon: getServiceIconOption("Users"),
+  Network: getServiceIconOption("Network", "Wifi"),
+  Laptop: getServiceIconOption("Laptop", "Computer"),
+  Grid3X3: getServiceIconOption("Blocks", "Briefcase"),
 };
 
 const iconMap = {
