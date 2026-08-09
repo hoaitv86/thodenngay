@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  Copy,
   Download,
   Eye,
   FileSpreadsheet,
@@ -193,6 +194,26 @@ type BillGoImportPreviewItem = {
   subscriptionId?: string | null;
 };
 
+type BulkEntryRow = {
+  id: string;
+  customerName: string;
+  phone: string;
+  address: string;
+  provider: string;
+  account: string;
+  packageId: string;
+  packageName: string;
+  monthlyFee: string;
+  cycle: BillGoCycle;
+  startMonth: string;
+  note: string;
+};
+
+type BulkEntryError = {
+  rowNumber: number;
+  messages: string[];
+};
+
 type BillGoImportPreview = {
   items: BillGoImportPreviewItem[];
   summary: { created: number; updated: number; skipped: number; errors: number };
@@ -316,6 +337,21 @@ const billGoImportHeaders = [
 ];
 
 const emptyImportSummary = { created: 0, updated: 0, skipped: 0, errors: 0 };
+
+const createBulkEntryRow = (): BulkEntryRow => ({
+  id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+  customerName: "",
+  phone: "",
+  address: "",
+  provider: providerSuggestions[0] || "Viettel",
+  account: "",
+  packageId: "",
+  packageName: "",
+  monthlyFee: "",
+  cycle: "monthly",
+  startMonth: monthInput(),
+  note: "",
+});
 
 const statusOptions = [
   { value: "all", label: "Tất cả trạng thái" },
@@ -711,6 +747,10 @@ export default function WorkerBillGoPage() {
   const [serverTotals, setServerTotals] = useState<BillGoListTotals>(emptyBillGoTotals);
   const [packages, setPackages] = useState<BillGoPackage[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkEntry, setShowBulkEntry] = useState(false);
+  const [bulkRows, setBulkRows] = useState<BulkEntryRow[]>(() => [createBulkEntryRow()]);
+  const [bulkErrors, setBulkErrors] = useState<BulkEntryError[]>([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState<BillGoImportRow[]>([]);
   const [importPreview, setImportPreview] = useState<BillGoImportPreview | null>(null);
@@ -1212,6 +1252,169 @@ export default function WorkerBillGoPage() {
     }
   };
 
+  const updateBulkRow = (rowId: string, patch: Partial<BulkEntryRow>) => {
+    setBulkRows(prev => prev.map(row => row.id === rowId ? { ...row, ...patch } : row));
+    setBulkErrors([]);
+  };
+
+  const addBulkRow = () => setBulkRows(prev => [...prev, createBulkEntryRow()]);
+
+  const removeBulkRow = (rowId: string) => {
+    setBulkRows(prev => prev.length > 1 ? prev.filter(row => row.id !== rowId) : [createBulkEntryRow()]);
+    setBulkErrors([]);
+  };
+
+  const duplicateBulkRow = (rowId: string) => {
+    setBulkRows(prev => {
+      const index = prev.findIndex(row => row.id === rowId);
+      if (index < 0) return prev;
+      const copy = { ...prev[index], id: createBulkEntryRow().id };
+      return [...prev.slice(0, index + 1), copy, ...prev.slice(index + 1)];
+    });
+    setBulkErrors([]);
+  };
+
+  const selectBulkPackage = (rowId: string, packageId: string) => {
+    const selectedPackage = packages.find(item => item.id === packageId);
+    updateBulkRow(rowId, {
+      packageId,
+      packageName: selectedPackage?.name || "",
+      monthlyFee: selectedPackage ? String(Number(selectedPackage.monthly_price || 0)) : "",
+      provider: selectedPackage?.provider || bulkRows.find(row => row.id === rowId)?.provider || providerSuggestions[0] || "Viettel",
+    });
+  };
+
+  const normalizeBulkCycle = (value: string): BillGoCycle => {
+    const normalized = value.trim().toLowerCase();
+    if (["2", "2m", "2 tháng", "2 thang", "two_months"].includes(normalized)) return "two_months";
+    if (["3", "3m", "3 tháng", "3 thang", "three_months"].includes(normalized)) return "three_months";
+    if (["6", "6m", "6 tháng", "6 thang", "six_months"].includes(normalized)) return "six_months";
+    if (["12", "12m", "12 tháng", "12 thang", "year", "yearly"].includes(normalized)) return "yearly";
+    return "monthly";
+  };
+
+  const normalizeBulkStartMonth = (value: string) => {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed.slice(0, 7);
+    const slash = trimmed.match(/^(\d{1,2})[/-](\d{4})$/);
+    if (slash) return `${slash[2]}-${slash[1].padStart(2, "0")}`;
+    return monthInput();
+  };
+
+  const handleBulkPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    const text = event.clipboardData.getData("text");
+    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (lines.length <= 1 && !text.includes("\t")) return;
+    event.preventDefault();
+    const pastedRows = lines.map(line => {
+      const cells = line.includes("\t") ? line.split("\t") : line.split(",");
+      const selectedPackage = packages.find(item => item.name.toLowerCase() === String(cells[5] || "").trim().toLowerCase());
+      const packageText = String(cells[5] || "").trim();
+      return {
+        ...createBulkEntryRow(),
+        customerName: String(cells[0] || "").trim(),
+        phone: String(cells[1] || "").trim(),
+        address: String(cells[2] || "").trim(),
+        provider: String(cells[3] || selectedPackage?.provider || providerSuggestions[0] || "Viettel").trim(),
+        account: String(cells[4] || "").trim(),
+        packageId: selectedPackage?.id || "",
+        packageName: selectedPackage?.name || packageText,
+        monthlyFee: selectedPackage ? String(Number(selectedPackage.monthly_price || 0)) : getNumericPackageAmount(packageText),
+        cycle: normalizeBulkCycle(String(cells[6] || "monthly")),
+        startMonth: normalizeBulkStartMonth(String(cells[7] || monthInput())),
+        note: String(cells[8] || "").trim(),
+      };
+    });
+    setBulkRows(prev => prev.length === 1 && !prev[0].customerName && !prev[0].account ? pastedRows : [...prev, ...pastedRows]);
+    setBulkErrors([]);
+  };
+
+  const validateBulkRows = (rows: BulkEntryRow[]) => {
+    const errors: BulkEntryError[] = [];
+    const seenPhones = new Map<string, number>();
+    const seenAccounts = new Map<string, number>();
+    rows.forEach((row, index) => {
+      const messages: string[] = [];
+      const rowNumber = index + 1;
+      const phoneKey = row.phone.replace(/\D/g, "");
+      const accountKey = row.account.trim().toLowerCase();
+      const monthlyFee = toMoneyNumber(row.monthlyFee || getNumericPackageAmount(row.packageName));
+      if (!row.customerName.trim()) messages.push("Thiếu tên khách hàng");
+      if (!row.address.trim()) messages.push("Thiếu địa chỉ");
+      if (!row.account.trim()) messages.push("Thiếu tài khoản Internet");
+      if (!row.packageName.trim()) messages.push("Thiếu gói cước");
+      if (monthlyFee < 0 || (!row.packageId && !getNumericPackageAmount(row.packageName))) messages.push("Gói cước chưa có số tiền hợp lệ");
+      if (!/^\d{4}-\d{2}$/.test(row.startMonth)) messages.push("Tháng bắt đầu không hợp lệ");
+      if (phoneKey) {
+        const existing = seenPhones.get(phoneKey);
+        if (existing) messages.push(`Trùng SĐT với dòng ${existing}`);
+        seenPhones.set(phoneKey, rowNumber);
+      }
+      if (accountKey) {
+        const existing = seenAccounts.get(accountKey);
+        if (existing) messages.push(`Trùng tài khoản Internet với dòng ${existing}`);
+        seenAccounts.set(accountKey, rowNumber);
+      }
+      if (messages.length > 0) errors.push({ rowNumber, messages });
+    });
+    return errors;
+  };
+
+  const buildBulkImportRows = (rows: BulkEntryRow[]): BillGoImportRow[] => rows.map((row, index) => ({
+    rowNumber: index + 1,
+    customerName: row.customerName.trim(),
+    phone: row.phone.trim(),
+    account: row.account.trim(),
+    address: row.address.trim(),
+    areaName: "",
+    subAreaName: "",
+    addressDetail: row.address.trim(),
+    provider: row.provider.trim(),
+    packageName: row.packageName.trim(),
+    monthlyFee: row.monthlyFee || getNumericPackageAmount(row.packageName),
+    cycle: row.cycle,
+    startDate: `${row.startMonth}-01`,
+    dueDate: "",
+    note: row.note.trim(),
+  }));
+
+  const saveBulkRows = async () => {
+    const activeRows = bulkRows.filter(row => [row.customerName, row.phone, row.address, row.account, row.packageName, row.note].some(value => value.trim()));
+    const nextRows = activeRows.length > 0 ? activeRows : bulkRows;
+    const validationErrors = validateBulkRows(nextRows);
+    if (validationErrors.length > 0) {
+      setBulkErrors(validationErrors);
+      return;
+    }
+    setBulkSaving(true);
+    setBulkErrors([]);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk_entry_apply", rows: buildBulkImportRows(nextRows), monthFilter }),
+      });
+      const result = await response.json();
+      if (!response.ok && response.status !== 207) {
+        const rowErrors = Array.isArray(result.rows) ? result.rows.map((item: { rowNumber?: number }) => ({ rowNumber: item.rowNumber || 0, messages: [result.error || "Dòng đã tồn tại"] })) : [];
+        setBulkErrors(rowErrors);
+        throw new Error(result.error || "Không thể lưu nhiều khách hàng.");
+      }
+      const summary = result.summary || emptyImportSummary;
+      setMessage(`Đã thêm nhiều khách hàng: thêm mới ${summary.created}, bỏ qua ${summary.skipped}, lỗi ${summary.errors}.`);
+      setBulkRows([createBulkEntryRow()]);
+      setShowBulkEntry(false);
+      await fetchAreas();
+      await refreshBillGoKeepingScroll();
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Không thể lưu nhiều khách hàng.");
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const submitCustomer = async (event: React.FormEvent) => {
     event.preventDefault();
     const addedCycle = form.cycle;
@@ -1507,7 +1710,10 @@ export default function WorkerBillGoPage() {
               }}
             />
           </label>
-          <button type="button" onClick={() => { if (showForm) setPackageSearch(""); setShowForm(value => !value); }} className="btn-primary !w-auto flex-1 sm:flex-none">
+          <button type="button" onClick={() => { setShowBulkEntry(value => !value); if (showForm) { setPackageSearch(""); setShowForm(false); } }} className="btn-outline !w-auto flex-1 sm:flex-none">
+            <Plus size={18} /> Thêm nhiều khách hàng
+          </button>
+          <button type="button" onClick={() => { if (showForm) setPackageSearch(""); setShowForm(value => !value); if (showBulkEntry) setShowBulkEntry(false); }} className="btn-primary !w-auto flex-1 sm:flex-none">
             <Plus size={18} /> Thêm khách hàng
           </button>
         </div>
@@ -1536,6 +1742,48 @@ export default function WorkerBillGoPage() {
         ))}
       </div>
 
+      {showBulkEntry && (
+        <section className="mt-4 rounded-lg border border-outline-variant/50 bg-white shadow-sm" onPaste={handleBulkPaste}>
+          <div className="flex flex-col gap-3 border-b border-outline-variant/25 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-base font-extrabold text-on-surface">Thêm nhiều khách hàng</h2>
+              <p className="mt-1 text-xs font-semibold text-on-surface-variant">Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Tài khoản, Gói cước, Chu kỳ, Tháng bắt đầu, Ghi chú.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={addBulkRow} className="btn-outline !w-auto !px-3 !py-2"><Plus size={16} /> Thêm dòng</button>
+              <button type="button" disabled={bulkSaving} onClick={() => void saveBulkRows()} className="btn-primary !w-auto !px-3 !py-2 disabled:opacity-50">{bulkSaving ? "Đang lưu..." : "Lưu tất cả"}</button>
+            </div>
+          </div>
+          {bulkErrors.length > 0 && (
+            <div className="m-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">
+              {bulkErrors.map(error => <p key={error.rowNumber || error.messages.join("-")}>Dòng {error.rowNumber}: {error.messages.join("; ")}</p>)}
+            </div>
+          )}
+          <div className="hidden border-b border-outline-variant/25 bg-surface-container-low px-4 py-2 text-[11px] font-extrabold uppercase text-on-surface-variant md:grid md:grid-cols-[1.2fr_.9fr_1.4fr_.8fr_1fr_1fr_.85fr_.9fr_1fr_auto] md:gap-2">
+            <span>Tên khách hàng</span><span>Số điện thoại</span><span>Địa chỉ</span><span>Nhà mạng</span><span>Tài khoản Internet</span><span>Gói cước</span><span>Chu kỳ</span><span>Tháng bắt đầu</span><span>Ghi chú</span><span></span>
+          </div>
+          <div className="grid gap-3 p-4 md:gap-2">
+            {bulkRows.map((row, index) => (
+              <div key={row.id} className="rounded-lg border border-outline-variant/50 p-3 md:grid md:grid-cols-[1.2fr_.9fr_1.4fr_.8fr_1fr_1fr_.85fr_.9fr_1fr_auto] md:items-start md:gap-2 md:border-0 md:p-0">
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant md:block"><span className="md:hidden">Tên khách hàng</span><input className="input-field" value={row.customerName} onChange={e => updateBulkRow(row.id, { customerName: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Số điện thoại</span><input className="input-field" inputMode="tel" value={row.phone} onChange={e => updateBulkRow(row.id, { phone: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Địa chỉ</span><input className="input-field" value={row.address} onChange={e => updateBulkRow(row.id, { address: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Nhà mạng</span><select className="input-field" value={row.provider} onChange={e => updateBulkRow(row.id, { provider: e.target.value })}>{providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Tài khoản Internet</span><input className="input-field" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Gói cước</span><select className="input-field" value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói</option>{packages.map(item => <option key={item.id} value={item.id}>{item.name} - {formatBillGoCurrency(item.monthly_price)}</option>)}</select></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Chu kỳ</span><select className="input-field" value={row.cycle} onChange={e => updateBulkRow(row.id, { cycle: e.target.value as BillGoCycle })}>{signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.shortLabel}</option>)}</select></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Tháng bắt đầu</span><input type="month" className="input-field" value={row.startMonth} onChange={e => updateBulkRow(row.id, { startMonth: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Ghi chú</span><input className="input-field" value={row.note} onChange={e => updateBulkRow(row.id, { note: e.target.value })} /></label>
+                <div className="mt-3 flex gap-2 md:mt-0 md:justify-end">
+                  <button type="button" title="Nhân bản dòng" onClick={() => duplicateBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-primary hover:bg-primary-fixed"><Copy size={16} /></button>
+                  <button type="button" title="Xóa dòng" onClick={() => removeBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-error hover:bg-error-container"><Trash2 size={16} /></button>
+                </div>
+                <p className="mt-2 text-xs font-bold text-on-surface-variant md:col-span-10 md:mt-1">Dòng {index + 1}: {row.packageId ? `Cước ${formatBillGoCurrency(toMoneyNumber(row.monthlyFee))}` : "Chưa chọn gói cước"}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {showForm && (
         <form onSubmit={submitCustomer} className="mt-4 grid h-[calc(100dvh-16rem)] max-h-[calc(100dvh-16rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-outline-variant/50 bg-white shadow-sm">
           <div className="border-b border-outline-variant/25 bg-white px-4 py-3">

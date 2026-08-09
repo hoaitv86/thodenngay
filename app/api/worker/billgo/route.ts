@@ -404,6 +404,8 @@ const buildBillGoImportPlan = async (
   }
 
   const seenKeys = new Set<string>();
+  const seenAccounts = new Set<string>();
+  const seenPhones = new Set<string>();
   const importedKeys = new Set<string>();
   const items = rows.map((rawRow, index) => {
     const row: BillGoImportRow = {
@@ -434,11 +436,15 @@ const buildBillGoImportPlan = async (
     if (!row.account && !row.phone) reasons.push("Thiếu Account và SĐT");
     if (row.cycle && !allowedCycles.has(row.cycle as BillGoCycle)) reasons.push("Chu kỳ không hợp lệ");
     if (monthlyFee < 0) reasons.push("Số tiền cước không hợp lệ");
+    if (accountKey && seenAccounts.has(accountKey)) reasons.push("Trùng tài khoản Internet trong danh sách");
+    if (phoneKey && seenPhones.has(phoneKey)) reasons.push("Trùng SĐT trong danh sách");
+    if (accountKey) seenAccounts.add(accountKey);
+    if (phoneKey) seenPhones.add(phoneKey);
     if (rowKey && seenKeys.has(rowKey)) reasons.push("Trùng Account/SĐT trong file");
     if (rowKey) seenKeys.add(rowKey);
     if (rowKey) importedKeys.add(rowKey);
 
-    const existing = accountKey ? existingByAccount.get(accountKey) : phoneKey ? existingByPhone.get(phoneKey) : null;
+    const existing = (accountKey ? existingByAccount.get(accountKey) : null) || (phoneKey ? existingByPhone.get(phoneKey) : null);
     if (reasons.length > 0) return { row, status: "error", reasons, changes, subscriptionId: existing?.id || null };
 
     if (!existing) return { row: { ...row, monthlyFee }, status: "new", reasons, changes: ["Thêm mới khách BillGo"], subscriptionId: null };
@@ -1045,13 +1051,13 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
   const action = asText(body.action);
-  const managerActions = new Set(["import_preview", "import_apply", "update_customer", "change_cycle", "pause", "reactivate", "soft_delete", "assign_area_bulk"]);
+  const managerActions = new Set(["import_preview", "import_apply", "bulk_entry_apply", "update_customer", "change_cycle", "pause", "reactivate", "soft_delete", "assign_area_bulk"]);
   if (managerActions.has(action) && !canManageBillGoScope(scope)) return jsonError("Bạn không có quyền quản lý dữ liệu BillGo.", 403);
   if (action === "collect" && !canCollectBillGoScope(scope)) return jsonError("Bạn không có quyền thu cước BillGo.", 403);
 
-  if (action === "import_preview" || action === "import_apply") {
+  if (action === "import_preview" || action === "import_apply" || action === "bulk_entry_apply") {
     const rows = Array.isArray(body.rows) ? body.rows as BillGoImportRow[] : [];
-    if (rows.length === 0) return jsonError("Chưa có dữ liệu Excel để đồng bộ.");
+    if (rows.length === 0) return jsonError("Chưa có dữ liệu khách hàng để lưu.");
     if (rows.length > 1000) return jsonError("Mỗi lần chỉ nhập tối đa 1000 dòng.");
 
     const monthFilter = asText(body.monthFilter) || todayInputForServer().slice(0, 7);
@@ -1060,6 +1066,15 @@ export async function PATCH(request: Request) {
     if ("error" in plan) return jsonError(plan.error || "Không thể xem trước dữ liệu nhập.");
     if (action === "import_preview") return NextResponse.json(plan);
     if (plan.summary.errors > 0) return jsonError("Vui lòng sửa các dòng lỗi trước khi đồng bộ.");
+    if (action === "bulk_entry_apply") {
+      const duplicatedRows = plan.items.filter(item => item.status === "update" || item.status === "skip");
+      if (duplicatedRows.length > 0) {
+        return NextResponse.json({
+          error: "Một số dòng đã tồn tại theo SĐT hoặc tài khoản Internet. Vui lòng bỏ dòng trùng trước khi lưu.",
+          rows: duplicatedRows.map(item => ({ rowNumber: item.row.rowNumber, customerName: item.row.customerName, account: item.row.account, phone: item.row.phone })),
+        }, { status: 409 });
+      }
+    }
 
     let created = 0;
     let updated = 0;
@@ -1115,7 +1130,7 @@ export async function PATCH(request: Request) {
             customer_address: row.address || row.addressDetail || null,
             area_id: location.areaId,
             sub_area_id: location.subAreaId,
-            address_detail: row.addressDetail || null,
+            address_detail: row.addressDetail || row.address || null,
             legacy_address: row.address || null,
             provider: row.provider || null,
             package_name: packageName,
@@ -1188,7 +1203,7 @@ export async function PATCH(request: Request) {
             customer_address: row.address || row.addressDetail || null,
             area_id: location.areaId,
             sub_area_id: location.subAreaId,
-            address_detail: row.addressDetail || null,
+            address_detail: row.addressDetail || row.address || null,
             provider: row.provider || null,
             package_name: packageName,
             current_cycle: cycle,
