@@ -26,7 +26,7 @@ const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
 const DEFAULT_BILLGO_PAGE_SIZE = 10;
 const MAX_BILLGO_PAGE_SIZE = 50;
-const allowedListStatuses = new Set(["all", "not_due", "unpaid", "paid", "partial", "overdue", "promo"]);
+const allowedListStatuses = new Set(["all", "pending_cycle", "not_due", "unpaid", "paid", "partial", "overdue", "promo"]);
 const allowedDueFilters = new Set(["all", "due_this_month", "not_due"]);
 
 type WorkerContext = {
@@ -213,6 +213,7 @@ const getComputedListStatus = (row: {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  if (row.status === "pending_cycle") return "pending_cycle";
   if (total > 0 && debt <= 0) return "paid";
   if (paid > 0 && debt > 0) return "partial";
   if (dueTime !== null && dueTime < today.getTime() && debt > 0) return "overdue";
@@ -420,7 +421,7 @@ const buildBillGoImportPlan = async (
       addressDetail: normalizeImportText(rawRow.addressDetail),
       provider: normalizeImportText(rawRow.provider),
       packageName: normalizeImportText(rawRow.packageName) || "Cước Internet",
-      cycle: normalizeImportText(rawRow.cycle) || "monthly",
+      cycle: normalizeImportText(rawRow.cycle),
       startDate: normalizeImportText(rawRow.startDate),
       dueDate: normalizeImportText(rawRow.dueDate),
       note: normalizeImportText(rawRow.note),
@@ -499,6 +500,54 @@ const buildBillGoImportPlan = async (
 
   return { items, summary, missingFromFile, importedKeys: Array.from(importedKeys) };
 };
+
+const buildPendingCycleRow = (subscription: {
+  id: string;
+  customer_id?: string | null;
+  worker_id?: string | null;
+  customer_name?: string | null;
+  phone?: string | null;
+  internet_account?: string | null;
+  customer_address?: string | null;
+  area_id?: string | null;
+  sub_area_id?: string | null;
+  address_detail?: string | null;
+  legacy_address?: string | null;
+  provider?: string | null;
+  package_name?: string | null;
+  current_cycle?: string | null;
+  cycle?: string | null;
+  monthly_fee?: number | string | null;
+  amount_per_cycle?: number | string | null;
+  next_period_start?: string | null;
+  next_due_date?: string | null;
+  start_date?: string | null;
+}) => ({
+  id: `pending_cycle_${subscription.id}`,
+  customer_id: subscription.customer_id,
+  worker_id: subscription.worker_id,
+  subscription_id: subscription.id,
+  total_amount: 0,
+  due_date: null,
+  period_start: null,
+  period_end: null,
+  collection_month: null,
+  usage_month: null,
+  billing_month: null,
+  billing_year: null,
+  cycle_at_collection: null,
+  billing_months: 0,
+  bonus_months: 0,
+  service_months: 0,
+  next_due_date: null,
+  paid_amount: 0,
+  paid_at: null,
+  payment_method: null,
+  status: "pending_cycle",
+  note: subscription.next_period_start ? "Chờ thiết lập lại chu kỳ" : "Chưa thiết lập chu kỳ",
+  subscription,
+  payments: [],
+});
 
 const buildNotDueRow = (
   subscription: {
@@ -775,6 +824,13 @@ export async function GET(request: Request) {
     previousUnpaidBySubscription.set(key, items);
   }
   const currentRowSubscriptionIds = new Set((currentRowsData || []).map(row => String(row.subscription_id || "")).filter(Boolean));
+  const pendingCycleRows = hydratedSubscriptions
+    .filter(subscription => subscription.status === "pending_cycle")
+    .filter(subscription => !currentRowSubscriptionIds.has(subscription.id))
+    .map(subscription => ({
+      ...buildPendingCycleRow(subscription),
+      previous_unpaid_receivables: previousUnpaidBySubscription.get(subscription.id) || [],
+    }));
   const coveredRows = hydratedSubscriptions
     .filter(subscription => !currentRowSubscriptionIds.has(subscription.id))
     .filter(subscription => coverageBySubscription.has(subscription.id))
@@ -790,6 +846,7 @@ export async function GET(request: Request) {
       payments: [],
     })),
     ...coveredRows,
+    ...pendingCycleRows,
   ];
   const filteredRows = currentRows
     .filter(row => {
@@ -816,6 +873,7 @@ export async function GET(request: Request) {
     acc.totalReceivable += receivable;
     acc.totalPaid += paid;
     acc.totalDebt += debt;
+    if (status === "pending_cycle") acc.pendingCycle += 1;
     if (status === "not_due") acc.notDue += 1;
     if (status === "paid") acc.paid += 1;
     if (status === "partial") acc.partial += 1;
@@ -823,7 +881,7 @@ export async function GET(request: Request) {
     if (status === "promo") acc.promo += 1;
     if (status === "unpaid") acc.unpaid += 1;
     return acc;
-  }, { totalCustomers: 0, unpaid: 0, paid: 0, partial: 0, overdue: 0, promo: 0, notDue: 0, totalReceivable: 0, totalPaid: 0, totalDebt: 0 });
+  }, { totalCustomers: 0, pendingCycle: 0, unpaid: 0, paid: 0, partial: 0, overdue: 0, promo: 0, notDue: 0, totalReceivable: 0, totalPaid: 0, totalDebt: 0 });
 
   const total = filteredRows.length;
   const pageCount = Math.max(Math.ceil(total / limit), 1);
@@ -945,7 +1003,8 @@ export async function POST(request: Request) {
   }
   const packageName = selectedPackage?.name || asText(body.packageName) || "C\u01b0\u1edbc Internet";
   const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
-  const cycle = asText(body.cycle) || "monthly";
+  const cycle = asText(body.cycle);
+  const hasCycle = allowedCycles.has(cycle as BillGoCycle);
   const allowedPackageCycles = selectedPackage?.allowed_cycles?.length
     ? Array.from(new Set([...selectedPackage.allowed_cycles, ...BILLGO_SIGNUP_CYCLES]))
     : BILLGO_SIGNUP_CYCLES;
@@ -957,8 +1016,8 @@ export async function POST(request: Request) {
   const paidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const paymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
 
-  if (!customerName || !account || !address || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle) || !allowedPackageCycles.includes(cycle as BillGoCycle)) {
-    return jsonError("Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7 th\u00f4ng tin h\u1ee3p l\u1ec7.");
+  if (!customerName || !account || !address || monthlyFee < 0 || (cycle && (!hasCycle || !allowedPackageCycles.includes(cycle as BillGoCycle))) || (hasCycle && !startDate)) {
+    return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
   }
 
   const { data: duplicate } = await admin
@@ -971,7 +1030,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (duplicate) return jsonError("Account n\u00e0y \u0111\u00e3 c\u00f3 trong BillGo.", 409);
 
-  const firstBilling = getBillGoBillingPeriod(startDate, cycle);
+  const firstBilling = hasCycle ? getBillGoBillingPeriod(startDate, cycle) : null;
   const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
   if ("error" in location) return jsonError(location.error || "Kh\u00f4ng th\u1ec3 t\u1ea1o \u0111\u1ecba b\u00e0n kh\u00e1ch h\u00e0ng.");
 
@@ -981,13 +1040,17 @@ export async function POST(request: Request) {
       customer_id: null, worker_id: workerId, customer_name: customerName, phone, internet_account: account, customer_address: address,
       area_id: location.areaId, sub_area_id: location.subAreaId, address_detail: addressDetail, legacy_address: address || null,
       provider: selectedPackage?.provider || provider || null, package_id: selectedPackage?.id || null, package_name: packageName,
-      service_type: selectedPackage?.type || "internet", cycle, current_cycle: cycle, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
-      start_date: firstBilling.periodStart, next_due_date: firstBilling.dueDate, next_period_start: firstBilling.periodStart,
-      status: "active", note, created_by: userId, last_changed_by: userId,
+      service_type: selectedPackage?.type || "internet", cycle: hasCycle ? cycle : null, current_cycle: hasCycle ? cycle : null, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
+      start_date: firstBilling?.periodStart || null, next_due_date: firstBilling?.dueDate || null, next_period_start: firstBilling?.periodStart || null,
+      status: hasCycle ? "active" : "pending_cycle", note, created_by: userId, last_changed_by: userId,
     })
     .select("id")
     .single();
   if (subscriptionError) return jsonError(subscriptionError.message);
+
+  if (!firstBilling) {
+    return NextResponse.json({ subscriptionId: subscription.id, receivableId: null, collectionMonth: null, nextPeriodStart: null, coveredUntil: null, pendingCycle: true, receipt: null }, { status: 201 });
+  }
 
   const subscriptionDraft = { id: subscription.id, customer_id: null, worker_id: workerId, package_id: selectedPackage?.id || null, package_name: packageName, current_cycle: cycle, cycle, monthly_fee: monthlyFee, amount_per_cycle: monthlyFee };
   const rowsToInsert = [];
@@ -1092,7 +1155,8 @@ export async function PATCH(request: Request) {
       }
 
       const row = item.row;
-      const cycle = (row.cycle || "monthly") as BillGoCycle;
+      const cycle = row.cycle as BillGoCycle;
+      const hasCycle = allowedCycles.has(cycle);
       const monthlyFee = toMoneyNumber(row.monthlyFee);
       const packageName = row.packageName || "Cước Internet";
       const location = await resolveBillGoArea(
@@ -1110,14 +1174,14 @@ export async function PATCH(request: Request) {
 
       if (item.status === "new") {
         const startDate = row.startDate || defaultStartDate;
-        const billing = getBillGoBillingPeriod(startDate, cycle);
-        const effectiveDueDate = row.dueDate || billing.dueDate;
-        const collectionMonth = getCollectionMonthFromDueDate(effectiveDueDate);
-        const billingParts = getBillingParts(collectionMonth);
-        const option = getBillGoCycleOption(cycle);
-        const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
-        const nextBilling = getBillGoBillingPeriod(nextPeriodStart, cycle);
-        const totalAmount = getBillGoCollectableAmount(monthlyFee, cycle);
+        const billing = hasCycle ? getBillGoBillingPeriod(startDate, cycle) : null;
+        const effectiveDueDate = billing ? row.dueDate || billing.dueDate : null;
+        const collectionMonth = effectiveDueDate ? getCollectionMonthFromDueDate(effectiveDueDate) : null;
+        const billingParts = collectionMonth ? getBillingParts(collectionMonth) : null;
+        const option = hasCycle ? getBillGoCycleOption(cycle) : null;
+        const nextPeriodStart = billing ? getBillGoNextPeriodStartDate(billing.periodEnd) : null;
+        const nextBilling = nextPeriodStart ? getBillGoBillingPeriod(nextPeriodStart, cycle) : null;
+        const totalAmount = hasCycle ? getBillGoCollectableAmount(monthlyFee, cycle) : 0;
 
         const { data: subscription, error: subscriptionError } = await admin
           .from("billgo_subscriptions")
@@ -1135,14 +1199,14 @@ export async function PATCH(request: Request) {
             provider: row.provider || null,
             package_name: packageName,
             service_type: "internet",
-            cycle,
-            current_cycle: cycle,
+            cycle: hasCycle ? cycle : null,
+            current_cycle: hasCycle ? cycle : null,
             amount_per_cycle: monthlyFee,
             monthly_fee: monthlyFee,
-            start_date: billing.periodStart,
+            start_date: billing?.periodStart || null,
             next_due_date: effectiveDueDate,
-            next_period_start: billing.periodStart,
-            status: "active",
+            next_period_start: billing?.periodStart || null,
+            status: hasCycle ? "active" : "pending_cycle",
             note: row.note || null,
             created_by: userId,
             last_changed_by: userId,
@@ -1151,6 +1215,11 @@ export async function PATCH(request: Request) {
           .single();
         if (subscriptionError || !subscription) {
           errors.push({ rowNumber: row.rowNumber, reason: subscriptionError?.message || "Không thể thêm khách" });
+          continue;
+        }
+
+        if (!billing || !collectionMonth || !billingParts || !option || !effectiveDueDate || !nextPeriodStart || !nextBilling) {
+          created += 1;
           continue;
         }
 

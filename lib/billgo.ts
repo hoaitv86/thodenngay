@@ -19,7 +19,7 @@ export type BillGoReceivableLike = {
 };
 
 export type BillGoCycle = "monthly" | "two_months" | "three_months" | "six_months" | "yearly";
-export type BillGoComputedStatus = "not_due" | "unpaid" | "partial" | "overdue" | "paid" | "promo";
+export type BillGoComputedStatus = "pending_cycle" | "not_due" | "unpaid" | "partial" | "overdue" | "paid" | "promo";
 export type BillGoStoredStatus = BillGoComputedStatus | "not_due" | "due" | "cancelled" | "deleted";
 
 export type BillGoSummary = {
@@ -177,6 +177,7 @@ export const getBillGoPaid = (payments: BillGoPayment[] = []) =>
     .reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0);
 
 export const getBillGoStatusLabel = (status: BillGoComputedStatus) => {
+  if (status === "pending_cycle") return "Chưa thiết lập chu kỳ";
   if (status === "not_due") return "Chưa đến kỳ";
   if (status === "paid") return "Đã thu";
   if (status === "partial") return "Thu thiếu";

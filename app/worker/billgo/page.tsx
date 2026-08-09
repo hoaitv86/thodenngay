@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -157,7 +157,7 @@ type SubAreaOption = {
 type RowView = {
   item: Receivable;
   summary: ReturnType<typeof getBillGoReceivableSummary>;
-  cycle: BillGoCycle;
+  cycle: BillGoCycle | "";
   customerName: string;
   account: string;
 };
@@ -204,7 +204,7 @@ type BulkEntryRow = {
   packageId: string;
   packageName: string;
   monthlyFee: string;
-  cycle: BillGoCycle;
+  cycle: BillGoCycle | "";
   startMonth: string;
   note: string;
 };
@@ -228,6 +228,7 @@ type BillGoListTotals = {
   overdue: number;
   promo: number;
   notDue: number;
+  pendingCycle: number;
   totalReceivable: number;
   totalPaid: number;
   totalDebt: number;
@@ -282,13 +283,13 @@ const parseDateInput = (value: string) => {
 };
 const monthLabel = (value: string) => {
   const date = parseDateInput(value);
-  if (!date) return "tháng cước";
-  return `tháng ${date.month}/${date.year}`;
+  if (!date) return "thÃ¡ng cÆ°á»›c";
+  return `thÃ¡ng ${date.month}/${date.year}`;
 };
 const monthYearLabel = (value: string) => {
   const date = parseDateInput(value);
-  if (!date) return "tháng cước";
-  return `tháng ${String(date.month).padStart(2, "0")}/${date.year}`;
+  if (!date) return "thÃ¡ng cÆ°á»›c";
+  return `thÃ¡ng ${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const dateLabel = (value: string) => {
   const date = parseDateInput(value);
@@ -305,35 +306,36 @@ const emptyBillGoTotals: BillGoListTotals = {
   overdue: 0,
   promo: 0,
   notDue: 0,
+  pendingCycle: 0,
   totalReceivable: 0,
   totalPaid: 0,
   totalDebt: 0,
 };
 
 const methodLabels: Record<string, string> = {
-  cash: "Tiền mặt",
-  bank_transfer: "Chuyển khoản",
-  other: "Khác",
+  cash: "Tiá»n máº·t",
+  bank_transfer: "Chuyá»ƒn khoáº£n",
+  other: "KhÃ¡c",
 };
 
 const providerSuggestions = ["Viettel", "VNPT", "FPT"];
 const signupCycleOptions = BILLGO_CYCLE_OPTIONS.filter(option => BILLGO_SIGNUP_CYCLES.includes(option.value));
 
 const billGoImportHeaders = [
-  "Tên khách hàng",
-  "SĐT",
+  "TÃªn khÃ¡ch hÃ ng",
+  "SÄT",
   "Account",
-  "Địa chỉ",
-  "Xã/phường",
-  "Xóm/thôn/khối",
-  "Địa chỉ chi tiết",
-  "Nhà mạng",
-  "Gói cước",
-  "Số tiền tháng",
-  "Chu kỳ",
-  "Kỳ bắt đầu",
-  "Hạn nộp",
-  "Ghi chú",
+  "Äá»‹a chá»‰",
+  "XÃ£/phÆ°á»ng",
+  "XÃ³m/thÃ´n/khá»‘i",
+  "Äá»‹a chá»‰ chi tiáº¿t",
+  "NhÃ  máº¡ng",
+  "GÃ³i cÆ°á»›c",
+  "Sá»‘ tiá»n thÃ¡ng",
+  "Chu ká»³",
+  "Ká»³ báº¯t Ä‘áº§u",
+  "Háº¡n ná»™p",
+  "Ghi chÃº",
 ];
 
 const emptyImportSummary = { created: 0, updated: 0, skipped: 0, errors: 0 };
@@ -348,23 +350,24 @@ const createBulkEntryRow = (): BulkEntryRow => ({
   packageId: "",
   packageName: "",
   monthlyFee: "",
-  cycle: "monthly",
-  startMonth: monthInput(),
+  cycle: "",
+  startMonth: "",
   note: "",
 });
 
 const statusOptions = [
-  { value: "all", label: "Tất cả trạng thái" },
-  { value: "unpaid", label: "Chưa thu" },
-  { value: "paid", label: "Đã thu" },
-  { value: "partial", label: "Thu thiếu" },
-  { value: "overdue", label: "Quá hạn" },
-  { value: "promo", label: "Khuyến mại" },
+  { value: "all", label: "Táº¥t cáº£ tráº¡ng thÃ¡i" },
+  { value: "pending_cycle", label: "ChÆ°a thiáº¿t láº­p chu ká»³" },
+  { value: "unpaid", label: "ChÆ°a thu" },
+  { value: "paid", label: "ÄÃ£ thu" },
+  { value: "partial", label: "Thu thiáº¿u" },
+  { value: "overdue", label: "QuÃ¡ háº¡n" },
+  { value: "promo", label: "Khuyáº¿n máº¡i" },
 ];
 
 const dueFilterOptions = [
-  { value: "all", label: "Tất cả hạn thu" },
-  { value: "due_this_month", label: "Đến hạn tháng này" },
+  { value: "all", label: "Táº¥t cáº£ háº¡n thu" },
+  { value: "due_this_month", label: "Äáº¿n háº¡n thÃ¡ng nÃ y" },
 ];
 
 const normalizeImportHeader = (value: string) =>
@@ -526,7 +529,7 @@ const unzipXlsxEntries = async (buffer: ArrayBuffer) => {
       break;
     }
   }
-  if (eocd < 0) throw new Error("File Excel không hợp lệ.");
+  if (eocd < 0) throw new Error("File Excel khÃ´ng há»£p lá»‡.");
   const entryCount = view.getUint16(eocd + 10, true);
   let cursor = view.getUint32(eocd + 16, true);
   const entries = new Map<string, string>();
@@ -567,7 +570,7 @@ const parseXlsxTable = async (file: File) => {
     : [];
   const sheetXml = entries.get("xl/worksheets/sheet1.xml")
     || Array.from(entries.entries()).find(([name]) => name.startsWith("xl/worksheets/sheet"))?.[1];
-  if (!sheetXml) throw new Error("Không tìm thấy sheet dữ liệu trong file Excel.");
+  if (!sheetXml) throw new Error("KhÃ´ng tÃ¬m tháº¥y sheet dá»¯ liá»‡u trong file Excel.");
   const documentXml = parser.parseFromString(sheetXml, "application/xml");
   return Array.from(documentXml.getElementsByTagName("row")).map(rowNode => {
     const cells: string[] = [];
@@ -611,8 +614,8 @@ const initialForm = () => ({
   packageId: "",
   packageName: "",
   monthlyFee: "",
-  cycle: "monthly" as BillGoCycle,
-  startDate: previousMonthFirstInput(),
+  cycle: "" as BillGoCycle | "",
+  startDate: "",
   dueDate: "",
   note: "",
   isLegacyCustomer: false,
@@ -702,10 +705,12 @@ const getReceiptEntries = (item: Receivable): BillGoReceiptEntry[] =>
       return b.receipt.receipt_code.localeCompare(a.receipt.receipt_code);
     });
 
-const getBillGoRowCycle = (item: Receivable) =>
-  (String(item.id || "").startsWith("not_due_")
+const getBillGoRowCycle = (item: Receivable): BillGoCycle | "" => {
+  if (item.status === "pending_cycle" || item.subscription?.status === "pending_cycle") return "";
+  return (String(item.id || "").startsWith("not_due_")
     ? item.subscription?.current_cycle || item.subscription?.cycle || item.cycle_at_collection || "monthly"
     : item.cycle_at_collection || item.subscription?.current_cycle || item.subscription?.cycle || "monthly") as BillGoCycle;
+};
 
 const getSignupCycleValues = (allowedCycles?: BillGoCycle[] | null) =>
   new Set([...(allowedCycles || []), ...BILLGO_SIGNUP_CYCLES]);
@@ -714,7 +719,8 @@ const subAreaNameCollator = new Intl.Collator("vi", { numeric: true, sensitivity
 
 const upfrontSignupCycles = new Set<BillGoCycle>(["two_months", "three_months", "six_months", "yearly"]);
 
-const applySignupCycleDefaults = <T extends { cycle: BillGoCycle; startDate: string; dueDate: string }>(form: T, cycle: BillGoCycle): T => {
+const applySignupCycleDefaults = <T extends { cycle: BillGoCycle | ""; startDate: string; dueDate: string }>(form: T, cycle: BillGoCycle | ""): T => {
+  if (!cycle) return { ...form, cycle, startDate: "", dueDate: "" };
   if (cycle === "monthly") {
     return { ...form, cycle, startDate: previousMonthFirstInput(), dueDate: "" };
   }
@@ -783,7 +789,7 @@ export default function WorkerBillGoPage() {
     packageName: "",
     monthlyFee: "",
     note: "",
-    cycle: "monthly" as BillGoCycle,
+    cycle: "" as BillGoCycle | "",
     effectivePeriodStart: todayInput(),
   });
 
@@ -876,14 +882,14 @@ export default function WorkerBillGoPage() {
       }
       const response = await fetch(`/api/worker/billgo?${params.toString()}`);
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
+      if (!response.ok) throw new Error(result.error || "KhÃ´ng thá»ƒ táº£i BillGo.");
       setRows(normalizeRows(result.rows || []));
       setPage(Number(result.page || 1));
       setPageCount(Number(result.pageCount || 1));
       setTotalRows(Number(result.total || 0));
       setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể tải BillGo.");
+      setMessage(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ táº£i BillGo.");
       setRows([]);
       setPageCount(1);
       setTotalRows(0);
@@ -927,8 +933,8 @@ export default function WorkerBillGoPage() {
       item,
       cycle,
       summary: getBillGoReceivableSummary(item),
-      customerName: item.subscription?.customer_name || "Khách BillGo",
-      account: item.subscription?.internet_account || "Chưa có account",
+      customerName: item.subscription?.customer_name || "KhÃ¡ch BillGo",
+      account: item.subscription?.internet_account || "ChÆ°a cÃ³ account",
     };
   }), [rows]);
 
@@ -1031,9 +1037,10 @@ export default function WorkerBillGoPage() {
   const previousSubArea = selectedSubAreaIndex > 0 ? selectedAreaSubAreas[selectedSubAreaIndex - 1] : null;
   const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
-  const formBilling = useMemo(() => getBillGoBillingPeriod(form.startDate, form.cycle), [form.cycle, form.startDate]);
-  const formDueDate = form.dueDate || formBilling.dueDate;
-  const formTotal = useMemo(() => getBillGoCollectableAmount(form.monthlyFee, form.cycle), [form.cycle, form.monthlyFee]);
+  const hasFormCycle = Boolean(form.cycle);
+  const formBilling = useMemo(() => hasFormCycle ? getBillGoBillingPeriod(form.startDate || previousMonthFirstInput(), form.cycle) : null, [form.cycle, form.startDate, hasFormCycle]);
+  const formDueDate = form.dueDate || formBilling?.dueDate || "";
+  const formTotal = useMemo(() => hasFormCycle ? getBillGoCollectableAmount(form.monthlyFee, form.cycle) : 0, [form.cycle, form.monthlyFee, hasFormCycle]);
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
   const formSubAreas = useMemo(
     () => areas.find(area => area.id === form.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
@@ -1131,12 +1138,12 @@ export default function WorkerBillGoPage() {
         return { ...prev, address: value, addressDetail: value };
       }
       if (key === "isLegacyCustomer") return { ...prev, isLegacyCustomer: value === "true", paidThroughMonth: value === "true" ? prev.paidThroughMonth : "" };
-      if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle);
+      if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle | "");
       if (key === "packageId") {
         const selectedPackage = packages.find(item => item.id === value);
         if (!selectedPackage) return { ...prev, packageId: "", packageName: "", monthlyFee: "" };
         const allowedCycles = getSignupCycleValues(selectedPackage.allowed_cycles);
-        const nextCycle = allowedCycles.has(prev.cycle) ? prev.cycle : BILLGO_SIGNUP_CYCLES[0] || "monthly";
+        const nextCycle = prev.cycle && allowedCycles.has(prev.cycle) ? prev.cycle : "";
         return applySignupCycleDefaults({
           ...prev,
           packageId: selectedPackage.id,
@@ -1177,7 +1184,7 @@ export default function WorkerBillGoPage() {
   const downloadImportTemplate = () => {
     const sample = [
       billGoImportHeaders,
-      ["Nguyễn Văn A", "0912345678", "n350_gftth_001", "Xóm 1", "Xã Mẫu", "Xóm 1", "Nhà số 12", "Viettel", "Internet 165000", "165000", "monthly", monthFilter ? `${monthFilter}-01` : previousMonthFirstInput(), "", ""],
+      ["Nguyá»…n VÄƒn A", "0912345678", "n350_gftth_001", "XÃ³m 1", "XÃ£ Máº«u", "XÃ³m 1", "NhÃ  sá»‘ 12", "Viettel", "Internet 165000", "165000", "monthly", monthFilter ? `${monthFilter}-01` : previousMonthFirstInput(), "", ""],
     ];
     const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${sample.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")}</table></body></html>`;
     const url = URL.createObjectURL(new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" }));
@@ -1199,13 +1206,13 @@ export default function WorkerBillGoPage() {
         body: JSON.stringify({ action: "import_preview", rows: nextRows, monthFilter }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể xem trước dữ liệu Excel.");
+      if (!response.ok) throw new Error(result.error || "KhÃ´ng thá»ƒ xem trÆ°á»›c dá»¯ liá»‡u Excel.");
       setImportRows(nextRows);
       setImportPreview(result as BillGoImportPreview);
       setImportFileName(fileName);
       setShowImport(true);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Không thể xem trước dữ liệu Excel.");
+      setImportError(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ xem trÆ°á»›c dá»¯ liá»‡u Excel.");
     } finally {
       setImportLoading(false);
     }
@@ -1217,10 +1224,10 @@ export default function WorkerBillGoPage() {
     setImportError("");
     try {
       const parsedRows = await parseBillGoImportFile(file);
-      if (parsedRows.length === 0) throw new Error("File không có dòng khách hàng hợp lệ.");
+      if (parsedRows.length === 0) throw new Error("File khÃ´ng cÃ³ dÃ²ng khÃ¡ch hÃ ng há»£p lá»‡.");
       await previewImportRows(parsedRows, file.name);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Không thể đọc file Excel.");
+      setImportError(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ Ä‘á»c file Excel.");
       setImportPreview(null);
     } finally {
       setImportLoading(false);
@@ -1239,14 +1246,14 @@ export default function WorkerBillGoPage() {
         body: JSON.stringify({ action: "import_apply", rows: importRows, monthFilter }),
       });
       const result = await response.json();
-      if (!response.ok && response.status !== 207) throw new Error(result.error || "Không thể đồng bộ dữ liệu Excel.");
+      if (!response.ok && response.status !== 207) throw new Error(result.error || "KhÃ´ng thá»ƒ Ä‘á»“ng bá»™ dá»¯ liá»‡u Excel.");
       const summary = result.summary || emptyImportSummary;
       setImportPreview(prev => prev ? { ...prev, summary, items: prev.items } : prev);
-      setMessage(`Đã đồng bộ Excel: thêm mới ${summary.created}, cập nhật ${summary.updated}, bỏ qua ${summary.skipped}, lỗi ${summary.errors}.`);
+      setMessage(`ÄÃ£ Ä‘á»“ng bá»™ Excel: thÃªm má»›i ${summary.created}, cáº­p nháº­t ${summary.updated}, bá» qua ${summary.skipped}, lá»—i ${summary.errors}.`);
       await fetchAreas();
       await refreshBillGoKeepingScroll();
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Không thể đồng bộ dữ liệu Excel.");
+      setImportError(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ Ä‘á»“ng bá»™ dá»¯ liá»‡u Excel.");
     } finally {
       setImportLoading(false);
     }
@@ -1284,12 +1291,13 @@ export default function WorkerBillGoPage() {
     });
   };
 
-  const normalizeBulkCycle = (value: string): BillGoCycle => {
+  const normalizeBulkCycle = (value: string): BillGoCycle | "" => {
     const normalized = value.trim().toLowerCase();
-    if (["2", "2m", "2 tháng", "2 thang", "two_months"].includes(normalized)) return "two_months";
-    if (["3", "3m", "3 tháng", "3 thang", "three_months"].includes(normalized)) return "three_months";
-    if (["6", "6m", "6 tháng", "6 thang", "six_months"].includes(normalized)) return "six_months";
-    if (["12", "12m", "12 tháng", "12 thang", "year", "yearly"].includes(normalized)) return "yearly";
+    if (!normalized) return "";
+    if (["2", "2m", "2 thÃ¡ng", "2 thang", "two_months"].includes(normalized)) return "two_months";
+    if (["3", "3m", "3 thÃ¡ng", "3 thang", "three_months"].includes(normalized)) return "three_months";
+    if (["6", "6m", "6 thÃ¡ng", "6 thang", "six_months"].includes(normalized)) return "six_months";
+    if (["12", "12m", "12 thÃ¡ng", "12 thang", "year", "yearly"].includes(normalized)) return "yearly";
     return "monthly";
   };
 
@@ -1321,8 +1329,8 @@ export default function WorkerBillGoPage() {
         packageId: selectedPackage?.id || "",
         packageName: selectedPackage?.name || packageText,
         monthlyFee: selectedPackage ? String(Number(selectedPackage.monthly_price || 0)) : getNumericPackageAmount(packageText),
-        cycle: normalizeBulkCycle(String(cells[6] || "monthly")),
-        startMonth: normalizeBulkStartMonth(String(cells[7] || monthInput())),
+        cycle: normalizeBulkCycle(String(cells[6] || "")),
+        startMonth: String(cells[6] || "").trim() ? normalizeBulkStartMonth(String(cells[7] || monthInput())) : "",
         note: "",
       };
     });
@@ -1340,20 +1348,20 @@ export default function WorkerBillGoPage() {
       const phoneKey = row.phone.replace(/\D/g, "");
       const accountKey = row.account.trim().toLowerCase();
       const monthlyFee = toMoneyNumber(row.monthlyFee || getNumericPackageAmount(row.packageName));
-      if (!row.customerName.trim()) messages.push("Thiếu tên khách hàng");
-      if (!row.address.trim()) messages.push("Thiếu địa chỉ");
-      if (!row.account.trim()) messages.push("Thiếu tài khoản Internet");
-      if (!row.packageName.trim()) messages.push("Thiếu gói cước");
-      if (monthlyFee < 0 || (!row.packageId && !getNumericPackageAmount(row.packageName))) messages.push("Gói cước chưa có số tiền hợp lệ");
-      if (!/^\d{4}-\d{2}$/.test(row.startMonth)) messages.push("Tháng bắt đầu không hợp lệ");
+      if (!row.customerName.trim()) messages.push("Thiáº¿u tÃªn khÃ¡ch hÃ ng");
+      if (!row.address.trim()) messages.push("Thiáº¿u Ä‘á»‹a chá»‰");
+      if (!row.account.trim()) messages.push("Thiáº¿u tÃ i khoáº£n Internet");
+      if (!row.packageName.trim()) messages.push("Thiáº¿u gÃ³i cÆ°á»›c");
+      if (monthlyFee < 0 || (!row.packageId && !getNumericPackageAmount(row.packageName))) messages.push("GÃ³i cÆ°á»›c chÆ°a cÃ³ sá»‘ tiá»n há»£p lá»‡");
+      if (row.cycle && !/^\d{4}-\d{2}$/.test(row.startMonth)) messages.push("ThÃ¡ng báº¯t Ä‘áº§u khÃ´ng há»£p lá»‡");
       if (phoneKey) {
         const existing = seenPhones.get(phoneKey);
-        if (existing) messages.push(`Trùng SĐT với dòng ${existing}`);
+        if (existing) messages.push(`TrÃ¹ng SÄT vá»›i dÃ²ng ${existing}`);
         seenPhones.set(phoneKey, rowNumber);
       }
       if (accountKey) {
         const existing = seenAccounts.get(accountKey);
-        if (existing) messages.push(`Trùng tài khoản Internet với dòng ${existing}`);
+        if (existing) messages.push(`TrÃ¹ng tÃ i khoáº£n Internet vá»›i dÃ²ng ${existing}`);
         seenAccounts.set(accountKey, rowNumber);
       }
       if (messages.length > 0) errors.push({ rowNumber, messages });
@@ -1374,7 +1382,7 @@ export default function WorkerBillGoPage() {
     packageName: row.packageName.trim(),
     monthlyFee: row.monthlyFee || getNumericPackageAmount(row.packageName),
     cycle: row.cycle,
-    startDate: `${row.startMonth}-01`,
+    startDate: row.cycle && row.startMonth ? `${row.startMonth}-01` : "",
     dueDate: "",
     note: row.note.trim(),
   }));
@@ -1398,18 +1406,18 @@ export default function WorkerBillGoPage() {
       });
       const result = await response.json();
       if (!response.ok && response.status !== 207) {
-        const rowErrors = Array.isArray(result.rows) ? result.rows.map((item: { rowNumber?: number }) => ({ rowNumber: item.rowNumber || 0, messages: [result.error || "Dòng đã tồn tại"] })) : [];
+        const rowErrors = Array.isArray(result.rows) ? result.rows.map((item: { rowNumber?: number }) => ({ rowNumber: item.rowNumber || 0, messages: [result.error || "DÃ²ng Ä‘Ã£ tá»“n táº¡i"] })) : [];
         setBulkErrors(rowErrors);
-        throw new Error(result.error || "Không thể lưu nhiều khách hàng.");
+        throw new Error(result.error || "KhÃ´ng thá»ƒ lÆ°u nhiá»u khÃ¡ch hÃ ng.");
       }
       const summary = result.summary || emptyImportSummary;
-      setMessage(`Đã thêm nhiều khách hàng: thêm mới ${summary.created}, bỏ qua ${summary.skipped}, lỗi ${summary.errors}.`);
+      setMessage(`ÄÃ£ thÃªm nhiá»u khÃ¡ch hÃ ng: thÃªm má»›i ${summary.created}, bá» qua ${summary.skipped}, lá»—i ${summary.errors}.`);
       setBulkRows([createBulkEntryRow()]);
       setShowBulkEntry(false);
       await fetchAreas();
       await refreshBillGoKeepingScroll();
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Không thể lưu nhiều khách hàng.");
+      setImportError(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ lÆ°u nhiá»u khÃ¡ch hÃ ng.");
     } finally {
       setBulkSaving(false);
     }
@@ -1427,22 +1435,22 @@ export default function WorkerBillGoPage() {
         body: JSON.stringify({ ...form, addressDetail: form.address, paidThroughMonth: form.isLegacyCustomer ? form.paidThroughMonth : "", dueDate: formDueDate }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể thêm khách hàng BillGo.");
+      if (!response.ok) throw new Error(result.error || "KhÃ´ng thá»ƒ thÃªm khÃ¡ch hÃ ng BillGo.");
       if (typeof result.collectionMonth === "string" && result.collectionMonth.length >= 7) {
         setMonthFilter(result.collectionMonth.slice(0, 7));
       }
       setViewMode("cycle");
-      setActiveTab(addedCycle);
-      setStatusFilter("all");
+      if (addedCycle) setActiveTab(addedCycle);
+      setStatusFilter(result.pendingCycle ? "pending_cycle" : "all");
       setDueFilter("all");
       setForm(initialForm());
       setPackageSearch("");
       setShowForm(false);
-      setMessage("Đã thêm khách hàng BillGo.");
+      setMessage("ÄÃ£ thÃªm khÃ¡ch hÃ ng BillGo.");
       await fetchAreas();
       await refreshBillGoKeepingScroll();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể thêm khách hàng BillGo.");
+      setMessage(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ thÃªm khÃ¡ch hÃ ng BillGo.");
     } finally {
       setSaving(false);
     }
@@ -1477,7 +1485,7 @@ export default function WorkerBillGoPage() {
       packageName: subscription?.package_name || "",
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
       note: subscription?.note || "",
-      cycle: (subscription?.current_cycle || subscription?.cycle || "monthly") as BillGoCycle,
+      cycle: (subscription?.current_cycle || subscription?.cycle || "") as BillGoCycle | "",
       effectivePeriodStart: getNextPeriodStartDisplay(subscription, item.period_start) || todayInput(),
     });
   };
@@ -1494,12 +1502,12 @@ export default function WorkerBillGoPage() {
         body: JSON.stringify({ action: "collect", receivableId: collecting.id, ...collectForm }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể xác nhận thu tiền.");
+      if (!response.ok) throw new Error(result.error || "KhÃ´ng thá»ƒ xÃ¡c nháº­n thu tiá»n.");
       setCollecting(null);
-      setMessage("Đã xác nhận thu tiền.");
+      setMessage("ÄÃ£ xÃ¡c nháº­n thu tiá»n.");
       await refreshBillGoKeepingScroll();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể xác nhận thu tiền.");
+      setMessage(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ xÃ¡c nháº­n thu tiá»n.");
     } finally {
       setSaving(false);
     }
@@ -1565,18 +1573,18 @@ export default function WorkerBillGoPage() {
         body: JSON.stringify(payload),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Không thể lưu thay đổi BillGo.");
+      if (!response.ok) throw new Error(result.error || "KhÃ´ng thá»ƒ lÆ°u thay Ä‘á»•i BillGo.");
       setActionTarget(null);
       setActionMode(null);
-      setMessage("Đã lưu thay đổi BillGo.");
+      setMessage("ÄÃ£ lÆ°u thay Ä‘á»•i BillGo.");
       if (actionMode === "edit") await fetchAreas();
       if (actionMode === "cycle") {
         setViewMode("cycle");
-        setActiveTab(editForm.cycle);
+        setActiveTab(editForm.cycle || BILLGO_ALL_TAB);
       }
       await refreshBillGoKeepingScroll();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể lưu thay đổi BillGo.");
+      setMessage(error instanceof Error ? error.message : "KhÃ´ng thá»ƒ lÆ°u thay Ä‘á»•i BillGo.");
     } finally {
       setSaving(false);
     }
@@ -1585,17 +1593,17 @@ export default function WorkerBillGoPage() {
   const shareReceipt = async (receipt: BillGoReceipt) => {
     const url = receipt.qr_payload || `${window.location.origin}/billgo/receipt/${receipt.lookup_code}`;
     if (navigator.share) {
-      await navigator.share({ title: `Phiếu thu ${receipt.receipt_code}`, url });
+      await navigator.share({ title: `Phiáº¿u thu ${receipt.receipt_code}`, url });
       return;
     }
     await navigator.clipboard?.writeText(url);
-    setMessage("Đã sao chép liên kết phiếu thu.");
+    setMessage("ÄÃ£ sao chÃ©p liÃªn káº¿t phiáº¿u thu.");
   };
 
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
-    const cycle = getBillGoCycleOption(row.cycle);
-    const canCollect = summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
+    const cycle = row.cycle ? getBillGoCycleOption(row.cycle) : null;
+    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
     const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
     const hasPreviousUnpaidPeriod = previousUnpaidReceivables.length > 0;
@@ -1607,10 +1615,10 @@ export default function WorkerBillGoPage() {
           <div className="min-w-0">
             <h3 className="truncate text-base font-extrabold text-on-surface">{row.customerName}</h3>
             <p className="mt-1 text-sm text-on-surface-variant">{row.account}</p>
-            <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "Chưa có số điện thoại"}</p>
+            <p className="text-sm text-on-surface-variant">{item.subscription?.phone || "ChÆ°a cÃ³ sá»‘ Ä‘iá»‡n thoáº¡i"}</p>
             {hasPreviousUnpaidPeriod && (
               <p className="mt-2 rounded-lg bg-error-container/60 px-2.5 py-1.5 text-xs font-extrabold text-error">
-                Còn kỳ cước {monthYearLabel(firstPreviousUnpaid?.period_start || firstPreviousUnpaid?.collection_month || `${monthFilter}-01`)} chưa thu
+                CÃ²n ká»³ cÆ°á»›c {monthYearLabel(firstPreviousUnpaid?.period_start || firstPreviousUnpaid?.collection_month || `${monthFilter}-01`)} chÆ°a thu
               </p>
             )}
           </div>
@@ -1619,14 +1627,14 @@ export default function WorkerBillGoPage() {
               {summary.statusLabel}
             </span>
             {canCollect && (
-              <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white">
+              <button type="button" title="XÃ¡c nháº­n thu tiá»n" onClick={() => openCollect(item)} className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white">
                 <CheckCircle2 size={16} />
                 <span className="lg:hidden">Thu</span>
               </button>
             )}
             {receiptEntries.length > 0 && (
               <button type="button" onClick={() => setReceiptTarget(item)} className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/60 bg-white px-3 py-2 text-xs font-extrabold text-primary">
-                Phiếu thu
+                Phiáº¿u thu
               </button>
             )}
             <details className="group">
@@ -1635,22 +1643,22 @@ export default function WorkerBillGoPage() {
               </summary>
               <div className="absolute right-0 z-10 mt-2 w-56 overflow-hidden rounded-lg border border-outline-variant/40 bg-white py-1 text-left text-sm shadow-lg">
                 <button type="button" disabled={!canCollect} onClick={() => openCollect(item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low disabled:opacity-45">
-                  <CircleDollarSign size={16} /> Thu tiền
+                  <CircleDollarSign size={16} /> Thu tiá»n
                 </button>
                 <button type="button" onClick={() => openAction("detail", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <Eye size={16} /> Xem chi tiết
+                  <Eye size={16} /> Xem chi tiáº¿t
                 </button>
                 <button type="button" onClick={() => openAction("edit", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <Pencil size={16} /> Sửa thông tin
+                  <Pencil size={16} /> Sá»­a thÃ´ng tin
                 </button>
                 <button type="button" onClick={() => openAction("cycle", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <RotateCcw size={16} /> Chuyển hình thức đóng
+                  <RotateCcw size={16} /> {item.subscription?.status === "pending_cycle" ? "Thiáº¿t láº­p chu ká»³" : "Chuyá»ƒn hÃ¬nh thá»©c Ä‘Ã³ng"}
                 </button>
                 <button type="button" onClick={() => openAction("status", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng thu"}
+                  <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "KÃ­ch hoáº¡t láº¡i" : "Ngá»«ng thu"}
                 </button>
                 <button type="button" onClick={() => openAction("delete", item)} className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
-                  <Trash2 size={16} /> Xóa khách hàng
+                  <Trash2 size={16} /> XÃ³a khÃ¡ch hÃ ng
                 </button>
               </div>
             </details>
@@ -1658,24 +1666,24 @@ export default function WorkerBillGoPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-sm lg:contents">
-          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">GÃ³i thÃ¡ng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cáº§n thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">ÄÃ£ thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
+          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">CÃ²n láº¡i<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">ÄÃ£ thu {formatBillGoCurrency(summary.paid)}</p></div>
         </div>
 
         <div className="mt-3 grid gap-1 text-xs text-on-surface-variant lg:mt-0">
-          <p>Chu kỳ: {cycle.label}</p>
-          <p>Sử dụng: {item.service_months || ((item.billing_months || 0) + (item.bonus_months || 0)) || cycle.paidMonths + cycle.bonusMonths} tháng</p>
-          <p>Kỳ cước: {item.period_start || "Chưa có"} - {item.period_end || "Chưa có"}</p>
-          <p>Hạn thanh toán: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "Chưa có"}</p>
-          <p>Đến hạn tiếp theo: {(item.next_due_date || item.subscription?.next_due_date) ? new Date(item.next_due_date || item.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "Chưa có"}</p>
-          <p>{getBillGoAddress(item.subscription) || "Chưa có địa chỉ"}</p>
+          <p>Chu ká»³: {cycle?.label || "ChÆ°a thiáº¿t láº­p chu ká»³"}</p>
+          <p>Sá»­ dá»¥ng: {cycle ? item.service_months || ((item.billing_months || 0) + (item.bonus_months || 0)) || cycle.paidMonths + cycle.bonusMonths : 0} thÃ¡ng</p>
+          <p>Ká»³ cÆ°á»›c: {item.period_start || "ChÆ°a cÃ³"} - {item.period_end || "ChÆ°a cÃ³"}</p>
+          <p>Háº¡n thanh toÃ¡n: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "ChÆ°a cÃ³"}</p>
+          <p>Äáº¿n háº¡n tiáº¿p theo: {(item.next_due_date || item.subscription?.next_due_date) ? new Date(item.next_due_date || item.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "ChÆ°a cÃ³"}</p>
+          <p>{getBillGoAddress(item.subscription) || "ChÆ°a cÃ³ Ä‘á»‹a chá»‰"}</p>
         </div>
 
         {canCollect && (
           <button type="button" onClick={() => openCollect(item)} className="btn-primary mt-1 !w-full lg:hidden">
-            <CheckCircle2 size={18} /> Xác nhận thu tiền
+            <CheckCircle2 size={18} /> XÃ¡c nháº­n thu tiá»n
           </button>
         )}
       </article>
@@ -1686,18 +1694,18 @@ export default function WorkerBillGoPage() {
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 lg:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase text-primary">Thu cước định kỳ</p>
+          <p className="text-xs font-bold uppercase text-primary">Thu cÆ°á»›c Ä‘á»‹nh ká»³</p>
           <h1 className="text-2xl font-extrabold text-on-surface">BillGo</h1>
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-          <button type="button" title="Tải lại" onClick={() => void fetchBillGo()} className="btn-outline !w-auto !p-3">
+          <button type="button" title="Táº£i láº¡i" onClick={() => void fetchBillGo()} className="btn-outline !w-auto !p-3">
             <RefreshCw size={18} />
           </button>
           <button type="button" onClick={downloadImportTemplate} className="btn-outline !w-auto flex-1 sm:flex-none">
-            <Download size={18} /> Tải file mẫu
+            <Download size={18} /> Táº£i file máº«u
           </button>
           <label className="btn-outline !w-auto flex-1 cursor-pointer sm:flex-none">
-            <Upload size={18} /> Nhập/Đồng bộ Excel
+            <Upload size={18} /> Nháº­p/Äá»“ng bá»™ Excel
             <input
               type="file"
               accept=".xlsx,.xls,.csv"
@@ -1711,10 +1719,10 @@ export default function WorkerBillGoPage() {
             />
           </label>
           <button type="button" onClick={() => { setShowBulkEntry(value => !value); if (showForm) { setPackageSearch(""); setShowForm(false); } }} className="btn-outline !w-auto flex-1 sm:flex-none">
-            <Plus size={18} /> Thêm nhiều khách hàng
+            <Plus size={18} /> ThÃªm nhiá»u khÃ¡ch hÃ ng
           </button>
           <button type="button" onClick={() => { if (showForm) setPackageSearch(""); setShowForm(value => !value); if (showBulkEntry) setShowBulkEntry(false); }} className="btn-primary !w-auto flex-1 sm:flex-none">
-            <Plus size={18} /> Thêm khách hàng
+            <Plus size={18} /> ThÃªm khÃ¡ch hÃ ng
           </button>
         </div>
       </header>
@@ -1723,13 +1731,13 @@ export default function WorkerBillGoPage() {
       {importError && <div className="mt-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">{importError}</div>}
       {overduePeriodLabels.length > 0 && (
         <div className="mt-4 rounded-lg border border-error/30 bg-error-container/60 p-3 text-sm font-extrabold text-error">
-          {overduePeriodLabels.map(label => `Còn kỳ cước ${label} chưa thu`).join(" ; ")}
+          {overduePeriodLabels.map(label => `CÃ²n ká»³ cÆ°á»›c ${label} chÆ°a thu`).join(" ; ")}
         </div>
       )}
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[
-          { value: "cycle", label: "Thu theo chu kỳ" },
-          { value: "area", label: "Thu theo địa bàn" },
+          { value: "cycle", label: "Thu theo chu ká»³" },
+          { value: "area", label: "Thu theo Ä‘á»‹a bÃ n" },
         ].map(option => (
           <button
             key={option.value}
@@ -1746,38 +1754,38 @@ export default function WorkerBillGoPage() {
         <section className="mt-4 rounded-lg border border-outline-variant/50 bg-white shadow-sm" onPaste={handleBulkPaste}>
           <div className="flex flex-col gap-3 border-b border-outline-variant/25 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-base font-extrabold text-on-surface">Thêm nhiều khách hàng</h2>
-              <p className="mt-1 text-xs font-semibold text-on-surface-variant">Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Tài khoản, Gói cước, Chu kỳ, Tháng bắt đầu.</p>
+              <h2 className="text-base font-extrabold text-on-surface">ThÃªm nhiá»u khÃ¡ch hÃ ng</h2>
+              <p className="mt-1 text-xs font-semibold text-on-surface-variant">CÃ³ thá»ƒ dÃ¡n dá»¯ liá»‡u theo thá»© tá»±: TÃªn, SÄT, Äá»‹a chá»‰, NhÃ  máº¡ng, TÃ i khoáº£n, GÃ³i cÆ°á»›c, Chu ká»³, ThÃ¡ng báº¯t Ä‘áº§u.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={addBulkRow} className="btn-outline !w-auto !px-3 !py-2"><Plus size={16} /> Thêm dòng</button>
-              <button type="button" disabled={bulkSaving} onClick={() => void saveBulkRows()} className="btn-primary !w-auto !px-3 !py-2 disabled:opacity-50">{bulkSaving ? "Đang lưu..." : "Lưu tất cả"}</button>
+              <button type="button" onClick={addBulkRow} className="btn-outline !w-auto !px-3 !py-2"><Plus size={16} /> ThÃªm dÃ²ng</button>
+              <button type="button" disabled={bulkSaving} onClick={() => void saveBulkRows()} className="btn-primary !w-auto !px-3 !py-2 disabled:opacity-50">{bulkSaving ? "Äang lÆ°u..." : "LÆ°u táº¥t cáº£"}</button>
             </div>
           </div>
           {bulkErrors.length > 0 && (
             <div className="m-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">
-              {bulkErrors.map(error => <p key={error.rowNumber || error.messages.join("-")}>Dòng {error.rowNumber}: {error.messages.join("; ")}</p>)}
+              {bulkErrors.map(error => <p key={error.rowNumber || error.messages.join("-")}>DÃ²ng {error.rowNumber}: {error.messages.join("; ")}</p>)}
             </div>
           )}
           <div className="hidden border-b border-outline-variant/25 bg-surface-container-low px-4 py-2 text-[11px] font-extrabold uppercase text-on-surface-variant md:grid md:grid-cols-[1.45fr_1.1fr_2fr_.8fr_1.15fr_1.2fr_.7fr_.72fr_auto] md:gap-2">
-            <span>Tên khách hàng</span><span>Số điện thoại</span><span>Địa chỉ</span><span>Nhà mạng</span><span>Tài khoản Internet</span><span>Gói cước</span><span>Chu kỳ</span><span>Tháng</span><span></span>
+            <span>TÃªn khÃ¡ch hÃ ng</span><span>Sá»‘ Ä‘iá»‡n thoáº¡i</span><span>Äá»‹a chá»‰</span><span>NhÃ  máº¡ng</span><span>TÃ i khoáº£n Internet</span><span>GÃ³i cÆ°á»›c</span><span>Chu ká»³</span><span>ThÃ¡ng</span><span></span>
           </div>
           <div className="grid gap-3 p-4 md:gap-2">
             {bulkRows.map((row, index) => (
               <div key={row.id} className="rounded-lg border border-outline-variant/50 p-3 md:grid md:grid-cols-[1.45fr_1.1fr_2fr_.8fr_1.15fr_1.2fr_.7fr_.72fr_auto] md:items-start md:gap-2 md:border-0 md:p-0">
-                <label className="grid gap-1 text-xs font-bold text-on-surface-variant md:block"><span className="md:hidden">Tên khách hàng</span><input className="input-field" value={row.customerName} onChange={e => updateBulkRow(row.id, { customerName: e.target.value })} /></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Số điện thoại</span><input className="input-field" inputMode="tel" value={row.phone} onChange={e => updateBulkRow(row.id, { phone: e.target.value })} /></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Địa chỉ</span><input className="input-field" value={row.address} onChange={e => updateBulkRow(row.id, { address: e.target.value })} /></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Nhà mạng</span><select className="input-field" value={row.provider} onChange={e => updateBulkRow(row.id, { provider: e.target.value })}>{providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Tài khoản Internet</span><input className="input-field" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} /></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Gói cước</span><select className="input-field" value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói</option>{packages.map(item => <option key={item.id} value={item.id}>{item.name} - {formatBillGoCurrency(item.monthly_price)}</option>)}</select></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Chu kỳ</span><select className="input-field" value={row.cycle} onChange={e => updateBulkRow(row.id, { cycle: e.target.value as BillGoCycle })}>{signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.shortLabel}</option>)}</select></label>
-                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Tháng bắt đầu</span><input type="month" className="input-field" value={row.startMonth} onChange={e => updateBulkRow(row.id, { startMonth: e.target.value })} /></label>
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant md:block"><span className="md:hidden">TÃªn khÃ¡ch hÃ ng</span><input className="input-field" value={row.customerName} onChange={e => updateBulkRow(row.id, { customerName: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Sá»‘ Ä‘iá»‡n thoáº¡i</span><input className="input-field" inputMode="tel" value={row.phone} onChange={e => updateBulkRow(row.id, { phone: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Äá»‹a chá»‰</span><input className="input-field" value={row.address} onChange={e => updateBulkRow(row.id, { address: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">NhÃ  máº¡ng</span><select className="input-field" value={row.provider} onChange={e => updateBulkRow(row.id, { provider: e.target.value })}>{providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">TÃ i khoáº£n Internet</span><input className="input-field" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} /></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">GÃ³i cÆ°á»›c</span><select className="input-field" value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chá»n gÃ³i</option>{packages.map(item => <option key={item.id} value={item.id}>{item.name} - {formatBillGoCurrency(item.monthly_price)}</option>)}</select></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">Chu ká»³</span><select className="input-field" value={row.cycle} onChange={e => updateBulkRow(row.id, { cycle: e.target.value as BillGoCycle })}><option value="">ChÆ°a thiáº¿t láº­p</option>{signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.shortLabel}</option>)}</select></label>
+                <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant md:mt-0 md:block"><span className="md:hidden">ThÃ¡ng báº¯t Ä‘áº§u</span><input type="month" className="input-field" value={row.startMonth} onChange={e => updateBulkRow(row.id, { startMonth: e.target.value })} disabled={!row.cycle} /></label>
                 <div className="mt-3 flex gap-2 md:mt-0 md:justify-end">
-                  <button type="button" title="Nhân bản dòng" onClick={() => duplicateBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-primary hover:bg-primary-fixed"><Copy size={16} /></button>
-                  <button type="button" title="Xóa dòng" onClick={() => removeBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-error hover:bg-error-container"><Trash2 size={16} /></button>
+                  <button type="button" title="NhÃ¢n báº£n dÃ²ng" onClick={() => duplicateBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-primary hover:bg-primary-fixed"><Copy size={16} /></button>
+                  <button type="button" title="XÃ³a dÃ²ng" onClick={() => removeBulkRow(row.id)} className="rounded-lg border border-outline-variant p-2 text-error hover:bg-error-container"><Trash2 size={16} /></button>
                 </div>
-                <p className="mt-2 text-xs font-bold text-on-surface-variant md:col-span-9 md:mt-1">Dòng {index + 1}: {row.packageId ? `Cước ${formatBillGoCurrency(toMoneyNumber(row.monthlyFee))}` : "Chưa chọn gói cước"}</p>
+                <p className="mt-2 text-xs font-bold text-on-surface-variant md:col-span-9 md:mt-1">DÃ²ng {index + 1}: {row.packageId ? `CÆ°á»›c ${formatBillGoCurrency(toMoneyNumber(row.monthlyFee))}` : "ChÆ°a chá»n gÃ³i cÆ°á»›c"}</p>
               </div>
             ))}
           </div>
@@ -1786,12 +1794,12 @@ export default function WorkerBillGoPage() {
       {showForm && (
         <form onSubmit={submitCustomer} className="mt-4 grid h-[calc(100dvh-16rem)] max-h-[calc(100dvh-16rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-outline-variant/50 bg-white shadow-sm">
           <div className="border-b border-outline-variant/25 bg-white px-4 py-3">
-            <h2 className="text-base font-extrabold">Thêm khách hàng</h2>
+            <h2 className="text-base font-extrabold">ThÃªm khÃ¡ch hÃ ng</h2>
           </div>
           <div className="min-h-0 overflow-y-auto p-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
-              <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
+              <input required className="input-field" placeholder="TÃªn khÃ¡ch hÃ ng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
+              <input className="input-field" placeholder="Sá»‘ Ä‘iá»‡n thoáº¡i" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
               <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={form.account} onChange={e => updateForm("account", e.target.value)} />
               <datalist id="billgo-account-suggestions">
                 {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
@@ -1799,21 +1807,21 @@ export default function WorkerBillGoPage() {
               <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
                 {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
               </select>
-              <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
+              <input list="billgo-area-suggestions" className="input-field" placeholder="XÃ£/phÆ°á»ng" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
               <datalist id="billgo-area-suggestions">
                 {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
               </datalist>
-              <input required list="billgo-customer-address-suggestions" className="input-field sm:col-span-2 xl:col-span-1" placeholder="Địa chỉ khách hàng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
+              <input required list="billgo-customer-address-suggestions" className="input-field sm:col-span-2 xl:col-span-1" placeholder="Äá»‹a chá»‰ khÃ¡ch hÃ ng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
               <datalist id="billgo-customer-address-suggestions">
                 {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
               </datalist>
               <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
-                Chọn gói cước
+                Chá»n gÃ³i cÆ°á»›c
                 <input
                   required
                   inputMode="numeric"
                   className="input-field"
-                  placeholder="Nhập giá tiền để tìm gói cước"
+                  placeholder="Nháº­p giÃ¡ tiá»n Ä‘á»ƒ tÃ¬m gÃ³i cÆ°á»›c"
                   value={packageSearch}
                   onChange={e => updatePackageSearch(e.target.value)}
                 />
@@ -1826,64 +1834,65 @@ export default function WorkerBillGoPage() {
                         onClick={() => selectFormPackage(packageOption)}
                         className={`w-full rounded-md px-3 py-2 text-left text-sm font-bold ${form.packageId === packageOption.id ? "bg-primary text-white" : "hover:bg-surface-container-low"}`}
                       >
-                        {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
+                        {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/thÃ¡ng
                       </button>
                     ))}
                     {formPackageOptions.length === 0 && packageSearchDigits && (
-                      <p className="px-3 py-2 text-sm text-on-surface-variant">Không có gói cước bắt đầu bằng giá {packageSearchDigits}</p>
+                      <p className="px-3 py-2 text-sm text-on-surface-variant">KhÃ´ng cÃ³ gÃ³i cÆ°á»›c báº¯t Ä‘áº§u báº±ng giÃ¡ {packageSearchDigits}</p>
                     )}
                   </div>
                 )}
               </div>
-              <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder="Tên gói tại thời điểm đăng ký" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
-              <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
+              <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder="TÃªn gÃ³i táº¡i thá»i Ä‘iá»ƒm Ä‘Äƒng kÃ½" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
+              <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Sá»‘ tiá»n cÆ°á»›c má»™t thÃ¡ng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
               <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
+                <option value="">Chưa thiết lập</option>
                 {signupCycleOptions
                   .filter(option => getSignupCycleValues(selectedFormPackage?.allowed_cycles).has(option.value))
                   .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
-              <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
+              <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Sá»‘ tiá»n cáº§n thu" />
               <label className="flex items-center gap-3 rounded-lg border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface sm:col-span-2 xl:col-span-3">
                 <input type="checkbox" checked={form.isLegacyCustomer} onChange={e => updateForm("isLegacyCustomer", e.target.checked ? "true" : "false")} className="h-5 w-5 accent-primary" />
-                Nhập khách hàng cũ
+                Nháº­p khÃ¡ch hÃ ng cÅ©
               </label>
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                Kỳ cước {monthLabel(form.startDate)}
-                <input required type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
+                Ká»³ cÆ°á»›c {monthLabel(form.startDate)}
+                <input required={hasFormCycle} disabled={!hasFormCycle} type="date" className="input-field" value={form.startDate} onChange={e => updateForm("startDate", e.target.value)} />
               </label>
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                Hạn nộp tiền
-                <input type="date" className="input-field" value={formDueDate} onChange={e => updateForm("dueDate", e.target.value)} />
+                Háº¡n ná»™p tiá»n
+                <input disabled={!hasFormCycle} type="date" className="input-field" value={formDueDate} onChange={e => updateForm("dueDate", e.target.value)} />
               </label>
               {form.isLegacyCustomer && (
                 <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                  Đã thu đến kỳ
+                  ÄÃ£ thu Ä‘áº¿n ká»³
                   <input type="month" className="input-field" value={form.paidThroughMonth} onChange={e => updateForm("paidThroughMonth", e.target.value)} />
                 </label>
               )}
               <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                Ngày nhập khách hàng
+                NgÃ y nháº­p khÃ¡ch hÃ ng
                 <input type="date" className="input-field" value={form.initialPaidAt} onChange={e => updateForm("initialPaidAt", e.target.value)} />
               </label>
               <select className="input-field" value={form.initialPaymentMethod} onChange={e => updateForm("initialPaymentMethod", e.target.value)}>
                 {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
-              <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
+              <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chÃº" value={form.note} onChange={e => updateForm("note", e.target.value)} />
             </div>
             <p className="mt-3 text-xs text-on-surface-variant">
-              Kỳ cước {monthLabel(form.startDate)}: {dateLabel(formBilling.periodStart)} - {dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: {dateLabel(formDueDate)}. {form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo kỳ cước hiện tại ở trạng thái Chưa thu."} {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+              {hasFormCycle && formBilling ? `Ká»³ cÆ°á»›c ${monthLabel(form.startDate)}: ${dateLabel(formBilling.periodStart)} - ${dateLabel(formBilling.periodEnd)}. Háº¡n ná»™p tiá»n: ${dateLabel(formDueDate)}. ` : "KhÃ¡ch hÃ ng sáº½ Ä‘Æ°á»£c lÆ°u á»Ÿ tráº¡ng thÃ¡i ChÆ°a thiáº¿t láº­p chu ká»³, chÆ°a táº¡o ká»³ thu vÃ  chÆ°a tÃ­nh tiá»n cáº§n thu. "}{hasFormCycle ? (form.isLegacyCustomer && form.paidThroughMonth ? `ÄÃ£ thu Ä‘áº¿n ká»³ thÃ¡ng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; há»‡ thá»‘ng tá»± xÃ¡c Ä‘á»‹nh ká»³ tiáº¿p theo.` : "KhÃ¡ch hÃ ng má»›i sáº½ Ä‘Æ°á»£c táº¡o ká»³ cÆ°á»›c hiá»‡n táº¡i á»Ÿ tráº¡ng thÃ¡i ChÆ°a thu.") : ""} {form.cycle === "yearly" ? "KhÃ¡ch tráº£ 12 thÃ¡ng vÃ  Ä‘Æ°á»£c dÃ¹ng 13 thÃ¡ng." : ""}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-            <button type="button" onClick={() => { setPackageSearch(""); setShowForm(false); }} className="btn-outline !w-auto">Hủy</button>
-            <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Đang lưu..." : "Thêm vào BillGo"}</button>
+            <button type="button" onClick={() => { setPackageSearch(""); setShowForm(false); }} className="btn-outline !w-auto">Há»§y</button>
+            <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Äang lÆ°u..." : "ThÃªm vÃ o BillGo"}</button>
           </div>
         </form>
       )}
 
       {viewMode === "cycle" ? (
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-          {[...BILLGO_CYCLE_OPTIONS, { value: BILLGO_ALL_TAB, label: "Tất cả khách hàng", shortLabel: "Tất cả", paidMonths: 0, bonusMonths: 0 }].map(option => (
+          {[...BILLGO_CYCLE_OPTIONS, { value: BILLGO_ALL_TAB, label: "Táº¥t cáº£ khÃ¡ch hÃ ng", shortLabel: "Táº¥t cáº£", paidMonths: 0, bonusMonths: 0 }].map(option => (
             <button
               key={option.value}
               type="button"
@@ -1898,33 +1907,33 @@ export default function WorkerBillGoPage() {
         <section className="mt-4 rounded-lg border border-outline-variant/40 bg-white p-4 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-3">
             <select className="input-field" value={selectedAreaId} onChange={e => { setSelectedAreaId(e.target.value); setSelectedSubAreaId(""); }}>
-              <option value="">Tất cả xã</option>
+              <option value="">Táº¥t cáº£ xÃ£</option>
               {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.id}>{area.name}</option>)}
             </select>
             <select className="input-field" value={selectedSubAreaId} onChange={e => setSelectedSubAreaId(e.target.value)} disabled={!selectedAreaId || selectedAreaSubAreas.length === 0}>
-              <option value="">{selectedAreaId ? "Tất cả xóm" : "Chọn xã trước"}</option>
+              <option value="">{selectedAreaId ? "Táº¥t cáº£ xÃ³m" : "Chá»n xÃ£ trÆ°á»›c"}</option>
               {selectedAreaSubAreas.map(subArea => <option key={subArea.id} value={subArea.id}>{subArea.name}</option>)}
             </select>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={!previousSubArea} onClick={() => previousSubArea && setSelectedSubAreaId(previousSubArea.id)} className="btn-outline !w-full !px-3 disabled:opacity-40">Xóm trước</button>
-              <button type="button" disabled={!nextSubArea} onClick={() => nextSubArea && setSelectedSubAreaId(nextSubArea.id)} className={`${remainingCount === 0 && nextSubArea ? "btn-primary" : "btn-outline"} !w-full !px-3 disabled:opacity-40`}>Xóm tiếp</button>
+              <button type="button" disabled={!previousSubArea} onClick={() => previousSubArea && setSelectedSubAreaId(previousSubArea.id)} className="btn-outline !w-full !px-3 disabled:opacity-40">XÃ³m trÆ°á»›c</button>
+              <button type="button" disabled={!nextSubArea} onClick={() => nextSubArea && setSelectedSubAreaId(nextSubArea.id)} className={`${remainingCount === 0 && nextSubArea ? "btn-primary" : "btn-outline"} !w-full !px-3 disabled:opacity-40`}>XÃ³m tiáº¿p</button>
             </div>
           </div>
 
           <div className="mt-3 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">
             {remainingCount === 0 && areaStats.total > 0
-              ? "Đã hoàn thành xóm"
-              : `Đã xử lý ${processedCount}/${areaStats.total} khách - còn ${remainingCount} khách chưa xử lý`}
+              ? "ÄÃ£ hoÃ n thÃ nh xÃ³m"
+              : `ÄÃ£ xá»­ lÃ½ ${processedCount}/${areaStats.total} khÃ¡ch - cÃ²n ${remainingCount} khÃ¡ch chÆ°a xá»­ lÃ½`}
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-6">
             {[
-              ["Tổng khách", String(areaStats.total)],
-              ["Đã thu", String(areaStats.paid)],
-          ["Chưa thu", String(areaStats.unpaid + areaStats.partial + areaStats.overdue)],
-              ["Thu thiếu", String(areaStats.partial)],
-              ["Còn lại", formatBillGoCurrency(areaStats.debt)],
-              ["Hoàn thành", `${areaStats.total ? Math.round((areaStats.paid / areaStats.total) * 100) : 0}%`],
+              ["Tá»•ng khÃ¡ch", String(areaStats.total)],
+              ["ÄÃ£ thu", String(areaStats.paid)],
+          ["ChÆ°a thu", String(areaStats.unpaid + areaStats.partial + areaStats.overdue)],
+              ["Thu thiáº¿u", String(areaStats.partial)],
+              ["CÃ²n láº¡i", formatBillGoCurrency(areaStats.debt)],
+              ["HoÃ n thÃ nh", `${areaStats.total ? Math.round((areaStats.paid / areaStats.total) * 100) : 0}%`],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg bg-surface-container-low p-3">
                 <p className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</p>
@@ -1938,11 +1947,11 @@ export default function WorkerBillGoPage() {
       <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
         <label className="relative block">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-          <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
+          <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="TÃ¬m tÃªn, account, Ä‘á»‹a chá»‰, gÃ³i cÆ°á»›c..." />
         </label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <input type="month" className="input-field" value={monthFilter} onChange={e => setMonthFilter(e.target.value || monthInput())} />
-          <button type="button" title="Tháng hiện tại" onClick={() => setMonthFilter(monthInput())} className="btn-outline !w-auto !px-3">
+          <button type="button" title="ThÃ¡ng hiá»‡n táº¡i" onClick={() => setMonthFilter(monthInput())} className="btn-outline !w-auto !px-3">
             <RotateCcw size={16} />
           </button>
         </div>
@@ -1977,12 +1986,13 @@ export default function WorkerBillGoPage() {
 
       {viewMode === "cycle" && <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
         {[
-          ["Tổng khách", String(totals.totalCustomers)],
-          ["Chưa thu", String(totalUncollectedCustomers)],
-          ["Đã thu", String(totals.paid)],
-          ["Thu thiếu", String(totals.partial)],
-          ["Cần thu", formatBillGoCurrency(totals.totalReceivable)],
-          ["Còn phải thu", formatBillGoCurrency(totals.totalDebt)],
+          ["Tá»•ng khÃ¡ch", String(totals.totalCustomers)],
+          ["ChÆ°a chu ká»³", String(totals.pendingCycle || 0)],
+          ["ChÆ°a thu", String(totalUncollectedCustomers)],
+          ["ÄÃ£ thu", String(totals.paid)],
+          ["Thu thiáº¿u", String(totals.partial)],
+          ["Cáº§n thu", formatBillGoCurrency(totals.totalReceivable)],
+          ["CÃ²n pháº£i thu", formatBillGoCurrency(totals.totalDebt)],
         ].map(([label, value]) => (
           <div key={label} className="rounded-lg border border-outline-variant/40 bg-white p-4">
             <p className="text-xs font-bold uppercase text-on-surface-variant">{label}</p>
@@ -1992,27 +2002,27 @@ export default function WorkerBillGoPage() {
       </div>}
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-on-surface-variant">Đang tải BillGo...</div>
+        <div className="py-16 text-center text-sm text-on-surface-variant">Äang táº£i BillGo...</div>
       ) : visibleRows.length === 0 ? (
         <div className="mt-5 rounded-lg border border-dashed border-outline-variant bg-white p-8 text-center text-sm text-on-surface-variant">
-          Chưa có khách hàng phù hợp bộ lọc tháng, trạng thái hoặc địa bàn.
+          ChÆ°a cÃ³ khÃ¡ch hÃ ng phÃ¹ há»£p bá»™ lá»c thÃ¡ng, tráº¡ng thÃ¡i hoáº·c Ä‘á»‹a bÃ n.
         </div>
       ) : (
         <section className="mt-5 space-y-2">
           <div className="hidden rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-xs font-bold uppercase text-on-surface-variant lg:grid lg:grid-cols-[minmax(190px,1.5fr)_120px_190px_130px_130px_110px]">
-            <span>Khách hàng</span>
-            <span>Trạng thái</span>
-            <span>Gói tháng</span>
-            <span>Cần thu</span>
-            <span>Còn lại</span>
-            <span>Kỳ cước</span>
+            <span>KhÃ¡ch hÃ ng</span>
+            <span>Tráº¡ng thÃ¡i</span>
+            <span>GÃ³i thÃ¡ng</span>
+            <span>Cáº§n thu</span>
+            <span>CÃ²n láº¡i</span>
+            <span>Ká»³ cÆ°á»›c</span>
           </div>
           {visibleRows.map(renderRow)}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 text-sm text-on-surface-variant">
-            <span>Trang {page}/{pageCount} · {totalRows} khách</span>
+            <span>Trang {page}/{pageCount} Â· {totalRows} khÃ¡ch</span>
             <div className="flex gap-2">
               <button type="button" className="btn-outline !w-auto !px-3 !py-2" disabled={loading || page <= 1} onClick={() => setPage(current => Math.max(current - 1, 1))}>
-                Trước
+                TrÆ°á»›c
               </button>
               <button type="button" className="btn-outline !w-auto !px-3 !py-2" disabled={loading || page >= pageCount} onClick={() => setPage(current => Math.min(current + 1, pageCount))}>
                 Sau
@@ -2027,21 +2037,21 @@ export default function WorkerBillGoPage() {
           <div className="modal-panel flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden p-0">
             <div className="flex items-start justify-between gap-3 border-b border-outline-variant/30 p-4">
               <div>
-                <p className="flex items-center gap-2 text-xs font-bold uppercase text-primary"><FileSpreadsheet size={16} /> Nhập/Đồng bộ Excel</p>
-                <h2 className="text-lg font-extrabold">{importFileName || "Dữ liệu BillGo"}</h2>
+                <p className="flex items-center gap-2 text-xs font-bold uppercase text-primary"><FileSpreadsheet size={16} /> Nháº­p/Äá»“ng bá»™ Excel</p>
+                <h2 className="text-lg font-extrabold">{importFileName || "Dá»¯ liá»‡u BillGo"}</h2>
               </div>
-              <button type="button" onClick={() => setShowImport(false)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+              <button type="button" onClick={() => setShowImport(false)} className="btn-outline !w-auto !px-3 !py-2">ÄÃ³ng</button>
             </div>
             <div className="overflow-y-auto p-4">
-              {importLoading && <div className="rounded-lg bg-surface-container-low p-3 text-sm font-bold text-on-surface-variant">Đang xử lý file Excel...</div>}
+              {importLoading && <div className="rounded-lg bg-surface-container-low p-3 text-sm font-bold text-on-surface-variant">Äang xá»­ lÃ½ file Excel...</div>}
               {importPreview && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {[
-                      ["Thêm mới", importPreview.summary.created, "text-success"],
-                      ["Cập nhật", importPreview.summary.updated, "text-primary"],
-                      ["Bỏ qua", importPreview.summary.skipped, "text-on-surface"],
-                      ["Lỗi", importPreview.summary.errors, "text-error"],
+                      ["ThÃªm má»›i", importPreview.summary.created, "text-success"],
+                      ["Cáº­p nháº­t", importPreview.summary.updated, "text-primary"],
+                      ["Bá» qua", importPreview.summary.skipped, "text-on-surface"],
+                      ["Lá»—i", importPreview.summary.errors, "text-error"],
                     ].map(([label, value, className]) => (
                       <div key={String(label)} className="rounded-lg border border-outline-variant/40 bg-white p-3">
                         <p className="text-[11px] font-bold uppercase text-on-surface-variant">{label}</p>
@@ -2052,26 +2062,26 @@ export default function WorkerBillGoPage() {
 
                   <div className="overflow-hidden rounded-lg border border-outline-variant/40">
                     <div className="hidden bg-surface-container-low px-3 py-2 text-xs font-bold uppercase text-on-surface-variant sm:grid sm:grid-cols-[70px_1.2fr_1fr_1fr_120px_1.4fr]">
-                      <span>Dòng</span>
-                      <span>Khách hàng</span>
+                      <span>DÃ²ng</span>
+                      <span>KhÃ¡ch hÃ ng</span>
                       <span>Account</span>
-                      <span>SĐT</span>
-                      <span>Trạng thái</span>
-                      <span>Ghi chú</span>
+                      <span>SÄT</span>
+                      <span>Tráº¡ng thÃ¡i</span>
+                      <span>Ghi chÃº</span>
                     </div>
                     <div className="max-h-[42dvh] divide-y divide-outline-variant/30 overflow-y-auto bg-white">
                       {importPreview.items.map(item => {
-                        const statusLabel = item.status === "new" ? "Thêm mới" : item.status === "update" ? "Cập nhật" : item.status === "skip" ? "Bỏ qua" : "Lỗi";
+                        const statusLabel = item.status === "new" ? "ThÃªm má»›i" : item.status === "update" ? "Cáº­p nháº­t" : item.status === "skip" ? "Bá» qua" : "Lá»—i";
                         const statusClass = item.status === "error" ? "bg-error-container text-error" : item.status === "new" ? "bg-success-container text-success" : item.status === "update" ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant";
                         return (
                           <div key={`${item.row.rowNumber}-${item.row.account || item.row.phone}`} className="grid gap-2 p-3 text-sm sm:grid-cols-[70px_1.2fr_1fr_1fr_120px_1.4fr] sm:items-center">
                             <span className="text-xs font-bold text-on-surface-variant">#{item.row.rowNumber}</span>
-                            <span className="font-bold text-on-surface">{item.row.customerName || "Chưa có tên"}</span>
-                            <span className="text-on-surface-variant">{item.row.account || "Không có"}</span>
-                            <span className="text-on-surface-variant">{item.row.phone || "Không có"}</span>
+                            <span className="font-bold text-on-surface">{item.row.customerName || "ChÆ°a cÃ³ tÃªn"}</span>
+                            <span className="text-on-surface-variant">{item.row.account || "KhÃ´ng cÃ³"}</span>
+                            <span className="text-on-surface-variant">{item.row.phone || "KhÃ´ng cÃ³"}</span>
                             <span className={`w-max rounded-full px-2 py-1 text-[11px] font-extrabold ${statusClass}`}>{statusLabel}</span>
                             <span className={item.status === "error" ? "text-error" : "text-on-surface-variant"}>
-                              {item.reasons.length > 0 ? item.reasons.join(", ") : item.changes.join(", ") || "Không thay đổi"}
+                              {item.reasons.length > 0 ? item.reasons.join(", ") : item.changes.join(", ") || "KhÃ´ng thay Ä‘á»•i"}
                             </span>
                           </div>
                         );
@@ -2081,29 +2091,29 @@ export default function WorkerBillGoPage() {
 
                   {importPreview.missingFromFile.length > 0 && (
                     <details className="rounded-lg border border-outline-variant/40 bg-white p-3 text-sm">
-                      <summary className="cursor-pointer font-extrabold text-on-surface">Khách BillGo không có trong file ({importPreview.missingFromFile.length})</summary>
+                      <summary className="cursor-pointer font-extrabold text-on-surface">KhÃ¡ch BillGo khÃ´ng cÃ³ trong file ({importPreview.missingFromFile.length})</summary>
                       <div className="mt-3 grid gap-2">
                         {importPreview.missingFromFile.slice(0, 50).map(item => (
                           <div key={item.subscriptionId} className="rounded-lg bg-surface-container-low p-2 text-on-surface-variant">
-                            <strong className="text-on-surface">{item.customerName || "Khách BillGo"}</strong> · {item.account || item.phone || "Chưa có khóa đối chiếu"}
+                            <strong className="text-on-surface">{item.customerName || "KhÃ¡ch BillGo"}</strong> Â· {item.account || item.phone || "ChÆ°a cÃ³ khÃ³a Ä‘á»‘i chiáº¿u"}
                           </div>
                         ))}
                       </div>
-                      <p className="mt-2 text-xs text-on-surface-variant">Hệ thống không tự xóa khách không có trong file. Hãy mở từng khách để chọn ngừng thu nếu cần.</p>
+                      <p className="mt-2 text-xs text-on-surface-variant">Há»‡ thá»‘ng khÃ´ng tá»± xÃ³a khÃ¡ch khÃ´ng cÃ³ trong file. HÃ£y má»Ÿ tá»«ng khÃ¡ch Ä‘á»ƒ chá»n ngá»«ng thu náº¿u cáº§n.</p>
                     </details>
                   )}
                 </div>
               )}
             </div>
             <div className="sticky bottom-0 flex flex-col gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)] sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => setShowImport(false)} className="btn-outline !w-full sm:!w-auto">Hủy</button>
+              <button type="button" onClick={() => setShowImport(false)} className="btn-outline !w-full sm:!w-auto">Há»§y</button>
               <button
                 type="button"
                 disabled={importLoading || !importPreview || importPreview.summary.errors > 0}
                 onClick={() => void confirmImportSync()}
                 className="btn-primary !w-full disabled:opacity-45 sm:!w-auto"
               >
-                {importLoading ? "Đang đồng bộ..." : "Xác nhận đồng bộ"}
+                {importLoading ? "Äang Ä‘á»“ng bá»™..." : "XÃ¡c nháº­n Ä‘á»“ng bá»™"}
               </button>
             </div>
           </div>
@@ -2115,45 +2125,45 @@ export default function WorkerBillGoPage() {
           <div className="modal-panel flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden p-0">
             <div className="flex items-start justify-between gap-3 border-b border-outline-variant/30 p-4">
               <div>
-                <p className="text-xs font-bold uppercase text-primary">Phiếu thu</p>
-                <h2 className="text-lg font-extrabold">{receiptTarget.subscription?.customer_name || "Khách BillGo"}</h2>
+                <p className="text-xs font-bold uppercase text-primary">Phiáº¿u thu</p>
+                <h2 className="text-lg font-extrabold">{receiptTarget.subscription?.customer_name || "KhÃ¡ch BillGo"}</h2>
               </div>
-              <button type="button" onClick={() => setReceiptTarget(null)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+              <button type="button" onClick={() => setReceiptTarget(null)} className="btn-outline !w-auto !px-3 !py-2">ÄÃ³ng</button>
             </div>
             <div className="overflow-y-auto p-3 sm:p-4">
               {getReceiptEntries(receiptTarget).length === 0 ? (
-                <p className="text-sm text-on-surface-variant">Chưa có phiếu thu đã lưu.</p>
+                <p className="text-sm text-on-surface-variant">ChÆ°a cÃ³ phiáº¿u thu Ä‘Ã£ lÆ°u.</p>
               ) : (
                 <div className="space-y-2">
                   {getReceiptEntries(receiptTarget).map(({ payment, receipt }) => (
                     <details key={`${payment?.id || "receipt"}-${receipt.lookup_code}`} className="group rounded-lg border border-outline-variant/40 bg-white text-sm">
                       <summary className="grid cursor-pointer list-none gap-2 p-3 sm:grid-cols-[minmax(0,1.4fr)_110px_120px_110px] sm:items-center">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Kỳ cước</p>
-                          <p className="truncate font-extrabold text-on-surface">{receipt.period_start || "Chưa có"} - {receipt.period_end || "Chưa có"}</p>
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Ká»³ cÆ°á»›c</p>
+                          <p className="truncate font-extrabold text-on-surface">{receipt.period_start || "ChÆ°a cÃ³"} - {receipt.period_end || "ChÆ°a cÃ³"}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Số tiền</p>
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Sá»‘ tiá»n</p>
                           <p className="font-extrabold text-primary">{formatBillGoCurrency(receipt.paid_amount ?? payment?.amount)}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Ngày thu</p>
-                          <p className="font-bold text-on-surface">{(receipt.paid_at || payment?.paid_at) ? new Date(receipt.paid_at || payment?.paid_at || "").toLocaleDateString("vi-VN") : "Chưa có"}</p>
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">NgÃ y thu</p>
+                          <p className="font-bold text-on-surface">{(receipt.paid_at || payment?.paid_at) ? new Date(receipt.paid_at || payment?.paid_at || "").toLocaleDateString("vi-VN") : "ChÆ°a cÃ³"}</p>
                         </div>
                         <div className="flex items-end justify-between gap-2 sm:block">
                           <div>
-                            <p className="text-[10px] font-bold uppercase text-on-surface-variant">Mã phiếu</p>
+                            <p className="text-[10px] font-bold uppercase text-on-surface-variant">MÃ£ phiáº¿u</p>
                             <p className="font-bold text-on-surface">{receipt.receipt_code}</p>
                           </div>
-                          <span className="text-xs font-bold text-primary group-open:hidden">Mở</span>
-                          <span className="hidden text-xs font-bold text-primary group-open:inline">Đóng</span>
+                          <span className="text-xs font-bold text-primary group-open:hidden">Má»Ÿ</span>
+                          <span className="hidden text-xs font-bold text-primary group-open:inline">ÄÃ³ng</span>
                         </div>
                       </summary>
                       <div className="border-t border-outline-variant/30 p-3 pt-2">
                         <div className="grid grid-cols-4 gap-2">
                           <a href={`/billgo/receipt/${receipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">Xem</a>
                           <a href={`/billgo/receipt/${receipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">PDF/In</a>
-                          <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Chia sẻ</button>
+                          <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Chia sáº»</button>
                           <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Zalo</button>
                         </div>
                         {(receipt.note || payment?.note) && <p className="mt-2 text-xs text-on-surface-variant">{receipt.note || payment?.note}</p>}
@@ -2173,37 +2183,37 @@ export default function WorkerBillGoPage() {
             <div className="overflow-y-auto p-4 pb-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase text-primary">Xác nhận thu tiền</p>
-                  <h2 className="text-lg font-extrabold">{collecting.subscription?.customer_name || "Khách BillGo"}</h2>
+                  <p className="text-xs font-bold uppercase text-primary">XÃ¡c nháº­n thu tiá»n</p>
+                  <h2 className="text-lg font-extrabold">{collecting.subscription?.customer_name || "KhÃ¡ch BillGo"}</h2>
                 </div>
-                <button type="button" onClick={() => setCollecting(null)} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+                <button type="button" onClick={() => setCollecting(null)} className="btn-outline !w-auto !px-3 !py-2">ÄÃ³ng</button>
               </div>
               <div className="mt-4 grid gap-2 text-sm">
-                <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(getBillGoRowCycle(collecting)).label}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Ká»³ cÆ°á»›c: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">GÃ³i cÆ°á»›c hÃ ng thÃ¡ng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Chu ká»³: <strong>{getBillGoCycleOption(getBillGoRowCycle(collecting)).label}</strong></div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
-                  <div className="rounded-lg bg-surface-container-low p-3">Số tháng sử dụng<br /><strong>{collecting.service_months || ((collecting.billing_months || 0) + (collecting.bonus_months || 0))}</strong></div>
+                  <div className="rounded-lg bg-surface-container-low p-3">Sá»‘ thÃ¡ng tÃ­nh tiá»n<br /><strong>{collecting.billing_months || 0}</strong></div>
+                  <div className="rounded-lg bg-surface-container-low p-3">Sá»‘ thÃ¡ng sá»­ dá»¥ng<br /><strong>{collecting.service_months || ((collecting.billing_months || 0) + (collecting.bonus_months || 0))}</strong></div>
                 </div>
-                <div className="rounded-lg bg-surface-container-low p-3">Đến hạn tiếp theo: <strong>{(collecting.next_due_date || collecting.subscription?.next_due_date) ? new Date(collecting.next_due_date || collecting.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "Chưa có"}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Tổng tiền cần thu: <strong>{formatBillGoCurrency(selectedSummary.receivable)}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Äáº¿n háº¡n tiáº¿p theo: <strong>{(collecting.next_due_date || collecting.subscription?.next_due_date) ? new Date(collecting.next_due_date || collecting.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "ChÆ°a cÃ³"}</strong></div>
+                <div className="rounded-lg bg-surface-container-low p-3">Tá»•ng tiá»n cáº§n thu: <strong>{formatBillGoCurrency(selectedSummary.receivable)}</strong></div>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền thực thu" value={collectForm.amount} onChange={e => setCollectForm(prev => ({ ...prev, amount: e.target.value }))} />
+                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Sá»‘ tiá»n thá»±c thu" value={collectForm.amount} onChange={e => setCollectForm(prev => ({ ...prev, amount: e.target.value }))} />
                 <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
-                  Ngày thu
+                  NgÃ y thu
                   <input required type="date" className="input-field" value={collectForm.paidAt} onChange={e => setCollectForm(prev => ({ ...prev, paidAt: e.target.value }))} />
                 </label>
                 <select className="input-field" value={collectForm.method} onChange={e => setCollectForm(prev => ({ ...prev, method: e.target.value }))}>
                   {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
-                <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={collectForm.note} onChange={e => setCollectForm(prev => ({ ...prev, note: e.target.value }))} />
+                <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chÃº" value={collectForm.note} onChange={e => setCollectForm(prev => ({ ...prev, note: e.target.value }))} />
               </div>
             </div>
             <div className="border-t border-outline-variant/30 bg-white p-4 shadow-[0_-12px_30px_rgba(15,23,42,0.08)]">
               <button disabled={saving || toMoneyNumber(collectForm.amount) <= 0} className="btn-primary !w-full">
-                {saving ? "Đang xác nhận..." : "Xác nhận thu tiền"}
+                {saving ? "Äang xÃ¡c nháº­n..." : "XÃ¡c nháº­n thu tiá»n"}
               </button>
             </div>
           </form>
@@ -2217,24 +2227,24 @@ export default function WorkerBillGoPage() {
               <div>
                 <p className="text-xs font-bold uppercase text-primary">BillGo</p>
                 <h2 className="text-lg font-extrabold">
-                  {actionMode === "edit" ? "Sửa thông tin" : actionMode === "cycle" ? "Chuyển hình thức đóng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng thu") : actionMode === "delete" ? "Xóa khách hàng" : "Chi tiết khách hàng"}
+                  {actionMode === "edit" ? "Sá»­a thÃ´ng tin" : actionMode === "cycle" ? "Chuyá»ƒn hÃ¬nh thá»©c Ä‘Ã³ng" : actionMode === "status" ? (actionTarget.subscription?.status === "paused" ? "KÃ­ch hoáº¡t láº¡i" : "Ngá»«ng thu") : actionMode === "delete" ? "XÃ³a khÃ¡ch hÃ ng" : "Chi tiáº¿t khÃ¡ch hÃ ng"}
                 </h2>
               </div>
-              <button type="button" onClick={() => { setActionTarget(null); setActionMode(null); }} className="btn-outline !w-auto !px-3 !py-2">Đóng</button>
+              <button type="button" onClick={() => { setActionTarget(null); setActionMode(null); }} className="btn-outline !w-auto !px-3 !py-2">ÄÃ³ng</button>
             </div>
 
             {actionMode === "detail" ? (
               <div className="mt-4 grid gap-2 text-sm">
                 {[
-                  ["Tên khách hàng", actionTarget.subscription?.customer_name || "Chưa có"],
-                  ["Số điện thoại", actionTarget.subscription?.phone || "Chưa có"],
-                  ["Account", actionTarget.subscription?.internet_account || "Chưa có"],
-                  ["Địa chỉ", getBillGoAddress(actionTarget.subscription) || "Chưa có"],
-                  ["Nhà mạng", actionTarget.subscription?.provider || "Chưa có"],
-                  ["Hình thức hiện tại", getBillGoCycleOption(actionTarget.subscription?.current_cycle || actionTarget.subscription?.cycle || "monthly").label],
-                  ["Đã thanh toán đến", getPaidThroughDisplay(actionTarget) || "Chưa có"],
-                  ["Kỳ thu tiếp theo", getNextPeriodStartForRow(actionTarget) ? dateLabel(getNextPeriodStartForRow(actionTarget) || "") : "Chưa có"],
-                  ["Ghi chú", actionTarget.subscription?.note || actionTarget.note || "Chưa có"],
+                  ["TÃªn khÃ¡ch hÃ ng", actionTarget.subscription?.customer_name || "ChÆ°a cÃ³"],
+                  ["Sá»‘ Ä‘iá»‡n thoáº¡i", actionTarget.subscription?.phone || "ChÆ°a cÃ³"],
+                  ["Account", actionTarget.subscription?.internet_account || "ChÆ°a cÃ³"],
+                  ["Äá»‹a chá»‰", getBillGoAddress(actionTarget.subscription) || "ChÆ°a cÃ³"],
+                  ["NhÃ  máº¡ng", actionTarget.subscription?.provider || "ChÆ°a cÃ³"],
+                  ["HÃ¬nh thá»©c hiá»‡n táº¡i", getBillGoCycleOption(actionTarget.subscription?.current_cycle || actionTarget.subscription?.cycle || "monthly").label],
+                  ["ÄÃ£ thanh toÃ¡n Ä‘áº¿n", getPaidThroughDisplay(actionTarget) || "ChÆ°a cÃ³"],
+                  ["Ká»³ thu tiáº¿p theo", getNextPeriodStartForRow(actionTarget) ? dateLabel(getNextPeriodStartForRow(actionTarget) || "") : "ChÆ°a cÃ³"],
+                  ["Ghi chÃº", actionTarget.subscription?.note || actionTarget.note || "ChÆ°a cÃ³"],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg bg-surface-container-low p-3">
                     <span className="text-on-surface-variant">{label}</span><br />
@@ -2242,58 +2252,58 @@ export default function WorkerBillGoPage() {
                   </div>
                 ))}
                 <div className="rounded-lg bg-surface-container-low p-3">
-                  <span className="text-on-surface-variant">Lịch sử giao dịch</span>
+                  <span className="text-on-surface-variant">Lá»‹ch sá»­ giao dá»‹ch</span>
                   {(actionTarget.payments || []).length === 0 ? (
-                    <p className="mt-1 font-bold">Chưa có giao dịch</p>
+                    <p className="mt-1 font-bold">ChÆ°a cÃ³ giao dá»‹ch</p>
                   ) : (actionTarget.payments || []).map(payment => (
                     <p key={payment.id} className="mt-1">
-                      <strong>{formatBillGoCurrency(payment.amount)}</strong> · {methodLabels[payment.method] || payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString("vi-VN") : "Chưa có ngày"}
+                      <strong>{formatBillGoCurrency(payment.amount)}</strong> Â· {methodLabels[payment.method] || payment.method} Â· {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString("vi-VN") : "ChÆ°a cÃ³ ngÃ y"}
                     </p>
                   ))}
                 </div>
                 <div className="rounded-lg bg-surface-container-low p-3">
-                  <span className="text-on-surface-variant">Lịch sử thay đổi hình thức đóng</span>
+                  <span className="text-on-surface-variant">Lá»‹ch sá»­ thay Ä‘á»•i hÃ¬nh thá»©c Ä‘Ã³ng</span>
                   {(actionTarget.subscription?.billgo_cycle_changes || []).length === 0 ? (
-                    <p className="mt-1 font-bold">Chưa có thay đổi</p>
+                    <p className="mt-1 font-bold">ChÆ°a cÃ³ thay Ä‘á»•i</p>
                   ) : (actionTarget.subscription?.billgo_cycle_changes || []).map(change => (
                     <p key={change.id} className="mt-1">
-                      <strong>{getBillGoCycleOption(change.old_cycle || "monthly").label}</strong> sang <strong>{getBillGoCycleOption(change.new_cycle || "monthly").label}</strong> từ {change.effective_period_start || "chưa có kỳ"}
+                      <strong>{getBillGoCycleOption(change.old_cycle || "monthly").label}</strong> sang <strong>{getBillGoCycleOption(change.new_cycle || "monthly").label}</strong> tá»« {change.effective_period_start || "chÆ°a cÃ³ ká»³"}
                     </p>
                   ))}
                 </div>
                 <div className="rounded-lg bg-surface-container-low p-3">
-                  <span className="text-on-surface-variant">Lịch sử ngừng và kích hoạt lại</span>
+                  <span className="text-on-surface-variant">Lá»‹ch sá»­ ngá»«ng vÃ  kÃ­ch hoáº¡t láº¡i</span>
                   {(actionTarget.subscription?.billgo_status_events || []).length === 0 ? (
-                    <p className="mt-1 font-bold">Chưa có sự kiện</p>
+                    <p className="mt-1 font-bold">ChÆ°a cÃ³ sá»± kiá»‡n</p>
                   ) : (actionTarget.subscription?.billgo_status_events || []).map(event => (
                     <p key={event.id} className="mt-1">
-                      <strong>{event.event_type}</strong> {event.effective_period_start ? `từ ${event.effective_period_start}` : ""} {event.note ? `· ${event.note}` : ""}
+                      <strong>{event.event_type}</strong> {event.effective_period_start ? `tá»« ${event.effective_period_start}` : ""} {event.note ? `Â· ${event.note}` : ""}
                     </p>
                   ))}
                 </div>
               </div>
             ) : actionMode === "edit" ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input required className="input-field" placeholder="Tên khách hàng" value={editForm.customerName} onChange={e => setEditForm(prev => ({ ...prev, customerName: e.target.value }))} />
-                <input className="input-field" placeholder="Số điện thoại" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} />
+                <input required className="input-field" placeholder="TÃªn khÃ¡ch hÃ ng" value={editForm.customerName} onChange={e => setEditForm(prev => ({ ...prev, customerName: e.target.value }))} />
+                <input className="input-field" placeholder="Sá»‘ Ä‘iá»‡n thoáº¡i" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} />
                 <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={editForm.account} onChange={e => setEditForm(prev => ({ ...prev, account: e.target.value }))} />
                 <select className="input-field" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))}>
                   {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
                 </select>
-                <input list="billgo-edit-area-suggestions" className="input-field" placeholder="Xã/phường" value={editForm.areaName} onChange={e => updateEditAreaName(e.target.value)} />
+                <input list="billgo-edit-area-suggestions" className="input-field" placeholder="XÃ£/phÆ°á»ng" value={editForm.areaName} onChange={e => updateEditAreaName(e.target.value)} />
                 <datalist id="billgo-edit-area-suggestions">
                   {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
                 </datalist>
-                <input required list="billgo-edit-customer-address-suggestions" className="input-field sm:col-span-2" placeholder="Địa chỉ khách hàng" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value, addressDetail: e.target.value }))} />
+                <input required list="billgo-edit-customer-address-suggestions" className="input-field sm:col-span-2" placeholder="Äá»‹a chá»‰ khÃ¡ch hÃ ng" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value, addressDetail: e.target.value }))} />
                 <datalist id="billgo-edit-customer-address-suggestions">
                   {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
                 </datalist>
-                <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {
+                <input required className="input-field" placeholder="GÃ³i cÆ°á»›c hÃ ng thÃ¡ng" value={editForm.packageName} onChange={e => setEditForm(prev => {
                   const packageAmount = getNumericPackageAmount(e.target.value);
                   return { ...prev, packageName: e.target.value, monthlyFee: packageAmount || prev.monthlyFee };
                 })} />
-                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
-                <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Sá»‘ tiá»n cÆ°á»›c má»™t thÃ¡ng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
+                <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chÃº" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
               </div>
             ) : actionMode === "cycle" ? (
               <div className="mt-4 grid gap-3">
@@ -2301,29 +2311,29 @@ export default function WorkerBillGoPage() {
                   {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
                 <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
-                <textarea className="input-field min-h-20" placeholder="Ghi chú thay đổi" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
-                <p className="text-xs text-on-surface-variant">Hình thức mới chỉ áp dụng từ kỳ đầu tiên chưa được thanh toán hoặc khuyến mại.</p>
+                <textarea className="input-field min-h-20" placeholder="Ghi chÃº thay Ä‘á»•i" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+                <p className="text-xs text-on-surface-variant">HÃ¬nh thá»©c má»›i chá»‰ Ã¡p dá»¥ng tá»« ká»³ Ä‘áº§u tiÃªn chÆ°a Ä‘Æ°á»£c thanh toÃ¡n hoáº·c khuyáº¿n máº¡i.</p>
               </div>
             ) : actionMode === "delete" ? (
               <div className="mt-4 grid gap-3">
                 <div className="rounded-lg bg-error-container/40 p-3 text-sm text-error">
-                  Khách hàng sẽ bị xóa mềm khỏi danh sách thường dùng. Lịch sử giao dịch và báo cáo cũ vẫn được giữ.
+                  KhÃ¡ch hÃ ng sáº½ bá»‹ xÃ³a má»m khá»i danh sÃ¡ch thÆ°á»ng dÃ¹ng. Lá»‹ch sá»­ giao dá»‹ch vÃ  bÃ¡o cÃ¡o cÅ© váº«n Ä‘Æ°á»£c giá»¯.
                 </div>
-                <textarea className="input-field min-h-20" placeholder="Lý do hoặc ghi chú xóa" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+                <textarea className="input-field min-h-20" placeholder="LÃ½ do hoáº·c ghi chÃº xÃ³a" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
               </div>
             ) : (
               <div className="mt-4 grid gap-3">
                 <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
-                <textarea className="input-field min-h-20" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
+                <textarea className="input-field min-h-20" placeholder="Ghi chÃº" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
                 <p className="text-xs text-on-surface-variant">
-                  {actionTarget.subscription?.status === "paused" ? "Khi kích hoạt lại, hệ thống tạo kỳ mới từ kỳ bắt đầu đã chọn." : "Khi ngừng sử dụng, hệ thống giữ lịch sử và không tạo kỳ cước mới."}
+                  {actionTarget.subscription?.status === "paused" ? "Khi kÃ­ch hoáº¡t láº¡i, há»‡ thá»‘ng táº¡o ká»³ má»›i tá»« ká»³ báº¯t Ä‘áº§u Ä‘Ã£ chá»n." : "Khi ngá»«ng sá»­ dá»¥ng, há»‡ thá»‘ng giá»¯ lá»‹ch sá»­ vÃ  khÃ´ng táº¡o ká»³ cÆ°á»›c má»›i."}
                 </p>
               </div>
             )}
 
             {actionMode !== "detail" && (
               <button disabled={saving || (actionMode === "edit" && toMoneyNumber(editForm.monthlyFee) < 0)} className="btn-primary mt-4 !w-full">
-                {saving ? "Đang lưu..." : actionMode === "delete" ? "Xác nhận xóa mềm" : "Lưu thay đổi"}
+                {saving ? "Äang lÆ°u..." : actionMode === "delete" ? "XÃ¡c nháº­n xÃ³a má»m" : "LÆ°u thay Ä‘á»•i"}
               </button>
             )}
           </form>
