@@ -143,6 +143,7 @@ const serviceIconOptions: ServiceIconOption[] = [
   { name: "Bolt", label: "Điện nhanh", icon: Bolt, className: "bg-warning-container text-warning" },
   { name: "Wind", label: "Máy lạnh", icon: Wind, className: "bg-sky-50 text-sky-500" },
   { name: "Blocks", label: "Xem tất cả", icon: Blocks, className: "bg-primary-fixed text-primary" },
+  { name: "PlusCircle", label: "Lắp đặt", icon: PlusCircle, className: "bg-primary-fixed text-primary-container" },
   { name: "Cpu", label: "Linh kiện", icon: Cpu, className: "bg-surface-container text-on-surface-variant" },
   { name: "Smartphone", label: "Điện thoại", icon: Smartphone, className: "bg-primary-fixed text-primary-container" },
   { name: "Lightbulb", label: "Điện", icon: Lightbulb, className: "bg-primary-fixed text-primary-container" },

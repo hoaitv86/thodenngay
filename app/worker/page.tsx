@@ -5,6 +5,31 @@ import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
+  AirVent,
+  Blocks,
+  Bolt,
+  Cable,
+  Cpu,
+  Cctv,
+  Droplets,
+  Hammer,
+  Laptop,
+  Monitor,
+  Network,
+  PlusCircle,
+  Printer,
+  Router,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+  Sofa,
+  Star,
+  Truck,
+  Users,
+  Wifi,
+  Wrench,
+} from "lucide-react";
+import {
   BriefcaseIcon,
   ClockIcon,
   MapPinIcon,
@@ -1286,7 +1311,7 @@ export default function WorkerDashboard() {
       });
 
       // Map icon component
-      const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+      const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
       const mappedNew = workerIsAvailable ? sortJobsNewestFirst(filteredPending.map(j => {
         const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
 

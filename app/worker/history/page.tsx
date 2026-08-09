@@ -2,6 +2,31 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import {
+  AirVent,
+  Blocks,
+  Bolt,
+  Cable,
+  Cpu,
+  Cctv,
+  Droplets,
+  Hammer,
+  Laptop,
+  Monitor,
+  Network,
+  PlusCircle,
+  Printer,
+  Router,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+  Sofa,
+  Star,
+  Truck,
+  Users,
+  Wifi,
+  Wrench,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CheckCircleIcon,
@@ -83,7 +108,7 @@ export default function WorkerHistory() {
           .range(0, WORKER_HISTORY_PAGE_SIZE - 1);
           
         if (jobs) {
-          const iconMap: Record<string, IconComponent> = { ZapIcon, DropletIcon, CameraIcon, CogIcon };
+          const iconMap: Record<string, IconComponent> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
           const mapped = ((jobs || []) as RawHistoryJob[]).map((j) => {
             const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
             const fallbackDate = j.updated_at || j.scheduled_at || new Date().toISOString();
