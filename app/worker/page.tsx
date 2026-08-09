@@ -3098,6 +3098,8 @@ export default function WorkerDashboard() {
     return jobDate ? jobDate >= monthStart : false;
   }).length;
   const mobileGoalOffset = 100 - monthlyRevenueProgress;
+  const mobilePriorityJobs = sortJobsNewestFirst(mobileDashboardJobs).slice(0, mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD ? 2 : 1);
+  const showMobilePriorityJobs = mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD && mobilePriorityJobs.length > 0;
 
   return (
     <div className="flex flex-col w-full relative">
@@ -3519,6 +3521,63 @@ export default function WorkerDashboard() {
             </div>
           </div>
         </div>
+      </section>
+
+
+      <section className="space-y-3 px-3 pb-2 md:hidden">
+        {showMobilePriorityJobs ? (
+          <div className="rounded-xl border border-outline-variant/40 bg-white p-3 shadow-sm">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <ZapIcon size={24} className="shrink-0 fill-current text-error" />
+                <div className="min-w-0">
+                  <h2 className="truncate text-xl font-extrabold text-on-surface">Việc ưu tiên</h2>
+                  <p className="text-xs font-bold text-on-surface-variant">Cần làm ngay</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setTab("active")} className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-extrabold text-primary">
+                Xem tất cả
+                <ChevronRightIcon size={16} />
+              </button>
+            </div>
+            <div className="divide-y divide-outline-variant/40">
+              {mobilePriorityJobs.map(job => {
+                const isNewJob = newJobs.some(item => item.id === job.id);
+                const isPendingJob = pendingApprovalJobs.some(item => item.id === job.id);
+                const canCall = Boolean(job.customer?.phone);
+                return (
+                  <article key={job.id} className="grid grid-cols-[1fr_auto] gap-3 py-3 first:pt-1 last:pb-1">
+                    <div className="min-w-0">
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className={"rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase " + (isNewJob ? "bg-error text-white" : isPendingJob ? "bg-warning text-white" : "bg-primary-fixed text-primary")}>{isNewJob ? "Mới" : isPendingJob ? "Chờ duyệt" : "Đã nhận"}</span>
+                        <span className="truncate text-[11px] font-bold text-on-surface-variant">{getUnworkedAgeLabel(job)}</span>
+                      </div>
+                      <h3 className="line-clamp-2 text-base font-extrabold leading-tight text-on-surface">{job.serviceName || job.description || job.job_code}</h3>
+                      <p className="mt-1 truncate text-xs font-bold text-on-surface-variant">{job.customerName || job.job_code}</p>
+                      <div className="mt-1 flex items-start gap-1.5 text-xs font-semibold text-on-surface-variant"><MapPinIcon size={13} className="mt-0.5 shrink-0 text-primary" /><span className="line-clamp-1">{job.address || "Chưa có địa chỉ"}</span></div>
+                      <div className="mt-1 flex items-center gap-1.5 text-xs font-bold text-error"><ClockIcon size={13} /><span>{job.time || "Chưa hẹn giờ"}</span></div>
+                    </div>
+                    <div className="flex min-w-[6.8rem] flex-col items-end justify-between gap-2 text-right">
+                      <strong className="text-base text-error">{job.price || formatCurrency(Number(job.quoted_price || 0))}</strong>
+                      <div className="flex items-center gap-2">
+                        {canCall && <a href={"tel:" + job.customer?.phone} className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/20 bg-white text-primary shadow-sm" aria-label="Gọi khách"><PhoneIcon size={18} /></a>}
+                        {isNewJob ? <button type="button" onClick={() => handleAcceptJob(job.id)} className="rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white shadow-sm">Nhận</button> : isPendingJob ? <button type="button" onClick={() => setTab("pending")} className="rounded-lg border border-warning/30 bg-warning-container px-3 py-2 text-xs font-extrabold text-warning">Xem</button> : <button type="button" onClick={() => openDirections(job)} className="rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white shadow-sm">Đi ngay</button>}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-outline-variant/40 bg-white p-5 text-center shadow-sm">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-success-container text-success"><CheckCircleIcon size={42} /></div>
+            <h2 className="mt-3 text-lg font-extrabold text-on-surface">Hôm nay bạn không có việc cần làm!</h2>
+            <p className="mt-1 text-sm font-semibold leading-5 text-on-surface-variant">Hãy tạo việc mới để phục vụ khách hàng nhé.</p>
+            <button type="button" onClick={() => setQuickFormOpen(true)} className="mt-4 flex w-full items-center justify-between rounded-full bg-primary px-4 py-3 text-left text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)]"><span className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-primary"><PlusIcon size={28} /></span><span><span className="block text-base font-extrabold leading-tight">Tạo việc nhanh</span><span className="block text-xs font-semibold text-white/80">Khách quen · Khách mới</span></span></span><ChevronRightIcon size={24} /></button>
+          </div>
+        )}
+        {billGoTotals.debtItems > 0 && <a href="/worker/billgo" className="flex items-center justify-between rounded-xl border border-success/15 bg-success-container/55 px-4 py-3 text-success shadow-sm"><span className="flex min-w-0 items-center gap-3"><DollarSignIcon size={22} className="shrink-0" /><span className="truncate text-xs font-extrabold uppercase">Khách BillGo cần thu hôm nay</span></span><span className="shrink-0 text-base font-extrabold">{billGoTotals.debtItems} khách</span></a>}
       </section>
 
       {/* Quick Job Creation */}
@@ -4248,7 +4307,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="mx-4 grid grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm sm:mx-6 lg:mx-8">
+      <div className="mx-4 hidden grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm md:grid sm:mx-6 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
