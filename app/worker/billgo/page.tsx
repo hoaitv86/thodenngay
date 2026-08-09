@@ -605,6 +605,27 @@ const getNumericPackageAmount = (value: string) => {
 const normalizeLocationText = (value: string | null | undefined) =>
   String(value || "").trim().toLocaleLowerCase("vi");
 
+const uniqueAddressParts = (...values: Array<string | null | undefined>) => {
+  const seen = new Set<string>();
+  return values
+    .map(value => String(value || "").trim())
+    .filter(Boolean)
+    .filter(value => {
+      const key = value.toLocaleLowerCase("vi");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
+const buildCustomerAddressInput = (subscription: Subscription | null | undefined, subAreaName?: string | null) =>
+  uniqueAddressParts(
+    subAreaName,
+    subscription?.address_detail,
+    subscription?.customer_address,
+    subscription?.legacy_address,
+  ).join(", ");
+
 const isSameMonth = (dateValue: string | null | undefined, monthValue: string) =>
   !!dateValue && dateValue.slice(0, 7) === monthValue;
 
@@ -854,6 +875,12 @@ export default function WorkerBillGoPage() {
     return () => window.clearTimeout(timeoutId);
   }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
+  const getBillGoAddress = useCallback((subscription?: Subscription | null) => {
+    const subAreaName = areas
+      .flatMap(area => area.sub_areas || [])
+      .find(subArea => subArea.id === subscription?.sub_area_id)?.name;
+    return buildCustomerAddressInput(subscription, subAreaName);
+  }, [areas]);
   const rowViews = useMemo<RowView[]>(() => rows.map(item => {
     const cycle = getBillGoRowCycle(item);
     return {
@@ -872,12 +899,12 @@ export default function WorkerBillGoPage() {
         row.customerName,
         row.account,
         row.item.subscription?.phone,
-        row.item.subscription?.address_detail,
-        row.item.subscription?.customer_address,
+        getBillGoAddress(row.item.subscription),
+
         row.item.subscription?.provider,
         row.item.subscription?.package_name,
       ].filter(Boolean).join(" ").toLocaleLowerCase("vi").includes(normalizedQuery);
-  }, [query]);
+  }, [getBillGoAddress, query]);
 
   const matchesDueFilter = useCallback((row: RowView) => {
     if (dueFilter === "due_this_month") return isSameMonth(row.item.due_date, monthFilter);
@@ -972,7 +999,7 @@ export default function WorkerBillGoPage() {
     () => areas.find(area => area.id === form.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
     [areas, form.areaId],
   );
-  const legacyAddressSuggestions = useMemo(() => {
+  const customerAddressSuggestions = useMemo(() => {
     const seen = new Set<string>();
     const suggestions: string[] = [];
     const addSuggestion = (value: string | null | undefined) => {
@@ -1001,10 +1028,6 @@ export default function WorkerBillGoPage() {
 
     return suggestions.sort((a, b) => a.localeCompare(b, "vi"));
   }, [areas, formSubAreas, rows]);
-  const editSubAreas = useMemo(
-    () => areas.find(area => area.id === editForm.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
-    [areas, editForm.areaId],
-  );
   const selectedFormPackage = useMemo(
     () => packages.find(item => item.id === form.packageId) || null,
     [form.packageId, packages],
@@ -1065,7 +1088,7 @@ export default function WorkerBillGoPage() {
             subAreaName: matchedSubArea.name,
           };
         }
-        return { ...prev, address: value };
+        return { ...prev, address: value, addressDetail: value };
       }
       if (key === "isLegacyCustomer") return { ...prev, isLegacyCustomer: value === "true", paidThroughMonth: value === "true" ? prev.paidThroughMonth : "" };
       if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle);
@@ -1104,14 +1127,6 @@ export default function WorkerBillGoPage() {
     setEditForm(prev => ({ ...prev, areaName: value, areaId: area?.id || "", subAreaId: "", subAreaName: "" }));
   };
 
-  const updateEditSubAreaName = (value: string) => {
-    setEditForm(prev => {
-      const subArea = areas
-        .find(item => item.id === prev.areaId)
-        ?.sub_areas?.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
-      return { ...prev, subAreaName: value, subAreaId: subArea?.id || "" };
-    });
-  };
 
   const refreshBillGoKeepingScroll = async () => {
     const scrollY = window.scrollY;
@@ -1206,7 +1221,7 @@ export default function WorkerBillGoPage() {
       const response = await fetch("/api/worker/billgo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, paidThroughMonth: form.isLegacyCustomer ? form.paidThroughMonth : "", dueDate: formDueDate }),
+        body: JSON.stringify({ ...form, addressDetail: form.address, paidThroughMonth: form.isLegacyCustomer ? form.paidThroughMonth : "", dueDate: formDueDate }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể thêm khách hàng BillGo.");
@@ -1249,12 +1264,12 @@ export default function WorkerBillGoPage() {
       customerName: subscription?.customer_name || "",
       phone: subscription?.phone || "",
       account: subscription?.internet_account || "",
-      address: subscription?.customer_address || "",
+      address: buildCustomerAddressInput(subscription, areas.flatMap(area => area.sub_areas || []).find(subArea => subArea.id === subscription?.sub_area_id)?.name),
       areaId: subscription?.area_id || "",
       areaName: areas.find(area => area.id === subscription?.area_id)?.name || "",
       subAreaId: subscription?.sub_area_id || "",
       subAreaName: areas.flatMap(area => area.sub_areas || []).find(subArea => subArea.id === subscription?.sub_area_id)?.name || "",
-      addressDetail: subscription?.address_detail || "",
+      addressDetail: buildCustomerAddressInput(subscription, areas.flatMap(area => area.sub_areas || []).find(subArea => subArea.id === subscription?.sub_area_id)?.name),
       provider: subscription?.provider || "Viettel",
       packageName: subscription?.package_name || "",
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
@@ -1314,7 +1329,7 @@ export default function WorkerBillGoPage() {
             areaName: editForm.areaName,
             subAreaId: editForm.subAreaId,
             subAreaName: editForm.subAreaName,
-            addressDetail: editForm.addressDetail,
+            addressDetail: editForm.address,
             provider: editForm.provider,
             packageName: editForm.packageName,
             monthlyFee: editForm.monthlyFee,
@@ -1452,7 +1467,7 @@ export default function WorkerBillGoPage() {
           <p>Kỳ cước: {item.period_start || "Chưa có"} - {item.period_end || "Chưa có"}</p>
           <p>Hạn thanh toán: {item.due_date ? new Date(item.due_date).toLocaleDateString("vi-VN") : "Chưa có"}</p>
           <p>Đến hạn tiếp theo: {(item.next_due_date || item.subscription?.next_due_date) ? new Date(item.next_due_date || item.subscription?.next_due_date || "").toLocaleDateString("vi-VN") : "Chưa có"}</p>
-          <p>{item.subscription?.customer_address || "Chưa có địa chỉ"}</p>
+          <p>{getBillGoAddress(item.subscription) || "Chưa có địa chỉ"}</p>
         </div>
 
         {canCollect && (
@@ -1541,14 +1556,9 @@ export default function WorkerBillGoPage() {
               <datalist id="billgo-area-suggestions">
                 {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
               </datalist>
-              <input list="billgo-sub-area-suggestions" className="input-field" placeholder="Xóm/thôn/khối" value={form.subAreaName} onChange={e => updateForm("subAreaName", e.target.value)} disabled={!form.areaName.trim()} />
-              <datalist id="billgo-sub-area-suggestions">
-                {formSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
-              </datalist>
-              <input className="input-field" placeholder="Địa chỉ chi tiết" value={form.addressDetail} onChange={e => updateForm("addressDetail", e.target.value)} />
-              <input required list="billgo-legacy-address-suggestions" className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
-              <datalist id="billgo-legacy-address-suggestions">
-                {legacyAddressSuggestions.map(address => <option key={address} value={address} />)}
+              <input required list="billgo-customer-address-suggestions" className="input-field sm:col-span-2 xl:col-span-1" placeholder="Địa chỉ khách hàng" value={form.address} onChange={e => updateForm("address", e.target.value)} />
+              <datalist id="billgo-customer-address-suggestions">
+                {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
               </datalist>
               <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
                 Chọn gói cước
@@ -1972,7 +1982,7 @@ export default function WorkerBillGoPage() {
                   ["Tên khách hàng", actionTarget.subscription?.customer_name || "Chưa có"],
                   ["Số điện thoại", actionTarget.subscription?.phone || "Chưa có"],
                   ["Account", actionTarget.subscription?.internet_account || "Chưa có"],
-                  ["Địa chỉ", actionTarget.subscription?.customer_address || "Chưa có"],
+                  ["Địa chỉ", getBillGoAddress(actionTarget.subscription) || "Chưa có"],
                   ["Nhà mạng", actionTarget.subscription?.provider || "Chưa có"],
                   ["Hình thức hiện tại", getBillGoCycleOption(actionTarget.subscription?.current_cycle || actionTarget.subscription?.cycle || "monthly").label],
                   ["Đã thanh toán đến", getPaidThroughDisplay(actionTarget) || "Chưa có"],
@@ -2027,12 +2037,10 @@ export default function WorkerBillGoPage() {
                 <datalist id="billgo-edit-area-suggestions">
                   {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
                 </datalist>
-                <input list="billgo-edit-sub-area-suggestions" className="input-field" placeholder="Xóm/thôn/khối" value={editForm.subAreaName} onChange={e => updateEditSubAreaName(e.target.value)} disabled={!editForm.areaName.trim()} />
-                <datalist id="billgo-edit-sub-area-suggestions">
-                  {editSubAreas.map(subArea => <option key={subArea.id} value={subArea.name} />)}
+                <input required list="billgo-edit-customer-address-suggestions" className="input-field sm:col-span-2" placeholder="Địa chỉ khách hàng" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value, addressDetail: e.target.value }))} />
+                <datalist id="billgo-edit-customer-address-suggestions">
+                  {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
                 </datalist>
-                <input className="input-field" placeholder="Địa chỉ chi tiết" value={editForm.addressDetail} onChange={e => setEditForm(prev => ({ ...prev, addressDetail: e.target.value }))} />
-                <input required className="input-field" placeholder="Địa chỉ cũ / hiển thị dự phòng" value={editForm.address} onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))} />
                 <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {
                   const packageAmount = getNumericPackageAmount(e.target.value);
                   return { ...prev, packageName: e.target.value, monthlyFee: packageAmount || prev.monthlyFee };

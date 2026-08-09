@@ -19,7 +19,7 @@ import {
 } from "@/lib/billgo";
 import type { BillGoPackage } from "@/lib/billgo-packages";
 import { BILLGO_SIGNUP_CYCLES } from "@/lib/billgo-packages";
-import { canCollectBillGo, canManageBillGo, canUseBillGo } from "@/lib/worker-unit-permissions";
+import { canCollectBillGo, canManageBillGo } from "@/lib/worker-unit-permissions";
 import { getAssignedBillGoAreaFilters, isBillGoSubscriptionInAssignedArea, resolveWorkerUnitScope, type WorkerUnitScope } from "@/lib/worker-unit-server";
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
@@ -922,7 +922,7 @@ export async function POST(request: Request) {
   const requestedSubAreaId = asText(body.subAreaId) || null;
   const areaName = asText(body.areaName);
   const subAreaName = asText(body.subAreaName);
-  const addressDetail = asText(body.addressDetail);
+  const addressDetail = asText(body.addressDetail) || address;
   const provider = asText(body.provider);
   const packageId = asText(body.packageId) || null;
   let selectedPackage: BillGoPackageSelection | null = null;
@@ -951,7 +951,7 @@ export async function POST(request: Request) {
   const paidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const paymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
 
-  if (!customerName || !account || (!address && !addressDetail) || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle) || !allowedPackageCycles.includes(cycle as BillGoCycle)) {
+  if (!customerName || !account || !address || !startDate || monthlyFee < 0 || !allowedCycles.has(cycle as BillGoCycle) || !allowedPackageCycles.includes(cycle as BillGoCycle)) {
     return jsonError("Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7 th\u00f4ng tin h\u1ee3p l\u1ec7.");
   }
 
@@ -1258,7 +1258,8 @@ export async function PATCH(request: Request) {
     const requestedSubAreaId = asText(body.subAreaId) || null;
     const areaName = asText(body.areaName);
     const subAreaName = asText(body.subAreaName);
-    const nextAddressDetail = asText(body.addressDetail);
+    const nextAddress = asText(body.address);
+    const nextAddressDetail = asText(body.addressDetail) || nextAddress;
     const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
     if ("error" in location) return jsonError(location.error || "Không thể tạo địa bàn khách hàng.");
     const nextAreaId = location.areaId;
@@ -1278,7 +1279,7 @@ export async function PATCH(request: Request) {
         customer_name: asText(body.customerName),
         phone: asText(body.phone),
         internet_account: asText(body.account),
-        customer_address: asText(body.address),
+        customer_address: nextAddress,
         area_id: nextAreaId,
         sub_area_id: nextSubAreaId,
         address_detail: nextAddressDetail,
@@ -1552,7 +1553,7 @@ export async function PATCH(request: Request) {
       customer_name: subscriptionRelation?.customer_name || null,
       customer_phone: subscriptionRelation?.phone || null,
       internet_account: subscriptionRelation?.internet_account || null,
-      customer_address: subscriptionRelation?.address_detail || subscriptionRelation?.customer_address || subscriptionRelation?.legacy_address || null,
+      customer_address: subscriptionRelation?.customer_address || subscriptionRelation?.address_detail || subscriptionRelation?.legacy_address || null,
       package_name: subscriptionRelation?.package_name || null,
       cycle_at_collection: subscriptionRelation?.current_cycle || subscriptionRelation?.cycle || receivable.cycle_at_collection || "monthly",
       period_start: receivable.period_start,
