@@ -2934,7 +2934,24 @@ export default function WorkerDashboard() {
         });
 
         if (completeWithMaterialsError) {
-          throw new Error("Không thể hoàn thành công việc với vật tư: " + completeWithMaterialsError.message);
+          const fallbackResponse = await fetch("/api/worker/job-completion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobId: job.id,
+              images: imageUrls,
+              completionItems: cleanedItems,
+              finalAmount,
+              warrantyDays: maxWarrantyDays,
+              warrantyNote: completionWarrantyNote,
+              materialItems: buildSalesRpcItems(materialDraftItems),
+            }),
+          });
+          const fallbackData = await fallbackResponse.json().catch(() => ({}));
+
+          if (!fallbackResponse.ok) {
+            throw new Error("Không thể hoàn thành công việc với vật tư: " + (fallbackData.error || completeWithMaterialsError.message));
+          }
         }
       }
 
