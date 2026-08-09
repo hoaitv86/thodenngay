@@ -3102,7 +3102,7 @@ export default function WorkerDashboard() {
   const showMobilePriorityJobs = mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD && mobilePriorityJobs.length > 0;
 
   return (
-    <div className="worker-dashboard-page flex w-full flex-col relative">
+    <div className="flex flex-col w-full relative">
       <div className="py-3">
         <CmsPlacement location="featured_notice" variant="banner" limit={1} />
       </div>
@@ -3152,7 +3152,7 @@ export default function WorkerDashboard() {
       )}
 
 
-      <section className="worker-mobile-dashboard relative z-10 -mt-6 space-y-4 px-3 pb-2 md:hidden">
+      <section className="relative z-10 -mt-6 space-y-4 px-3 pb-2 md:hidden">
         <div className="rounded-xl border border-primary/10 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.10)]">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -3524,7 +3524,7 @@ export default function WorkerDashboard() {
       </section>
 
 
-      <section className="worker-priority-section space-y-3 px-3 pb-2 md:hidden">
+      <section className="space-y-3 px-3 pb-2 md:hidden">
         {showMobilePriorityJobs ? (
           <div className="rounded-xl border border-outline-variant/40 bg-white p-3 shadow-sm">
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -3581,7 +3581,7 @@ export default function WorkerDashboard() {
       </section>
 
       {/* Quick Job Creation */}
-      <section id="worker-quick-job" className="worker-quick-create scroll-mt-24 px-3 py-3 sm:px-6 md:py-4 lg:px-8">
+      <section id="worker-quick-job" className="scroll-mt-24 px-3 py-3 sm:px-6 md:py-4 lg:px-8">
         <div className="overflow-hidden rounded-xl border border-primary-container/35 bg-primary p-0 text-white shadow-[0_14px_34px_rgba(37,99,235,0.22)] ring-1 ring-white/70 md:bg-sky-50 md:p-4 md:text-on-surface">
           <button
             type="button"
@@ -4307,7 +4307,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="worker-desktop-tabs mx-4 hidden grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm md:grid sm:mx-6 lg:mx-8">
+      <div className="mx-4 hidden grid-cols-3 gap-2 rounded-xl border border-outline-variant/30 bg-white p-1 shadow-sm md:grid sm:mx-6 lg:mx-8">
         <button
           onClick={() => setTab("new")}
           className={`relative rounded-lg px-2 py-2.5 text-xs font-bold transition-all sm:text-sm ${tab === "new" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:bg-surface-container-low"}`}
@@ -4339,7 +4339,7 @@ export default function WorkerDashboard() {
       </div>
 
       {/* Job Feed */}
-      <div className="worker-job-feed flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
+      <div className="flex-1 space-y-4 p-4 sm:px-6 lg:px-8">
         {tab === "new" ? (
           newJobs.length > 0 ? (
             newJobs.map(job => {
