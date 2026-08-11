@@ -24,12 +24,15 @@ import { getAssignedBillGoAreaFilters, isBillGoSubscriptionInAssignedArea, resol
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
-const DEFAULT_BILLGO_PAGE_SIZE = 10;
+const DEFAULT_BILLGO_PAGE_SIZE = 30;
 const MAX_BILLGO_PAGE_SIZE = 50;
 const allowedListStatuses = new Set(["all", "pending_cycle", "not_due", "unpaid", "paid", "partial", "overdue", "promo"]);
 const allowedDueFilters = new Set(["all", "due_this_month", "not_due"]);
 const billGoSubscriptionBaseSelect = "id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date";
 const billGoSubscriptionTv360Select = "id, customer_id, worker_id, parent_subscription_id, customer_name, phone, internet_account, tv360_account, tv360_service_type, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date";
+const billGoReceivableListSelect = "id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_period_start, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id";
+const billGoReceivableDetailBaseSelect = `${billGoReceivableListSelect}, subscription:billgo_subscriptions(${billGoSubscriptionBaseSelect})`;
+const billGoReceivableDetailTv360Select = `${billGoReceivableListSelect}, subscription:billgo_subscriptions(${billGoSubscriptionTv360Select})`;
 
 const isMissingBillGoTv360SchemaError = (error?: { message?: string | null; code?: string | null } | null) =>
   Boolean(error?.message && (
@@ -121,6 +124,7 @@ function canCollectBillGoScope(scope: WorkerUnitScope) {
 }
 
 const asText = (value: unknown) => String(value || "").trim();
+const firstRelation = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] || null : value || null;
 
 const getCollectionMonthFromDueDate = (dueDate: string) => {
   const date = new Date(dueDate);
@@ -917,6 +921,74 @@ export async function GET(request: Request) {
   if (!canUseBillGoScope(scope)) return jsonError("Bạn không có quyền truy cập BillGo.", 403);
 
   const { searchParams } = new URL(request.url);
+  const requestStartedAt = performance.now();
+  const detailReceivableId = asText(searchParams.get("detailReceivableId"));
+  if (detailReceivableId) {
+    const detailStartedAt = performance.now();
+    const fetchReceivableDetail = (includeTv360Columns: boolean) => admin
+      .from("billgo_receivables")
+      .select(includeTv360Columns ? billGoReceivableDetailTv360Select : billGoReceivableDetailBaseSelect)
+      .eq("id", detailReceivableId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    let { data: receivable, error: receivableError } = await fetchReceivableDetail(true);
+    if (isMissingBillGoTv360SchemaError(receivableError)) {
+      const legacyDetail = await fetchReceivableDetail(false);
+      receivable = legacyDetail.data;
+      receivableError = legacyDetail.error;
+    }
+    if (receivableError) return jsonError("Không thể tải chi tiết BillGo: " + receivableError.message);    if (!receivable) return jsonError("Không tìm thấy khách BillGo.", 404);
+
+    const detailSubscription = firstRelation((receivable as { subscription?: unknown }).subscription as never) as { id?: string } | null;
+    const subscriptionId = String(detailSubscription?.id || receivable.subscription_id || "");
+    const [paymentResult, cycleHistoryResult, statusHistoryResult, receiptHistoryResult] = await Promise.all([
+      admin
+        .from("payments")
+        .select("id, receivable_id, amount, method, status, paid_at, note, billgo_receipts(receipt_code, lookup_code, qr_payload)")
+        .eq("receivable_id", detailReceivableId)
+        .eq("status", "paid")
+        .order("paid_at", { ascending: false }),
+      subscriptionId
+        ? admin
+            .from("billgo_cycle_changes")
+            .select("id, subscription_id, old_cycle, new_cycle, effective_period_start, note, created_at")
+            .eq("subscription_id", subscriptionId)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      subscriptionId
+        ? admin
+            .from("billgo_status_events")
+            .select("id, subscription_id, event_type, effective_period_start, note, created_at")
+            .eq("subscription_id", subscriptionId)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      subscriptionId
+        ? admin
+            .from("billgo_receipts")
+            .select("receipt_code, lookup_code, qr_payload, subscription_id, period_start, period_end, paid_at, paid_amount, payment_method, note")
+            .eq("subscription_id", subscriptionId)
+            .order("paid_at", { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (paymentResult.error) return jsonError("Không thể tải thanh toán BillGo: " + paymentResult.error.message);
+    if (cycleHistoryResult.error) return jsonError("Không thể tải lịch sử chu kỳ BillGo: " + cycleHistoryResult.error.message);
+    if (statusHistoryResult.error) return jsonError("Không thể tải lịch sử trạng thái BillGo: " + statusHistoryResult.error.message);
+    if (receiptHistoryResult.error) return jsonError("Không thể tải phiếu thu BillGo: " + receiptHistoryResult.error.message);
+
+    const row = {
+      ...receivable,
+      payments: paymentResult.data || [],
+      subscription: detailSubscription ? {
+        ...detailSubscription,
+        billgo_cycle_changes: cycleHistoryResult.data || [],
+        billgo_status_events: statusHistoryResult.data || [],
+        billgo_receipts: receiptHistoryResult.data || [],
+      } : null,
+    };
+    return NextResponse.json({ row, meta: { detailMs: Math.round(performance.now() - detailStartedAt), totalMs: Math.round(performance.now() - requestStartedAt), mode: "detail" } });
+  }
   const monthFilter = searchParams.get("month") || todayInputForServer().slice(0, 7);
   const page = Math.max(Number(searchParams.get("page") || "1") || 1, 1);
   const limit = Math.min(Math.max(Number(searchParams.get("limit") || DEFAULT_BILLGO_PAGE_SIZE) || DEFAULT_BILLGO_PAGE_SIZE, 1), MAX_BILLGO_PAGE_SIZE);
@@ -978,7 +1050,7 @@ export async function GET(request: Request) {
     ? await Promise.all([
         admin
           .from("billgo_receivables")
-          .select("id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_period_start, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id")
+          .select(billGoReceivableListSelect)
           .eq("worker_id", workerId)
           .in("subscription_id", subscriptionIds)
           .is("deleted_at", null)
@@ -1082,87 +1154,29 @@ export async function GET(request: Request) {
   const safePage = Math.min(page, pageCount);
   const from = (safePage - 1) * limit;
   const pageRows = filteredRows.slice(from, from + limit);
-  const receivableIds = pageRows.map(row => row.id).filter(id => !String(id).startsWith("not_due_"));
-  const pageSubscriptionIds = Array.from(
-    new Set(pageRows.map(row => row.subscription?.id).filter((id): id is string => Boolean(id))),
-  );
-  const [paymentResult, cycleHistoryResult, statusHistoryResult, receiptHistoryResult] = await Promise.all([
-    receivableIds.length > 0
-      ? admin
-          .from("payments")
-          .select("id, receivable_id, amount, method, status, paid_at, note, billgo_receipts(receipt_code, lookup_code, qr_payload)")
-          .in("receivable_id", receivableIds)
-          .eq("status", "paid")
-          .order("paid_at", { ascending: false })
-      : Promise.resolve({ data: [], error: null }),
-    pageSubscriptionIds.length > 0
-      ? admin
-          .from("billgo_cycle_changes")
-          .select("id, subscription_id, old_cycle, new_cycle, effective_period_start, note, created_at")
-          .in("subscription_id", pageSubscriptionIds)
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [], error: null }),
-    pageSubscriptionIds.length > 0
-      ? admin
-          .from("billgo_status_events")
-          .select("id, subscription_id, event_type, effective_period_start, note, created_at")
-          .in("subscription_id", pageSubscriptionIds)
-          .order("created_at", { ascending: false })
-      : Promise.resolve({ data: [], error: null }),
-    pageSubscriptionIds.length > 0
-      ? admin
-          .from("billgo_receipts")
-          .select("receipt_code, lookup_code, qr_payload, subscription_id, period_start, period_end, paid_at, paid_amount, payment_method, note")
-          .in("subscription_id", pageSubscriptionIds)
-          .order("paid_at", { ascending: false })
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  const { data: payments, error: paymentError } = paymentResult;
-  if (paymentError) return jsonError("Không thể tải thanh toán BillGo: " + paymentError.message);
-  if (cycleHistoryResult.error) return jsonError("Không thể tải lịch sử chu kỳ BillGo: " + cycleHistoryResult.error.message);
-  if (statusHistoryResult.error) return jsonError("Không thể tải lịch sử trạng thái BillGo: " + statusHistoryResult.error.message);
-  if (receiptHistoryResult.error) return jsonError("Không thể tải phiếu thu BillGo: " + receiptHistoryResult.error.message);
-
-  const paymentsByReceivable = new Map<string, unknown[]>();
-  for (const payment of payments || []) {
-    const key = String(payment.receivable_id || "");
-    const items = paymentsByReceivable.get(key) || [];
-    items.push(payment);
-    paymentsByReceivable.set(key, items);
-  }
-  const cycleHistoryBySubscription = new Map<string, unknown[]>();
-  for (const change of cycleHistoryResult.data || []) {
-    const key = String(change.subscription_id || "");
-    const items = cycleHistoryBySubscription.get(key) || [];
-    items.push(change);
-    cycleHistoryBySubscription.set(key, items);
-  }
-  const statusHistoryBySubscription = new Map<string, unknown[]>();
-  for (const event of statusHistoryResult.data || []) {
-    const key = String(event.subscription_id || "");
-    const items = statusHistoryBySubscription.get(key) || [];
-    items.push(event);
-    statusHistoryBySubscription.set(key, items);
-  }
-  const receiptHistoryBySubscription = new Map<string, unknown[]>();
-  for (const receipt of receiptHistoryResult.data || []) {
-    const key = String(receipt.subscription_id || "");
-    const items = receiptHistoryBySubscription.get(key) || [];
-    items.push(receipt);
-    receiptHistoryBySubscription.set(key, items);
-  }
   const hydratedRows = pageRows.map(row => ({
     ...row,
-    payments: paymentsByReceivable.get(row.id) || [],
+    payments: [],
     subscription: row.subscription ? {
       ...row.subscription,
-      billgo_cycle_changes: cycleHistoryBySubscription.get(row.subscription.id) || [],
-      billgo_status_events: statusHistoryBySubscription.get(row.subscription.id) || [],
-      billgo_receipts: receiptHistoryBySubscription.get(row.subscription.id) || [],
+      billgo_cycle_changes: [],
+      billgo_status_events: [],
+      billgo_receipts: [],
     } : null,
   }));
 
-  return NextResponse.json({ rows: hydratedRows, created: ensured.created || 0, page: safePage, limit, total, pageCount, totals });
+  const meta = {
+    mode: "list",
+    totalMs: Math.round(performance.now() - requestStartedAt),
+    subscriptionCount: hydratedSubscriptions.length,
+    candidateRowCount: currentRows.length,
+    filteredRowCount: total,
+    pageRowCount: hydratedRows.length,
+    page: safePage,
+    limit,
+  };
+
+  return NextResponse.json({ rows: hydratedRows, created: ensured.created || 0, page: safePage, limit, total, pageCount, totals, meta });
 }
 export async function POST(request: Request) {
   const context = await getWorkerContext();

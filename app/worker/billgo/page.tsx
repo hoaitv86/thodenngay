@@ -315,7 +315,7 @@ const dateLabel = (value: string) => {
   return `${String(date.day).padStart(2, "0")}/${String(date.month).padStart(2, "0")}/${date.year}`;
 };
 const BILLGO_VIEW_STATE_KEY = "billgo.collection.view";
-const BILLGO_PAGE_SIZE = 10;
+const BILLGO_PAGE_SIZE = 30;
 const emptyBillGoTotals: BillGoListTotals = {
   totalCustomers: 0,
   unpaid: 0,
@@ -801,6 +801,7 @@ export default function WorkerBillGoPage() {
   const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
   const [receiptTarget, setReceiptTarget] = useState<Receivable | null>(null);
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [collectForm, setCollectForm] = useState({
     amount: "",
     paidAt: todayInput(),
@@ -919,6 +920,7 @@ export default function WorkerBillGoPage() {
         if (selectedAreaId) params.set("areaId", selectedAreaId);
         if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
       }
+      const startedAt = performance.now();
       const response = await fetch(`/api/worker/billgo?${params.toString()}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
@@ -927,6 +929,9 @@ export default function WorkerBillGoPage() {
       setPageCount(Number(result.pageCount || 1));
       setTotalRows(Number(result.total || 0));
       setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[BillGo] customer list loaded", { clientMs: Math.round(performance.now() - startedAt), server: result.meta });
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể tải BillGo.");
       setRows([]);
@@ -1550,6 +1555,33 @@ export default function WorkerBillGoPage() {
     }
   };
 
+  const mergeBillGoRow = (nextRow: Receivable) => {
+    setRows(previous => previous.map(row => row.id === nextRow.id ? nextRow : row));
+    return nextRow;
+  };
+
+  const loadBillGoRowDetail = async (item: Receivable) => {
+    if ((item.payments || []).length > 0 || (item.subscription?.billgo_receipts || []).length > 0 || (item.subscription?.billgo_cycle_changes || []).length > 0 || (item.subscription?.billgo_status_events || []).length > 0) {
+      return item;
+    }
+    setDetailLoadingId(item.id);
+    try {
+      const response = await fetch(`/api/worker/billgo?detailReceivableId=${encodeURIComponent(item.id)}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể tải chi tiết BillGo.");
+      return mergeBillGoRow(normalizeRows([result.row])[0] || item);
+    } finally {
+      setDetailLoadingId(null);
+    }
+  };
+
+  const openReceiptHistory = async (item: Receivable) => {
+    try {
+      setReceiptTarget(await loadBillGoRowDetail(item));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể tải phiếu thu BillGo.");
+    }
+  };
   const openCollect = (item: Receivable) => {
     const summary = getBillGoReceivableSummary(item);
     setCollecting(item);
@@ -1561,9 +1593,18 @@ export default function WorkerBillGoPage() {
     });
   };
 
-  const openAction = (mode: ActionMode, item: Receivable) => {
-    const subscription = item.subscription;
-    setActionTarget(item);
+  const openAction = async (mode: ActionMode, item: Receivable) => {
+    let targetItem = item;
+    if (mode === "detail") {
+      try {
+        targetItem = await loadBillGoRowDetail(item);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Không thể tải chi tiết BillGo.");
+        return;
+      }
+    }
+    const subscription = targetItem.subscription;
+    setActionTarget(targetItem);
     setActionMode(mode);
     setEditForm({
       customerName: subscription?.customer_name || "",
@@ -1580,7 +1621,7 @@ export default function WorkerBillGoPage() {
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
       note: subscription?.note || "",
       cycle: (subscription?.current_cycle || subscription?.cycle || "") as BillGoCycle | "",
-      effectivePeriodStart: getNextPeriodStartDisplay(subscription, item.period_start) || todayInput(),
+      effectivePeriodStart: getNextPeriodStartDisplay(subscription, targetItem.period_start) || todayInput(),
     });
   };
 
@@ -1753,6 +1794,7 @@ export default function WorkerBillGoPage() {
     const cycle = row.cycle ? getBillGoCycleOption(row.cycle) : null;
     const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
+    const canOpenReceiptHistory = receiptEntries.length > 0 || summary.paid > 0;
     const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
     const hasPreviousUnpaidPeriod = previousUnpaidReceivables.length > 0;
     const firstPreviousUnpaid = previousUnpaidReceivables[0];
@@ -1792,9 +1834,9 @@ export default function WorkerBillGoPage() {
                 <span className="lg:hidden">Thu</span>
               </button>
             )}
-            {receiptEntries.length > 0 && (
-              <button type="button" onClick={() => setReceiptTarget(item)} className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/60 bg-white px-3 py-2 text-xs font-extrabold text-primary">
-                Phiếu thu
+            {canOpenReceiptHistory && (
+              <button type="button" onClick={() => void openReceiptHistory(item)} className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/60 bg-white px-3 py-2 text-xs font-extrabold text-primary">
+                {detailLoadingId === item.id ? "Đang tải..." : "Phiếu thu"}
               </button>
             )}
             <details className="group">
@@ -1805,19 +1847,19 @@ export default function WorkerBillGoPage() {
                 <button type="button" disabled={!canCollect} onClick={() => openCollect(item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low disabled:opacity-45">
                   <CircleDollarSign size={16} /> Thu tiền
                 </button>
-                <button type="button" onClick={() => openAction("detail", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
-                  <Eye size={16} /> Xem chi tiết
+                <button type="button" onClick={() => void openAction("detail", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                  <Eye size={16} /> {detailLoadingId === item.id ? "Đang tải..." : "Xem chi tiết"}
                 </button>
-                <button type="button" onClick={() => openAction("edit", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                <button type="button" onClick={() => void openAction("edit", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <Pencil size={16} /> Sửa thông tin
                 </button>
-                <button type="button" onClick={() => openAction("cycle", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                <button type="button" onClick={() => void openAction("cycle", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <RotateCcw size={16} /> {item.subscription?.status === "pending_cycle" ? "Thiết lập chu kỳ" : "Chuyển hình thức đóng"}
                 </button>
-                <button type="button" onClick={() => openAction("status", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                <button type="button" onClick={() => void openAction("status", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <PauseCircle size={16} /> {item.subscription?.status === "paused" ? "Kích hoạt lại" : "Ngừng thu"}
                 </button>
-                <button type="button" onClick={() => openAction("delete", item)} className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
+                <button type="button" onClick={() => void openAction("delete", item)} className="flex w-full items-center gap-2 px-3 py-2 text-error hover:bg-error-container/40">
                   <Trash2 size={16} /> Xóa khách hàng
                 </button>
               </div>
