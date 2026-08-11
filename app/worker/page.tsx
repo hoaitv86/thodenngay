@@ -3635,8 +3635,8 @@ export default function WorkerDashboard() {
                 <PlusIcon size={30} strokeWidth={2.6} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-xl font-extrabold leading-tight text-white md:text-primary-container">Tạo việc nhanh</h2>
-                <p className="mt-1 text-sm font-semibold leading-5 text-white/85 md:text-on-surface-variant">
+                <h2 className="text-xl font-extrabold leading-tight text-primary-container">Tạo việc nhanh</h2>
+                <p className="mt-1 text-sm font-semibold leading-5 text-on-surface-variant">
                   Tạo việc mới cho khách hàng
                 </p>
               </div>
