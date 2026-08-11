@@ -51,7 +51,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
-import { applyDefaultServiceParents, groupServicesForDisplay } from "@/lib/service-hierarchy";
+import { applyDefaultServiceParents, getCompactServicePathLabel, groupServicesForDisplay, searchSelectableServices } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import {
   BILLGO_CYCLE_OPTIONS,
@@ -512,13 +512,8 @@ const getQuickServicePathLabel = (service: ServiceOption | null, services: Servi
   return names.join(" / ");
 };
 
-const getQuickServiceSearchText = (service: ServiceOption, services: ServiceOption[]) =>
-  normalizeServiceText([
-    service.name,
-    service.description,
-    service.parentName,
-    getQuickServicePathLabel(service, services),
-  ].filter(Boolean).join(" "));
+const getQuickServiceSuggestionLabel = (service: ServiceOption, services: ServiceOption[]) =>
+  getCompactServicePathLabel(service, services, 3);
 
 const getJobCreatedDate = (job: Pick<WorkerJob, "created_at" | "scheduled_at">) => {
   const dateValue = job.created_at || job.scheduled_at;
@@ -740,44 +735,15 @@ export default function WorkerDashboard() {
     return suggestions.slice(0, 6);
   }, [activeJobs, pendingApprovalJobs, quickJob.serviceId, quickServiceGroups, services]);
 
-  const quickServiceSearchResults = React.useMemo(() => {
-    const leafServices = quickServiceGroups
-      .flatMap(group => group.services)
-      .filter((service, index, list) => list.findIndex(item => item.id === service.id) === index);
-    const query = normalizeServiceText(quickServiceSearch);
+  const quickServiceSearchResults = React.useMemo(() =>
+    searchSelectableServices(services, quickServiceSearch, 12),
+    [quickServiceSearch, services]
+  );
 
-    if (!query) return [];
-
-    const queryParts = query.split(/\s+/).filter(Boolean);
-    return leafServices
-      .map(service => ({
-        service,
-        searchText: getQuickServiceSearchText(service, services),
-      }))
-      .filter(({ searchText }) => queryParts.every(part => searchText.includes(part)))
-      .slice(0, 8)
-      .map(({ service }) => service);
-  }, [quickServiceGroups, quickServiceSearch, services]);
-
-  const editQuickServiceSearchResults = React.useMemo(() => {
-    const leafServices = quickServiceGroups
-      .flatMap(group => group.services)
-      .filter((service, index, list) => list.findIndex(item => item.id === service.id) === index);
-    const query = normalizeServiceText(editQuickServiceSearch);
-
-    if (!query) return [];
-
-    const queryParts = query.split(/\s+/).filter(Boolean);
-    return leafServices
-      .map(service => ({
-        service,
-        searchText: getQuickServiceSearchText(service, services),
-      }))
-      .filter(({ searchText }) => queryParts.every(part => searchText.includes(part)))
-      .slice(0, 8)
-      .map(({ service }) => service);
-  }, [editQuickServiceSearch, quickServiceGroups, services]);
-
+  const editQuickServiceSearchResults = React.useMemo(() =>
+    searchSelectableServices(services, editQuickServiceSearch, 12),
+    [editQuickServiceSearch, services]
+  );
   const quickCustomerOptions = React.useMemo<QuickCustomerOption[]>(() => {
     const customerMap = new Map<string, QuickCustomerOption>();
     const addCustomer = (customer: QuickCustomerOption) => {
@@ -3772,7 +3738,7 @@ export default function WorkerDashboard() {
                                 >
                                   <span className="block text-sm font-extrabold leading-5">{service.name}</span>
                                   <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                    {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                    {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                   </span>
                                 </button>
                               );
@@ -3810,7 +3776,7 @@ export default function WorkerDashboard() {
                                 >
                                   <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                   <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                    {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                    {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                   </span>
                                 </button>
                               );
@@ -3864,7 +3830,7 @@ export default function WorkerDashboard() {
                                       >
                                         <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                         <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                          {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                          {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                         </span>
                                       </button>
                                     );
@@ -3896,7 +3862,7 @@ export default function WorkerDashboard() {
                                             >
                                               <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                               <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                                {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                                {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                               </span>
                                             </button>
                                           );
@@ -5007,7 +4973,7 @@ export default function WorkerDashboard() {
                               >
                                 <span className="block text-sm font-extrabold leading-5">{service.name}</span>
                                 <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                  {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                  {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                 </span>
                               </button>
                             );
@@ -5063,7 +5029,7 @@ export default function WorkerDashboard() {
                                         >
                                           <span className="block text-sm font-extrabold leading-5">{service.name}</span>
                                           <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                            {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                            {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                           </span>
                                         </button>
                                       );
@@ -5091,7 +5057,7 @@ export default function WorkerDashboard() {
                                           >
                                             <span className="block text-sm font-extrabold leading-5">{service.name}</span>
                                             <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                              {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
+                                              {getQuickServiceSuggestionLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                             </span>
                                           </button>
                                         );

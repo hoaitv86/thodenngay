@@ -3,6 +3,7 @@ import {
   type ServiceLike,
   getCanonicalServiceCategory,
   groupServicesByCanonicalCategory,
+  normalizeServiceText,
 } from "@/lib/service-categories";
 
 export type ServiceHierarchyLike = ServiceLike & {
@@ -232,4 +233,92 @@ export const getServiceDisplayCategoryId = <T extends ServiceHierarchyLike>(serv
   }
 
   return current.id;
+};
+
+const normalizeSearchText = (value?: string | null) =>
+  normalizeServiceText(value)
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const SERVICE_SEARCH_STOP_WORDS = new Set([
+  "bi", "loi", "duoc", "khong", "ko", "k", "can", "sua", "sua chua", "dich", "vu", "dich vu", "cua", "cho", "ve", "va",
+]);
+
+const getSearchTokens = (query: string) => {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return [];
+  return normalized
+    .split(" ")
+    .filter(token => token.length > 1 && !SERVICE_SEARCH_STOP_WORDS.has(token));
+};
+
+export const getServicePathNodes = <T extends ServiceHierarchyLike>(service: T, services: T[]) => {
+  const serviceById = new Map(services.map(item => [item.id, item]));
+  const nodes: T[] = [service];
+  const visited = new Set<string>([service.id]);
+  let parentId = service.parent_service_id || null;
+
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = serviceById.get(parentId);
+    if (!parent) break;
+    nodes.unshift(parent);
+    parentId = parent.parent_service_id || null;
+  }
+
+  return nodes;
+};
+
+export const getCompactServicePathLabel = <T extends ServiceHierarchyLike>(service: T, services: T[], maxNodes = 3) => {
+  const nodes = getServicePathNodes(service, services);
+  const compactNodes = nodes.slice(Math.max(nodes.length - maxNodes, 0));
+  return compactNodes.map(node => node.name || "Dịch vụ").join(" • ");
+};
+
+export const getSearchableServicePathText = <T extends ServiceHierarchyLike>(service: T, services: T[]) => {
+  const nodes = getServicePathNodes(service, services);
+  return normalizeSearchText(nodes.flatMap(node => [node.name, node.description, node.icon]).filter(Boolean).join(" "));
+};
+
+const scoreServiceSearchResult = <T extends ServiceHierarchyLike>(service: T, services: T[], query: string) => {
+  const normalizedQuery = normalizeSearchText(query);
+  const tokens = getSearchTokens(query);
+  if (!normalizedQuery || tokens.length === 0) return 0;
+
+  const leafText = normalizeSearchText([service.name, service.description, service.icon].filter(Boolean).join(" "));
+  const pathText = getSearchableServicePathText(service, services);
+  const pathLabel = normalizeSearchText(getServicePathLabel(service, services));
+  let score = 0;
+
+  if (leafText.includes(normalizedQuery)) score += 120;
+  if (pathText.includes(normalizedQuery)) score += 80;
+  if (pathLabel.includes(normalizedQuery)) score += 60;
+
+  tokens.forEach(token => {
+    if (leafText.includes(token)) score += 18;
+    else if (pathText.includes(token)) score += 9;
+  });
+
+  const matchedTokens = tokens.filter(token => pathText.includes(token)).length;
+  if (matchedTokens === 0) return 0;
+  score += matchedTokens * 4;
+  if (matchedTokens === tokens.length) score += 16;
+
+  return score;
+};
+
+export const searchSelectableServices = <T extends ServiceHierarchyLike>(services: T[], query: string, limit = 12) => {
+  const selectableServices = getSelectableServices(services);
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return [];
+
+  return selectableServices
+    .map(service => ({ service, score: scoreServiceSearchResult(service, services, query) }))
+    .filter(result => result.score > 0)
+    .sort((a, b) => b.score - a.score || getCompactServicePathLabel(a.service, services).localeCompare(getCompactServicePathLabel(b.service, services), "vi"))
+    .slice(0, limit)
+    .map(result => result.service);
 };
