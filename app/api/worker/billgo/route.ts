@@ -234,6 +234,7 @@ const getRowSearchText = (row: {
     customer_name?: string | null;
     phone?: string | null;
     internet_account?: string | null;
+    tv360_account?: string | null;
     customer_address?: string | null;
     address_detail?: string | null;
     legacy_address?: string | null;
@@ -243,6 +244,7 @@ const getRowSearchText = (row: {
 }) => [
   row.subscription?.customer_name,
   row.subscription?.phone,
+  row.subscription?.tv360_account,
   row.subscription?.internet_account,
   row.subscription?.customer_address,
   row.subscription?.address_detail,
@@ -479,6 +481,16 @@ type BillGoImportSubscription = {
 };
 
 type BillGoPackageSelection = Pick<BillGoPackage, "id" | "name" | "type" | "provider" | "monthly_price" | "setup_price" | "allowed_cycles">;
+
+type Tv360SignupInput = {
+  serviceType: "smart_tv360" | "receiver_tv360";
+  account: string;
+  packageId: string;
+  packageName: string;
+  monthlyFee: number;
+  cycle: BillGoCycle;
+  selectedPackage: BillGoPackageSelection;
+};
 
 const normalizeImportText = (value: unknown) => String(value || "").trim();
 const normalizeImportKey = (value: unknown) => normalizeImportText(value).toLocaleLowerCase("vi");
@@ -880,7 +892,7 @@ export async function GET(request: Request) {
 
   let subscriptionQuery = admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
+    .select("id, customer_id, worker_id, parent_subscription_id, customer_name, phone, internet_account, tv360_account, tv360_service_type, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
     .eq("worker_id", workerId)
     .not("status", "in", "(cancelled,deleted)")
     .is("deleted_at", null);
@@ -892,6 +904,7 @@ export async function GET(request: Request) {
       `customer_name.ilike.%${escapedQuery}%`,
       `phone.ilike.%${escapedQuery}%`,
       `internet_account.ilike.%${escapedQuery}%`,
+      `tv360_account.ilike.%${escapedQuery}%`,
       `customer_address.ilike.%${escapedQuery}%`,
       `address_detail.ilike.%${escapedQuery}%`,
       `legacy_address.ilike.%${escapedQuery}%`,
@@ -1144,6 +1157,52 @@ export async function POST(request: Request) {
   const paidThroughMonth = isLegacyCustomer ? normalizeMonthInput(asText(body.paidThroughMonth)) : "";
   const paidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const paymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
+  const hasTv360 = body.hasTv360 === true;
+  const rawTv360Accounts = hasTv360 && Array.isArray(body.tv360Accounts) ? body.tv360Accounts : [];
+  const tv360Accounts: Tv360SignupInput[] = [];
+  const tv360AccountKeys = new Set<string>();
+
+  for (const rawAccount of rawTv360Accounts) {
+    const serviceType = asText(rawAccount?.serviceType) === "receiver_tv360" ? "receiver_tv360" : "smart_tv360";
+    const tvAccount = asText(rawAccount?.account);
+    const tvPackageId = asText(rawAccount?.packageId);
+    const tvCycle = asText(rawAccount?.cycle);
+    const expectedPackageType = serviceType === "receiver_tv360" ? "receiver" : "tv360";
+    const tvMonthlyFeeInput = toMoneyNumber(rawAccount?.monthlyFee);
+
+    if (!tvAccount || !tvPackageId || !allowedCycles.has(tvCycle as BillGoCycle) || tvMonthlyFeeInput < 0) {
+      return jsonError("Vui lòng nhập đầy đủ thông tin TV360 hợp lệ.");
+    }
+    const tvAccountKey = tvAccount.toLocaleLowerCase("vi");
+    if (tv360AccountKeys.has(tvAccountKey)) return jsonError("Tài khoản TV360 bị trùng trong form.");
+    tv360AccountKeys.add(tvAccountKey);
+
+    const { data: tvPackage, error: tvPackageError } = await admin
+      .from("billgo_packages")
+      .select("id, name, type, provider, monthly_price, setup_price, allowed_cycles")
+      .eq("id", tvPackageId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (tvPackageError) return jsonError(tvPackageError.message);
+    if (!tvPackage || tvPackage.type !== expectedPackageType) return jsonError("Gói cước TV360 không còn áp dụng.", 404);
+
+    const tvAllowedCycles = tvPackage.allowed_cycles?.length
+      ? Array.from(new Set([...tvPackage.allowed_cycles, ...BILLGO_SIGNUP_CYCLES]))
+      : BILLGO_SIGNUP_CYCLES;
+    if (!tvAllowedCycles.includes(tvCycle as BillGoCycle)) return jsonError("Chu kỳ TV360 không hợp lệ với gói đã chọn.");
+
+    tv360Accounts.push({
+      serviceType,
+      account: tvAccount,
+      packageId: tvPackage.id,
+      packageName: tvPackage.name || asText(rawAccount?.packageName) || "TV360",
+      monthlyFee: tvMonthlyFeeInput || toMoneyNumber(tvPackage.monthly_price),
+      cycle: tvCycle as BillGoCycle,
+      selectedPackage: tvPackage as BillGoPackageSelection,
+    });
+  }
+
+  if (tv360Accounts.length > 0 && (!hasCycle || !startDate)) return jsonError("Vui lòng thiết lập chu kỳ Internet trước khi thêm TV360.");
 
   if (!customerName || !account || !address || monthlyFee < 0 || (cycle && (!hasCycle || !allowedPackageCycles.includes(cycle as BillGoCycle))) || (hasCycle && !startDate)) {
     return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
@@ -1154,6 +1213,8 @@ export async function POST(request: Request) {
     .select("id")
     .eq("worker_id", workerId)
     .ilike("internet_account", account)
+    .is("parent_subscription_id", null)
+    .eq("service_type", "internet")
     .is("deleted_at", null)
     .not("status", "in", "(cancelled,deleted)")
     .maybeSingle();
@@ -1233,7 +1294,76 @@ export async function POST(request: Request) {
 
   await admin.from("billgo_subscriptions").update({ covered_until: coveredUntil, next_period_start: nextPeriodStart, next_due_date: nextDueDate, last_changed_by: userId }).eq("id", subscription.id);
 
-  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivables?.[receivables.length - 1]?.id || null, collectionMonth, nextPeriodStart, coveredUntil, receipt: null }, { status: 201 });
+  const tv360SubscriptionIds: string[] = [];
+  const tv360ReceivableIds: string[] = [];
+  for (const tvAccount of tv360Accounts) {
+    const tvBilling = getBillGoBillingPeriod(startDate, tvAccount.cycle);
+    const { data: tvSubscription, error: tvSubscriptionError } = await admin
+      .from("billgo_subscriptions")
+      .insert({
+        customer_id: null,
+        worker_id: workerId,
+        parent_subscription_id: subscription.id,
+        customer_name: customerName,
+        phone,
+        internet_account: account,
+        tv360_account: tvAccount.account,
+        tv360_service_type: tvAccount.serviceType,
+        customer_address: address,
+        area_id: location.areaId,
+        sub_area_id: location.subAreaId,
+        address_detail: addressDetail,
+        legacy_address: address || null,
+        provider: tvAccount.selectedPackage.provider || selectedPackage?.provider || provider || null,
+        package_id: tvAccount.packageId,
+        package_name: tvAccount.packageName,
+        service_type: tvAccount.selectedPackage.type,
+        cycle: tvAccount.cycle,
+        current_cycle: tvAccount.cycle,
+        amount_per_cycle: tvAccount.monthlyFee,
+        monthly_fee: tvAccount.monthlyFee,
+        start_date: tvBilling.periodStart,
+        next_due_date: tvBilling.dueDate,
+        next_period_start: tvBilling.periodStart,
+        status: "active",
+        note,
+        created_by: userId,
+        last_changed_by: userId,
+      })
+      .select("id")
+      .single();
+
+    if (tvSubscriptionError || !tvSubscription) {
+      await admin.from("billgo_subscriptions").delete().in("id", [subscription.id, ...tv360SubscriptionIds]);
+      return jsonError(tvSubscriptionError?.message || "Không thể tạo tài khoản TV360.");
+    }
+    tv360SubscriptionIds.push(tvSubscription.id);
+
+    const tvDraft = buildReceivableDraft({
+      id: tvSubscription.id,
+      customer_id: null,
+      worker_id: workerId,
+      package_id: tvAccount.packageId,
+      package_name: tvAccount.packageName,
+      current_cycle: tvAccount.cycle,
+      cycle: tvAccount.cycle,
+      monthly_fee: tvAccount.monthlyFee,
+      amount_per_cycle: tvAccount.monthlyFee,
+    }, userId, tvBilling.periodStart);
+    const { data: tvReceivable, error: tvReceivableError } = await admin
+      .from("billgo_receivables")
+      .insert({ ...tvDraft, note })
+      .select("id, next_period_start, next_due_date")
+      .single();
+    if (tvReceivableError || !tvReceivable) {
+      await admin.from("billgo_subscriptions").delete().in("id", [subscription.id, ...tv360SubscriptionIds]);
+      return jsonError(tvReceivableError?.message || "Không thể tạo kỳ thu TV360.");
+    }
+    tv360ReceivableIds.push(tvReceivable.id);
+    await admin.from("billgo_subscriptions").update({ next_period_start: tvReceivable.next_period_start, next_due_date: tvReceivable.next_due_date, last_changed_by: userId }).eq("id", tvSubscription.id);
+  }
+
+  return NextResponse.json({ subscriptionId: subscription.id, receivableId: receivables?.[receivables.length - 1]?.id || null, tv360SubscriptionIds, tv360ReceivableIds, collectionMonth, nextPeriodStart, coveredUntil, receipt: null }, { status: 201 });
 }
 export async function PATCH(request: Request) {
   const context = await getWorkerContext();

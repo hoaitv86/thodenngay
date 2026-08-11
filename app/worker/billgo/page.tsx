@@ -37,6 +37,7 @@ import {
   BILLGO_SIGNUP_CYCLES,
   getBillGoPackageTypeLabel,
   type BillGoPackage,
+  type BillGoPackageType,
 } from "@/lib/billgo-packages";
 import { createClient } from "@/lib/supabase/client";
 
@@ -104,6 +105,10 @@ type Subscription = {
   customer_name?: string | null;
   phone?: string | null;
   internet_account?: string | null;
+  tv360_account?: string | null;
+  tv360_service_type?: string | null;
+  service_type?: string | null;
+  parent_subscription_id?: string | null;
   customer_address?: string | null;
   area_id?: string | null;
   sub_area_id?: string | null;
@@ -207,6 +212,19 @@ type BulkEntryRow = {
   cycle: BillGoCycle | "";
   startMonth: string;
   note: string;
+};
+
+type Tv360ServiceType = "smart_tv360" | "receiver_tv360";
+
+type Tv360AccountForm = {
+  id: string;
+  enabled: boolean;
+  serviceType: Tv360ServiceType;
+  account: string;
+  packageId: string;
+  packageName: string;
+  monthlyFee: string;
+  cycle: BillGoCycle | "";
 };
 
 type BulkEntryError = {
@@ -353,6 +371,17 @@ const createBulkEntryRow = (): BulkEntryRow => ({
   cycle: "",
   startMonth: "",
   note: "",
+});
+
+const createTv360AccountForm = (): Tv360AccountForm => ({
+  id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+  enabled: true,
+  serviceType: "smart_tv360",
+  account: "",
+  packageId: "",
+  packageName: "",
+  monthlyFee: "",
+  cycle: "",
 });
 
 const statusOptions = [
@@ -622,6 +651,8 @@ const initialForm = () => ({
   paidThroughMonth: "",
   initialPaidAt: todayInput(),
   initialPaymentMethod: "cash",
+  hasTv360: false,
+  tv360Accounts: [] as Tv360AccountForm[],
 });
 
 const firstRelation = <T,>(value: T | T[] | null | undefined) => Array.isArray(value) ? value[0] || null : value || null;
@@ -941,7 +972,7 @@ export default function WorkerBillGoPage() {
       cycle,
       summary: getBillGoReceivableSummary(item),
       customerName: item.subscription?.customer_name || "KhÃ¡ch BillGo",
-      account: item.subscription?.internet_account || "ChÆ°a cÃ³ account",
+      account: item.subscription?.tv360_account || item.subscription?.internet_account || "ChÆ°a cÃ³ account",
     };
   }), [rows]);
 
@@ -952,6 +983,7 @@ export default function WorkerBillGoPage() {
         row.customerName,
         row.account,
         row.item.subscription?.phone,
+        row.item.subscription?.tv360_account,
         getBillGoAddress(row.item.subscription),
 
         row.item.subscription?.provider,
@@ -1055,7 +1087,11 @@ export default function WorkerBillGoPage() {
   const hasFormCycle = Boolean(form.cycle);
   const formBilling = useMemo(() => hasFormCycle ? getBillGoBillingPeriod(form.startDate || previousMonthFirstInput(), form.cycle) : null, [form.cycle, form.startDate, hasFormCycle]);
   const formDueDate = form.dueDate || formBilling?.dueDate || "";
-  const formTotal = useMemo(() => hasFormCycle ? getBillGoCollectableAmount(form.monthlyFee, form.cycle) : 0, [form.cycle, form.monthlyFee, hasFormCycle]);
+  const internetFormTotal = useMemo(() => hasFormCycle ? getBillGoCollectableAmount(form.monthlyFee, form.cycle) : 0, [form.cycle, form.monthlyFee, hasFormCycle]);
+  const tv360FormTotal = useMemo(() => form.hasTv360
+    ? form.tv360Accounts.reduce((sum, account) => sum + (account.cycle ? getBillGoCollectableAmount(account.monthlyFee, account.cycle) : 0), 0)
+    : 0, [form.hasTv360, form.tv360Accounts]);
+  const formTotal = internetFormTotal + tv360FormTotal;
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
   const formSubAreas = useMemo(
     () => areas.find(area => area.id === form.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
@@ -1094,22 +1130,24 @@ export default function WorkerBillGoPage() {
     () => packages.find(item => item.id === form.packageId) || null,
     [form.packageId, packages],
   );
+  const internetPackages = useMemo(() => packages.filter(item => item.type === "internet"), [packages]);
+  const tv360Packages = useMemo(() => packages.filter(item => item.type === "tv360" || item.type === "receiver"), [packages]);
   const packageSearchDigits = packageSearch.replace(/\D/g, "");
   const packageSearchText = packageSearch.trim().toLocaleLowerCase("vi");
   const formPackageOptions = useMemo(
     () => {
       if (packageSearchDigits) {
-        return packages.filter(item => String(Number(item.monthly_price || 0)).startsWith(packageSearchDigits));
+        return internetPackages.filter(item => String(Number(item.monthly_price || 0)).startsWith(packageSearchDigits));
       }
-      if (!packageSearchText) return packages;
-      return packages.filter(item => {
+      if (!packageSearchText) return internetPackages;
+      return internetPackages.filter(item => {
         const label = [getBillGoPackageTypeLabel(item.type), item.name, item.provider, formatBillGoCurrency(item.monthly_price)]
           .join(" ")
           .toLocaleLowerCase("vi");
         return label.includes(packageSearchText);
       });
     },
-    [packageSearchDigits, packageSearchText, packages],
+    [internetPackages, packageSearchDigits, packageSearchText],
   );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
@@ -1153,9 +1191,10 @@ export default function WorkerBillGoPage() {
         return { ...prev, address: value, addressDetail: value };
       }
       if (key === "isLegacyCustomer") return { ...prev, isLegacyCustomer: value === "true", paidThroughMonth: value === "true" ? prev.paidThroughMonth : "" };
+      if (key === "hasTv360") return { ...prev, hasTv360: value === "true", tv360Accounts: value === "true" ? (prev.tv360Accounts.length > 0 ? prev.tv360Accounts : [createTv360AccountForm()]) : [] };
       if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle | "");
       if (key === "packageId") {
-        const selectedPackage = packages.find(item => item.id === value);
+        const selectedPackage = internetPackages.find(item => item.id === value);
         if (!selectedPackage) return { ...prev, packageId: "", packageName: "", monthlyFee: "" };
         const allowedCycles = getSignupCycleValues(selectedPackage.allowed_cycles);
         const nextCycle = prev.cycle && allowedCycles.has(prev.cycle) ? prev.cycle : "";
@@ -1177,6 +1216,43 @@ export default function WorkerBillGoPage() {
   const selectFormPackage = (packageOption: BillGoPackage) => {
     setPackageSearch(formatBillGoCurrency(packageOption.monthly_price) + " - " + packageOption.name);
     updateForm("packageId", packageOption.id);
+  };
+
+  const updateTv360Account = (accountId: string, patch: Partial<Tv360AccountForm>) => {
+    setForm(prev => ({
+      ...prev,
+      tv360Accounts: prev.tv360Accounts.map(account => account.id === accountId ? { ...account, ...patch } : account),
+    }));
+  };
+
+  const addTv360Account = () => {
+    setForm(prev => ({ ...prev, hasTv360: true, tv360Accounts: [...prev.tv360Accounts, createTv360AccountForm()] }));
+  };
+
+  const removeTv360Account = (accountId: string) => {
+    setForm(prev => {
+      const nextAccounts = prev.tv360Accounts.filter(account => account.id !== accountId);
+      return { ...prev, hasTv360: nextAccounts.length > 0, tv360Accounts: nextAccounts };
+    });
+  };
+
+  const selectTv360Package = (accountId: string, packageId: string) => {
+    const selectedPackage = tv360Packages.find(item => item.id === packageId);
+    if (!selectedPackage) {
+      updateTv360Account(accountId, { packageId: "", packageName: "", monthlyFee: "" });
+      return;
+    }
+    updateTv360Account(accountId, {
+      packageId: selectedPackage.id,
+      packageName: selectedPackage.name,
+      monthlyFee: String(Number(selectedPackage.monthly_price || 0)),
+      serviceType: selectedPackage.type === "receiver" ? "receiver_tv360" : "smart_tv360",
+    });
+  };
+
+  const getTv360PackageOptions = (serviceType: Tv360ServiceType) => {
+    const packageType: BillGoPackageType = serviceType === "receiver_tv360" ? "receiver" : "tv360";
+    return tv360Packages.filter(item => item.type === packageType);
   };
 
   const updatePackageSearch = (value: string) => {
@@ -1933,6 +2009,48 @@ export default function WorkerBillGoPage() {
                   .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Sá»‘ tiá»n cáº§n thu" />
+              <section className="rounded-lg border border-outline-variant/50 bg-surface-container-lowest p-3 sm:col-span-2 xl:col-span-3">
+                <label className="flex items-center justify-between gap-3 text-sm font-bold text-on-surface">
+                  <span>Có dịch vụ TV360</span>
+                  <input type="checkbox" checked={form.hasTv360} onChange={e => updateForm("hasTv360", e.target.checked ? "true" : "false")} className="h-5 w-5 accent-primary" />
+                </label>
+                {form.hasTv360 && (
+                  <div className="mt-3 space-y-3">
+                    {form.tv360Accounts.map((tvAccount, index) => {
+                      const tvPackageOptions = getTv360PackageOptions(tvAccount.serviceType);
+                      return (
+                        <div key={tvAccount.id} className="rounded-lg border border-outline-variant/40 bg-white p-3">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <p className="text-sm font-extrabold text-on-surface">Tài khoản TV360 {index + 1}</p>
+                            <button type="button" onClick={() => removeTv360Account(tvAccount.id)} className="rounded-lg border border-outline-variant px-2 py-1 text-xs font-bold text-error hover:bg-error-container">Xóa</button>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                            <select className="input-field" value={tvAccount.serviceType} onChange={e => updateTv360Account(tvAccount.id, { serviceType: e.target.value as Tv360ServiceType, packageId: "", packageName: "", monthlyFee: "" })}>
+                              <option value="smart_tv360">Smart TV360</option>
+                              <option value="receiver_tv360">Đầu thu TV360</option>
+                            </select>
+                            <input required className="input-field" placeholder="Tài khoản TV360" value={tvAccount.account} onChange={e => updateTv360Account(tvAccount.id, { account: e.target.value })} />
+                            <select required className="input-field" value={tvAccount.packageId} onChange={e => selectTv360Package(tvAccount.id, e.target.value)}>
+                              <option value="">Gói cước TV360</option>
+                              {tvPackageOptions.map(item => <option key={item.id} value={item.id}>{item.name} - {formatBillGoCurrency(item.monthly_price)}</option>)}
+                            </select>
+                            <input required readOnly={Boolean(tvAccount.packageId)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Giá cước TV360" value={tvAccount.monthlyFee} onChange={e => updateTv360Account(tvAccount.id, { monthlyFee: e.target.value })} />
+                            <select required className="input-field" value={tvAccount.cycle} onChange={e => updateTv360Account(tvAccount.id, { cycle: e.target.value as BillGoCycle | "" })}>
+                              <option value="">Chu kỳ TV360</option>
+                              {signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                          </div>
+                          <p className="mt-2 text-xs font-bold text-on-surface-variant">
+                            Đến kỳ: {tvAccount.cycle ? formatBillGoCurrency(getBillGoCollectableAmount(tvAccount.monthlyFee, tvAccount.cycle)) : "Chưa chọn chu kỳ"}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <button type="button" onClick={addTv360Account} className="btn-outline !w-auto !px-3 !py-2"><Plus size={16} /> Thêm tài khoản TV360</button>
+                    <p className="text-xs font-bold text-primary-container">Tổng TV360 đến kỳ: {formatBillGoCurrency(tv360FormTotal)}</p>
+                  </div>
+                )}
+              </section>
               <label className="flex items-center gap-3 rounded-lg border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface sm:col-span-2 xl:col-span-3">
                 <input type="checkbox" checked={form.isLegacyCustomer} onChange={e => updateForm("isLegacyCustomer", e.target.checked ? "true" : "false")} className="h-5 w-5 accent-primary" />
                 Nháº­p khÃ¡ch hÃ ng cÅ©
