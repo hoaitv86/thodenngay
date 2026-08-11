@@ -28,6 +28,50 @@ const DEFAULT_BILLGO_PAGE_SIZE = 10;
 const MAX_BILLGO_PAGE_SIZE = 50;
 const allowedListStatuses = new Set(["all", "pending_cycle", "not_due", "unpaid", "paid", "partial", "overdue", "promo"]);
 const allowedDueFilters = new Set(["all", "due_this_month", "not_due"]);
+const billGoSubscriptionBaseSelect = "id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date";
+const billGoSubscriptionTv360Select = "id, customer_id, worker_id, parent_subscription_id, customer_name, phone, internet_account, tv360_account, tv360_service_type, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date";
+
+const isMissingBillGoTv360SchemaError = (error?: { message?: string | null; code?: string | null } | null) =>
+  Boolean(error?.message && (
+    error.message.includes("billgo_subscriptions.parent_subscription_id")
+    || error.message.includes("billgo_subscriptions.tv360_account")
+    || error.message.includes("billgo_subscriptions.tv360_service_type")
+    || error.message.includes("parent_subscription_id")
+    || error.message.includes("tv360_account")
+    || error.message.includes("tv360_service_type")
+  ));
+
+type BillGoSubscriptionListRow = {
+  id: string;
+  customer_id?: string | null;
+  worker_id?: string | null;
+  parent_subscription_id?: string | null;
+  customer_name?: string | null;
+  phone?: string | null;
+  internet_account?: string | null;
+  tv360_account?: string | null;
+  tv360_service_type?: string | null;
+  customer_address?: string | null;
+  area_id?: string | null;
+  sub_area_id?: string | null;
+  address_detail?: string | null;
+  legacy_address?: string | null;
+  provider?: string | null;
+  package_id?: string | null;
+  package_name?: string | null;
+  service_type?: string | null;
+  cycle?: string | null;
+  current_cycle?: string | null;
+  amount_per_cycle?: number | string | null;
+  monthly_fee?: number | string | null;
+  next_period_start?: string | null;
+  next_due_date?: string | null;
+  covered_until?: string | null;
+  status?: string | null;
+  note?: string | null;
+  created_at?: string | null;
+  start_date?: string | null;
+};
 
 type WorkerContext = {
   admin: SupabaseClient;
@@ -890,33 +934,41 @@ export async function GET(request: Request) {
   const ensured = canManageBillGoScope(scope) ? await ensureDueReceivables(admin, workerId, userId, monthFilter) : { created: 0 };
   if ("error" in ensured && ensured.error) return jsonError(ensured.error);
 
-  let subscriptionQuery = admin
-    .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, parent_subscription_id, customer_name, phone, internet_account, tv360_account, tv360_service_type, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date")
-    .eq("worker_id", workerId)
-    .not("status", "in", "(cancelled,deleted)")
-    .is("deleted_at", null);
-  if (areaId) subscriptionQuery = subscriptionQuery.eq("area_id", areaId);
-  if (subAreaId) subscriptionQuery = subscriptionQuery.eq("sub_area_id", subAreaId);
-  if (searchQuery) {
-    const escapedQuery = searchQuery.replace(/[%_]/g, "\\$&");
-    subscriptionQuery = subscriptionQuery.or([
-      `customer_name.ilike.%${escapedQuery}%`,
-      `phone.ilike.%${escapedQuery}%`,
-      `internet_account.ilike.%${escapedQuery}%`,
-      `tv360_account.ilike.%${escapedQuery}%`,
-      `customer_address.ilike.%${escapedQuery}%`,
-      `address_detail.ilike.%${escapedQuery}%`,
-      `legacy_address.ilike.%${escapedQuery}%`,
-      `provider.ilike.%${escapedQuery}%`,
-      `package_name.ilike.%${escapedQuery}%`,
-    ].join(","));
-  }
+  const fetchSubscriptions = async (includeTv360Columns: boolean) => {
+    let query = (admin.from("billgo_subscriptions") as any)
+      .select(includeTv360Columns ? billGoSubscriptionTv360Select : billGoSubscriptionBaseSelect)
+      .eq("worker_id", workerId)
+      .not("status", "in", "(cancelled,deleted)")
+      .is("deleted_at", null);
+    if (areaId) query = query.eq("area_id", areaId);
+    if (subAreaId) query = query.eq("sub_area_id", subAreaId);
+    if (searchQuery) {
+      const escapedQuery = searchQuery.replace(/[%_]/g, "\\$&");
+      const searchFields = [
+        `customer_name.ilike.%${escapedQuery}%`,
+        `phone.ilike.%${escapedQuery}%`,
+        `internet_account.ilike.%${escapedQuery}%`,
+        ...(includeTv360Columns ? [`tv360_account.ilike.%${escapedQuery}%`] : []),
+        `customer_address.ilike.%${escapedQuery}%`,
+        `address_detail.ilike.%${escapedQuery}%`,
+        `legacy_address.ilike.%${escapedQuery}%`,
+        `provider.ilike.%${escapedQuery}%`,
+        `package_name.ilike.%${escapedQuery}%`,
+      ];
+      query = query.or(searchFields.join(","));
+    }
+    return query.order("customer_name", { ascending: true });
+  };
 
-  const { data: subscriptions, error: subscriptionError } = await subscriptionQuery.order("customer_name", { ascending: true });
+  let { data: subscriptions, error: subscriptionError } = await fetchSubscriptions(true);
+  if (isMissingBillGoTv360SchemaError(subscriptionError)) {
+    const legacyResult = await fetchSubscriptions(false);
+    subscriptions = legacyResult.data;
+    subscriptionError = legacyResult.error;
+  }
   if (subscriptionError) return jsonError("Không thể tải khách BillGo: " + subscriptionError.message);
 
-  const hydratedSubscriptions = (subscriptions || [])
+  const hydratedSubscriptions = ((subscriptions || []) as BillGoSubscriptionListRow[])
     .map(subscription => withEffectiveNextPeriodStart(subscription))
     .filter(subscription => !assignedFilters || isBillGoSubscriptionInAssignedArea(subscription, assignedFilters));
   const subscriptionIds = hydratedSubscriptions.map(subscription => subscription.id);
@@ -1208,17 +1260,28 @@ export async function POST(request: Request) {
     return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
   }
 
-  const { data: duplicate } = await admin
-    .from("billgo_subscriptions")
-    .select("id")
-    .eq("worker_id", workerId)
-    .ilike("internet_account", account)
-    .is("parent_subscription_id", null)
-    .eq("service_type", "internet")
-    .is("deleted_at", null)
-    .not("status", "in", "(cancelled,deleted)")
-    .maybeSingle();
-  if (duplicate) return jsonError("Account n\u00e0y \u0111\u00e3 c\u00f3 trong BillGo.", 409);
+  const checkDuplicateInternetAccount = async (includeTv360Columns: boolean) => {
+    let query = admin
+      .from("billgo_subscriptions")
+      .select("id")
+      .eq("worker_id", workerId)
+      .ilike("internet_account", account)
+      .is("deleted_at", null)
+      .not("status", "in", "(cancelled,deleted)");
+    if (includeTv360Columns) {
+      query = query.is("parent_subscription_id", null).eq("service_type", "internet");
+    }
+    return query.maybeSingle();
+  };
+
+  let { data: duplicate, error: duplicateError } = await checkDuplicateInternetAccount(true);
+  if (isMissingBillGoTv360SchemaError(duplicateError)) {
+    const legacyDuplicate = await checkDuplicateInternetAccount(false);
+    duplicate = legacyDuplicate.data;
+    duplicateError = legacyDuplicate.error;
+  }
+  if (duplicateError) return jsonError("Không thể kiểm tra account BillGo: " + duplicateError.message);
+  if (duplicate) return jsonError("Account này đã có trong BillGo.", 409);
 
   const firstBilling = hasCycle ? getBillGoBillingPeriod(startDate, cycle) : null;
   const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
@@ -1335,6 +1398,9 @@ export async function POST(request: Request) {
 
     if (tvSubscriptionError || !tvSubscription) {
       await admin.from("billgo_subscriptions").delete().in("id", [subscription.id, ...tv360SubscriptionIds]);
+      if (isMissingBillGoTv360SchemaError(tvSubscriptionError)) {
+        return jsonError("Database BillGo chưa có cột TV360. Vui lòng chạy migration supabase/migration_billgo_tv360_accounts.sql trước khi thêm TV360.", 409);
+      }
       return jsonError(tvSubscriptionError?.message || "Không thể tạo tài khoản TV360.");
     }
     tv360SubscriptionIds.push(tvSubscription.id);
