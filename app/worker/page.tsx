@@ -3624,19 +3624,19 @@ export default function WorkerDashboard() {
 
       {/* Quick Job Creation */}
       <section id="worker-quick-job" className="scroll-mt-24 px-3 py-3 sm:px-6 md:py-4 lg:px-8">
-        <div className="overflow-hidden rounded-xl border border-primary-container/35 bg-primary p-0 text-white shadow-[0_14px_34px_rgba(37,99,235,0.22)] ring-1 ring-white/70 md:bg-sky-50 md:p-4 md:text-on-surface">
+        <div className="overflow-hidden rounded-xl border border-primary-container/35 bg-primary p-0 text-white shadow-[0_14px_34px_rgba(37,99,235,0.22)] ring-1 ring-white/70 md:p-4">
           <button
             type="button"
             onClick={() => setQuickFormOpen(open => !open)}
             className="flex w-full items-center justify-between gap-3 p-4 text-left md:p-0"
           >
             <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-md shadow-cyan-900/15 ring-2 ring-white md:h-12 md:w-12 md:rounded-lg md:bg-primary md:text-white">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-md shadow-cyan-900/15 ring-2 ring-white md:h-12 md:w-12 md:rounded-lg md:bg-white md:text-primary">
                 <PlusIcon size={30} strokeWidth={2.6} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-xl font-extrabold leading-tight text-primary-container">Tạo việc nhanh</h2>
-                <p className="mt-1 text-sm font-semibold leading-5 text-on-surface-variant">
+                <h2 className="text-xl font-extrabold leading-tight text-white">Tạo việc nhanh</h2>
+                <p className="mt-1 text-sm font-semibold leading-5 text-white/85">
                   Tạo việc mới cho khách hàng
                 </p>
               </div>
