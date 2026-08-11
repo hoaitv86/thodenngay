@@ -1006,6 +1006,47 @@ export async function GET(request: Request) {
   const ensured = canManageBillGoScope(scope) ? await ensureDueReceivables(admin, workerId, userId, monthFilter) : { created: 0 };
   if ("error" in ensured && ensured.error) return jsonError(ensured.error);
 
+  if (!assignedFilters) {
+    const optimizedStartedAt = performance.now();
+    const { data: optimizedPayload, error: optimizedError } = await admin.rpc("billgo_customer_list_page", {
+      p_worker_id: workerId,
+      p_month: monthFilter,
+      p_page: page,
+      p_limit: limit,
+      p_cycle: cycleFilter,
+      p_status: statusFilter,
+      p_due: dueFilter,
+      p_area_id: areaId || null,
+      p_sub_area_id: subAreaId || null,
+      p_search: searchQuery,
+    });
+
+    if (!optimizedError && optimizedPayload && typeof optimizedPayload === "object") {
+      const payload = optimizedPayload as Record<string, unknown>;
+      return NextResponse.json({
+        rows: Array.isArray(payload.rows) ? payload.rows : [],
+        created: ensured.created || 0,
+        page: Number(payload.page || page),
+        limit: Number(payload.limit || limit),
+        total: Number(payload.total || 0),
+        pageCount: Number(payload.pageCount || 1),
+        totals: payload.totals || {},
+        meta: {
+          mode: "list_rpc",
+          totalMs: Math.round(performance.now() - requestStartedAt),
+          queryMs: Math.round(performance.now() - optimizedStartedAt),
+          page: Number(payload.page || page),
+          limit: Number(payload.limit || limit),
+          pageRowCount: Array.isArray(payload.rows) ? payload.rows.length : 0,
+        },
+      });
+    }
+
+    if (optimizedError && !["42883", "PGRST202"].includes(String(optimizedError.code || ""))) {
+      console.warn("[BillGo] Optimized customer list RPC failed; falling back to legacy loader", optimizedError.message);
+    }
+  }
+
   const fetchSubscriptions = async (includeTv360Columns: boolean) => {
     let query = (admin.from("billgo_subscriptions") as any)
       .select(includeTv360Columns ? billGoSubscriptionTv360Select : billGoSubscriptionBaseSelect)

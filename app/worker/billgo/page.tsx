@@ -1005,12 +1005,7 @@ export default function WorkerBillGoPage() {
     return true;
   }, [dueFilter, monthFilter]);
 
-  const filteredRows = useMemo(() => rowViews.filter(row => {
-    if (activeTab !== BILLGO_ALL_TAB && row.cycle !== activeTab) return false;
-    if (!matchesBillGoStatusFilter(row.summary.status, statusFilter)) return false;
-    if (!matchesDueFilter(row)) return false;
-    return matchesSearch(row);
-  }), [activeTab, matchesDueFilter, matchesSearch, rowViews, statusFilter]);
+  const filteredRows = useMemo(() => rowViews, [rowViews]);
 
   const selectedArea = useMemo(
     () => areas.find(area => area.id === selectedAreaId),
@@ -1028,33 +1023,10 @@ export default function WorkerBillGoPage() {
     return () => window.clearTimeout(timeoutId);
   }, [selectedAreaId, selectedAreaSubAreas, selectedSubAreaId, viewMode]);
 
-  const areaRows = useMemo(() => rowViews.filter(row => {
-    const subscription = row.item.subscription;
-    const locationText = normalizeLocationText([
-      subscription?.address_detail,
-      subscription?.customer_address,
-      subscription?.legacy_address,
-    ].filter(Boolean).join(" "));
-    if (selectedAreaId) {
-      const areaName = normalizeLocationText(selectedArea?.name);
-      const matchesAreaId = subscription?.area_id === selectedAreaId;
-      const matchesLegacyAreaName = !subscription?.area_id && !!areaName && locationText.includes(areaName);
-      if (!matchesAreaId && !matchesLegacyAreaName) return false;
-    }
-    if (selectedSubAreaId) {
-      const subArea = selectedAreaSubAreas.find(item => item.id === selectedSubAreaId);
-      const subAreaName = normalizeLocationText(subArea?.name);
-      const matchesSubAreaId = subscription?.sub_area_id === selectedSubAreaId;
-      const matchesLegacySubAreaName = !subscription?.sub_area_id && !!subAreaName && locationText.includes(subAreaName);
-      if (!matchesSubAreaId && !matchesLegacySubAreaName) return false;
-    }
-    if (!matchesBillGoStatusFilter(row.summary.status, areaStatusFilter)) return false;
-    if (!matchesDueFilter(row)) return false;
-    return matchesSearch(row);
-  }).sort((a, b) => {
+  const areaRows = useMemo(() => [...rowViews].sort((a, b) => {
     const order: Record<string, number> = { unpaid: 0, partial: 1, overdue: 2, paid: 3, promo: 4 };
     return (order[a.summary.status] ?? 9) - (order[b.summary.status] ?? 9) || a.customerName.localeCompare(b.customerName);
-  }), [areaStatusFilter, matchesDueFilter, matchesSearch, rowViews, selectedArea, selectedAreaId, selectedAreaSubAreas, selectedSubAreaId]);
+  }), [rowViews]);
 
   const areaStats = useMemo(() => ({
     total: serverTotals.totalCustomers,
