@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -796,6 +796,7 @@ export default function WorkerBillGoPage() {
   const [importError, setImportError] = useState("");
   const [form, setForm] = useState(initialForm);
   const [packageSearch, setPackageSearch] = useState("");
+  const [showPackageSuggestions, setShowPackageSuggestions] = useState(false);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
   const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
@@ -1215,6 +1216,7 @@ export default function WorkerBillGoPage() {
 
   const selectFormPackage = (packageOption: BillGoPackage) => {
     setPackageSearch(formatBillGoCurrency(packageOption.monthly_price) + " - " + packageOption.name);
+    setShowPackageSuggestions(false);
     updateForm("packageId", packageOption.id);
   };
 
@@ -1257,6 +1259,7 @@ export default function WorkerBillGoPage() {
 
   const updatePackageSearch = (value: string) => {
     setPackageSearch(value);
+    setShowPackageSuggestions(Boolean(value.trim()));
     if (form.packageId) updateForm("packageId", "");
   };
 
@@ -1875,10 +1878,10 @@ export default function WorkerBillGoPage() {
               }}
             />
           </label>
-          <button type="button" onClick={() => { setShowBulkEntry(value => !value); if (showForm) { setPackageSearch(""); setShowForm(false); } }} className="btn-outline !w-auto flex-1 sm:flex-none">
+          <button type="button" onClick={() => { setShowBulkEntry(value => !value); if (showForm) { setPackageSearch(""); setShowPackageSuggestions(false); setShowForm(false); } }} className="btn-outline !w-auto flex-1 sm:flex-none">
             <Plus size={18} /> Thêm nhiều khách hàng
           </button>
-          <button type="button" onClick={() => { if (showForm) setPackageSearch(""); setShowForm(value => !value); if (showBulkEntry) setShowBulkEntry(false); }} className="btn-primary !w-auto flex-1 sm:flex-none">
+          <button type="button" onClick={() => { if (showForm) { setPackageSearch(""); setShowPackageSuggestions(false); } setShowForm(value => !value); if (showBulkEntry) setShowBulkEntry(false); }} className="btn-primary !w-auto flex-1 sm:flex-none">
             <Plus size={18} /> Thêm khách hàng
           </button>
         </div>
@@ -1982,7 +1985,7 @@ export default function WorkerBillGoPage() {
                   value={packageSearch}
                   onChange={e => updatePackageSearch(e.target.value)}
                 />
-                {packageSearch.trim() && (
+                {showPackageSuggestions && packageSearch.trim() && (
                   <div className="max-h-36 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white p-1 shadow-sm">
                     {formPackageOptions.map(packageOption => (
                       <button
@@ -2083,7 +2086,7 @@ export default function WorkerBillGoPage() {
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-            <button type="button" onClick={() => { setPackageSearch(""); setShowForm(false); }} className="btn-outline !w-auto">Hủy</button>
+            <button type="button" onClick={() => { setPackageSearch(""); setShowPackageSuggestions(false); setShowForm(false); }} className="btn-outline !w-auto">Hủy</button>
             <button disabled={saving || formTotal < 0 || toMoneyNumber(form.monthlyFee) < 0} className="btn-primary !w-auto">{saving ? "Đang lưu..." : "Thêm vào BillGo"}</button>
           </div>
         </form>
