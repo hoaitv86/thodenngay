@@ -805,6 +805,25 @@ textarea {
   color: inherit !important;
 }
 
+.worker-quick-job-surface {
+  color: var(--color-on-surface) !important;
+}
+
+.worker-quick-job-surface [class*="text-on-surface-variant"]:not([class*="text-white"]) {
+  color: var(--color-on-surface-variant) !important;
+}
+
+.worker-quick-job-surface [class*="text-on-surface"]:not([class*="text-white"]) {
+  color: var(--color-on-surface) !important;
+}
+
+.worker-quick-job-surface [class*="text-primary"]:not([class*="text-white"]) {
+  color: var(--color-primary) !important;
+}
+
+.worker-quick-job-surface [class*="text-secondary"]:not([class*="text-white"]) {
+  color: var(--color-secondary-container) !important;
+}
 [class~="bg-primary"] :is(input, select, textarea, option),
 [class~="bg-primary-container"] :is(input, select, textarea, option),
 [class~="bg-secondary-container"] :is(input, select, textarea, option),

@@ -3649,7 +3649,7 @@ export default function WorkerDashboard() {
           </button>
 
           {quickFormOpen && (
-            <form onSubmit={handleCreateQuickJob} className="m-3 mt-0 space-y-3 rounded-lg border border-primary-container/15 bg-white p-3 text-on-surface shadow-sm md:m-0 md:mt-4 md:bg-white/85">
+            <form onSubmit={handleCreateQuickJob} className="worker-quick-job-surface m-3 mt-0 space-y-3 rounded-lg border border-primary-container/15 bg-white p-3 text-on-surface shadow-sm md:m-0 md:mt-4 md:bg-white/85">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
                   Tên khách hàng
