@@ -103,6 +103,7 @@ export function HierarchicalServiceSelector<T extends ServiceOption>({
                         <ServiceCheckbox
                           key={service.id}
                           service={service}
+                          pathLabel={getServicePathLabel(service, services)}
                           selected={selectedIds.has(service.id)}
                           showPrice={showPrices}
                           disabled={disabled}
@@ -119,6 +120,7 @@ export function HierarchicalServiceSelector<T extends ServiceOption>({
                           <ServiceCheckbox
                             key={service.id}
                             service={service}
+                            pathLabel={getServicePathLabel(service, services)}
                             selected={selectedIds.has(service.id)}
                             showPrice={showPrices}
                             disabled={disabled}
@@ -140,12 +142,14 @@ export function HierarchicalServiceSelector<T extends ServiceOption>({
 
 function ServiceCheckbox<T extends ServiceOption>({
   service,
+  pathLabel,
   selected,
   showPrice,
   disabled,
   onToggle,
 }: {
   service: T;
+  pathLabel: string;
   selected: boolean;
   showPrice: boolean;
   disabled: boolean;
@@ -169,6 +173,9 @@ function ServiceCheckbox<T extends ServiceOption>({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold">{service.name || "Dịch vụ"}</span>
+        {pathLabel && pathLabel !== service.name && (
+          <span className="mt-0.5 block truncate text-xs text-on-surface-variant">{pathLabel}</span>
+        )}
         {showPrice && Number(service.base_price || 0) > 0 && (
           <span className="mt-0.5 block text-xs text-on-surface-variant">
             Từ {Number(service.base_price).toLocaleString("vi-VN")}đ

@@ -70,9 +70,19 @@ export const getCustomerServiceBasePrice = <T extends PricedServiceHierarchyLike
   service: T,
   services: T[],
 ) => {
+  const getLeafPrices = (serviceId: string): number[] => {
+    const children = services.filter(item => item.parent_service_id === serviceId);
+    if (children.length === 0) {
+      const price = Number(services.find(item => item.id === serviceId)?.base_price || 0);
+      return Number.isFinite(price) && price > 0 ? [price] : [];
+    }
+
+    return children.flatMap(child => getLeafPrices(child.id));
+  };
+
   const children = services.filter(item => item.parent_service_id === service.id);
   const childPrices = children
-    .map(item => Number(item.base_price || 0))
+    .flatMap(item => getLeafPrices(item.id))
     .filter(price => Number.isFinite(price) && price > 0);
 
   if (childPrices.length > 0) return Math.min(...childPrices);

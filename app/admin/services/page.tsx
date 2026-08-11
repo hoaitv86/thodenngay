@@ -265,7 +265,8 @@ export default function AdminServices() {
   const getLevelLabel = (level: number) => {
     if (level === 0) return "danh mục cha";
     if (level === 1) return "danh mục con";
-    return "dịch vụ";
+    if (level >= 4) return "dịch vụ";
+    return "mục danh mục";
   };
 
   const fetchServices = useCallback(async () => {
@@ -375,13 +376,13 @@ export default function AdminServices() {
     const parentService = parentServiceId ? serviceById.get(parentServiceId) : null;
     const nextLevel = parentService ? getServiceLevel(parentService) + 1 : 0;
 
-    if (nextLevel > 2) {
-      alert("Cấu trúc chỉ hỗ trợ 3 cấp: danh mục cha, danh mục con và dịch vụ.");
+    if (nextLevel > 4) {
+      alert("Cấu trúc chỉ hỗ trợ tối đa 5 cấp: danh mục cha, nhóm, loại hệ thống, bộ phận và lỗi.");
       return;
     }
 
-    if (!trimmedName || (nextLevel === 2 && serviceForm.base_price === "")) {
-      alert(nextLevel === 2 ? "Vui lòng điền tên dịch vụ và giá cơ bản." : "Vui lòng điền tên danh mục.");
+    if (!trimmedName || (nextLevel >= 4 && serviceForm.base_price === "")) {
+      alert(nextLevel >= 4 ? "Vui lòng điền tên dịch vụ và giá cơ bản." : "Vui lòng điền tên danh mục.");
       return;
     }
 
@@ -510,7 +511,7 @@ export default function AdminServices() {
   const unavailableParentIds = new Set(editingService ? [editingService.id, ...getDescendantIds(editingService.id)] : []);
   const parentOptions = services
     .filter(service => !unavailableParentIds.has(service.id))
-    .filter(service => getServiceLevel(service) < 2)
+    .filter(service => getServiceLevel(service) < 4)
     .sort((a, b) => getServiceLevel(a) - getServiceLevel(b) || a.name.localeCompare(b.name));
 
   const isInServiceTree = (service: ServiceItem) =>
@@ -556,6 +557,76 @@ export default function AdminServices() {
       .sort((a, b) => a.name.localeCompare(b.name));
   };
 
+  const renderNestedServiceItem = (serviceItem: ServiceItem, level: number): React.ReactNode => {
+    const nestedItems = getVisibleChildren(serviceItem.id);
+    const isLeaf = nestedItems.length === 0;
+    const badgeText = `Cấp ${level + 1} · ${isLeaf ? getLevelLabel(Math.max(level, 4)) : getLevelLabel(level)}`;
+
+    return (
+      <div key={serviceItem.id} className="space-y-2">
+        <div className="flex flex-col gap-2 rounded-lg border border-outline-variant/20 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-secondary-fixed px-2 py-0.5 text-[10px] font-extrabold uppercase text-on-secondary-container">
+                {badgeText}
+              </span>
+              <span className={`badge ${serviceItem.is_active ? 'badge-active' : 'badge-inactive'} text-[10px]`}>
+                {serviceItem.is_active ? 'Hoạt động' : 'Tạm ngưng'}
+              </span>
+            </div>
+            <p className="truncate text-sm font-extrabold text-on-surface">{serviceItem.name}</p>
+            <p className="text-xs text-on-surface-variant">
+              {serviceItem.description || "Chưa có mô tả."}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center justify-between gap-2">
+            {isLeaf || Number(serviceItem.base_price || 0) > 0 ? (
+              <div className="text-sm font-extrabold text-primary-container">
+                {serviceItem.base_price ? Number(serviceItem.base_price).toLocaleString('vi-VN') + 'đ' : 'Liên hệ'}
+              </div>
+            ) : (
+              <div className="rounded-lg bg-surface-container-low px-3 py-2 text-right">
+                <div className="text-[10px] font-bold uppercase text-on-surface-variant">Mục con</div>
+                <div className="text-sm font-extrabold text-primary-container">{nestedItems.length}</div>
+              </div>
+            )}
+            {level < 4 && (
+              <button
+                type="button"
+                onClick={() => openCreateServiceModal(serviceItem)}
+                className="h-7 w-7 rounded-lg hover:bg-primary-fixed flex items-center justify-center text-on-surface-variant hover:text-primary-container"
+                title="Thêm mục con"
+              >
+                <PlusCircle size={13} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => openEditModal(serviceItem)}
+              className="h-7 w-7 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary-container"
+              title="Sửa mục"
+            >
+              <Edit size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteService(serviceItem)}
+              className="h-7 w-7 rounded-lg hover:bg-error-container flex items-center justify-center text-on-surface-variant hover:text-error"
+              title="Xóa mục"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+        {nestedItems.length > 0 && (
+          <div className="space-y-2 border-l border-outline-variant/30 pl-3 sm:pl-5">
+            {nestedItems.map(child => renderNestedServiceItem(child, level + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 animate-fade-in relative">
       {/* Header section */}
@@ -563,7 +634,7 @@ export default function AdminServices() {
         <div>
           <h1 className="text-headline-md text-on-surface font-bold">Danh mục & Bảng giá</h1>
           <p className="text-body-sm text-on-surface-variant mt-1">
-            Quản lý danh mục cha, danh mục con và dịch vụ theo cây 3 cấp
+            Quản lý danh mục và dịch vụ theo cây nhiều cấp
           </p>
         </div>
         <button 
@@ -787,45 +858,7 @@ export default function AdminServices() {
                             </div>
                           ) : (
                             <div className="space-y-2 pl-0 sm:pl-11">
-                              {serviceItems.map(serviceItem => (
-                                <div key={serviceItem.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant/20 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <div className="min-w-0">
-                                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                                      <span className="rounded-full bg-secondary-fixed px-2 py-0.5 text-[10px] font-extrabold uppercase text-on-secondary-container">
-                                        Cấp 3 · Dịch vụ
-                                      </span>
-                                      <span className={`badge ${serviceItem.is_active ? 'badge-active' : 'badge-inactive'} text-[10px]`}>
-                                        {serviceItem.is_active ? 'Hoạt động' : 'Tạm ngưng'}
-                                      </span>
-                                    </div>
-                                    <p className="truncate text-sm font-extrabold text-on-surface">{serviceItem.name}</p>
-                                    <p className="text-xs text-on-surface-variant">
-                                      {serviceItem.description || "Chưa có mô tả dịch vụ."}
-                                    </p>
-                                  </div>
-                                  <div className="flex shrink-0 items-center justify-between gap-2">
-                                    <div className="text-sm font-extrabold text-primary-container">
-                                      {serviceItem.base_price ? Number(serviceItem.base_price).toLocaleString('vi-VN') + 'đ' : 'Liên hệ'}
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditModal(serviceItem)}
-                                      className="h-7 w-7 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary-container"
-                                      title="Sửa dịch vụ"
-                                    >
-                                      <Edit size={13} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteService(serviceItem)}
-                                      className="h-7 w-7 rounded-lg hover:bg-error-container flex items-center justify-center text-on-surface-variant hover:text-error"
-                                      title="Xóa dịch vụ"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
+                              {serviceItems.map(serviceItem => renderNestedServiceItem(serviceItem, 2))}
                             </div>
                           )}
                         </div>
@@ -918,14 +951,14 @@ export default function AdminServices() {
                   />
                 </div>
 
-                {formLevel === 2 && (
+                {formLevel >= 2 && (
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-on-surface">Giá cơ bản (VNĐ) <span className="text-error">*</span></label>
                     <input 
                       type="number" 
                       placeholder="VD: 150000" 
                       className="input-field" 
-                      required
+                      required={formLevel >= 4}
                       value={serviceForm.base_price}
                       onChange={e => setServiceForm({...serviceForm, base_price: e.target.value})}
                     />

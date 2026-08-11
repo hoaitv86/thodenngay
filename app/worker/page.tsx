@@ -3810,7 +3810,7 @@ export default function WorkerDashboard() {
                                 >
                                   <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                   <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                    Từ {formatCurrency(Number(service.base_price || 0))}
+                                    {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                   </span>
                                 </button>
                               );
@@ -3864,7 +3864,7 @@ export default function WorkerDashboard() {
                                       >
                                         <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                         <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                          Từ {formatCurrency(Number(service.base_price || 0))}
+                                          {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                         </span>
                                       </button>
                                     );
@@ -3896,7 +3896,7 @@ export default function WorkerDashboard() {
                                             >
                                               <span className="block text-base font-extrabold leading-5">{service.name}</span>
                                               <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                                Từ {formatCurrency(Number(service.base_price || 0))}
+                                                {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                               </span>
                                             </button>
                                           );
@@ -5063,7 +5063,7 @@ export default function WorkerDashboard() {
                                         >
                                           <span className="block text-sm font-extrabold leading-5">{service.name}</span>
                                           <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                            Từ {formatCurrency(Number(service.base_price || 0))}
+                                            {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                           </span>
                                         </button>
                                       );
@@ -5091,7 +5091,7 @@ export default function WorkerDashboard() {
                                           >
                                             <span className="block text-sm font-extrabold leading-5">{service.name}</span>
                                             <span className={`mt-1 block text-xs font-semibold ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                                              Từ {formatCurrency(Number(service.base_price || 0))}
+                                              {getQuickServicePathLabel(service, services)} • Từ {formatCurrency(Number(service.base_price || 0))}
                                             </span>
                                           </button>
                                         );
