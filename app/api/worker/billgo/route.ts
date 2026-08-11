@@ -1237,6 +1237,10 @@ export async function POST(request: Request) {
   const subAreaName = asText(body.subAreaName);
   const addressDetail = asText(body.addressDetail) || address;
   const provider = asText(body.provider);
+  const requestedServiceType = asText(body.serviceType) || "internet";
+  const allowedMainServiceTypes = new Set(["internet", "mobile", "electricity", "installment"]);
+  const serviceType = allowedMainServiceTypes.has(requestedServiceType) ? requestedServiceType : "internet";
+  const serviceLabel = serviceType === "mobile" ? "Di \u0111\u1ed9ng" : serviceType === "electricity" ? "Ti\u1ec1n \u0111i\u1ec7n" : serviceType === "installment" ? "Tr\u1ea3 g\u00f3p" : "Internet";
   const packageId = asText(body.packageId) || null;
   let selectedPackage: BillGoPackageSelection | null = null;
   if (packageId) {
@@ -1250,7 +1254,9 @@ export async function POST(request: Request) {
     if (!packageRow) return jsonError("G\u00f3i c\u01b0\u1edbc kh\u00f4ng c\u00f2n \u00e1p d\u1ee5ng.", 404);
     selectedPackage = packageRow as BillGoPackageSelection;
   }
-  const packageName = selectedPackage?.name || asText(body.packageName) || "C\u01b0\u1edbc Internet";
+  if (selectedPackage && selectedPackage.type !== "internet") return jsonError("G\u00f3i c\u01b0\u1edbc ch\u00ednh kh\u00f4ng h\u1ee3p l\u1ec7 cho d\u1ecbch v\u1ee5 \u0111ang ch\u1ecdn.", 400);
+  if (serviceType !== "internet" && selectedPackage) return jsonError("D\u1ecbch v\u1ee5 n\u00e0y ch\u01b0a d\u00f9ng g\u00f3i Internet c\u00f3 s\u1eb5n. Vui l\u00f2ng nh\u1eadp t\u00ean g\u00f3i v\u00e0 gi\u00e1 c\u01b0\u1edbc.", 400);
+  const packageName = selectedPackage?.name || asText(body.packageName) || serviceLabel;
   const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
   const cycle = asText(body.cycle);
   const hasCycle = allowedCycles.has(cycle as BillGoCycle);
@@ -1264,7 +1270,7 @@ export async function POST(request: Request) {
   const paidThroughMonth = isLegacyCustomer ? normalizeMonthInput(asText(body.paidThroughMonth)) : "";
   const paidAt = asText(body.initialPaidAt) || new Date().toISOString();
   const paymentMethod = allowedPaymentMethods.has(asText(body.initialPaymentMethod)) ? asText(body.initialPaymentMethod) : "cash";
-  const hasTv360 = body.hasTv360 === true;
+  const hasTv360 = serviceType === "internet" && body.hasTv360 === true;
   const rawTv360Accounts = hasTv360 && Array.isArray(body.tv360Accounts) ? body.tv360Accounts : [];
   const tv360Accounts: Tv360SignupInput[] = [];
   const tv360AccountKeys = new Set<string>();
@@ -1315,7 +1321,7 @@ export async function POST(request: Request) {
     return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
   }
 
-  const checkDuplicateInternetAccount = async (includeTv360Columns: boolean) => {
+  const checkDuplicateSubscriptionAccount = async (includeTv360Columns: boolean) => {
     let query = admin
       .from("billgo_subscriptions")
       .select("id")
@@ -1323,15 +1329,16 @@ export async function POST(request: Request) {
       .ilike("internet_account", account)
       .is("deleted_at", null)
       .not("status", "in", "(cancelled,deleted)");
+    query = query.eq("service_type", serviceType);
     if (includeTv360Columns) {
-      query = query.is("parent_subscription_id", null).eq("service_type", "internet");
+      query = query.is("parent_subscription_id", null);
     }
     return query.maybeSingle();
   };
 
-  let { data: duplicate, error: duplicateError } = await checkDuplicateInternetAccount(true);
+  let { data: duplicate, error: duplicateError } = await checkDuplicateSubscriptionAccount(true);
   if (isMissingBillGoTv360SchemaError(duplicateError)) {
-    const legacyDuplicate = await checkDuplicateInternetAccount(false);
+    const legacyDuplicate = await checkDuplicateSubscriptionAccount(false);
     duplicate = legacyDuplicate.data;
     duplicateError = legacyDuplicate.error;
   }
@@ -1348,7 +1355,7 @@ export async function POST(request: Request) {
       customer_id: null, worker_id: workerId, customer_name: customerName, phone, internet_account: account, customer_address: address,
       area_id: location.areaId, sub_area_id: location.subAreaId, address_detail: addressDetail, legacy_address: address || null,
       provider: selectedPackage?.provider || provider || null, package_id: selectedPackage?.id || null, package_name: packageName,
-      service_type: selectedPackage?.type || "internet", cycle: hasCycle ? cycle : null, current_cycle: hasCycle ? cycle : null, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
+      service_type: serviceType, cycle: hasCycle ? cycle : null, current_cycle: hasCycle ? cycle : null, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
       start_date: firstBilling?.periodStart || null, next_due_date: firstBilling?.dueDate || null, next_period_start: firstBilling?.periodStart || null,
       status: hasCycle ? "active" : "pending_cycle", note, created_by: userId, last_changed_by: userId,
     })

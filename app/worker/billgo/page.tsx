@@ -40,6 +40,13 @@ import {
   type BillGoPackageType,
 } from "@/lib/billgo-packages";
 import { createClient } from "@/lib/supabase/client";
+import {
+  BILLGO_SERVICE_ICON_CONFIG,
+  BILLGO_SERVICE_ICON_TYPES,
+  ServiceIcon,
+  getBillGoServiceIconType,
+  type BillGoServiceIconType,
+} from "@/app/components/billgo/ServiceIcon";
 
 type Payment = {
   id: string;
@@ -252,6 +259,14 @@ type BillGoListTotals = {
   totalDebt: number;
 };
 
+type BillGoServiceOverview = {
+  type: BillGoServiceIconType;
+  label: string;
+  count: number;
+  receivable: number;
+  debt: number;
+};
+
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
 const getNextPeriodStartDisplay = (subscription?: Subscription | null, fallback?: string | null) => {
@@ -279,6 +294,14 @@ const getNextPeriodStartForRow = (row?: Receivable | null) => {
   if (paidThrough) return getBillGoNextPeriodStartDate(paidThrough);
   return getNextPeriodStartDisplay(row?.subscription, row?.next_period_start || row?.period_start || null);
 };
+
+const getReceivableServiceIconType = (row?: Receivable | null) =>
+  getBillGoServiceIconType([
+    row?.subscription?.service_type,
+    row?.subscription?.package_name,
+    row?.subscription?.provider,
+    row?.subscription?.note,
+  ].filter(Boolean).join(" "));
 const previousMonthFirstInput = () => {
   const today = new Date();
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
@@ -639,6 +662,7 @@ const initialForm = () => ({
   subAreaId: "",
   subAreaName: "",
   addressDetail: "",
+  serviceType: "internet" as BillGoServiceIconType,
   provider: "Viettel",
   packageId: "",
   packageName: "",
@@ -982,6 +1006,25 @@ export default function WorkerBillGoPage() {
     };
   }), [rows]);
 
+  const serviceOverview = useMemo<BillGoServiceOverview[]>(() => {
+    const stats = new Map<BillGoServiceIconType, BillGoServiceOverview>(BILLGO_SERVICE_ICON_TYPES.map(type => [type, {
+      type,
+      label: BILLGO_SERVICE_ICON_CONFIG[type].label,
+      count: 0,
+      receivable: 0,
+      debt: 0,
+    }]));
+    rowViews.forEach(row => {
+      const type = getReceivableServiceIconType(row.item);
+      const item = stats.get(type);
+      if (!item) return;
+      item.count += 1;
+      item.receivable += row.summary.receivable;
+      item.debt += row.summary.debt;
+    });
+    return BILLGO_SERVICE_ICON_TYPES.map(type => stats.get(type)!).filter(item => item.count > 0 || item.type === "internet");
+  }, [rowViews]);
+
   const matchesSearch = useCallback((row: RowView) => {
     const normalizedQuery = query.trim().toLocaleLowerCase("vi");
     if (!normalizedQuery) return true;
@@ -1065,11 +1108,13 @@ export default function WorkerBillGoPage() {
   const hasFormCycle = Boolean(form.cycle);
   const formBilling = useMemo(() => hasFormCycle ? getBillGoBillingPeriod(form.startDate || previousMonthFirstInput(), form.cycle) : null, [form.cycle, form.startDate, hasFormCycle]);
   const formDueDate = form.dueDate || formBilling?.dueDate || "";
-  const internetFormTotal = useMemo(() => hasFormCycle ? getBillGoCollectableAmount(form.monthlyFee, form.cycle) : 0, [form.cycle, form.monthlyFee, hasFormCycle]);
+  const primaryFormTotal = useMemo(() => hasFormCycle ? getBillGoCollectableAmount(form.monthlyFee, form.cycle) : 0, [form.cycle, form.monthlyFee, hasFormCycle]);
+  const selectedFormServiceConfig = BILLGO_SERVICE_ICON_CONFIG[form.serviceType];
+  const isInternetForm = form.serviceType === "internet";
   const tv360FormTotal = useMemo(() => form.hasTv360
     ? form.tv360Accounts.reduce((sum, account) => sum + (account.cycle ? getBillGoCollectableAmount(account.monthlyFee, account.cycle) : 0), 0)
     : 0, [form.hasTv360, form.tv360Accounts]);
-  const formTotal = internetFormTotal + tv360FormTotal;
+  const formTotal = primaryFormTotal + tv360FormTotal;
   const selectedSummary = collecting ? getBillGoReceivableSummary(collecting) : null;
   const formSubAreas = useMemo(
     () => areas.find(area => area.id === form.areaId)?.sub_areas?.filter(subArea => subArea.is_active !== false) || [],
@@ -1114,6 +1159,7 @@ export default function WorkerBillGoPage() {
   const packageSearchText = packageSearch.trim().toLocaleLowerCase("vi");
   const formPackageOptions = useMemo(
     () => {
+      if (!isInternetForm) return [];
       if (packageSearchDigits) {
         return internetPackages.filter(item => String(Number(item.monthly_price || 0)).startsWith(packageSearchDigits));
       }
@@ -1125,7 +1171,7 @@ export default function WorkerBillGoPage() {
         return label.includes(packageSearchText);
       });
     },
-    [internetPackages, packageSearchDigits, packageSearchText],
+    [internetPackages, isInternetForm, packageSearchDigits, packageSearchText],
   );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
@@ -1168,8 +1214,21 @@ export default function WorkerBillGoPage() {
         }
         return { ...prev, address: value, addressDetail: value };
       }
+      if (key === "serviceType") {
+        const nextServiceType = getBillGoServiceIconType(value);
+        return {
+          ...prev,
+          serviceType: nextServiceType,
+          provider: nextServiceType === "internet" ? prev.provider || "Viettel" : prev.provider,
+          packageId: "",
+          packageName: "",
+          monthlyFee: "",
+          hasTv360: nextServiceType === "internet" ? prev.hasTv360 : false,
+          tv360Accounts: nextServiceType === "internet" ? prev.tv360Accounts : [],
+        };
+      }
       if (key === "isLegacyCustomer") return { ...prev, isLegacyCustomer: value === "true", paidThroughMonth: value === "true" ? prev.paidThroughMonth : "" };
-      if (key === "hasTv360") return { ...prev, hasTv360: value === "true", tv360Accounts: value === "true" ? (prev.tv360Accounts.length > 0 ? prev.tv360Accounts : [createTv360AccountForm()]) : [] };
+      if (key === "hasTv360") return prev.serviceType === "internet" ? { ...prev, hasTv360: value === "true", tv360Accounts: value === "true" ? (prev.tv360Accounts.length > 0 ? prev.tv360Accounts : [createTv360AccountForm()]) : [] } : prev;
       if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle | "");
       if (key === "packageId") {
         const selectedPackage = internetPackages.find(item => item.id === value);
@@ -1236,6 +1295,11 @@ export default function WorkerBillGoPage() {
 
   const updatePackageSearch = (value: string) => {
     setPackageSearch(value);
+    if (!isInternetForm) {
+      setShowPackageSuggestions(false);
+      setForm(prev => ({ ...prev, packageId: "", packageName: value }));
+      return;
+    }
     setShowPackageSuggestions(Boolean(value.trim()));
     if (form.packageId) updateForm("packageId", "");
   };
@@ -1902,12 +1966,47 @@ export default function WorkerBillGoPage() {
       </header>
 
       {message && <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">{message}</div>}
+      <div className="mt-4 grid grid-cols-4 gap-2 overflow-x-auto pb-1">
+        {BILLGO_SERVICE_ICON_TYPES.map(type => {
+          const config = BILLGO_SERVICE_ICON_CONFIG[type];
+          const isActive = type === "internet";
+          return (
+            <button
+              key={type}
+              type="button"
+              className={[
+                "flex min-w-24 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-extrabold",
+                isActive ? config.tone.border + " " + config.tone.softBg + " " + config.tone.text + " shadow-[inset_0_-3px_0_currentColor]" : "border-outline-variant/50 bg-white text-on-surface hover:bg-surface-container-low",
+              ].join(" ")}
+            >
+              <ServiceIcon type={type} size="sm" />
+              <span>{config.label}</span>
+            </button>
+          );
+        })}
+      </div>
       {importError && <div className="mt-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">{importError}</div>}
       {overduePeriodLabels.length > 0 && (
         <div className="mt-4 rounded-lg border border-error/30 bg-error-container/60 p-3 text-sm font-extrabold text-error">
           {overduePeriodLabels.map(label => `Còn kỳ cước ${label} chưa thu`).join(" ; ")}
         </div>
       )}
+      <section className="mt-4 rounded-lg border border-outline-variant/50 bg-white p-3 shadow-sm">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {serviceOverview.map(item => (
+            <div key={item.type} className="flex items-center gap-3 rounded-lg border border-outline-variant/40 bg-white p-3">
+              <ServiceIcon type={item.type} size="lg" selected />
+              <div className="min-w-0">
+                <p className={"text-sm font-extrabold " + BILLGO_SERVICE_ICON_CONFIG[item.type].tone.text}>{item.label}</p>
+                <p className="text-xs text-on-surface-variant">{item.count} {"kho\u1ea3n"}</p>
+                <p className="mt-1 text-base font-black text-on-surface">{formatBillGoCurrency(item.receivable)}</p>
+                <p className="text-xs text-on-surface-variant">{"C\u00f2n l\u1ea1i"} {formatBillGoCurrency(item.debt)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[
           { value: "cycle", label: "Thu theo chu kỳ" },
@@ -1972,15 +2071,34 @@ export default function WorkerBillGoPage() {
           </div>
           <div className="min-h-0 overflow-y-auto p-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-2 sm:col-span-2 xl:col-span-3">
+                <p className="text-xs font-extrabold uppercase text-on-surface-variant">{"Lo\u1ea1i d\u1ecbch v\u1ee5"}</p>
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  {BILLGO_SERVICE_ICON_TYPES.map(type => {
+                    const config = BILLGO_SERVICE_ICON_CONFIG[type];
+                    const isSelected = form.serviceType === type;
+                    return (
+                      <button key={type} type="button" onClick={() => updateForm("serviceType", type)} className={["flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-extrabold", isSelected ? config.tone.border + " " + config.tone.softBg + " " + config.tone.text + " shadow-[inset_0_-3px_0_currentColor]" : "border-outline-variant/50 bg-white text-on-surface hover:bg-surface-container-low"].join(" ")}>
+                        <ServiceIcon type={type} size="sm" selected={isSelected} />
+                        <span>{config.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
-              <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={form.account} onChange={e => updateForm("account", e.target.value)} />
+              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : `M\u00e3/t\u00e0i kho\u1ea3n ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
               <datalist id="billgo-account-suggestions">
                 {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
               </datalist>
-              <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
-                {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
-              </select>
+              {isInternetForm ? (
+                <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
+                  {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
+                </select>
+              ) : (
+                <input className="input-field" placeholder={`Nh\u00e0 cung c\u1ea5p ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
+              )}
               <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
               <datalist id="billgo-area-suggestions">
                 {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
@@ -1990,16 +2108,16 @@ export default function WorkerBillGoPage() {
                 {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
               </datalist>
               <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
-                Chọn gói cước
+             {isInternetForm ? "Ch\u1ecdn g\u00f3i c\u01b0\u1edbc" : `G\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`}
                 <input
                   required
                   inputMode="numeric"
                   className="input-field"
-                  placeholder="Nhập giá tiền để tìm gói cước"
+                  placeholder={isInternetForm ? "Nh\u1eadp gi\u00e1 ti\u1ec1n \u0111\u1ec3 t\u00ecm g\u00f3i c\u01b0\u1edbc" : `Nh\u1eadp g\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`}
                   value={packageSearch}
                   onChange={e => updatePackageSearch(e.target.value)}
                 />
-                {showPackageSuggestions && packageSearch.trim() && (
+                {isInternetForm && showPackageSuggestions && packageSearch.trim() && (
                   <div className="max-h-36 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white p-1 shadow-sm">
                     {formPackageOptions.map(packageOption => (
                       <button
@@ -2017,15 +2135,16 @@ export default function WorkerBillGoPage() {
                   </div>
                 )}
               </div>
-              <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder="Tên gói tại thời điểm đăng ký" value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
+              <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder={isInternetForm ? "T\u00ean g\u00f3i t\u1ea1i th\u1eddi \u0111i\u1ec3m \u0111\u0103ng k\u00fd" : `T\u00ean g\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`} value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
               <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
               <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
                 <option value="">Chưa thiết lập</option>
                 {signupCycleOptions
-                  .filter(option => getSignupCycleValues(selectedFormPackage?.allowed_cycles).has(option.value))
+                  .filter(option => !isInternetForm || getSignupCycleValues(selectedFormPackage?.allowed_cycles).has(option.value))
                   .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
+              {isInternetForm && (
               <section className="rounded-lg border border-outline-variant/50 bg-surface-container-lowest p-3 sm:col-span-2 xl:col-span-3">
                 <label className="flex items-center justify-between gap-3 text-sm font-bold text-on-surface">
                   <span>Có dịch vụ TV360</span>
@@ -2068,6 +2187,7 @@ export default function WorkerBillGoPage() {
                   </div>
                 )}
               </section>
+              )}
               <label className="flex items-center gap-3 rounded-lg border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm font-bold text-on-surface sm:col-span-2 xl:col-span-3">
                 <input type="checkbox" checked={form.isLegacyCustomer} onChange={e => updateForm("isLegacyCustomer", e.target.checked ? "true" : "false")} className="h-5 w-5 accent-primary" />
                 Nhập khách hàng cũ
