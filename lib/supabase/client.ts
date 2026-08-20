@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { DEMO_ACTION_BLOCK_MESSAGE, DEMO_SESSION_STORAGE_KEY } from '@/lib/demo-accounts';
+import { forgetOfflineAuthenticatedUser, getOfflineAuthenticatedUser, rememberOfflineAuthenticatedUser } from '@/lib/offline/session';
 
 const makeDemoError = () => ({
   name: "DemoReadonlyError",
@@ -35,11 +36,44 @@ const withDemoReadonlyGuard = <T extends object>(client: T): T => {
       if (prop === "auth") {
         return new Proxy(targetClient.auth, {
           get(authTarget, authProp, authReceiver) {
-            if (authProp === "signInWithPassword" || authProp === "signOut") {
-              return (...args: unknown[]) => {
+            if (authProp === "signInWithPassword") {
+              return async (...args: unknown[]) => {
                 window.localStorage.removeItem(DEMO_SESSION_STORAGE_KEY);
                 const authMethod = Reflect.get(authTarget, authProp, authReceiver);
+                const result = await authMethod.apply(authTarget, args);
+                if (result?.data?.user) rememberOfflineAuthenticatedUser(result.data.user);
+                return result;
+              };
+            }
+            if (authProp === "signOut") {
+              return async (...args: unknown[]) => {
+                window.localStorage.removeItem(DEMO_SESSION_STORAGE_KEY);
+                forgetOfflineAuthenticatedUser();
+                const authMethod = Reflect.get(authTarget, authProp, authReceiver);
                 return authMethod.apply(authTarget, args);
+              };
+            }
+            if (authProp === "getUser") {
+              return async (...args: unknown[]) => {
+                const getUser = Reflect.get(authTarget, authProp, authReceiver);
+                const result = await getUser.apply(authTarget, args);
+                if (result?.data?.user) {
+                  rememberOfflineAuthenticatedUser(result.data.user);
+                  return result;
+                }
+                if (!window.navigator.onLine) {
+                  const offlineUser = getOfflineAuthenticatedUser();
+                  if (offlineUser) return { data: { user: offlineUser }, error: null };
+                }
+                return result;
+              };
+            }
+            if (authProp === "getSession") {
+              return async (...args: unknown[]) => {
+                const getSession = Reflect.get(authTarget, authProp, authReceiver);
+                const result = await getSession.apply(authTarget, args);
+                if (result?.data?.session?.user) rememberOfflineAuthenticatedUser(result.data.session.user);
+                return result;
               };
             }
             if (authProp === "updateUser") {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
+import { createClient } from "@/lib/supabase/client";
 
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 
@@ -20,6 +22,14 @@ export default function OfflineRuntime() {
     window.addEventListener("online", handleOnlineStateChange);
     window.addEventListener("offline", handleOnlineStateChange);
 
+    const supabase = createClient();
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user) rememberOfflineAuthenticatedUser(data.session.user);
+    });
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) rememberOfflineAuthenticatedUser(session.user);
+    });
+
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
@@ -38,6 +48,7 @@ export default function OfflineRuntime() {
     }
 
     return () => {
+      authListener.subscription.unsubscribe();
       window.removeEventListener("online", handleOnlineStateChange);
       window.removeEventListener("offline", handleOnlineStateChange);
     };
