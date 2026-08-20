@@ -265,6 +265,12 @@ type BillGoListTotals = {
   totalDebt: number;
 };
 
+type BillingPeriodQuickFilter = {
+  month: string;
+  label: string;
+  source: "previous" | "current";
+};
+
 type BillGoServiceOverview = {
   type: BillGoServiceIconType;
   label: string;
@@ -856,6 +862,7 @@ export default function WorkerBillGoPage() {
     effectivePeriodStart: todayInput(),
   });
   const [selectedSubscriptionIds, setSelectedSubscriptionIds] = useState<string[]>([]);
+  const [billingPeriodFilter, setBillingPeriodFilter] = useState<BillingPeriodQuickFilter | null>(null);
   const [showBulkCycle, setShowBulkCycle] = useState(false);
   const [bulkCycleForm, setBulkCycleForm] = useState({
     cycle: "monthly" as BillGoCycle,
@@ -878,16 +885,22 @@ export default function WorkerBillGoPage() {
           selectedAreaId: string;
           selectedSubAreaId: string;
           query: string;
+          billingPeriodFilter: BillingPeriodQuickFilter | null;
         }>;
         if (saved.viewMode) setViewMode(saved.viewMode);
         if (saved.activeTab) setActiveTab(saved.activeTab);
-        if (saved.monthFilter === monthInput()) setMonthFilter(saved.monthFilter);
+        if (saved.billingPeriodFilter?.month) {
+          setMonthFilter(saved.billingPeriodFilter.month);
+        } else if (saved.monthFilter === monthInput()) {
+          setMonthFilter(saved.monthFilter);
+        }
         if (saved.statusFilter && saved.statusFilter !== "not_due") setStatusFilter(saved.statusFilter);
         if (saved.dueFilter && saved.dueFilter !== "not_due") setDueFilter(saved.dueFilter);
         if (saved.areaStatusFilter && saved.areaStatusFilter !== "not_due") setAreaStatusFilter(saved.areaStatusFilter);
         if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
         if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
         if (typeof saved.query === "string") setQuery(saved.query);
+        if (saved.billingPeriodFilter?.month) setBillingPeriodFilter(saved.billingPeriodFilter);
       } catch {
         window.localStorage.removeItem(BILLGO_VIEW_STATE_KEY);
       } finally {
@@ -909,8 +922,9 @@ export default function WorkerBillGoPage() {
       selectedAreaId,
       selectedSubAreaId,
       query,
+      billingPeriodFilter,
     }));
-  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
+  }, [activeTab, areaStatusFilter, billingPeriodFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const fetchAreas = useCallback(async () => {
     const response = await fetch("/api/worker/areas");
@@ -1092,10 +1106,19 @@ export default function WorkerBillGoPage() {
   const selectedSubscriptionIdSet = useMemo(() => new Set(selectedSubscriptionIds), [selectedSubscriptionIds]);
   const selectedVisibleCount = visibleSubscriptionIds.filter(id => selectedSubscriptionIdSet.has(id)).length;
   const allVisibleSelected = visibleSubscriptionIds.length > 0 && selectedVisibleCount === visibleSubscriptionIds.length;
-  const overduePeriodLabels = useMemo(() => Array.from(new Set(visibleRows
-    .flatMap(row => getPreviousUnpaidReceivables(row.item))
-    .map(previous => monthYearLabel(previous.period_start || previous.collection_month || `${monthFilter}-01`))))
-    .sort((a, b) => a.localeCompare(b, "vi")), [monthFilter, visibleRows]);
+  const overduePeriodSummaries = useMemo(() => {
+    const summaries = new Map<string, { month: string; label: string; count: number; debt: number }>();
+    visibleRows.flatMap(row => getPreviousUnpaidReceivables(row.item)).forEach(previous => {
+      const sourceDate = previous.period_start || previous.collection_month || `${monthFilter}-01`;
+      const month = sourceDate.slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(month)) return;
+      const existing = summaries.get(month) || { month, label: monthYearLabel(sourceDate), count: 0, debt: 0 };
+      existing.count += 1;
+      existing.debt += Math.max(toMoneyNumber(previous.total_amount) - toMoneyNumber(previous.paid_amount), 0);
+      summaries.set(month, existing);
+    });
+    return Array.from(summaries.values()).sort((a, b) => a.month.localeCompare(b.month));
+  }, [monthFilter, visibleRows]);
 
   useEffect(() => {
     setSelectedSubscriptionIds(previous => previous.filter(id => rowViews.some(row => row.item.subscription?.id === id)));
@@ -1106,6 +1129,36 @@ export default function WorkerBillGoPage() {
 
   const totals = serverTotals;
   const totalUncollectedCustomers = totals.unpaid + totals.partial + totals.overdue;
+  const currentMonthFilter = monthInput();
+  const currentPeriodSummary = monthFilter === currentMonthFilter && totalUncollectedCustomers > 0
+    ? {
+        month: currentMonthFilter,
+        label: monthYearLabel(`${currentMonthFilter}-01`),
+        count: totalUncollectedCustomers,
+        debt: totals.totalDebt,
+      }
+    : null;
+  const hasBillingPeriodFilter = Boolean(billingPeriodFilter);
+
+  const applyBillingPeriodFilter = (filter: BillingPeriodQuickFilter) => {
+    setBillingPeriodFilter(filter);
+    setViewMode("cycle");
+    setActiveTab(BILLGO_ALL_TAB);
+    setMonthFilter(filter.month);
+    setStatusFilter("unpaid");
+    setDueFilter("all");
+    setPage(1);
+    setSelectedSubscriptionIds([]);
+  };
+
+  const clearBillingPeriodFilter = () => {
+    setBillingPeriodFilter(null);
+    setMonthFilter(monthInput());
+    setStatusFilter("all");
+    setDueFilter("all");
+    setPage(1);
+    setSelectedSubscriptionIds([]);
+  };
 
   const selectedSubAreaIndex = selectedAreaSubAreas.findIndex(subArea => subArea.id === selectedSubAreaId);
   const previousSubArea = selectedSubAreaIndex > 0 ? selectedAreaSubAreas[selectedSubAreaIndex - 1] : null;
@@ -2029,9 +2082,39 @@ export default function WorkerBillGoPage() {
         })}
       </div>
       {importError && <div className="mt-4 rounded-lg bg-error-container p-3 text-sm font-bold text-error">{importError}</div>}
-      {overduePeriodLabels.length > 0 && (
+      {(overduePeriodSummaries.length > 0 || currentPeriodSummary || hasBillingPeriodFilter) && (
         <div className="mt-4 rounded-lg border border-error/30 bg-error-container/60 p-3 text-sm font-extrabold text-error">
-          {overduePeriodLabels.map(label => `Còn kỳ cước ${label} chưa thu`).join(" ; ")}
+          <div className="flex flex-wrap items-center gap-2">
+            {overduePeriodSummaries.map(summary => (
+              <button
+                key={summary.month}
+                type="button"
+                onClick={() => applyBillingPeriodFilter({ month: summary.month, label: summary.label, source: "previous" })}
+                className="rounded-lg border border-error/30 bg-white px-3 py-2 text-left text-xs font-extrabold text-error hover:bg-error-container/40"
+              >
+                Kỳ cước {summary.label} chưa thu · {summary.count} khách · {formatBillGoCurrency(summary.debt)}
+              </button>
+            ))}
+            {currentPeriodSummary && (
+              <button
+                type="button"
+                onClick={() => applyBillingPeriodFilter({ month: currentPeriodSummary.month, label: currentPeriodSummary.label, source: "current" })}
+                className="rounded-lg border border-warning/30 bg-white px-3 py-2 text-left text-xs font-extrabold text-warning hover:bg-warning-container/40"
+              >
+                Kỳ cước tháng hiện tại chưa thu · {currentPeriodSummary.count} khách · {formatBillGoCurrency(currentPeriodSummary.debt)}
+              </button>
+            )}
+            {hasBillingPeriodFilter && (
+              <button type="button" onClick={clearBillingPeriodFilter} className="rounded-lg border border-outline-variant/50 bg-white px-3 py-2 text-xs font-extrabold text-on-surface">
+                Quay lại / Xóa bộ lọc
+              </button>
+            )}
+          </div>
+          {billingPeriodFilter && (
+            <p className="mt-2 text-xs text-error">
+              Đang lọc khách chưa thu kỳ cước {billingPeriodFilter.label}. Khoản thu muộn vẫn giữ kỳ cước gốc và ngày thu là ngày thực tế thanh toán.
+            </p>
+          )}
         </div>
       )}
       <section className="mt-4 rounded-lg border border-outline-variant/50 bg-white p-3 shadow-sm">
@@ -2329,19 +2412,19 @@ export default function WorkerBillGoPage() {
           <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
         </label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <input type="month" className="input-field" value={monthFilter} onChange={e => setMonthFilter(e.target.value || monthInput())} />
-          <button type="button" title="Tháng hiện tại" onClick={() => setMonthFilter(monthInput())} className="btn-outline !w-auto !px-3">
+          <input type="month" className="input-field" value={monthFilter} onChange={e => { setBillingPeriodFilter(null); setMonthFilter(e.target.value || monthInput()); setPage(1); }} />
+          <button type="button" title="Tháng hiện tại" onClick={() => { setBillingPeriodFilter(null); setMonthFilter(monthInput()); setPage(1); }} className="btn-outline !w-auto !px-3">
             <RotateCcw size={16} />
           </button>
         </div>
         <label className="relative block">
-          <select className="input-field appearance-none pr-10" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <select className="input-field appearance-none pr-10" value={statusFilter} onChange={e => { setBillingPeriodFilter(null); setStatusFilter(e.target.value); setPage(1); }}>
             {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
         </label>
         <label className="relative block">
-          <select className="input-field appearance-none pr-10" value={dueFilter} onChange={e => setDueFilter(e.target.value)}>
+          <select className="input-field appearance-none pr-10" value={dueFilter} onChange={e => { setBillingPeriodFilter(null); setDueFilter(e.target.value); setPage(1); }}>
             {dueFilterOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
