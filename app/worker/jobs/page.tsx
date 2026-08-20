@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, CalendarClock, Clock, MapPin, Phone, Search, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
 
 type CustomerProfile = {
   id?: string | null;
@@ -117,6 +118,7 @@ export default function WorkerJobs() {
       setLoading(false);
       return;
     }
+    const cacheKey = `worker:jobs:backlog:${user.id}`;
 
     const { data: worker, error: workerError } = await supabase
       .from("workers")
@@ -125,6 +127,12 @@ export default function WorkerJobs() {
       .single();
 
     if (workerError || !worker) {
+      const cached = await getCachedDataset<BacklogJob[]>(cacheKey);
+      if (cached) {
+        setJobs(cached.data);
+        setLoading(false);
+        return;
+      }
       setMessage("Không tìm thấy hồ sơ thợ.");
       setJobs([]);
       setLoading(false);
@@ -154,13 +162,21 @@ export default function WorkerJobs() {
       .range(0, WORKER_BACKLOG_LIMIT - 1);
 
     if (error) {
+      const cached = await getCachedDataset<BacklogJob[]>(cacheKey);
+      if (cached) {
+        setJobs(cached.data);
+        setLoading(false);
+        return;
+      }
       setMessage("Không thể tải danh sách tồn việc: " + error.message);
       setJobs([]);
       setLoading(false);
       return;
     }
 
-    setJobs(((data || []) as BacklogJob[]).filter(job => isBeforeCurrentMonth(job, currentMonthStart)));
+    const nextJobs = ((data || []) as BacklogJob[]).filter(job => isBeforeCurrentMonth(job, currentMonthStart));
+    setJobs(nextJobs);
+    void setCachedDataset(cacheKey, nextJobs);
     setLoading(false);
   }, [currentMonthStart, supabase]);
 

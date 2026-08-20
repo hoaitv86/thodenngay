@@ -12,6 +12,7 @@ import {
   type WorkerRole,
 } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
 import { resolveWorkerFeatureModuleState } from "@/lib/worker-modules";
@@ -254,7 +255,8 @@ export default function WorkerLayout({
       if (!user) return;
       if (isMounted) setNotificationUserId(user.id);
 
-      const [{ data: profile }, { data: worker }, memberships] = await Promise.all([
+      const cacheKey = `worker:context:${user.id}`;
+      let [{ data: profile }, { data: worker }, memberships] = await Promise.all([
         supabase
           .from("profiles")
           .select("full_name, role, phone, email, address")
@@ -267,6 +269,17 @@ export default function WorkerLayout({
           .maybeSingle(),
         loadMemberships(user.id),
       ]);
+
+      if (!profile && !worker && (!memberships || memberships.length === 0)) {
+        const cached = await getCachedDataset<{ profile: typeof profile; worker: typeof worker; memberships: WorkerMembershipRow[] }>(cacheKey);
+        if (cached) {
+          profile = cached.data.profile;
+          worker = cached.data.worker;
+          memberships = cached.data.memberships;
+        }
+      } else {
+        void setCachedDataset(cacheKey, { profile, worker, memberships });
+      }
 
       if (!isMounted) return;
 

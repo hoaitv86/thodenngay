@@ -40,6 +40,7 @@ import {
   type BillGoPackageType,
 } from "@/lib/billgo-packages";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
 import {
   BILLGO_SERVICE_ICON_CONFIG,
   BILLGO_SERVICE_ICON_TYPES,
@@ -927,16 +928,22 @@ export default function WorkerBillGoPage() {
   }, [activeTab, areaStatusFilter, billingPeriodFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const fetchAreas = useCallback(async () => {
-    const response = await fetch("/api/worker/areas");
-    if (!response.ok) {
-      setAreas([]);
-      return;
+    const cacheKey = "worker:areas";
+    try {
+      const response = await fetch("/api/worker/areas");
+      if (!response.ok) throw new Error("Không thể tải khu vực.");
+      const result = await response.json();
+      const nextAreas = (result.areas || []) as AreaOption[];
+      setAreas(nextAreas);
+      void setCachedDataset(cacheKey, nextAreas);
+    } catch (_error) {
+      const cached = await getCachedDataset<AreaOption[]>(cacheKey);
+      setAreas(cached?.data || []);
     }
-    const result = await response.json();
-    setAreas((result.areas || []) as AreaOption[]);
   }, []);
 
   const fetchPackages = useCallback(async () => {
+    const cacheKey = "billgo:packages";
     const { data, error } = await supabase
       .from("billgo_packages")
       .select("id, code, name, type, provider, monthly_price, setup_price, allowed_cycles, description, is_active, sort_order")
@@ -944,7 +951,14 @@ export default function WorkerBillGoPage() {
       .order("type", { ascending: true })
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
-    setPackages(error ? [] : (data || []) as BillGoPackage[]);
+    if (error) {
+      const cached = await getCachedDataset<BillGoPackage[]>(cacheKey);
+      setPackages(cached?.data || []);
+      return;
+    }
+    const nextPackages = (data || []) as BillGoPackage[];
+    setPackages(nextPackages);
+    void setCachedDataset(cacheKey, nextPackages);
   }, [supabase]);
 
   const fetchBillGo = useCallback(async () => {
@@ -965,7 +979,9 @@ export default function WorkerBillGoPage() {
         if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
       }
       const startedAt = performance.now();
-      const response = await fetch(`/api/worker/billgo?${params.toString()}`);
+      const requestKey = params.toString();
+      const cacheKey = `billgo:list:${requestKey}`;
+      const response = await fetch(`/api/worker/billgo?${requestKey}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
       setRows(normalizeRows(result.rows || []));
@@ -973,10 +989,35 @@ export default function WorkerBillGoPage() {
       setPageCount(Number(result.pageCount || 1));
       setTotalRows(Number(result.total || 0));
       setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
+      void setCachedDataset(cacheKey, result);
       if (process.env.NODE_ENV !== "production") {
         console.info("[BillGo] customer list loaded", { clientMs: Math.round(performance.now() - startedAt), server: result.meta });
       }
     } catch (error) {
+      const params = new URLSearchParams({
+        month: monthFilter,
+        page: String(page),
+        limit: String(BILLGO_PAGE_SIZE),
+        due: dueFilter,
+        q: query.trim(),
+      });
+      if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
+      params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
+      if (viewMode === "area") {
+        if (selectedAreaId) params.set("areaId", selectedAreaId);
+        if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
+      }
+      const cached = await getCachedDataset<any>(`billgo:list:${params.toString()}`);
+      if (cached) {
+        const result = cached.data;
+        setRows(normalizeRows(result.rows || []));
+        setPage(Number(result.page || 1));
+        setPageCount(Number(result.pageCount || 1));
+        setTotalRows(Number(result.total || 0));
+        setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
+        setMessage("");
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Không thể tải BillGo.");
       setRows([]);
       setPageCount(1);

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
 import {
   BriefcaseIcon,
   CalendarIcon,
@@ -77,6 +78,7 @@ export default function WorkerCustomersPage() {
       setLoading(false);
       return;
     }
+    const cacheKey = `worker:customers:${user.id}`;
 
     const { data: workerData, error: workerError } = await supabase
       .from("workers")
@@ -85,6 +87,12 @@ export default function WorkerCustomersPage() {
       .single();
 
     if (workerError || !workerData) {
+      const cached = await getCachedDataset<CustomerSummary[]>(cacheKey);
+      if (cached) {
+        setCustomers(cached.data);
+        setLoading(false);
+        return;
+      }
       setError("Không tìm thấy hồ sơ thợ.");
       setCustomers([]);
       setLoading(false);
@@ -110,6 +118,12 @@ export default function WorkerCustomersPage() {
       .range(0, WORKER_CUSTOMERS_JOB_LIMIT - 1);
 
     if (jobsError) {
+      const cached = await getCachedDataset<CustomerSummary[]>(cacheKey);
+      if (cached) {
+        setCustomers(cached.data);
+        setLoading(false);
+        return;
+      }
       setError("Không thể tải danh sách khách hàng: " + jobsError.message);
       setCustomers([]);
       setLoading(false);
@@ -161,11 +175,11 @@ export default function WorkerCustomersPage() {
       }
     });
 
-    setCustomers(
-      [...summaries.values()].sort((a, b) =>
-        new Date(b.lastJobAt || 0).getTime() - new Date(a.lastJobAt || 0).getTime()
-      )
+    const nextCustomers = [...summaries.values()].sort((a, b) =>
+      new Date(b.lastJobAt || 0).getTime() - new Date(a.lastJobAt || 0).getTime()
     );
+    setCustomers(nextCustomers);
+    void setCachedDataset(cacheKey, nextCustomers);
     setLoading(false);
   }, [supabase]);
 
