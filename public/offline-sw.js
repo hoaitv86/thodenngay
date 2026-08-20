@@ -48,7 +48,7 @@ async function networkFirstNavigation(request) {
     const response = await fetch(request);
     if (response && response.ok) await cache.put(request, response.clone());
     return response;
-  } catch (_error) {
+  } catch {
     return (await cache.match(request))
       || (await cache.match("/worker"))
       || (await cache.match("/login"))

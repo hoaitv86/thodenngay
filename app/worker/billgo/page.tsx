@@ -40,7 +40,7 @@ import {
   type BillGoPackageType,
 } from "@/lib/billgo-packages";
 import { createClient } from "@/lib/supabase/client";
-import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
+import { enqueueOfflineMutation, getCachedDataset, isLikelyOfflineError, setCachedDataset, syncOfflineMutations } from "@/lib/offline/cache";
 import {
   BILLGO_SERVICE_ICON_CONFIG,
   BILLGO_SERVICE_ICON_TYPES,
@@ -280,6 +280,15 @@ type BillGoServiceOverview = {
   debt: number;
 };
 
+type BillGoListCacheResult = {
+  rows?: Receivable[];
+  page?: number | string;
+  pageCount?: number | string;
+  total?: number | string;
+  totals?: Partial<BillGoListTotals>;
+  meta?: unknown;
+};
+
 const currentDate = new Date();
 const todayInput = () => toBillGoDateInput(new Date());
 const getNextPeriodStartDisplay = (subscription?: Subscription | null, fallback?: string | null) => {
@@ -419,6 +428,9 @@ const createTv360AccountForm = (): Tv360AccountForm => ({
   monthlyFee: "",
   cycle: "",
 });
+
+const createOfflineMutationId = (prefix: string) =>
+  `${prefix}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`}`;
 
 const statusOptions = [
   { value: "all", label: "Tất cả trạng thái" },
@@ -936,7 +948,7 @@ export default function WorkerBillGoPage() {
       const nextAreas = (result.areas || []) as AreaOption[];
       setAreas(nextAreas);
       void setCachedDataset(cacheKey, nextAreas);
-    } catch (_error) {
+    } catch {
       const cached = await getCachedDataset<AreaOption[]>(cacheKey);
       setAreas(cached?.data || []);
     }
@@ -1007,7 +1019,7 @@ export default function WorkerBillGoPage() {
         if (selectedAreaId) params.set("areaId", selectedAreaId);
         if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
       }
-      const cached = await getCachedDataset<any>(`billgo:list:${params.toString()}`);
+      const cached = await getCachedDataset<BillGoListCacheResult>(`billgo:list:${params.toString()}`);
       if (cached) {
         const result = cached.data;
         setRows(normalizeRows(result.rows || []));
@@ -1432,6 +1444,18 @@ export default function WorkerBillGoPage() {
     window.requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
   };
 
+  useEffect(() => {
+    const handleSyncComplete = (event: Event) => {
+      const detail = (event as CustomEvent<{ synced?: number; failed?: number }>).detail;
+      if ((detail?.synced || 0) > 0) {
+        const scrollY = window.scrollY;
+        void fetchBillGo().then(() => window.requestAnimationFrame(() => window.scrollTo({ top: scrollY })));
+      }
+    };
+    window.addEventListener("tdn:offline-sync-complete", handleSyncComplete);
+    return () => window.removeEventListener("tdn:offline-sync-complete", handleSyncComplete);
+  }, [fetchBillGo]);
+
   const downloadImportTemplate = () => {
     const sample = [
       billGoImportHeaders,
@@ -1745,6 +1769,49 @@ export default function WorkerBillGoPage() {
     });
   };
 
+  const applyPendingCollection = useCallback((item: Receivable, amount: number, paidAt: string, method: string, note?: string) => {
+    const total = toMoneyNumber(item.total_amount);
+    const nextPaid = toMoneyNumber(item.paid_amount) + amount;
+    const nextStatus = nextPaid >= total ? "paid" : "partial";
+    setRows((previous) => previous
+      .map((row) => row.id === item.id
+        ? {
+            ...row,
+            paid_amount: nextPaid,
+            paid_at: paidAt,
+            payment_method: method,
+            status: nextStatus,
+            payments: [
+              ...(row.payments || []),
+              { id: createOfflineMutationId("offline-payment"), amount, method, status: "pending", paid_at: paidAt, note },
+            ],
+          }
+        : row)
+      .filter((row) => !(row.id === item.id && nextStatus === "paid" && ["unpaid", "overdue"].includes(statusFilter))));
+    setServerTotals((previous) => ({
+      ...previous,
+      totalPaid: previous.totalPaid + amount,
+      totalDebt: Math.max(previous.totalDebt - amount, 0),
+      paid: nextStatus === "paid" ? previous.paid + 1 : previous.paid,
+      unpaid: nextStatus === "paid" ? Math.max(previous.unpaid - 1, 0) : previous.unpaid,
+      partial: nextStatus === "partial" ? previous.partial + 1 : previous.partial,
+    }));
+  }, [statusFilter]);
+
+  const queueBillGoCollection = useCallback(async (item: Receivable, payload: Record<string, unknown>) => {
+    const id = String(payload.idempotencyKey || createOfflineMutationId("billgo-collect"));
+    await enqueueOfflineMutation({
+      id,
+      url: "/api/worker/billgo",
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: { ...payload, idempotencyKey: id },
+      module: "billgo",
+      entityId: item.id,
+    });
+    applyPendingCollection(item, toMoneyNumber(payload.amount as string | number | null | undefined), String(payload.paidAt || todayInput()), String(payload.method || "cash"), typeof payload.note === "string" ? payload.note : undefined);
+  }, [applyPendingCollection]);
+
   const openAction = async (mode: ActionMode, item: Receivable) => {
     let targetItem = item;
     if (mode === "detail") {
@@ -1783,10 +1850,11 @@ export default function WorkerBillGoPage() {
     setSaving(true);
     setMessage("");
     try {
+      const payload = { action: "collect", receivableId: collecting.id, ...collectForm, idempotencyKey: createOfflineMutationId("billgo-collect") };
       const response = await fetch("/api/worker/billgo", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "collect", receivableId: collecting.id, ...collectForm }),
+        body: JSON.stringify(payload),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể xác nhận thu tiền.");
@@ -1794,6 +1862,13 @@ export default function WorkerBillGoPage() {
       setMessage("Đã xác nhận thu tiền.");
       await refreshBillGoKeepingScroll();
     } catch (error) {
+      if (collecting && isLikelyOfflineError(error)) {
+        const payload = { action: "collect", receivableId: collecting.id, ...collectForm, idempotencyKey: createOfflineMutationId("billgo-collect") };
+        await queueBillGoCollection(collecting, payload);
+        setCollecting(null);
+        setMessage("Đã lưu xác nhận thu vào hàng chờ offline. Hệ thống sẽ tự đồng bộ khi có mạng.");
+        return;
+      }
       setMessage(error instanceof Error ? error.message : "Không thể xác nhận thu tiền.");
     } finally {
       setSaving(false);
@@ -1915,34 +1990,45 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     setMessage("");
     const errors: string[] = [];
     let completed = 0;
+    let queued = 0;
     try {
       for (const row of selectedCollectableRows) {
-        const response = await fetch("/api/worker/billgo", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "collect",
-            receivableId: row.item.id,
-            amount: row.summary.debt,
-            paidAt: todayInput(),
-            method: "cash",
-            note: "Xác nhận đã thu hàng loạt",
-          }),
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          errors.push(`${row.customerName}: ${result.error || "Không thể xác nhận đã thu"}`);
-        } else {
-          completed += 1;
+        const payload = {
+          action: "collect",
+          receivableId: row.item.id,
+          amount: row.summary.debt,
+          paidAt: todayInput(),
+          method: "cash",
+          note: "Xác nhận đã thu hàng loạt",
+          idempotencyKey: createOfflineMutationId("billgo-collect"),
+        };
+        try {
+          const response = await fetch("/api/worker/billgo", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            errors.push(`${row.customerName}: ${result.error || "Không thể xác nhận đã thu"}`);
+          } else {
+            completed += 1;
+          }
+        } catch (error) {
+          if (!isLikelyOfflineError(error)) throw error;
+          await queueBillGoCollection(row.item, payload);
+          queued += 1;
         }
       }
 
       setSelectedSubscriptionIds([]);
-      await refreshBillGoKeepingScroll();
+      if (queued === 0) await refreshBillGoKeepingScroll();
+      else if (window.navigator.onLine) void syncOfflineMutations();
       const skippedSuffix = skippedSelectedCollectionCount > 0 ? ` Đã bỏ qua ${skippedSelectedCollectionCount} khách không đủ điều kiện.` : "";
+      const queuedSuffix = queued > 0 ? ` Đã đưa ${queued} khách vào hàng chờ offline.` : "";
       setMessage(errors.length > 0
-        ? `Đã xác nhận ${completed}/${selectedCollectableRows.length} khách.${skippedSuffix} Lỗi: ${errors.slice(0, 3).join("; ")}`
-        : `Đã xác nhận đã thu cho ${completed} khách.${skippedSuffix}`);
+        ? `Đã xác nhận ${completed}/${selectedCollectableRows.length} khách.${queuedSuffix}${skippedSuffix} Lỗi: ${errors.slice(0, 3).join("; ")}`
+        : `Đã xác nhận đã thu cho ${completed} khách.${queuedSuffix}${skippedSuffix}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể xác nhận đã thu hàng loạt.");
     } finally {
@@ -2974,3 +3060,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     </div>
   );
 }
+
+
+
+

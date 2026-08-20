@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
+import { syncOfflineMutations } from "@/lib/offline/cache";
 import { createClient } from "@/lib/supabase/client";
 
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
@@ -17,8 +18,12 @@ function publishNetworkState() {
 export default function OfflineRuntime() {
   useEffect(() => {
     publishNetworkState();
+    if (window.navigator.onLine) void syncOfflineMutations();
 
-    const handleOnlineStateChange = () => publishNetworkState();
+    const handleOnlineStateChange = () => {
+      publishNetworkState();
+      if (window.navigator.onLine) void syncOfflineMutations();
+    };
     window.addEventListener("online", handleOnlineStateChange);
     window.addEventListener("offline", handleOnlineStateChange);
 

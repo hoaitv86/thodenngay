@@ -47,7 +47,7 @@ export function getOfflineAuthenticatedUser(): User | null {
       created_at: stored.lastAuthenticatedAt,
       updated_at: stored.lastAuthenticatedAt,
     } as unknown as User;
-  } catch (_error) {
+  } catch {
     forgetOfflineAuthenticatedUser();
     return null;
   }
