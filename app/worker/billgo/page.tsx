@@ -1106,6 +1106,19 @@ export default function WorkerBillGoPage() {
   const selectedSubscriptionIdSet = useMemo(() => new Set(selectedSubscriptionIds), [selectedSubscriptionIds]);
   const selectedVisibleCount = visibleSubscriptionIds.filter(id => selectedSubscriptionIdSet.has(id)).length;
   const allVisibleSelected = visibleSubscriptionIds.length > 0 && selectedVisibleCount === visibleSubscriptionIds.length;
+  const selectedVisibleRows = useMemo(
+    () => visibleRows.filter(row => row.item.subscription?.id && selectedSubscriptionIdSet.has(row.item.subscription.id)),
+    [selectedSubscriptionIdSet, visibleRows],
+  );
+  const selectedCollectableRows = useMemo(
+    () => selectedVisibleRows.filter(row => row.summary.debt > 0 && !["pending_cycle", "not_due", "paid", "promo"].includes(row.summary.status)),
+    [selectedVisibleRows],
+  );
+  const skippedSelectedCollectionCount = Math.max(selectedVisibleRows.length - selectedCollectableRows.length, 0);
+  const selectedCollectionTotal = useMemo(
+    () => selectedCollectableRows.reduce((sum, row) => sum + row.summary.debt, 0),
+    [selectedCollectableRows],
+  );
   const overduePeriodSummaries = useMemo(() => {
     const summaries = new Map<string, { month: string; label: string; count: number; debt: number }>();
     visibleRows.flatMap(row => getPreviousUnpaidReceivables(row.item)).forEach(previous => {
@@ -1121,7 +1134,10 @@ export default function WorkerBillGoPage() {
   }, [monthFilter, visibleRows]);
 
   useEffect(() => {
-    setSelectedSubscriptionIds(previous => previous.filter(id => rowViews.some(row => row.item.subscription?.id === id)));
+    const timeoutId = window.setTimeout(() => {
+      setSelectedSubscriptionIds(previous => previous.filter(id => rowViews.some(row => row.item.subscription?.id === id)));
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [rowViews]);
 
   const processedCount = areaStats.paid;
@@ -1838,6 +1854,61 @@ export default function WorkerBillGoPage() {
     });
   };
 
+  const submitBulkCollection = async () => {
+    if (selectedVisibleRows.length === 0) {
+      setMessage("Vui lòng chọn khách cần xác nhận đã thu.");
+      return;
+    }
+    if (selectedCollectableRows.length === 0) {
+      setMessage("Các khách đã chọn không còn khoản chưa thu để xác nhận.");
+      return;
+    }
+
+    const skippedText = skippedSelectedCollectionCount > 0 ? `
+Bỏ qua ${skippedSelectedCollectionCount} khách đã thu, khuyến mại, chưa đến kỳ hoặc chưa thiết lập chu kỳ.` : "";
+    const confirmed = window.confirm(`Xác nhận đã thu cho ${selectedCollectableRows.length} khách?
+Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollectionTotal)}.${skippedText}`);
+    if (!confirmed) return;
+
+    setSaving(true);
+    setMessage("");
+    const errors: string[] = [];
+    let completed = 0;
+    try {
+      for (const row of selectedCollectableRows) {
+        const response = await fetch("/api/worker/billgo", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "collect",
+            receivableId: row.item.id,
+            amount: row.summary.debt,
+            paidAt: todayInput(),
+            method: "cash",
+            note: "Xác nhận đã thu hàng loạt",
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          errors.push(`${row.customerName}: ${result.error || "Không thể xác nhận đã thu"}`);
+        } else {
+          completed += 1;
+        }
+      }
+
+      setSelectedSubscriptionIds([]);
+      await refreshBillGoKeepingScroll();
+      const skippedSuffix = skippedSelectedCollectionCount > 0 ? ` Đã bỏ qua ${skippedSelectedCollectionCount} khách không đủ điều kiện.` : "";
+      setMessage(errors.length > 0
+        ? `Đã xác nhận ${completed}/${selectedCollectableRows.length} khách.${skippedSuffix} Lỗi: ${errors.slice(0, 3).join("; ")}`
+        : `Đã xác nhận đã thu cho ${completed} khách.${skippedSuffix}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể xác nhận đã thu hàng loạt.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitBulkCycle = async (event: React.FormEvent) => {
     event.preventDefault();
     if (selectedSubscriptionIds.length === 0) return;
@@ -2471,6 +2542,9 @@ export default function WorkerBillGoPage() {
           </label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <span className="text-sm font-bold text-on-surface-variant">Da chon {selectedSubscriptionIds.length} khach</span>
+            <button type="button" disabled={saving || selectedCollectableRows.length === 0} onClick={() => void submitBulkCollection()} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
+              <CheckCircle2 size={16} /> Xác nhận đã thu
+            </button>
             <button type="button" disabled={selectedSubscriptionIds.length === 0} onClick={() => setShowBulkCycle(true)} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
               <RotateCcw size={16} /> Gan chu ky
             </button>
