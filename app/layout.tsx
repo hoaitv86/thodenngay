@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./app.css";
+import OfflineRuntime from "@/app/components/OfflineRuntime";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -33,6 +34,7 @@ export default function RootLayout({
   return (
     <html lang="vi" className="h-full antialiased">
       <body className="min-h-full flex flex-col font-sans">
+        <OfflineRuntime />
         {children}
       </body>
     </html>
