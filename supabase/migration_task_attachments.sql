@@ -5,7 +5,7 @@
 DO $$
 BEGIN
   IF to_regclass('public.jobs') IS NULL THEN
-    RAISE EXCEPTION 'Missing required table public.jobs. This database does not match the current tiengiaoviec app schema; aborting without creating public.jobs or changing data.';
+    RAISE EXCEPTION 'Missing required table public.jobs. The current tiengiaoviec app stores assigned work in public.jobs, so this looks like the wrong Supabase project/schema or an older database. Aborting without creating public.jobs or changing data.';
   END IF;
 
   IF to_regclass('public.profiles') IS NULL THEN
@@ -46,10 +46,38 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'public.workers is missing required columns id/user_id. Aborting without changing data.';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'id'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'role'
+  ) THEN
+    RAISE EXCEPTION 'public.profiles is missing required columns id/role. Aborting without changing data.';
+  END IF;
 END $$;
-
+DO $$
+BEGIN
+  IF to_regprocedure('public.is_admin()') IS NULL THEN
+    EXECUTE $fn$
+      CREATE FUNCTION public.is_admin()
+      RETURNS BOOLEAN
+      LANGUAGE SQL
+      SECURITY DEFINER
+      SET search_path = public
+      AS $body$
+        SELECT EXISTS (
+          SELECT 1
+          FROM public.profiles
+          WHERE id = auth.uid()
+            AND role = 'admin'
+        );
+      $body$;
+    $fn$;
+  END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS public.task_attachments (
-  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id UUID NOT NULL,
   original_name TEXT NOT NULL,
   storage_path TEXT NOT NULL UNIQUE,
@@ -68,7 +96,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.task_attachments
       ADD CONSTRAINT task_attachments_task_id_fkey
-      FOREIGN KEY (task_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+      FOREIGN KEY (task_id) REFERENCES public.jobs(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
