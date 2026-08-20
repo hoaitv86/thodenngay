@@ -18,6 +18,9 @@ type BillGoReceiptRow = {
   receipt_code: string;
   lookup_code: string;
   qr_payload: string;
+  status?: string | null;
+  reversed_at?: string | null;
+  reversal_note?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   internet_account?: string | null;
@@ -54,7 +57,7 @@ const getAdmin = () => {
   });
 };
 
-const receiptSelect = "receipt_code, lookup_code, qr_payload, customer_name, customer_phone, internet_account, customer_address, package_name, cycle_at_collection, period_start, period_end, total_amount, paid_amount, remaining_amount, payment_method, paid_at, collector_name, note, created_at";
+const receiptSelect = "receipt_code, lookup_code, qr_payload, status, reversed_at, reversal_note, customer_name, customer_phone, internet_account, customer_address, package_name, cycle_at_collection, period_start, period_end, total_amount, paid_amount, remaining_amount, payment_method, paid_at, collector_name, note, created_at";
 
 const normalizeReceiptCode = (code: string) => decodeURIComponent(code || "").trim().toUpperCase();
 
@@ -130,6 +133,7 @@ export default async function BillGoReceiptPage({ params, searchParams }: Receip
   const receiptUrl = await buildReceiptUrl(receipt);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=10&data=${encodeURIComponent(receiptUrl)}`;
   const paidAmountText = readVietnameseMoney(receipt.paid_amount);
+  const isReversed = receipt.status === "reversed" || receipt.status === "void";
 
   return (
     <main className="min-h-dvh bg-surface px-4 py-6 text-on-surface">
@@ -154,12 +158,19 @@ export default async function BillGoReceiptPage({ params, searchParams }: Receip
           <div>
             <p className="text-xs font-bold uppercase text-primary">BillGo</p>
             <h1 className="mt-1 text-2xl font-extrabold">Phiếu thu</h1>
+            {isReversed && <p className="mt-2 inline-flex rounded-full bg-error-container px-3 py-1 text-xs font-extrabold uppercase text-error">Đã hoàn tác</p>}
             <p className="mt-1 text-sm text-on-surface-variant">Mã phiếu: <strong>{receipt.receipt_code}</strong></p>
             <p className="text-sm text-on-surface-variant">Mã tra cứu: <strong>{receipt.lookup_code}</strong></p>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={qrUrl} alt={`QR tra cứu phiếu ${receipt.receipt_code}`} width={180} height={180} className="rounded-lg border border-outline-variant/40 p-2" />
         </div>
+
+        {isReversed && (
+          <div className="mt-5 rounded-lg border border-error/30 bg-error-container/50 p-3 text-sm font-bold text-error">
+            Phiếu thu này đã được hoàn tác{receipt.reversed_at ? ` lúc ${dateLabel(receipt.reversed_at)}` : ""}. Khoản tiền không còn được tính vào tổng đã thu.
+          </div>
+        )}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           {[

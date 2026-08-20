@@ -946,9 +946,9 @@ export async function GET(request: Request) {
     const [paymentResult, cycleHistoryResult, statusHistoryResult, receiptHistoryResult] = await Promise.all([
       admin
         .from("payments")
-        .select("id, receivable_id, amount, method, status, paid_at, note, billgo_receipts(receipt_code, lookup_code, qr_payload)")
+        .select("id, receivable_id, amount, method, status, paid_at, note, billgo_receipts(id, payment_id, receipt_code, lookup_code, qr_payload, status, reversed_at, reversal_note)")
         .eq("receivable_id", detailReceivableId)
-        .eq("status", "paid")
+        .in("status", ["paid", "void"])
         .order("paid_at", { ascending: false }),
       subscriptionId
         ? admin
@@ -967,7 +967,7 @@ export async function GET(request: Request) {
       subscriptionId
         ? admin
             .from("billgo_receipts")
-            .select("receipt_code, lookup_code, qr_payload, subscription_id, period_start, period_end, paid_at, paid_amount, payment_method, note")
+            .select("id, payment_id, receipt_code, lookup_code, qr_payload, status, subscription_id, period_start, period_end, paid_at, paid_amount, payment_method, note, reversed_at, reversed_by, reversal_note")
             .eq("subscription_id", subscriptionId)
             .order("paid_at", { ascending: false })
         : Promise.resolve({ data: [], error: null }),
@@ -1965,6 +1965,146 @@ export async function PATCH(request: Request) {
     }));
     if (historyRows.length > 0) await admin.from("billgo_area_changes").insert(historyRows);
     return NextResponse.json({ ok: true, updated: subscriptionIds.length });
+  }
+
+  if (action === "reverse_collection") {
+    if (!canCollectBillGoScope(scope)) return jsonError("Bạn không có quyền hoàn tác thu tiền BillGo.", 403);
+    const receivableId = asText(body.receivableId);
+    const paymentId = asText(body.paymentId);
+    const note = asText(body.note) || "Hoàn tác thu nhầm";
+    if (!receivableId || !paymentId) return jsonError("Thiếu thông tin khoản thu cần hoàn tác.");
+
+    const { data: payment, error: paymentError } = await admin
+      .from("payments")
+      .select("id, receivable_id, amount, method, status, paid_at, note, collected_by")
+      .eq("id", paymentId)
+      .eq("receivable_id", receivableId)
+      .single();
+    if (paymentError || !payment) return jsonError("Không tìm thấy khoản thu.", 404);
+    if (payment.status !== "paid") return jsonError("Khoản thu này đã được hoàn tác hoặc không còn hiệu lực.", 409);
+
+    const { data: receivable, error: receivableError } = await admin
+      .from("billgo_receivables")
+      .select("id, worker_id, subscription_id, customer_id, total_amount, due_date, period_start, period_end, cycle_at_collection, billing_months, bonus_months, paid_amount, paid_at, payment_method, collected_by, status, subscription:billgo_subscriptions(id, current_cycle, cycle, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, package_name, covered_until)")
+      .eq("id", receivableId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .single();
+    if (receivableError || !receivable) return jsonError("Không tìm thấy kỳ cước.", 404);
+
+    const receivableSubscription = Array.isArray(receivable.subscription) ? receivable.subscription[0] : receivable.subscription;
+    if (scope.role === "bill_collector") {
+      const assignedFilters = await getAssignedBillGoAreaFilters(admin, userId);
+      if (!isBillGoSubscriptionInAssignedArea(receivableSubscription, assignedFilters)) {
+        return jsonError("Bạn chỉ được hoàn tác khách trong địa bàn được giao.", 403);
+      }
+    }
+
+    const previousPaid = toMoneyNumber(receivable.paid_amount);
+    const reversedAmount = toMoneyNumber(payment.amount);
+    if (reversedAmount <= 0) return jsonError("Số tiền hoàn tác không hợp lệ.");
+    const nextPaid = Math.max(previousPaid - reversedAmount, 0);
+    const previousStatus = String(receivable.status || getBillGoStoredStatus(toMoneyNumber(receivable.total_amount), previousPaid, receivable.due_date));
+    const nextStatus = getBillGoStoredStatus(toMoneyNumber(receivable.total_amount), nextPaid, receivable.due_date);
+    const reversedAt = new Date().toISOString();
+    const nextPaymentNote = [payment.note, "Đã hoàn tác BillGo", note].filter(Boolean).join(" · ");
+
+    const { error: voidPaymentError } = await admin
+      .from("payments")
+      .update({ status: "void", note: nextPaymentNote, updated_at: reversedAt })
+      .eq("id", payment.id)
+      .eq("status", "paid");
+    if (voidPaymentError) return jsonError("Không thể hoàn tác thanh toán: " + voidPaymentError.message);
+
+    const { error: receiptUpdateError } = await admin
+      .from("billgo_receipts")
+      .update({ status: "reversed", reversed_at: reversedAt, reversed_by: userId, reversal_note: note })
+      .eq("payment_id", payment.id);
+    if (receiptUpdateError) return jsonError("Không thể cập nhật trạng thái phiếu thu: " + receiptUpdateError.message);
+
+    const { error: coverageDeleteError } = await admin
+      .from("billgo_payment_coverages")
+      .delete()
+      .eq("payment_id", payment.id);
+    if (coverageDeleteError) return jsonError("Không thể cập nhật tháng đã thu: " + coverageDeleteError.message);
+
+    const { data: remainingPaidPayments } = await admin
+      .from("payments")
+      .select("paid_at, method, collected_by")
+      .eq("receivable_id", receivable.id)
+      .eq("status", "paid")
+      .order("paid_at", { ascending: false })
+      .limit(1);
+    const latestPaidPayment = remainingPaidPayments?.[0] || null;
+
+    const { error: updateReceivableError } = await admin
+      .from("billgo_receivables")
+      .update({
+        paid_amount: nextPaid,
+        status: nextStatus,
+        paid_at: latestPaidPayment?.paid_at || null,
+        payment_method: latestPaidPayment?.method || null,
+        collected_by: latestPaidPayment?.collected_by || null,
+      })
+      .eq("id", receivable.id);
+    if (updateReceivableError) return jsonError("Không thể cập nhật kỳ cước: " + updateReceivableError.message);
+
+    if (receivable.subscription_id) {
+      if (toMoneyNumber(receivable.bonus_months) > 0 && receivable.period_start) {
+        const promoStart = toBillGoDateInput(addMonths(receivable.period_start, toMoneyNumber(receivable.billing_months)));
+        await admin
+          .from("billgo_receivables")
+          .update({ status: "deleted", deleted_at: reversedAt, deleted_by: userId })
+          .eq("subscription_id", receivable.subscription_id)
+          .eq("worker_id", workerId)
+          .eq("status", "promo")
+          .eq("period_start", promoStart);
+      }
+
+      const { data: lastCoveredRows } = await admin
+        .from("billgo_receivables")
+        .select("period_end")
+        .eq("subscription_id", receivable.subscription_id)
+        .eq("worker_id", workerId)
+        .is("deleted_at", null)
+        .eq("status", "paid")
+        .order("period_end", { ascending: false })
+        .limit(1);
+      const latestCoveredUntil = lastCoveredRows?.[0]?.period_end || null;
+      const nextPeriodStart = latestCoveredUntil ? getBillGoNextPeriodStartDate(latestCoveredUntil) : receivable.period_start;
+      const cycle = String(receivableSubscription?.current_cycle || receivableSubscription?.cycle || receivable.cycle_at_collection || "monthly");
+      const nextDueDate = nextPeriodStart ? getBillGoBillingPeriod(nextPeriodStart, cycle).dueDate : receivable.due_date;
+      const { error: subscriptionUpdateError } = await admin
+        .from("billgo_subscriptions")
+        .update({
+          covered_until: latestCoveredUntil,
+          next_period_start: nextPeriodStart,
+          next_due_date: nextDueDate,
+          last_changed_by: userId,
+        })
+        .eq("id", receivable.subscription_id)
+        .eq("worker_id", workerId);
+      if (subscriptionUpdateError) return jsonError("Không thể cập nhật khách BillGo: " + subscriptionUpdateError.message);
+    }
+
+    const { error: historyError } = await admin.from("billgo_payment_reversals").insert({
+      payment_id: payment.id,
+      receivable_id: receivable.id,
+      subscription_id: receivable.subscription_id,
+      worker_id: workerId,
+      customer_id: receivable.customer_id,
+      customer_name: receivableSubscription?.customer_name || null,
+      period_start: receivable.period_start,
+      period_end: receivable.period_end,
+      amount: reversedAmount,
+      previous_status: previousStatus,
+      next_status: nextStatus,
+      performed_by: userId,
+      note,
+    });
+    if (historyError) return jsonError("Không thể lưu lịch sử hoàn tác: " + historyError.message);
+
+    return NextResponse.json({ ok: true, paidAmount: nextPaid, status: nextStatus, reversedAt });
   }
 
   if (action !== "collect") return jsonError("Hành động BillGo không hợp lệ.");

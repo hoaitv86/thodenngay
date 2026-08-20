@@ -59,15 +59,21 @@ type Payment = {
 };
 
 type BillGoReceipt = {
+  id?: string | null;
+  payment_id?: string | null;
   receipt_code: string;
   lookup_code: string;
   qr_payload: string;
+  status?: string | null;
   period_start?: string | null;
   period_end?: string | null;
   paid_at?: string | null;
   paid_amount?: number | string | null;
   payment_method?: string | null;
   note?: string | null;
+  reversed_at?: string | null;
+  reversed_by?: string | null;
+  reversal_note?: string | null;
 };
 
 type Receivable = {
@@ -1825,12 +1831,49 @@ export default function WorkerBillGoPage() {
     setMessage("Đã sao chép liên kết phiếu thu.");
   };
 
+  const getReceiptStatusLabel = (receipt: BillGoReceipt, payment?: Payment) => {
+    const status = payment?.status === "void" ? "reversed" : receipt.status || "paid";
+    if (status === "reversed" || status === "void") return "Đã hoàn tác";
+    return "Đã thu";
+  };
+
+  const reverseCollection = async (target: Receivable, payment: Payment | undefined, receipt: BillGoReceipt) => {
+    const paymentId = payment?.id || receipt.payment_id;
+    if (!paymentId) {
+      setMessage("Không tìm thấy mã thanh toán để hoàn tác.");
+      return;
+    }
+    const amount = formatBillGoCurrency(receipt.paid_amount ?? payment?.amount);
+    const customerName = target.subscription?.customer_name || "khách BillGo";
+    const confirmed = window.confirm(`Hoàn tác khoản thu ${amount} của ${customerName}? Phiếu thu cũ sẽ được giữ lại và chuyển sang trạng thái Đã hoàn tác.`);
+    if (!confirmed) return;
+
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reverse_collection", receivableId: target.id, paymentId, note: "Hoàn tác thu nhầm" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể hoàn tác khoản thu.");
+      setReceiptTarget(null);
+      setMessage("Đã hoàn tác khoản thu BillGo.");
+      await refreshBillGoKeepingScroll();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể hoàn tác khoản thu.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
     const cycle = row.cycle ? getBillGoCycleOption(row.cycle) : null;
     const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
-    const canOpenReceiptHistory = receiptEntries.length > 0 || summary.paid > 0;
+    const canOpenReceiptHistory = receiptEntries.length > 0 || summary.paid > 0 || summary.status === "paid" || summary.status === "partial";
     const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
     const hasPreviousUnpaidPeriod = previousUnpaidReceivables.length > 0;
     const firstPreviousUnpaid = previousUnpaidReceivables[0];
@@ -2488,8 +2531,11 @@ export default function WorkerBillGoPage() {
                 <p className="text-sm text-on-surface-variant">Chưa có phiếu thu đã lưu.</p>
               ) : (
                 <div className="space-y-2">
-                  {getReceiptEntries(receiptTarget).map(({ payment, receipt }) => (
-                    <details key={`${payment?.id || "receipt"}-${receipt.lookup_code}`} className="group rounded-lg border border-outline-variant/40 bg-white text-sm">
+                  {getReceiptEntries(receiptTarget).map(({ payment, receipt }) => {
+                    const receiptStatus = getReceiptStatusLabel(receipt, payment);
+                    const canReverseReceipt = receiptStatus === "Đã thu" && Boolean(payment?.id || receipt.payment_id);
+                    return (
+                    <details key={`${payment?.id || receipt.payment_id || "receipt"}-${receipt.lookup_code}`} className="group rounded-lg border border-outline-variant/40 bg-white text-sm">
                       <summary className="grid cursor-pointer list-none gap-2 p-3 sm:grid-cols-[minmax(0,1.4fr)_110px_120px_110px] sm:items-center">
                         <div className="min-w-0">
                           <p className="text-[10px] font-bold uppercase text-on-surface-variant">Kỳ cước</p>
@@ -2507,22 +2553,26 @@ export default function WorkerBillGoPage() {
                           <div>
                             <p className="text-[10px] font-bold uppercase text-on-surface-variant">Mã phiếu</p>
                             <p className="font-bold text-on-surface">{receipt.receipt_code}</p>
+                            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-extrabold ${receiptStatus === "Đã hoàn tác" ? "bg-error-container text-error" : "bg-success-container text-success"}`}>{receiptStatus}</span>
                           </div>
                           <span className="text-xs font-bold text-primary group-open:hidden">Mở</span>
                           <span className="hidden text-xs font-bold text-primary group-open:inline">Đóng</span>
                         </div>
                       </summary>
                       <div className="border-t border-outline-variant/30 p-3 pt-2">
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                           <a href={`/billgo/receipt/${receipt.lookup_code}`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">Xem</a>
                           <a href={`/billgo/receipt/${receipt.lookup_code}?print=1`} target="_blank" rel="noreferrer" className="btn-outline !w-full !px-2 !py-2 text-xs">PDF/In</a>
                           <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Chia sẻ</button>
                           <button type="button" onClick={() => void shareReceipt(receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs">Zalo</button>
+                          <button type="button" disabled={!canReverseReceipt || saving} onClick={() => void reverseCollection(receiptTarget, payment, receipt)} className="btn-outline !w-full !px-2 !py-2 text-xs text-error disabled:opacity-45">Hoàn tác</button>
                         </div>
+                        {receiptStatus === "Đã hoàn tác" && <p className="mt-2 rounded-lg bg-error-container/40 p-2 text-xs font-bold text-error">Phiếu thu đã hoàn tác{receipt.reversed_at ? ` lúc ${new Date(receipt.reversed_at).toLocaleString("vi-VN")}` : ""}.</p>}
                         {(receipt.note || payment?.note) && <p className="mt-2 text-xs text-on-surface-variant">{receipt.note || payment?.note}</p>}
                       </div>
                     </details>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2641,7 +2691,7 @@ export default function WorkerBillGoPage() {
                     <p className="mt-1 font-bold">Chưa có giao dịch</p>
                   ) : (actionTarget.payments || []).map(payment => (
                     <p key={payment.id} className="mt-1">
-                      <strong>{formatBillGoCurrency(payment.amount)}</strong> · {methodLabels[payment.method] || payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString("vi-VN") : "Chưa có ngày"}
+                      <strong>{formatBillGoCurrency(payment.amount)}</strong> · {payment.status === "void" ? "Đã hoàn tác" : "Đã thu"} · {methodLabels[payment.method] || payment.method} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString("vi-VN") : "Chưa có ngày"}
                     </p>
                   ))}
                 </div>
