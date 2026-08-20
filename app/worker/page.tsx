@@ -89,6 +89,8 @@ import { getJobServices, isMissingWorkflowColumn, normalizeServiceIds, type JobW
 import { isDemoAccount } from "@/lib/demo-accounts";
 import { readVietnameseMoney } from "@/lib/vietnamese-money";
 import { CmsPlacement } from "@/app/components/CmsPlacement";
+import { TaskAttachmentList } from "@/app/components/TaskAttachmentList";
+import type { TaskAttachment } from "@/lib/task-attachments";
 
 const DynamicServiceWorkflowForm = dynamic(() =>
   import("@/app/components/DynamicServiceWorkflowForm").then(mod => mod.DynamicServiceWorkflowForm)
@@ -131,8 +133,8 @@ type QuickCustomerOption = {
 
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
 const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
-const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
-const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
+const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
+const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
 
 interface WorkerJob {
   id: string;
@@ -158,6 +160,7 @@ interface WorkerJob {
   warranty_days?: number | null;
   warranty_note?: string | null;
   workflow_data?: WorkflowData | null;
+  task_attachments?: TaskAttachment[] | null;
   service?: ServiceOption | null;
   job_services?: JobWithWorkflow["job_services"];
   payments?: Array<{
@@ -4394,6 +4397,8 @@ export default function WorkerDashboard() {
                   </div>
                 </div>
 
+                <TaskAttachmentList attachments={job.task_attachments} />
+
                 {job.images && job.images.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-label-sm font-bold text-on-surface-variant uppercase tracking-wide">
@@ -4712,6 +4717,8 @@ export default function WorkerDashboard() {
                     </select>
                   </div>
                 )}
+
+              <TaskAttachmentList attachments={job.task_attachments} />
 
               {job.images && job.images.length > 0 && (
                 <div className="space-y-2">

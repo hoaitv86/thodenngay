@@ -20,6 +20,8 @@ import {
   type BillGoPackage,
 } from "@/lib/billgo-packages";
 import { readVietnameseMoney } from "@/lib/vietnamese-money";
+import { TaskAttachmentList } from "@/app/components/TaskAttachmentList";
+import type { TaskAttachment } from "@/lib/task-attachments";
 import {
   MapPinIcon,
   ClockIcon,
@@ -85,6 +87,7 @@ interface WorkerJobDetail {
   warranty_days?: number | null;
   warranty_note?: string | null;
   workflow_data?: JobWorkflowData | null;
+  task_attachments?: TaskAttachment[] | null;
   service?: {
     id?: string | null;
     name?: string | null;
@@ -225,6 +228,7 @@ export default function WorkerJobDetailPage() {
           warranty_days,
           warranty_note,
           workflow_data,
+                    task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
           service:services!jobs_service_id_fkey(id, name, description),
           job_services(service:services(id, name, description)),
           customer:profiles!customer_id(full_name, phone, address),
@@ -254,7 +258,8 @@ export default function WorkerJobDetailPage() {
             warranty_days,
             warranty_note,
             workflow_data,
-            service:services!jobs_service_id_fkey(id, name, description),
+                      task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
+          service:services!jobs_service_id_fkey(id, name, description),
             customer:profiles!customer_id(full_name, phone, address),
             ratings(score, comment, created_at, images)
           `)
@@ -1526,6 +1531,8 @@ export default function WorkerJobDetailPage() {
           </div>
         )}
 
+        <TaskAttachmentList attachments={job.task_attachments} />
+
         {/* Completion Images */}
         {isCompleted && completionImages.length > 0 && (
           <div className="space-y-3">
@@ -1630,3 +1637,5 @@ export default function WorkerJobDetailPage() {
     </div>
   );
 }
+
+

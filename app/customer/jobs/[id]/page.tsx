@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { JobWorkflowSummary } from "@/app/components/JobWorkflowSummary";
+import { TaskAttachmentList } from "@/app/components/TaskAttachmentList";
+import type { TaskAttachment } from "@/lib/task-attachments";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import type { WorkflowData } from "@/config/serviceWorkflows";
 import { 
@@ -34,6 +36,7 @@ type CustomerJobDetail = {
   description?: string | null;
   images?: string[] | null;
   workflow_data?: WorkflowData | null;
+  task_attachments?: TaskAttachment[] | null;
   service?: { id?: string | null; name?: string | null; description?: string | null } | null;
   job_services?: JobWithWorkflow["job_services"];
   worker?: {
@@ -87,6 +90,7 @@ export default function JobDetailPage() {
           description,
           images,
           workflow_data,
+                    task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
           service:services!jobs_service_id_fkey(id, name, description),
           job_services(service:services(id, name, description)),
           worker:workers(
@@ -114,7 +118,8 @@ export default function JobDetailPage() {
             description,
             images,
             workflow_data,
-            service:services!jobs_service_id_fkey(id, name, description),
+                      task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
+          service:services!jobs_service_id_fkey(id, name, description),
             worker:workers(
               avg_rating,
               total_jobs,
@@ -153,7 +158,7 @@ export default function JobDetailPage() {
       // Refetch job locally
       const { data } = await supabase
         .from('jobs')
-        .select('id, job_code, customer_id, worker_id, status, quoted_price, address, scheduled_at, description, images, workflow_data, service:services!jobs_service_id_fkey(id, name, description)')
+.select('id, job_code, customer_id, worker_id, status, quoted_price, address, scheduled_at, description, images, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description)')
         .eq('id', id)
         .single();
       setJob(data as unknown as CustomerJobDetail);
@@ -373,6 +378,8 @@ export default function JobDetailPage() {
           </div>
         )}
 
+        <TaskAttachmentList attachments={job.task_attachments} />
+
         {/* Customer Request Images */}
         {job.images && job.images.length > 0 && (
           <div className="space-y-3 pt-4 border-t border-outline-variant/30">
@@ -552,3 +559,5 @@ export default function JobDetailPage() {
     </div>
   );
 }
+
+

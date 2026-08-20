@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
 import type { WorkflowData } from "@/config/serviceWorkflows";
 import { requireAdminPermission } from "@/lib/admin-server";
+import { MAX_TASK_ATTACHMENTS, TASK_ATTACHMENTS_BUCKET } from "@/lib/task-attachments";
 
 type CreateJobRequest = {
   customerMode?: "existing" | "new";
@@ -23,48 +22,70 @@ type CreateJobRequest = {
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const makePhoneEmail = (phone: string) => `${normalizePhone(phone)}@thodenngay.vn`;
 const makeDefaultPassword = () => "123@123456";
-const ADMIN_JOB_RESPONSE_SELECT = "id, customer_id, worker_id, service_id, service_detail_id, job_code, created_at, address, status, quoted_price, final_amount, cancellation_reason, cancellation_requested_at, cancellation_reviewed_at, customer_gps_location, worker_gps_location, customer:profiles!customer_id(id, full_name, phone, email, gps_location), service:services!jobs_service_id_fkey(id, name, icon, base_price, parent_service_id), worker:workers(profiles(full_name))";
+const ADMIN_JOB_RESPONSE_SELECT = "id, customer_id, worker_id, service_id, service_detail_id, job_code, created_at, address, status, quoted_price, final_amount, cancellation_reason, cancellation_requested_at, cancellation_reviewed_at, customer_gps_location, worker_gps_location, customer:profiles!customer_id(id, full_name, phone, email, gps_location), service:services!jobs_service_id_fkey(id, name, icon, base_price, parent_service_id), worker:workers(profiles(full_name)), task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at)";
 
-async function getAdminUser() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-          } catch {
-            // Route handlers can be invoked in contexts where cookies are read-only.
-          }
-        },
-      },
+function getStringField(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === "string" ? value : undefined;
+}
+
+function parseJsonField<T>(value: string | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function parseCreateJobRequest(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return {
+      body: (await request.json()) as CreateJobRequest,
+      attachments: [] as File[],
+    };
+  }
+
+  const formData = await request.formData();
+  return {
+    body: {
+      customerMode: getStringField(formData, "customerMode") as CreateJobRequest["customerMode"],
+      customerId: getStringField(formData, "customerId"),
+      customerName: getStringField(formData, "customerName"),
+      customerPhone: getStringField(formData, "customerPhone"),
+      serviceId: getStringField(formData, "serviceId"),
+      serviceIds: parseJsonField<string[]>(getStringField(formData, "serviceIds"), []),
+      workflowData: parseJsonField<WorkflowData>(getStringField(formData, "workflowData"), {}),
+      address: getStringField(formData, "address"),
+      scheduledAt: getStringField(formData, "scheduledAt"),
+      quotedPrice: getStringField(formData, "quotedPrice"),
+      description: getStringField(formData, "description"),
     },
-  );
+    attachments: formData
+      .getAll("attachments")
+      .filter((value): value is File => value instanceof File && value.size > 0),
+  };
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+function buildAttachmentStoragePath(jobId: string, file: File, index: number) {
+  const originalName = file.name || `file-${index + 1}`;
+  const extMatch = originalName.match(/\.([a-zA-Z0-9]{1,12})$/);
+  const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : "";
+  return `jobs/${jobId}/${Date.now()}-${index}-${crypto.randomUUID()}${ext}`;
+}
 
-  if (!user) {
-    return { error: NextResponse.json({ error: "Không được phép truy cập." }, { status: 401 }) };
+async function ensureTaskAttachmentBucket(supabaseAdmin: SupabaseClient) {
+  const { error } = await supabaseAdmin.storage.getBucket(TASK_ATTACHMENTS_BUCKET);
+  if (!error) return;
+
+  const { error: createError } = await supabaseAdmin.storage.createBucket(TASK_ATTACHMENTS_BUCKET, {
+    public: false,
+  });
+
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw new Error("Không thể tạo bucket file đính kèm: " + createError.message);
   }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "admin") {
-    return { error: NextResponse.json({ error: "Không có quyền quản trị viên." }, { status: 403 }) };
-  }
-
-  return { user };
 }
 
 export async function POST(request: Request) {
@@ -80,13 +101,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as CreateJobRequest;
+    const { body, attachments } = await parseCreateJobRequest(request);
     const customerMode = body.customerMode || "existing";
     const serviceIds = normalizeServiceIds(body.serviceId, body.serviceIds);
     const primaryServiceId = getPrimaryServiceId(body.serviceId, body.serviceIds);
 
     if (!primaryServiceId || !body.address || !body.scheduledAt) {
       return NextResponse.json({ error: "Thiếu thông tin job bắt buộc." }, { status: 400 });
+    }
+
+    if (attachments.length > MAX_TASK_ATTACHMENTS) {
+      return NextResponse.json({ error: `Chỉ được đính kèm tối đa ${MAX_TASK_ATTACHMENTS} file cho một công việc.` }, { status: 400 });
     }
 
     const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
@@ -207,12 +232,73 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Không thể tạo job: " + insertResult.error.message }, { status: 500 });
     }
 
-    if (insertResult.data?.id) {
-      await attachJobServices(supabaseAdmin, insertResult.data.id, serviceIds);
+    const jobId = insertResult.data?.id;
+    const uploadedPaths: string[] = [];
+
+    if (jobId) {
+      try {
+        await attachJobServices(supabaseAdmin, jobId, serviceIds);
+
+        if (attachments.length > 0) {
+          await ensureTaskAttachmentBucket(supabaseAdmin);
+
+          const attachmentRows = [];
+          for (let index = 0; index < attachments.length; index += 1) {
+            const file = attachments[index];
+            const storagePath = buildAttachmentStoragePath(jobId, file, index);
+            const { error: uploadError } = await supabaseAdmin.storage
+              .from(TASK_ATTACHMENTS_BUCKET)
+              .upload(storagePath, file, {
+                cacheControl: "3600",
+                contentType: file.type || "application/octet-stream",
+                upsert: false,
+              });
+
+            if (uploadError) {
+              throw new Error(`Không thể tải file "${file.name}" lên: ${uploadError.message}`);
+            }
+
+            uploadedPaths.push(storagePath);
+            attachmentRows.push({
+              task_id: jobId,
+              original_name: file.name || `file-${index + 1}`,
+              storage_path: storagePath,
+              mime_type: file.type || null,
+              file_size: file.size,
+            });
+          }
+
+          const { error: attachmentError } = await supabaseAdmin
+            .from("task_attachments")
+            .insert(attachmentRows);
+
+          if (attachmentError) {
+            throw new Error("Không thể lưu thông tin file đính kèm: " + attachmentError.message);
+          }
+        }
+      } catch (attachmentError) {
+        if (uploadedPaths.length > 0) {
+          await supabaseAdmin.storage.from(TASK_ATTACHMENTS_BUCKET).remove(uploadedPaths);
+        }
+        await supabaseAdmin.from("jobs").delete().eq("id", jobId);
+
+        return NextResponse.json(
+          { error: attachmentError instanceof Error ? attachmentError.message : "Không thể lưu file đính kèm." },
+          { status: 500 },
+        );
+      }
     }
 
+    const { data: createdJob } = jobId
+      ? await supabaseAdmin
+        .from("jobs")
+        .select(ADMIN_JOB_RESPONSE_SELECT)
+        .eq("id", jobId)
+        .single()
+      : { data: insertResult.data };
+
     return NextResponse.json({
-      job: insertResult.data,
+      job: createdJob || insertResult.data,
       createdCustomer,
       customerAlreadyExists,
       loginPhone: customerMode === "new" ? normalizePhone(body.customerPhone || "") : null,
@@ -225,3 +311,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

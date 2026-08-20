@@ -7,6 +7,7 @@ import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { DynamicServiceWorkflowForm } from "@/app/components/DynamicServiceWorkflowForm";
 import { HierarchicalServiceSelector } from "@/app/components/HierarchicalServiceSelector";
 import { normalizeServiceIds } from "@/lib/job-workflow";
+import { formatFileSize, MAX_TASK_ATTACHMENTS } from "@/lib/task-attachments";
 import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import {
   SearchIcon,
@@ -146,6 +147,7 @@ export default function AdminJobs() {
     description: ""
   });
   const [workflowData, setWorkflowData] = useState<WorkflowData>({});
+  const [selectedAttachments, setSelectedAttachments] = useState<File[]>([]);
 
   // Assign Worker Modal states
   const [assignWorkerModalOpen, setAssignWorkerModalOpen] = useState(false);
@@ -275,6 +277,35 @@ export default function AdminJobs() {
     }));
   };
 
+  const getAttachmentKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
+
+  const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    setSelectedAttachments(prev => {
+      const seen = new Set(prev.map(getAttachmentKey));
+      const next = [...prev];
+      for (const file of files) {
+        const key = getAttachmentKey(file);
+        if (!seen.has(key) && next.length < MAX_TASK_ATTACHMENTS) {
+          seen.add(key);
+          next.push(file);
+        }
+      }
+
+      if (files.length + prev.length > MAX_TASK_ATTACHMENTS) {
+        alert(`Chỉ được đính kèm tối đa ${MAX_TASK_ATTACHMENTS} file cho một công việc.`);
+      }
+
+      return next;
+    });
+    event.currentTarget.value = "";
+  };
+
+  const removeAttachment = (index: number) => {
+    setSelectedAttachments(prev => prev.filter((_, itemIndex) => itemIndex !== index));
+  };
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
     const creatingNewCustomer = customerMode === "new";
@@ -291,26 +322,24 @@ export default function AdminJobs() {
     setIsSubmitting(true);
 
     try {
+      const formData = new FormData();
+      formData.append("customerMode", customerMode);
+      formData.append("customerId", newJob.customerId);
+      formData.append("customerName", newJob.customerName);
+      formData.append("customerPhone", newJob.customerPhone);
+      formData.append("serviceId", newJob.serviceId);
+      formData.append("serviceIds", JSON.stringify(selectedServiceIds));
+      formData.append("workflowData", JSON.stringify(pruneWorkflowData(workflowData, selectedServices, { excludeSectionKeys: handoverWorkflowSectionKeys })));
+      formData.append("address", newJob.address);
+      formData.append("scheduledAt", newJob.scheduledAt);
+      formData.append("quotedPrice", newJob.quotedPrice);
+      formData.append("description", newJob.description);
+      selectedAttachments.forEach(file => formData.append("attachments", file));
+
       const res = await fetch("/api/admin/jobs", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          customerMode,
-          customerId: newJob.customerId,
-          customerName: newJob.customerName,
-          customerPhone: newJob.customerPhone,
-          serviceId: newJob.serviceId,
-          serviceIds: selectedServiceIds,
-          workflowData: pruneWorkflowData(workflowData, selectedServices, { excludeSectionKeys: handoverWorkflowSectionKeys }),
-          address: newJob.address,
-          scheduledAt: newJob.scheduledAt,
-          quotedPrice: newJob.quotedPrice,
-          description: newJob.description,
-        }),
+        body: formData,
       });
-
       const data = (await res.json()) as CreateJobResponse;
 
       if (!res.ok) {
@@ -332,6 +361,7 @@ export default function AdminJobs() {
         description: ""
       });
       setWorkflowData({});
+      setSelectedAttachments([]);
 
       const createdCustomer = data.createdCustomer;
       if (createdCustomer) {
@@ -853,7 +883,7 @@ export default function AdminJobs() {
             <div className="flex items-center justify-between p-6 border-b border-outline-variant/50">
               <h2 className="text-xl font-bold text-on-surface">Tạo Job mới (Điều phối)</h2>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => { setIsModalOpen(false); setSelectedAttachments([]); }}
                 className="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface-variant"
               >
                 <XIcon size={24} />
@@ -1044,12 +1074,48 @@ export default function AdminJobs() {
                     onChange={e => setNewJob({ ...newJob, description: e.target.value })}
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface">File đính kèm</label>
+                  <label className="flex min-h-20 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant/60 bg-surface-container-lowest px-4 py-4 text-center transition-colors hover:bg-surface-container-low">
+                    <span className="text-sm font-bold text-primary-container">Chọn tệp</span>
+                    <span className="mt-1 text-xs text-on-surface-variant">Có thể chọn nhiều file, tối đa 10 file/công việc</span>
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleAttachmentChange}
+                      disabled={isSubmitting || selectedAttachments.length >= MAX_TASK_ATTACHMENTS}
+                    />
+                  </label>
+                  {selectedAttachments.length > 0 && (
+                    <div className="space-y-2 rounded-xl border border-outline-variant/35 bg-white p-3">
+                      {selectedAttachments.map((file, index) => (
+                        <div key={getAttachmentKey(file)} className="flex items-center gap-3 rounded-lg bg-surface-container-low px-3 py-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold text-on-surface" title={file.name}>{file.name}</p>
+                            <p className="text-xs font-medium text-on-surface-variant">{formatFileSize(file.size)}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeAttachment(index)}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-error-container hover:text-error"
+                            disabled={isSubmitting}
+                            aria-label={`Xóa file ${file.name}`}
+                          >
+                            <XIcon size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </form>
             </div>
 
             <div className="p-6 border-t border-outline-variant/50 flex justify-end gap-3 bg-surface-container-lowest rounded-b-2xl">
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => { setIsModalOpen(false); setSelectedAttachments([]); }}
                 className="btn-outline !py-2.5 !px-5"
                 disabled={isSubmitting}
               >
@@ -1064,7 +1130,7 @@ export default function AdminJobs() {
                 {isSubmitting ? (
                   <span className="flex items-center gap-2">
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Đang tạo...
+                    {selectedAttachments.length > 0 ? "Đang tải file..." : "Đang tạo..."}
                   </span>
                 ) : "Tạo Job"}
               </button>
@@ -1178,3 +1244,4 @@ export default function AdminJobs() {
     </>
   );
 }
+
