@@ -1,9 +1,7 @@
-const CACHE_VERSION = "tdn-app-shell-v1";
+const CACHE_VERSION = "tdn-app-shell-v2";
 const APP_SHELL_URLS = [
   "/",
   "/login",
-  "/worker",
-  "/worker/billgo",
   "/site.webmanifest",
   "/favicon-16x16.png",
   "/favicon-32x32.png",
@@ -50,7 +48,6 @@ async function networkFirstNavigation(request) {
     return response;
   } catch {
     return (await cache.match(request))
-      || (await cache.match("/worker"))
       || (await cache.match("/login"))
       || (await cache.match("/"))
       || Response.error();

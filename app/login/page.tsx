@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -9,6 +10,7 @@ import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../componen
 import { MapPinCheck } from "lucide-react";
 import { saveLoginLocation } from "@/services/locationService";
 import { ACTIVE_ROLE_COOKIE, resolvePostLoginDestination } from "@/lib/account-roles";
+import { getOfflineAuthSnapshot, rememberOfflineAuthSnapshot } from "@/lib/offline/session";
 import {
   DEMO_ACTION_BLOCK_MESSAGE,
   DEMO_SESSION_STORAGE_KEY,
@@ -41,45 +43,70 @@ export default function LoginPage() {
   useEffect(() => {
     let isMounted = true;
 
+    const redirectToOfflineSnapshot = (userId?: string) => {
+      const snapshot = getOfflineAuthSnapshot();
+      if (!snapshot?.destination) return false;
+      if (userId && snapshot.user.id !== userId) return false;
+      router.replace(snapshot.destination);
+      return true;
+    };
+
     const redirectExistingSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!isMounted) return;
       if (!user) {
+        if (!window.navigator.onLine && redirectToOfflineSnapshot()) return;
         setCheckingExistingSession(false);
         return;
       }
 
-      const [{ data: profile }, { data: worker }, { data: userRoles }] = await Promise.all([
-        supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single(),
-        supabase
-          .from("workers")
-          .select("status")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        supabase
-          .from("user_roles")
-          .select("role, is_active")
-          .eq("user_id", user.id),
-      ]);
+      try {
+        const [{ data: profile }, { data: worker }, { data: userRoles }] = await Promise.all([
+          supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single(),
+          supabase
+            .from("workers")
+            .select("status")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("user_roles")
+            .select("role, is_active")
+            .eq("user_id", user.id),
+        ]);
 
-      if (!isMounted) return;
-      if (!profile) {
+        if (!isMounted) return;
+        if (!profile) {
+          if (redirectToOfflineSnapshot(user.id)) return;
+          setCheckingExistingSession(false);
+          return;
+        }
+
+        const destination = resolvePostLoginDestination({
+          legacyRole: profile.role,
+          worker,
+          userRoles: userRoles || [],
+          preferredRole: getPreferredRole(),
+        });
+
+        rememberOfflineAuthSnapshot({
+          user,
+          destination,
+          legacyRole: profile.role,
+          worker,
+          userRoles: userRoles || [],
+          preferredRole: getPreferredRole(),
+        });
+
+        router.replace(destination);
+      } catch {
+        if (!isMounted) return;
+        if (redirectToOfflineSnapshot(user.id)) return;
         setCheckingExistingSession(false);
-        return;
       }
-
-      const destination = resolvePostLoginDestination({
-        legacyRole: profile.role,
-        worker,
-        userRoles: userRoles || [],
-        preferredRole: getPreferredRole(),
-      });
-
-      router.replace(destination);
     };
 
     redirectExistingSession();
@@ -102,7 +129,7 @@ export default function LoginPage() {
     );
   }
 
-  const finishLogin = async (userId: string, forceDemoSession = false) => {
+  const finishLogin = async (userId: string, forceDemoSession = false, authenticatedUser: User | null = null) => {
     const [{ data: profile, error: profileError }, { data: worker }, { data: userRoles }] = await Promise.all([
       supabase
       .from("profiles")
@@ -136,6 +163,15 @@ export default function LoginPage() {
     }
 
     const destination = resolvePostLoginDestination({
+      legacyRole: profile.role,
+      worker,
+      userRoles: userRoles || [],
+      preferredRole: getPreferredRole(),
+    });
+    const snapshotUser = authenticatedUser || (await supabase.auth.getUser()).data.user;
+    rememberOfflineAuthSnapshot({
+      user: snapshotUser,
+      destination,
       legacyRole: profile.role,
       worker,
       userRoles: userRoles || [],
@@ -194,7 +230,7 @@ export default function LoginPage() {
       return;
     }
 
-    await finishLogin(data.user.id, true);
+    await finishLogin(data.user.id, true, data.user);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -270,6 +306,14 @@ export default function LoginPage() {
       }
 
       const destination = resolvePostLoginDestination({
+        legacyRole: profile.role,
+        worker,
+        userRoles: userRoles || [],
+        preferredRole: getPreferredRole(),
+      });
+      rememberOfflineAuthSnapshot({
+        user: data.user,
+        destination,
         legacyRole: profile.role,
         worker,
         userRoles: userRoles || [],
