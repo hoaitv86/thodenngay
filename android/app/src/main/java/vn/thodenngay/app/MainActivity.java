@@ -4,6 +4,11 @@ import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -11,12 +16,15 @@ import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.ServiceWorkerController;
+import android.webkit.ServiceWorkerWebSettings;
 import android.webkit.URLUtil;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -27,19 +35,30 @@ import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.Bridge;
+import org.json.JSONTokener;
 
 public class MainActivity extends BridgeActivity {
     private static final String HOME_URL = "https://thodenngay.vn";
+    private static final String ANDROID_START_URL = "https://thodenngay.vn/login?app=android";
+    private static final String APP_HOST = "thodenngay.vn";
     private static final String PDF_MIME_TYPE = "application/pdf";
+    private static final String OFFLINE_PREFS = "tdn_android_offline_shell";
+    private static final String KEY_LAST_URL = "last_success_url";
+    private static final String KEY_LAST_HTML = "last_success_html";
+    private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
 
     private FrameLayout rootView;
     private LinearLayout errorView;
     private FrameLayout startupSplashView;
     private WebView webView;
+    private SharedPreferences offlinePrefs;
+    private boolean loadingOfflineFallback = false;
+    private String lastMainFrameErrorUrl;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        offlinePrefs = getSharedPreferences(OFFLINE_PREFS, Context.MODE_PRIVATE);
         registerBackHandler();
     }
 
@@ -49,6 +68,9 @@ public class MainActivity extends BridgeActivity {
         configureWebView();
         createNetworkErrorView();
         createStartupSplashView();
+        if (!hasNetworkConnection()) {
+            webView.postDelayed(() -> loadOfflineStartup(null), 250);
+        }
     }
 
     private void configureWebView() {
@@ -67,9 +89,21 @@ public class MainActivity extends BridgeActivity {
         settings.setUseWideViewPort(true);
         settings.setAllowContentAccess(true);
         settings.setAllowFileAccess(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setCacheMode(hasNetworkConnection() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
 
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            cookieManager.setAcceptThirdPartyCookies(webView, true);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            ServiceWorkerWebSettings swSettings = ServiceWorkerController.getInstance().getServiceWorkerWebSettings();
+            swSettings.setAllowContentAccess(true);
+            swSettings.setAllowFileAccess(false);
+            swSettings.setCacheMode(hasNetworkConnection() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             settings.setOffscreenPreRaster(true);
         }
@@ -134,7 +168,9 @@ public class MainActivity extends BridgeActivity {
         retry.setText(getString(R.string.network_error_retry));
         retry.setOnClickListener(v -> {
             hideNetworkError();
-            webView.loadUrl(HOME_URL);
+            loadingOfflineFallback = false;
+            configureCacheModeForNetwork();
+            webView.loadUrl(ANDROID_START_URL);
         });
 
         errorView.addView(title);
@@ -223,6 +259,126 @@ public class MainActivity extends BridgeActivity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    private boolean hasNetworkConnection() {
+        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) return false;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Network network = connectivityManager.getActiveNetwork();
+            if (network == null) return false;
+            NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+            return capabilities != null && (
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+                    || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                    || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            );
+        }
+
+        NetworkInfo networkInfo = connectivityManager.getActiveNetworkInfo();
+        return networkInfo != null && networkInfo.isConnected();
+    }
+
+    private void configureCacheModeForNetwork() {
+        int cacheMode = hasNetworkConnection() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK;
+        if (webView != null) {
+            webView.getSettings().setCacheMode(cacheMode);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setCacheMode(cacheMode);
+        }
+    }
+
+    private boolean isRemoteAppUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            return ("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) && APP_HOST.equalsIgnoreCase(uri.getHost());
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private String getFallbackUrl(String failedUrl) {
+        if (isRemoteAppUrl(failedUrl)) return failedUrl;
+        String storedUrl = offlinePrefs.getString(KEY_LAST_URL, null);
+        if (isRemoteAppUrl(storedUrl)) return storedUrl;
+        return ANDROID_START_URL;
+    }
+
+    private void rememberSuccessfulShell(WebView view, String url) {
+        if (!hasNetworkConnection() || !isRemoteAppUrl(url)) return;
+
+        offlinePrefs.edit().putString(KEY_LAST_URL, url).apply();
+        view.evaluateJavascript(
+            "(function(){try{return document.documentElement.outerHTML}catch(error){return ''}})();",
+            value -> {
+                try {
+                    Object parsed = new JSONTokener(value).nextValue();
+                    if (!(parsed instanceof String)) return;
+                    String html = (String) parsed;
+                    if (html.length() < 500 || !html.contains("__next")) return;
+                    if (html.length() > MAX_SNAPSHOT_CHARS) return;
+                    offlinePrefs.edit()
+                        .putString(KEY_LAST_URL, url)
+                        .putString(KEY_LAST_HTML, html)
+                        .apply();
+                } catch (Exception ignored) {
+                    // Keep the previous Android offline shell snapshot.
+                }
+            }
+        );
+    }
+
+    private boolean loadCachedHtmlSnapshot(String failedUrl) {
+        String html = offlinePrefs.getString(KEY_LAST_HTML, null);
+        if (html == null || html.length() < 500) return false;
+
+        String baseUrl = getFallbackUrl(failedUrl);
+        loadingOfflineFallback = true;
+        hideNetworkError();
+        configureCacheModeForNetwork();
+        webView.stopLoading();
+        webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", baseUrl);
+        return true;
+    }
+
+    private void loadOfflineStartup(String failedUrl) {
+        String fallbackUrl = getFallbackUrl(failedUrl);
+        loadingOfflineFallback = true;
+        hideNetworkError();
+        configureCacheModeForNetwork();
+
+        try {
+            webView.stopLoading();
+            webView.loadUrl(fallbackUrl);
+        } catch (Exception error) {
+            if (!loadCachedHtmlSnapshot(fallbackUrl)) {
+                showNetworkError();
+            }
+        }
+    }
+
+    private boolean isLikelyNetworkError(int errorCode) {
+        return errorCode == WebViewClient.ERROR_HOST_LOOKUP
+            || errorCode == WebViewClient.ERROR_CONNECT
+            || errorCode == WebViewClient.ERROR_TIMEOUT
+            || errorCode == WebViewClient.ERROR_IO
+            || errorCode == WebViewClient.ERROR_UNKNOWN;
+    }
+
+    private void handleMainFrameLoadError(String failedUrl, int errorCode) {
+        if (isLikelyNetworkError(errorCode)) {
+            if (!loadingOfflineFallback) {
+                loadOfflineStartup(failedUrl);
+                return;
+            }
+            if (loadCachedHtmlSnapshot(failedUrl)) {
+                return;
+            }
+        }
+        showNetworkError();
+    }
+
     private void downloadFile(String url, String userAgent, String contentDisposition, String mimeType) {
         try {
             Uri uri = Uri.parse(url);
@@ -287,13 +443,20 @@ public class MainActivity extends BridgeActivity {
             super.onPageFinished(view, url);
             hideNetworkError();
             hideStartupSplash();
+            if (loadingOfflineFallback) {
+                loadingOfflineFallback = false;
+                return;
+            }
+            rememberSuccessfulShell(view, url);
         }
 
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
             if (request.isForMainFrame()) {
-                showNetworkError();
+                lastMainFrameErrorUrl = request.getUrl().toString();
+                int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
+                handleMainFrameLoadError(lastMainFrameErrorUrl, errorCode);
             }
         }
 
@@ -301,6 +464,11 @@ public class MainActivity extends BridgeActivity {
         public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
             super.onReceivedHttpError(view, request, errorResponse);
             if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
+                lastMainFrameErrorUrl = request.getUrl().toString();
+                if (!loadingOfflineFallback && !hasNetworkConnection()) {
+                    loadOfflineStartup(lastMainFrameErrorUrl);
+                    return;
+                }
                 showNetworkError();
             }
         }
