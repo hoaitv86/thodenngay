@@ -6,6 +6,7 @@ import { syncOfflineMutations } from "@/lib/offline/cache";
 import { createClient } from "@/lib/supabase/client";
 
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
+const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
 
 function publishNetworkState() {
   window.dispatchEvent(
@@ -13,6 +14,51 @@ function publishNetworkState() {
       detail: { online: window.navigator.onLine, checkedAt: new Date().toISOString() },
     })
   );
+}
+
+function collectAppShellUrls() {
+  const urls = new Set<string>([
+    window.location.href,
+    new URL("/", window.location.origin).href,
+    new URL("/login", window.location.origin).href,
+    new URL("/site.webmanifest", window.location.origin).href,
+    new URL("/favicon.ico", window.location.origin).href,
+    new URL("/favicon-16x16.png", window.location.origin).href,
+    new URL("/favicon-32x32.png", window.location.origin).href,
+    new URL("/apple-touch-icon.png", window.location.origin).href,
+    new URL("/android-chrome-192x192.png", window.location.origin).href,
+    new URL("/android-chrome-512x512.png", window.location.origin).href,
+  ]);
+
+  document
+    .querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
+      'script[src], link[rel="stylesheet"], link[rel="preload"], link[rel="modulepreload"], link[rel="icon"], link[rel="apple-touch-icon"], link[rel="manifest"]'
+    )
+    .forEach((element) => {
+      const url = element instanceof HTMLScriptElement ? element.src : element.href;
+      if (!url) return;
+      try {
+        const parsed = new URL(url, window.location.href);
+        if (parsed.origin === window.location.origin) urls.add(parsed.href);
+      } catch {
+        // Ignore malformed browser-provided URLs.
+      }
+    });
+
+  return Array.from(urls);
+}
+
+function sendAppShellCacheMessage(registration: ServiceWorkerRegistration) {
+  if (!window.navigator.onLine) return;
+
+  const send = () => {
+    const worker = registration.active || navigator.serviceWorker.controller;
+    if (!worker) return;
+    worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls: collectAppShellUrls() });
+  };
+
+  send();
+  window.setTimeout(send, 1500);
 }
 
 export default function OfflineRuntime() {
@@ -36,7 +82,7 @@ export default function OfflineRuntime() {
     });
 
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
+      const registerServiceWorker = () => {
         navigator.serviceWorker
           .register("/offline-sw.js", { scope: "/" })
           .then((registration) => {
@@ -45,11 +91,19 @@ export default function OfflineRuntime() {
                 detail: { scope: registration.scope },
               })
             );
+            sendAppShellCacheMessage(registration);
+            void navigator.serviceWorker.ready.then(sendAppShellCacheMessage);
           })
           .catch((error) => {
-            console.warn("Không thể bật cache offline:", error);
+            console.warn("Unable to enable offline cache:", error);
           });
-      }, { once: true });
+      };
+
+      if (document.readyState === "complete") {
+        registerServiceWorker();
+      } else {
+        window.addEventListener("load", registerServiceWorker, { once: true });
+      }
     }
 
     return () => {
