@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   BriefcaseIcon,
   CalendarIcon,
@@ -49,6 +50,11 @@ type CustomerSummary = {
   services: string[];
 };
 
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
+};
+
 const currencyFormatter = new Intl.NumberFormat("vi-VN", {
   style: "currency",
   currency: "VND",
@@ -60,6 +66,58 @@ const getCustomerProfile = (customer: RawWorkerCustomerJob["customer"]) => {
 };
 
 const WORKER_CUSTOMERS_JOB_LIMIT = 200;
+
+function buildCustomerSummaries(jobs: RawWorkerCustomerJob[]) {
+  const summaries = new Map<string, CustomerSummary>();
+
+  jobs.forEach((job) => {
+    const customer = getCustomerProfile(job.customer);
+    const customerId = customer?.id || job.customer_id;
+    if (!customerId) return;
+    const current = summaries.get(customerId);
+    const jobDate = job.updated_at || job.scheduled_at || job.created_at;
+    const serviceName = job.service?.name || "Dịch vụ";
+    const isCompleted = job.status === "completed" || job.status === "done";
+    const isCancelled = job.status === "cancelled";
+
+    if (!current) {
+      summaries.set(customerId, {
+        id: customerId,
+        name: customer?.full_name || "Khách hàng",
+        phone: customer?.phone,
+        address: customer?.address || job.address,
+        jobCount: 1,
+        completedCount: isCompleted ? 1 : 0,
+        cancelledCount: isCancelled ? 1 : 0,
+        totalRevenue: isCompleted ? Number(job.quoted_price || 0) : 0,
+        lastJobAt: jobDate,
+        lastJobId: job.id,
+        services: [serviceName],
+      });
+      return;
+    }
+
+    current.jobCount += 1;
+    current.completedCount += isCompleted ? 1 : 0;
+    current.cancelledCount += isCancelled ? 1 : 0;
+    current.totalRevenue += isCompleted ? Number(job.quoted_price || 0) : 0;
+    current.address = current.address || customer?.address || job.address;
+    current.phone = current.phone || customer?.phone;
+
+    if (!current.services.includes(serviceName)) {
+      current.services.push(serviceName);
+    }
+
+    if (jobDate && (!current.lastJobAt || new Date(jobDate) > new Date(current.lastJobAt))) {
+      current.lastJobAt = jobDate;
+      current.lastJobId = job.id;
+    }
+  });
+
+  return [...summaries.values()].sort((a, b) =>
+    new Date(b.lastJobAt || 0).getTime() - new Date(a.lastJobAt || 0).getTime()
+  );
+}
 
 export default function WorkerCustomersPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -78,7 +136,37 @@ export default function WorkerCustomersPage() {
       setLoading(false);
       return;
     }
-    const cacheKey = `worker:customers:${user.id}`;
+
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    let cacheScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+    const cachedCustomers = cacheScope
+      ? await getCachedDataset<CustomerSummary[]>(makeWorkerDatasetKey("customers", cacheScope))
+      : null;
+    const cachedJobs = cacheScope
+      ? await getCachedDataset<RawWorkerCustomerJob[]>(makeWorkerDatasetKey("jobs", cacheScope))
+      : null;
+    const cachedCustomerSourceJobs = cacheScope
+      ? await getCachedDataset<RawWorkerCustomerJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "customers"))
+      : null;
+    const cachedSourceJobs = cachedJobs?.data || cachedCustomerSourceJobs?.data || null;
+
+    if (cachedSourceJobs) {
+      const nextCustomers = buildCustomerSummaries(cachedSourceJobs);
+      setCustomers(nextCustomers);
+      logOfflineDebug("hydrated from cache", { dataset: "customers", cacheKey: cachedJobs?.key || cachedCustomerSourceJobs?.key || null, recordCount: nextCustomers.length });
+      setLoading(false);
+    } else if (cachedCustomers) {
+      setCustomers(cachedCustomers.data);
+      logOfflineDebug("hydrated from cache", { dataset: "customers", cacheKey: cachedCustomers.key, recordCount: cachedCustomers.data.length });
+      setLoading(false);
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "customers", userId: user.id, reason: "offline" });
+      return;
+    }
 
     const { data: workerData, error: workerError } = await supabase
       .from("workers")
@@ -86,11 +174,10 @@ export default function WorkerCustomersPage() {
       .eq("user_id", user.id)
       .single();
 
+    const hasCachedCustomers = Boolean(cachedSourceJobs || cachedCustomers);
     if (workerError || !workerData) {
-      const cached = await getCachedDataset<CustomerSummary[]>(cacheKey);
-      if (cached) {
-        setCustomers(cached.data);
-        setLoading(false);
+      if (hasCachedCustomers) {
+        logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
         return;
       }
       setError("Không tìm thấy hồ sơ thợ.");
@@ -98,6 +185,8 @@ export default function WorkerCustomersPage() {
       setLoading(false);
       return;
     }
+
+    cacheScope = cacheScope || { userId: user.id, workerId: workerData.id, storeId: cachedProfile?.data.storeId || null };
 
     const { data: jobsData, error: jobsError } = await supabase
       .from("jobs")
@@ -118,10 +207,8 @@ export default function WorkerCustomersPage() {
       .range(0, WORKER_CUSTOMERS_JOB_LIMIT - 1);
 
     if (jobsError) {
-      const cached = await getCachedDataset<CustomerSummary[]>(cacheKey);
-      if (cached) {
-        setCustomers(cached.data);
-        setLoading(false);
+      if (hasCachedCustomers) {
+        logOfflineDebug("skipped cache overwrite", { dataset: "customers", cacheKey: makeWorkerDatasetKey("customers", cacheScope), reason: jobsError.message });
         return;
       }
       setError("Không thể tải danh sách khách hàng: " + jobsError.message);
@@ -130,56 +217,13 @@ export default function WorkerCustomersPage() {
       return;
     }
 
-    const summaries = new Map<string, CustomerSummary>();
-
-    ((jobsData || []) as RawWorkerCustomerJob[]).forEach((job) => {
-      const customer = getCustomerProfile(job.customer);
-      const customerId = customer?.id || job.customer_id;
-      const current = summaries.get(customerId);
-      const jobDate = job.updated_at || job.scheduled_at || job.created_at;
-      const serviceName = job.service?.name || "Dịch vụ";
-      const isCompleted = job.status === "completed" || job.status === "done";
-      const isCancelled = job.status === "cancelled";
-
-      if (!current) {
-        summaries.set(customerId, {
-          id: customerId,
-          name: customer?.full_name || "Khách hàng",
-          phone: customer?.phone,
-          address: customer?.address || job.address,
-          jobCount: 1,
-          completedCount: isCompleted ? 1 : 0,
-          cancelledCount: isCancelled ? 1 : 0,
-          totalRevenue: isCompleted ? Number(job.quoted_price || 0) : 0,
-          lastJobAt: jobDate,
-          lastJobId: job.id,
-          services: [serviceName],
-        });
-        return;
-      }
-
-      current.jobCount += 1;
-      current.completedCount += isCompleted ? 1 : 0;
-      current.cancelledCount += isCancelled ? 1 : 0;
-      current.totalRevenue += isCompleted ? Number(job.quoted_price || 0) : 0;
-      current.address = current.address || customer?.address || job.address;
-      current.phone = current.phone || customer?.phone;
-
-      if (!current.services.includes(serviceName)) {
-        current.services.push(serviceName);
-      }
-
-      if (jobDate && (!current.lastJobAt || new Date(jobDate) > new Date(current.lastJobAt))) {
-        current.lastJobAt = jobDate;
-        current.lastJobId = job.id;
-      }
-    });
-
-    const nextCustomers = [...summaries.values()].sort((a, b) =>
-      new Date(b.lastJobAt || 0).getTime() - new Date(a.lastJobAt || 0).getTime()
-    );
+    const sourceJobs = (jobsData || []) as RawWorkerCustomerJob[];
+    const nextCustomers = buildCustomerSummaries(sourceJobs);
     setCustomers(nextCustomers);
-    void setCachedDataset(cacheKey, nextCustomers);
+    await Promise.allSettled([
+      setCachedDataset(makeWorkerDatasetKey("customers", cacheScope), nextCustomers, { dataset: "customers", userId: user.id, workerId: workerData.id, storeId: cacheScope.storeId || null }),
+      setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "customers"), sourceJobs, { dataset: "jobs", variant: "customers", userId: user.id, workerId: workerData.id, storeId: cacheScope.storeId || null }),
+    ]);
     setLoading(false);
   }, [supabase]);
 

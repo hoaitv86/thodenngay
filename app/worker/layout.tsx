@@ -12,7 +12,8 @@ import {
   type WorkerRole,
 } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
-import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey } from "@/lib/offline/worker-data";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
 import { resolveWorkerFeatureModuleState } from "@/lib/worker-modules";
@@ -35,7 +36,13 @@ type MobileMoreGroup = {
 };
 
 type WorkerMembershipRow = {
+  unit_id?: string | null;
   member_role?: string | null;
+};
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null; user?: { full_name?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null; is_available?: boolean | null; status?: string | null; specialties?: unknown } | null;
+  storeId?: string | null;
 };
 
 type WorkerNotification = {
@@ -236,7 +243,7 @@ export default function WorkerLayout({
     const loadMemberships = async (userId: string) => {
       const { data, error } = await supabase
         .from("worker_unit_members")
-        .select("member_role")
+        .select("unit_id, member_role")
         .eq("user_id", userId)
         .eq("status", "active");
 
@@ -255,7 +262,8 @@ export default function WorkerLayout({
       if (!user) return;
       if (isMounted) setNotificationUserId(user.id);
 
-      const cacheKey = `worker:context:${user.id}`;
+      const legacyCacheKey = `worker:context:${user.id}`;
+      const profileCacheKey = makeWorkerUserDatasetKey("worker-profile", user.id);
       let [{ data: profile }, { data: worker }, memberships] = await Promise.all([
         supabase
           .from("profiles")
@@ -270,15 +278,39 @@ export default function WorkerLayout({
         loadMemberships(user.id),
       ]);
 
+      const storeId = memberships?.find((item) => item.unit_id)?.unit_id || null;
+
       if (!profile && !worker && (!memberships || memberships.length === 0)) {
-        const cached = await getCachedDataset<{ profile: typeof profile; worker: typeof worker; memberships: WorkerMembershipRow[] }>(cacheKey);
-        if (cached) {
-          profile = cached.data.profile;
-          worker = cached.data.worker;
-          memberships = cached.data.memberships;
+        const [cachedContext, cachedWorkerProfile] = await Promise.all([
+          getCachedDataset<{ profile: typeof profile; worker: typeof worker; memberships: WorkerMembershipRow[] }>(legacyCacheKey),
+          getCachedDataset<WorkerProfileCache>(profileCacheKey),
+        ]);
+        if (cachedContext) {
+          profile = cachedContext.data.profile;
+          worker = cachedContext.data.worker;
+          memberships = cachedContext.data.memberships;
+          logOfflineDebug("hydrated from cache", { dataset: "worker-profile", cacheKey: cachedContext.key });
+        }
+        if (!worker && cachedWorkerProfile?.data.worker) {
+          worker = cachedWorkerProfile.data.worker as typeof worker;
+          const cachedUser = cachedWorkerProfile.data.worker.user;
+          if (!profile && cachedUser) {
+            profile = {
+              full_name: cachedUser.full_name || null,
+              role: "worker",
+              phone: cachedUser.phone || null,
+              email: cachedUser.email || null,
+              address: cachedUser.address || null,
+            } as unknown as typeof profile;
+          }
+          logOfflineDebug("hydrated from cache", { dataset: "worker-profile", cacheKey: cachedWorkerProfile.key });
         }
       } else {
-        void setCachedDataset(cacheKey, { profile, worker, memberships });
+        void setCachedDataset(legacyCacheKey, { profile, worker, memberships }, { dataset: "worker-profile", userId: user.id, workerId: worker?.id || null, storeId });
+        if (worker?.id) {
+          void setCachedDataset(profileCacheKey, { worker, storeId } satisfies WorkerProfileCache, { dataset: "worker-profile", userId: user.id, workerId: worker.id, storeId });
+          void setCachedDataset(makeWorkerDatasetKey("store", { userId: user.id, workerId: worker.id, storeId }), { userId: user.id, workerId: worker.id, storeId }, { dataset: "store", userId: user.id, workerId: worker.id, storeId });
+        }
       }
 
       if (!isMounted) return;

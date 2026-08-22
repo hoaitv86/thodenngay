@@ -40,7 +40,8 @@ import {
   type BillGoPackageType,
 } from "@/lib/billgo-packages";
 import { createClient } from "@/lib/supabase/client";
-import { enqueueOfflineMutation, getCachedDataset, isLikelyOfflineError, setCachedDataset, syncOfflineMutations } from "@/lib/offline/cache";
+import { enqueueOfflineMutation, getCachedDataset, isLikelyOfflineError, logOfflineDebug, setCachedDataset, syncOfflineMutations } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   BILLGO_SERVICE_ICON_CONFIG,
   BILLGO_SERVICE_ICON_TYPES,
@@ -290,6 +291,11 @@ type BillGoListCacheResult = {
   total?: number | string;
   totals?: Partial<BillGoListTotals>;
   meta?: unknown;
+};
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
 };
 
 const currentDate = new Date();
@@ -887,6 +893,54 @@ export default function WorkerBillGoPage() {
     note: "",
   });
 
+  const applyBillGoListResult = useCallback((result: BillGoListCacheResult) => {
+    setRows(normalizeRows(result.rows || []));
+    setPage(Number(result.page || 1));
+    setPageCount(Number(result.pageCount || 1));
+    setTotalRows(Number(result.total || 0));
+    setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
+  }, []);
+
+  const loadBillGoOfflineScope = useCallback(async (): Promise<WorkerOfflineScope | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const profileKey = makeWorkerUserDatasetKey("worker-profile", user.id);
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(profileKey);
+    if (cachedProfile?.data.worker?.id) {
+      return { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null };
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "worker-profile", userId: user.id, reason: "offline" });
+      return { userId: user.id, workerId: "pending", storeId: null };
+    }
+
+    const [{ data: worker, error: workerError }, { data: membership }] = await Promise.all([
+      supabase
+        .from("workers")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("worker_unit_members")
+        .select("unit_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (workerError || !worker?.id) {
+      logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
+      return { userId: user.id, workerId: "pending", storeId: null };
+    }
+
+    const storeId = cachedProfile?.data.storeId || membership?.unit_id || null;
+    void setCachedDataset(profileKey, { worker, storeId } satisfies WorkerProfileCache, { dataset: "worker-profile", userId: user.id, workerId: worker.id, storeId });
+    return { userId: user.id, workerId: worker.id, storeId };
+  }, [supabase]);
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       try {
@@ -944,22 +998,48 @@ export default function WorkerBillGoPage() {
   }, [activeTab, areaStatusFilter, billingPeriodFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const fetchAreas = useCallback(async () => {
-    const cacheKey = "worker:areas";
+    const cacheScope = await loadBillGoOfflineScope();
+    const cacheKey = cacheScope ? makeWorkerDatasetKey("areas", cacheScope) : null;
+    const cached = cacheKey ? await getCachedDataset<AreaOption[]>(cacheKey) : null;
+
+    if (cached) {
+      setAreas(cached.data);
+      logOfflineDebug("hydrated from cache", { dataset: "areas", cacheKey, recordCount: cached.data.length });
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "areas", cacheKey, reason: "offline" });
+      return;
+    }
+
     try {
       const response = await fetch("/api/worker/areas");
       if (!response.ok) throw new Error("Không thể tải khu vực.");
       const result = await response.json();
       const nextAreas = (result.areas || []) as AreaOption[];
       setAreas(nextAreas);
-      void setCachedDataset(cacheKey, nextAreas);
-    } catch {
-      const cached = await getCachedDataset<AreaOption[]>(cacheKey);
-      setAreas(cached?.data || []);
+      if (cacheKey) void setCachedDataset(cacheKey, nextAreas, { dataset: "areas", userId: cacheScope?.userId, workerId: cacheScope?.workerId, storeId: cacheScope?.storeId || null });
+    } catch (error) {
+      logOfflineDebug("skipped cache overwrite", { dataset: "areas", cacheKey, reason: error instanceof Error ? error.message : "fetch-error" });
+      if (!cached) setAreas([]);
     }
-  }, []);
+  }, [loadBillGoOfflineScope]);
 
   const fetchPackages = useCallback(async () => {
-    const cacheKey = "billgo:packages";
+    const cacheScope = await loadBillGoOfflineScope();
+    const cacheKey = cacheScope ? makeWorkerDatasetKey("packages", cacheScope) : null;
+    const cached = cacheKey ? await getCachedDataset<BillGoPackage[]>(cacheKey) : null;
+
+    if (cached) {
+      setPackages(cached.data);
+      logOfflineDebug("hydrated from cache", { dataset: "packages", cacheKey, recordCount: cached.data.length });
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "packages", cacheKey, reason: "offline" });
+      return;
+    }
+
     const { data, error } = await supabase
       .from("billgo_packages")
       .select("id, code, name, type, provider, monthly_price, setup_price, allowed_cycles, description, is_active, sort_order")
@@ -968,70 +1048,63 @@ export default function WorkerBillGoPage() {
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
     if (error) {
-      const cached = await getCachedDataset<BillGoPackage[]>(cacheKey);
-      setPackages(cached?.data || []);
+      logOfflineDebug("skipped cache overwrite", { dataset: "packages", cacheKey, reason: error.message });
+      if (!cached) setPackages([]);
       return;
     }
     const nextPackages = (data || []) as BillGoPackage[];
     setPackages(nextPackages);
-    void setCachedDataset(cacheKey, nextPackages);
-  }, [supabase]);
+    if (cacheKey) void setCachedDataset(cacheKey, nextPackages, { dataset: "packages", userId: cacheScope?.userId, workerId: cacheScope?.workerId, storeId: cacheScope?.storeId || null });
+  }, [loadBillGoOfflineScope, supabase]);
 
   const fetchBillGo = useCallback(async () => {
     setLoading(true);
     setMessage("");
+
+    const params = new URLSearchParams({
+      month: monthFilter,
+      page: String(page),
+      limit: String(BILLGO_PAGE_SIZE),
+      due: dueFilter,
+      q: query.trim(),
+    });
+    if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
+    params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
+    if (viewMode === "area") {
+      if (selectedAreaId) params.set("areaId", selectedAreaId);
+      if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
+    }
+
+    const requestKey = params.toString();
+    const cacheScope = await loadBillGoOfflineScope();
+    const cacheKey = cacheScope ? makeWorkerDatasetKey("billgo", cacheScope, requestKey) : null;
+    const cached = cacheKey ? await getCachedDataset<BillGoListCacheResult>(cacheKey) : null;
+
+    if (cached) {
+      applyBillGoListResult(cached.data);
+      setMessage("");
+      setLoading(false);
+      logOfflineDebug("hydrated from cache", { dataset: "billgo", cacheKey, recordCount: cached.data.rows?.length || 0 });
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "billgo", cacheKey, reason: "offline" });
+      return;
+    }
+
     try {
-      const params = new URLSearchParams({
-        month: monthFilter,
-        page: String(page),
-        limit: String(BILLGO_PAGE_SIZE),
-        due: dueFilter,
-        q: query.trim(),
-      });
-      if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
-      params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
-      if (viewMode === "area") {
-        if (selectedAreaId) params.set("areaId", selectedAreaId);
-        if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
-      }
-      const startedAt = performance.now();
-      const requestKey = params.toString();
-      const cacheKey = `billgo:list:${requestKey}`;
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const response = await fetch(`/api/worker/billgo?${requestKey}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể tải BillGo.");
-      setRows(normalizeRows(result.rows || []));
-      setPage(Number(result.page || 1));
-      setPageCount(Number(result.pageCount || 1));
-      setTotalRows(Number(result.total || 0));
-      setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
-      void setCachedDataset(cacheKey, result);
+      applyBillGoListResult(result);
+      if (cacheKey) void setCachedDataset(cacheKey, result, { dataset: "billgo", variant: requestKey, userId: cacheScope?.userId, workerId: cacheScope?.workerId, storeId: cacheScope?.storeId || null });
       if (process.env.NODE_ENV !== "production") {
-        console.info("[BillGo] customer list loaded", { clientMs: Math.round(performance.now() - startedAt), server: result.meta });
+        console.info("[BillGo] customer list loaded", { clientMs: startedAt ? Math.round(performance.now() - startedAt) : null, server: result.meta });
       }
     } catch (error) {
-      const params = new URLSearchParams({
-        month: monthFilter,
-        page: String(page),
-        limit: String(BILLGO_PAGE_SIZE),
-        due: dueFilter,
-        q: query.trim(),
-      });
-      if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
-      params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
-      if (viewMode === "area") {
-        if (selectedAreaId) params.set("areaId", selectedAreaId);
-        if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
-      }
-      const cached = await getCachedDataset<BillGoListCacheResult>(`billgo:list:${params.toString()}`);
       if (cached) {
-        const result = cached.data;
-        setRows(normalizeRows(result.rows || []));
-        setPage(Number(result.page || 1));
-        setPageCount(Number(result.pageCount || 1));
-        setTotalRows(Number(result.total || 0));
-        setServerTotals({ ...emptyBillGoTotals, ...(result.totals || {}) });
-        setMessage("");
+        logOfflineDebug("skipped cache overwrite", { dataset: "billgo", cacheKey, reason: error instanceof Error ? error.message : "fetch-error" });
         return;
       }
       setMessage(error instanceof Error ? error.message : "Không thể tải BillGo.");
@@ -1042,7 +1115,7 @@ export default function WorkerBillGoPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+  }, [activeTab, applyBillGoListResult, areaStatusFilter, dueFilter, loadBillGoOfflineScope, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
 
   useEffect(() => {
     if (!viewStateHydrated) return;

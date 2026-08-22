@@ -3,13 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, CalendarClock, Clock, MapPin, Phone, Search, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getCachedDataset, setCachedDataset } from "@/lib/offline/cache";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 
 type CustomerProfile = {
   id?: string | null;
   full_name?: string | null;
   phone?: string | null;
   address?: string | null;
+};
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
 };
 
 type BacklogJob = {
@@ -54,6 +60,10 @@ const statusLabels: Record<string, { label: string; className: string }> = {
     className: "bg-error-container text-error",
   },
 };
+
+function filterBacklogJobs(jobs: BacklogJob[], currentMonthStart: Date) {
+  return jobs.filter(job => pendingStatuses.includes(job.status || "") && isBeforeCurrentMonth(job, currentMonthStart));
+}
 
 function isBeforeCurrentMonth(job: BacklogJob, currentMonthStart: Date) {
   const dateValue = getJobDate(job);
@@ -118,7 +128,29 @@ export default function WorkerJobs() {
       setLoading(false);
       return;
     }
-    const cacheKey = `worker:jobs:backlog:${user.id}`;
+
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    let cacheScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+    const cachedJobs = cacheScope
+      ? await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope))
+      : null;
+    const cachedBacklogJobs = cacheScope
+      ? await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog"))
+      : null;
+    const cachedSourceJobs = cachedJobs?.data || cachedBacklogJobs?.data || null;
+
+    if (cachedSourceJobs) {
+      setJobs(filterBacklogJobs(cachedSourceJobs, currentMonthStart));
+      logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cachedJobs?.key || cachedBacklogJobs?.key || null, recordCount: cachedSourceJobs.length });
+      setLoading(false);
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "jobs", userId: user.id, reason: "offline" });
+      return;
+    }
 
     const { data: worker, error: workerError } = await supabase
       .from("workers")
@@ -127,10 +159,8 @@ export default function WorkerJobs() {
       .single();
 
     if (workerError || !worker) {
-      const cached = await getCachedDataset<BacklogJob[]>(cacheKey);
-      if (cached) {
-        setJobs(cached.data);
-        setLoading(false);
+      if (cachedSourceJobs) {
+        logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
         return;
       }
       setMessage("Không tìm thấy hồ sơ thợ.");
@@ -138,6 +168,8 @@ export default function WorkerJobs() {
       setLoading(false);
       return;
     }
+
+    cacheScope = cacheScope || { userId: user.id, workerId: worker.id, storeId: null };
 
     const { data, error } = await supabase
       .from("jobs")
@@ -162,10 +194,8 @@ export default function WorkerJobs() {
       .range(0, WORKER_BACKLOG_LIMIT - 1);
 
     if (error) {
-      const cached = await getCachedDataset<BacklogJob[]>(cacheKey);
-      if (cached) {
-        setJobs(cached.data);
-        setLoading(false);
+      if (cachedSourceJobs) {
+        logOfflineDebug("skipped cache overwrite", { dataset: "jobs", cacheKey: makeWorkerDatasetKey("jobs", cacheScope, "backlog"), reason: error.message });
         return;
       }
       setMessage("Không thể tải danh sách tồn việc: " + error.message);
@@ -174,9 +204,10 @@ export default function WorkerJobs() {
       return;
     }
 
-    const nextJobs = ((data || []) as BacklogJob[]).filter(job => isBeforeCurrentMonth(job, currentMonthStart));
+    const sourceJobs = (data || []) as BacklogJob[];
+    const nextJobs = filterBacklogJobs(sourceJobs, currentMonthStart);
     setJobs(nextJobs);
-    void setCachedDataset(cacheKey, nextJobs);
+    await setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "backlog"), sourceJobs, { dataset: "jobs", variant: "backlog", userId: user.id, workerId: worker.id, storeId: cacheScope.storeId || null });
     setLoading(false);
   }, [currentMonthStart, supabase]);
 

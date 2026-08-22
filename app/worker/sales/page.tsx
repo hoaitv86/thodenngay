@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Package, Plus, Search, ShoppingCart } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 import {
   isMissingWorkerInventorySchemaError,
@@ -16,6 +18,11 @@ import {
 } from "@/lib/worker-sales";
 
 const WORKER_SALES_ORDER_LIMIT = 100;
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
+};
 
 export default function WorkerSalesPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -35,20 +42,44 @@ export default function WorkerSalesPage() {
       return;
     }
 
-    const { data: worker } = await supabase
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    const cachedScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+    const cachedOrders = cachedScope ? await getCachedDataset<WorkerSalesOrder[]>(makeWorkerDatasetKey("sales", cachedScope)) : null;
+
+    if (cachedOrders) {
+      setOrders(cachedOrders.data);
+      logOfflineDebug("hydrated from cache", { dataset: "sales", cacheKey: cachedOrders.key, recordCount: cachedOrders.data.length });
+      setLoading(false);
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "sales", userId: user.id, reason: "offline" });
+      return;
+    }
+
+    const { data: worker, error: workerError } = await supabase
       .from("workers")
       .select("id")
       .eq("user_id", user.id)
       .single();
-    const scope = worker ? await resolveWorkerUnitScope(supabase, user.id, worker.id) : null;
-    const scopedWorkerId = scope?.scopedWorkerId || worker?.id || "";
 
-    if (!worker) {
+    if (workerError || !worker) {
+      if (cachedOrders) {
+        logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
+        return;
+      }
       setMessage("Không tìm thấy hồ sơ thợ.");
       setOrders([]);
       setLoading(false);
       return;
     }
+
+    const scope = await resolveWorkerUnitScope(supabase, user.id, worker.id);
+    const scopedWorkerId = scope?.scopedWorkerId || worker.id;
+    const storeId = scope?.unitId || cachedProfile?.data.storeId || null;
+    const cacheScope: WorkerOfflineScope = { userId: user.id, workerId: scopedWorkerId, storeId };
 
     const { data, error } = await supabase
       .from("worker_sales_orders")
@@ -70,12 +101,23 @@ export default function WorkerSalesPage() {
       .range(0, WORKER_SALES_ORDER_LIMIT - 1);
 
     if (error) {
+      if (cachedOrders) {
+        logOfflineDebug("skipped cache overwrite", { dataset: "sales", cacheKey: makeWorkerDatasetKey("sales", cacheScope), reason: error.message });
+        return;
+      }
       setMessage(isMissingWorkerInventorySchemaError(error)
         ? missingWorkerInventorySchemaMessage
         : "Không thể tải lịch sử bán hàng: " + error.message);
       setOrders([]);
     } else {
-      setOrders((data || []) as WorkerSalesOrder[]);
+      const nextOrders = (data || []) as WorkerSalesOrder[];
+      setOrders(nextOrders);
+      await Promise.allSettled([
+        setCachedDataset(makeWorkerDatasetKey("sales", cacheScope), nextOrders, { dataset: "sales", userId: user.id, workerId: scopedWorkerId, storeId }),
+        scopedWorkerId !== worker.id
+          ? setCachedDataset(makeWorkerDatasetKey("sales", { userId: user.id, workerId: worker.id, storeId }), nextOrders, { dataset: "sales", userId: user.id, workerId: worker.id, storeId, aliasFor: scopedWorkerId })
+          : Promise.resolve(),
+      ]);
     }
     setLoading(false);
   }, [supabase]);

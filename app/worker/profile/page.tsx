@@ -4,6 +4,8 @@ import React, { useMemo, useState, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { getGpsLocationErrorMessage } from "@/lib/location";
 import {
   WORKER_UNIT_ASSIGNABLE_ROLES,
@@ -52,6 +54,17 @@ interface WorkerProfileData {
     created_at: string;
   } | null;
 }
+
+type WorkerProfileCache = {
+  worker?: (WorkerProfileData["worker"] & {
+    user?: Partial<Omit<WorkerProfileData, "worker">> | null;
+  }) | null;
+  storeId?: string | null;
+};
+
+type CachedProfileJob = {
+  status?: string | null;
+};
 
 type GpsLocation = {
   lat: number;
@@ -152,6 +165,48 @@ export default function WorkerProfile() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+        const cachedWorker = cachedProfile?.data.worker || null;
+        const cacheScope: WorkerOfflineScope | null = cachedWorker?.id
+          ? { userId: user.id, workerId: cachedWorker.id, storeId: cachedProfile?.data.storeId || null }
+          : null;
+        const cachedJobs = cacheScope
+          ? await getCachedDataset<CachedProfileJob[]>(makeWorkerDatasetKey("jobs", cacheScope))
+          : null;
+        const cachedJobsDone = cachedJobs?.data.filter(job => job.status === "completed" || job.status === "done").length;
+
+        if (cachedWorker) {
+          const cachedUser = cachedWorker.user || {};
+          const nextProfile = {
+            id: user.id,
+            email: cachedUser.email || user.email,
+            phone: cachedUser.phone || null,
+            full_name: cachedUser.full_name || user.email || "Thợ",
+            address: cachedUser.address || null,
+            gps_location: cachedUser.gps_location || null,
+            created_at: cachedUser.created_at || cachedWorker.created_at || new Date(0).toISOString(),
+            avatar_url: cachedUser.avatar_url || null,
+            worker: cachedWorker,
+          } as WorkerProfileData;
+          setProfile(nextProfile);
+          setProfileStats({
+            jobsDone: cachedJobsDone ?? cachedWorker.total_jobs ?? 0,
+            rating: cachedWorker.avg_rating || 0,
+          });
+          setSelectedSpecialties(cachedWorker.specialties || []);
+          setSelectedParentIds(inferWorkerSpecialtyParentIds(cachedWorker.specialties || []));
+          setSelectedChildValues(inferWorkerSpecialtyChildValues(cachedWorker.specialties || []));
+          setFullName(nextProfile.full_name || "");
+          setPhone(nextProfile.phone || "");
+          setLoading(false);
+          logOfflineDebug("hydrated from cache", { dataset: "worker-profile", cacheKey: cachedProfile?.key || null, recordCount: 1 });
+        }
+
+        if (typeof window !== "undefined" && !window.navigator.onLine) {
+          logOfflineDebug("server fetch skipped", { dataset: "worker-profile", userId: user.id, reason: "offline" });
+          return;
+        }
+
         // Get base profile
         const { data: userProfile } = await supabase
           .from('profiles')
@@ -194,6 +249,15 @@ export default function WorkerProfile() {
         if (userProfile) {
           setFullName(userProfile.full_name || "");
           setPhone(userProfile.phone || "");
+        }
+
+        if (workerData?.id) {
+          const storeId = cachedProfile?.data.storeId || null;
+          void setCachedDataset(
+            makeWorkerUserDatasetKey("worker-profile", user.id),
+            { worker: { ...workerData, user: userProfile }, storeId } satisfies WorkerProfileCache,
+            { dataset: "worker-profile", userId: user.id, workerId: workerData.id, storeId }
+          );
         }
 
         if (workerData?.status === "active") {

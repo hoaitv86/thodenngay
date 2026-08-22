@@ -49,6 +49,8 @@ import {
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents, getCompactServicePathLabel, groupServicesForDisplay, searchSelectableServices } from "@/lib/service-hierarchy";
@@ -132,9 +134,10 @@ type QuickCustomerOption = {
 };
 
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
+const WORKER_DASHBOARD_ALL_JOB_LIMIT = 500;
 const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
-const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
-const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
+const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, updated_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
+const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, updated_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
 
 interface WorkerJob {
   id: string;
@@ -150,6 +153,7 @@ interface WorkerJob {
   serviceName?: string;
   description?: string | null;
   created_at?: string;
+  updated_at?: string;
   assigned_at?: string;
   scheduled_at?: string;
   quoted_price: number;
@@ -395,6 +399,35 @@ const DEFAULT_WORKER_MONTHLY_GOAL = {
   newCustomersTarget: 10,
 };
 
+type WorkerRatingRow = {
+  score?: number | string | null;
+  created_at?: string | null;
+};
+
+type WorkerDashboardCacheSource = {
+  worker: WorkerWithProfile;
+  availableJobs: WorkerJob[];
+  workerJobs: WorkerJob[];
+  inventoryProducts: InventoryProduct[];
+  workerBillGoReceivables: WorkerBillGoReceivable[];
+  billGoPackages: BillGoPackage[];
+  services: ServiceOption[];
+  todayRatings: WorkerRatingRow[];
+  monthlyRatings: WorkerRatingRow[];
+  monthlyGoals: WorkerMonthlyGoal[];
+};
+
+type WorkerProfileCache = {
+  worker: WorkerWithProfile;
+  storeId?: string | null;
+};
+
+type WorkerStoreCache = {
+  userId: string;
+  workerId: string;
+  storeId: string | null;
+};
+
 const initialWorkerDashboardData: WorkerDashboardData = {
   worker: null,
   newJobs: [],
@@ -583,6 +616,136 @@ const getCurrentBrowserLocation = () => {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   });
+};
+
+const dashboardJobIconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
+
+const getDashboardJobCustomerName = (job: WorkerJob) => {
+  const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
+  return customer?.full_name || null;
+};
+
+const averageRating = (ratings: WorkerRatingRow[]) =>
+  ratings.length > 0
+    ? Number((ratings.reduce((sum, item) => sum + Number(item.score || 0), 0) / ratings.length).toFixed(1))
+    : 0;
+
+const calculateWorkerDashboardStats = (
+  workerData: WorkerWithProfile,
+  workerJobs: WorkerJob[],
+  todayRatings: WorkerRatingRow[],
+  monthlyRatings: WorkerRatingRow[],
+): WorkerDashboardStats => {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const nextDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  let income = 0;
+  let monthlyIncome = 0;
+  const servedCustomerIds = new Set<string>();
+  const todayCustomerIds = new Set<string>();
+  const monthlyCustomerIds = new Set<string>();
+  let todayIncome = 0;
+  let legacyTodayIncome = 0;
+  let hasTodayJobPayments = false;
+  let legacyMonthlyIncome = 0;
+  let hasMonthlyJobPayments = false;
+  const firstCompletedAtByCustomer = new Map<string, Date>();
+
+  workerJobs.forEach(job => {
+    if (job.status !== "completed" && job.status !== "done") return;
+    const completedDate = job.updated_at ? new Date(job.updated_at as string) : null;
+    const customerKey = job.customer_id || job.id;
+    if (completedDate) {
+      const firstCompletedAt = firstCompletedAtByCustomer.get(customerKey);
+      if (!firstCompletedAt || completedDate < firstCompletedAt) {
+        firstCompletedAtByCustomer.set(customerKey, completedDate);
+      }
+    }
+    const completedToday = Boolean(completedDate && completedDate >= todayStart && completedDate < nextDayStart);
+    const completedThisMonth = Boolean(completedDate && completedDate >= monthStart && completedDate < nextMonthStart);
+    servedCustomerIds.add(customerKey);
+    if (completedToday) todayCustomerIds.add(customerKey);
+    if (completedThisMonth) monthlyCustomerIds.add(customerKey);
+
+    income += Number(job.final_amount || job.quoted_price || 0);
+    if (completedToday) legacyTodayIncome += Number(job.final_amount || job.quoted_price || 0);
+    if (completedThisMonth) legacyMonthlyIncome += Number(job.final_amount || job.quoted_price || 0);
+
+    (job.payments || []).forEach(payment => {
+      if (payment.status !== "paid" || !payment.paid_at) return;
+      const paidDate = new Date(payment.paid_at);
+      if (paidDate >= todayStart && paidDate < nextDayStart) {
+        hasTodayJobPayments = true;
+        todayIncome += Number(payment.amount || 0);
+      }
+      if (paidDate >= monthStart && paidDate < nextMonthStart) {
+        hasMonthlyJobPayments = true;
+        monthlyIncome += Number(payment.amount || 0);
+      }
+    });
+  });
+
+  if (!hasTodayJobPayments) todayIncome = legacyTodayIncome;
+  if (!hasMonthlyJobPayments) monthlyIncome = legacyMonthlyIncome;
+
+  return {
+    jobsDone: servedCustomerIds.size,
+    income,
+    rating: workerData.avg_rating || 0,
+    todayCustomers: todayCustomerIds.size,
+    todayIncome,
+    todayRating: averageRating(todayRatings),
+    monthlyCustomers: monthlyCustomerIds.size,
+    monthlyNewCustomers: [...firstCompletedAtByCustomer.values()].filter(firstCompletedAt => firstCompletedAt >= monthStart && firstCompletedAt < nextMonthStart).length,
+    monthlyIncome,
+    monthlyRating: averageRating(monthlyRatings),
+  };
+};
+
+const buildWorkerDashboardDataFromSource = (source: WorkerDashboardCacheSource, mockActiveJobs: WorkerJob[] = []): WorkerDashboardData => {
+  const workerData = source.worker;
+  const workerIsAvailable = workerData.is_available !== false;
+  const workerProfileGps = isGpsPoint(workerData.user?.gps_location) ? workerData.user.gps_location : null;
+  const mapJob = (job: WorkerJob, fallbackCustomerName: string) => {
+    const route = getRouteEstimate(
+      isGpsPoint(job.worker_gps_location) ? job.worker_gps_location : workerProfileGps,
+      getJobCustomerGps(job)
+    );
+    return {
+      ...job,
+      customerName: getDashboardJobCustomerName(job) || fallbackCustomerName,
+      serviceName: job.service?.name || undefined,
+      icon: dashboardJobIconMap[job.service?.icon || ""] || BriefcaseIcon,
+      price: new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(job.quoted_price),
+      time: new Date(job.scheduled_at || job.created_at || Date.now()).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+      distance: route.distance,
+      eta: route.eta,
+      hasGpsEstimate: route.hasGps,
+    };
+  };
+
+  const mappedNew = workerIsAvailable
+    ? sortJobsNewestFirst(source.availableJobs.map(job => mapJob(job, "Khách hàng")))
+    : [];
+  const mappedPendingApproval = sortJobsNewestFirst(source.workerJobs.filter(job => job.status === "pending").map(job => mapJob(job, "Khách hàng")));
+  const mappedActive = sortJobsNewestFirst(source.workerJobs.filter(job => job.status === "assigned" || job.status === "in_progress").map(job => mapJob(job, "Khách vãng lai")));
+
+  return {
+    worker: workerData,
+    newJobs: mappedNew,
+    pendingApprovalJobs: mappedPendingApproval,
+    activeJobs: sortJobsNewestFirst([
+      ...mockActiveJobs,
+      ...mappedActive.filter(job => !mockActiveJobs.some(mockJob => mockJob.id === job.id)),
+    ]),
+    inventoryProducts: source.inventoryProducts,
+    workerBillGoReceivables: source.workerBillGoReceivables,
+    billGoPackages: source.billGoPackages,
+    services: source.services,
+    workerStats: calculateWorkerDashboardStats(workerData, source.workerJobs, source.todayRatings, source.monthlyRatings),
+  };
 };
 
 export default function WorkerDashboard() {
@@ -1089,22 +1252,7 @@ export default function WorkerDashboard() {
     return () => window.removeEventListener("worker:open-quick-job", openQuickJob);
   }, []);
 
-  const loadWorkerMonthlyGoal = React.useCallback(async (workerId: string, isBackground = false) => {
-    const { data, error } = await supabase
-      .from("worker_monthly_goals")
-      .select("id, worker_id, goal_month, revenue_target, total_customers_target, new_customers_target, skipped")
-      .eq("worker_id", workerId)
-      .in("goal_month", [currentGoalMonth, previousGoalMonth])
-      .order("goal_month", { ascending: false });
-
-    if (error) {
-      if (!isBackground) {
-        setMonthlyGoalError("Chưa tải được mục tiêu tháng. Hãy chạy migration worker_monthly_goals.");
-      }
-      return;
-    }
-
-    const goals = (data || []) as unknown as WorkerMonthlyGoal[];
+  const applyWorkerMonthlyGoalRows = React.useCallback((goals: WorkerMonthlyGoal[]) => {
     const currentGoal = goals.find(goal => goal.goal_month === currentGoalMonth) || null;
     const previousGoal = goals.find(goal => goal.goal_month === previousGoalMonth) || null;
     const suggestion = currentGoal
@@ -1126,8 +1274,80 @@ export default function WorkerDashboard() {
     setMonthlyGoalDraft(makeGoalDraft(suggestion));
     if (!currentGoal) setMonthlyGoalFormOpen(true);
     if (currentGoal?.skipped) setMonthlyGoalFormOpen(false);
-  }, [currentGoalMonth, previousGoalMonth, supabase]);
+  }, [currentGoalMonth, previousGoalMonth]);
 
+  const loadWorkerMonthlyGoal = React.useCallback(async (workerId: string, isBackground = false, cacheScope?: WorkerOfflineScope) => {
+    const cacheKey = cacheScope ? makeWorkerDatasetKey("monthly-goals", cacheScope) : null;
+    const cached = cacheKey ? await getCachedDataset<WorkerMonthlyGoal[]>(cacheKey) : null;
+    const { data, error } = await supabase
+      .from("worker_monthly_goals")
+      .select("id, worker_id, goal_month, revenue_target, total_customers_target, new_customers_target, skipped")
+      .eq("worker_id", workerId)
+      .in("goal_month", [currentGoalMonth, previousGoalMonth])
+      .order("goal_month", { ascending: false });
+
+    if (error) {
+      if (cached) {
+        applyWorkerMonthlyGoalRows(cached.data);
+        logOfflineDebug("server fetch error", { dataset: "monthly-goals", cacheKey, reason: error.message });
+        return cached.data;
+      }
+      if (!isBackground) {
+        setMonthlyGoalError("Chưa tải được mục tiêu tháng. Hãy chạy migration worker_monthly_goals.");
+      }
+      logOfflineDebug("skipped cache overwrite", { dataset: "monthly-goals", cacheKey, reason: error.message });
+      return [] as WorkerMonthlyGoal[];
+    }
+
+    const goals = (data || []) as unknown as WorkerMonthlyGoal[];
+    applyWorkerMonthlyGoalRows(goals);
+    if (cacheKey) void setCachedDataset(cacheKey, goals, { dataset: "monthly-goals", workerId });
+    return goals;
+  }, [applyWorkerMonthlyGoalRows, currentGoalMonth, previousGoalMonth, supabase]);
+
+  const hydrateDashboardFromCache = React.useCallback(async (userId: string) => {
+    const profileKey = makeWorkerUserDatasetKey("worker-profile", userId);
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(profileKey);
+    const cachedWorker = cachedProfile?.data.worker || null;
+    if (!cachedWorker?.id) return null;
+
+    const cacheScope: WorkerOfflineScope = {
+      userId,
+      workerId: cachedWorker.id,
+      storeId: cachedProfile?.data.storeId || null,
+    };
+    const dashboardKey = makeWorkerDatasetKey("dashboard-summary", cacheScope);
+    const cachedDashboard = await getCachedDataset<WorkerDashboardCacheSource>(dashboardKey);
+    if (!cachedDashboard) return { scope: cacheScope, source: null };
+
+    setDashboardData(buildWorkerDashboardDataFromSource(cachedDashboard.data, mockActiveJobsRef.current));
+    applyWorkerMonthlyGoalRows(cachedDashboard.data.monthlyGoals || []);
+    setLoading(false);
+    logOfflineDebug("hydrated from cache", {
+      dataset: "dashboard-summary",
+      cacheKey: dashboardKey,
+      workerId: cachedWorker.id,
+      recordCount: cachedDashboard.data.workerJobs.length,
+    });
+    return { scope: cacheScope, source: cachedDashboard.data };
+  }, [applyWorkerMonthlyGoalRows]);
+
+  const loadWorkerStoreId = React.useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from("worker_unit_members")
+      .select("unit_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      logOfflineDebug("server fetch error", { dataset: "store", userId, reason: error.message });
+      return null;
+    }
+
+    return typeof data?.unit_id === "string" ? data.unit_id : null;
+  }, [supabase]);
   const saveWorkerMonthlyGoal = async (skipped = false) => {
     if (!worker?.id) return;
 
@@ -1171,8 +1391,16 @@ export default function WorkerDashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    const cachedDashboard = await hydrateDashboardFromCache(user.id);
+    const cachedSource = cachedDashboard?.source || null;
+
+    if (typeof window !== 'undefined' && !window.navigator.onLine) {
+      logOfflineDebug('server fetch skipped', { dataset: 'dashboard-summary', userId: user.id, reason: 'offline' });
+      return;
+    }
+
     // 2. Get worker profile
-    const { data: workerData } = await supabase
+    const { data: workerData, error: workerError } = await supabase
       .from('workers')
       .select('id, user_id, specialties, status, is_available, avg_rating, total_jobs, certificates, approved_at, created_at, user:profiles(id, full_name, phone, email, address, gps_location, latitude, longitude)')
       .eq('user_id', user.id)
@@ -1185,9 +1413,17 @@ export default function WorkerDashboard() {
       } as unknown as WorkerWithProfile
       : null;
 
+    if ((workerError || !normalizedWorkerData) && cachedSource) {
+      logOfflineDebug('server fetch error', { dataset: 'worker-profile', userId: user.id, reason: workerError?.message || 'missing-worker' });
+      if (!isBackground) setLoading(false);
+      return;
+    }
+
     if (normalizedWorkerData) {
       const workerData = normalizedWorkerData;
-      await loadWorkerMonthlyGoal(workerData.id, isBackground);
+      const storeId = await loadWorkerStoreId(user.id);
+      const cacheScope: WorkerOfflineScope = { userId: user.id, workerId: workerData.id, storeId };
+      const monthlyGoals = await loadWorkerMonthlyGoal(workerData.id, isBackground, cacheScope);
       const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
       const isDemoWorker = isDemoAccount(workerData.user);
@@ -1205,9 +1441,11 @@ export default function WorkerDashboard() {
         .order("name", { ascending: true });
 
       if (inventoryError) {
+        nextInventoryProducts = cachedSource?.inventoryProducts || [];
         if (!isMissingWorkerInventorySchemaError(inventoryError) && !isBackground) {
-          showToast("Không thể tải kho hàng: " + inventoryError.message, "error");
+          showToast('Không thể tải kho hàng: ' + inventoryError.message, 'error');
         }
+        logOfflineDebug('skipped cache overwrite', { dataset: 'inventory', cacheKey: makeWorkerDatasetKey('inventory', cacheScope), reason: inventoryError.message });
       } else {
         nextInventoryProducts = (inventoryData || []) as InventoryProduct[];
       }
@@ -1218,22 +1456,15 @@ export default function WorkerDashboard() {
         .eq('is_active', true)
         .order('name', { ascending: true });
 
-      if (servicesError) {
-        const fallback = await supabase
-          .from('services')
-          .select('id, name, description, base_price, icon')
-          .eq('is_active', true)
-          .order('name', { ascending: true });
-        serviceOptions = fallback.data?.map(service => ({ ...service, parent_service_id: null })) || null;
-        servicesError = fallback.error;
-      }
-
       let servicesForMatching: ServiceOption[] = [];
 
       if (servicesError) {
+        servicesForMatching = cachedSource?.services || [];
+        nextServices = servicesForMatching;
         if (!isBackground) {
-          showToast("Không thể tải danh sách dịch vụ: " + servicesError.message, "error");
+          showToast('Không thể tải danh sách dịch vụ: ' + servicesError.message, 'error');
         }
+        logOfflineDebug('skipped cache overwrite', { dataset: 'categories', cacheKey: makeWorkerDatasetKey('categories', cacheScope), reason: servicesError.message });
       } else {
         const servicesWithParents = filterStandardServiceCatalog(applyDefaultServiceParents(serviceOptions || []));
         servicesForMatching = (isDemoWorker
@@ -1254,15 +1485,17 @@ export default function WorkerDashboard() {
         .order("name", { ascending: true });
 
       if (packageError) {
+        nextBillGoPackages = cachedSource?.billGoPackages || [];
         if (!isBackground) {
-          showToast("Không thể tải danh mục gói cước: " + packageError.message, "error");
+          showToast('Không thể tải danh mục gói cước: ' + packageError.message, 'error');
         }
+        logOfflineDebug('skipped cache overwrite', { dataset: 'packages', cacheKey: makeWorkerDatasetKey('packages', cacheScope), reason: packageError.message });
       } else {
         nextBillGoPackages = (packageData || []) as BillGoPackage[];
       }
 
       // 3. Get New Jobs (Pending)
-      const { data: pendingJobs } = await supabase
+      const { data: pendingJobs, error: pendingJobsError } = await supabase
         .from('jobs')
         .select(WORKER_DASHBOARD_JOB_SELECT)
         .eq('status', 'pending')
@@ -1270,14 +1503,19 @@ export default function WorkerDashboard() {
         .order('created_at', { ascending: false });
 
       // Filter pending jobs matching worker specialties
-      const filteredPending = ((pendingJobs || []) as unknown as WorkerJob[]).filter(j => {
-        if (isDemoWorker) return true;
-        const matchedService = servicesForMatching.find(service => service.id === j.service_id);
-        return j.service && serviceMatchesSpecialties({
-          ...j.service,
-          parentName: matchedService?.parentName || null,
-        }, workerSpecialties, { allowEmptySpecialties: false });
-      });
+      const filteredPending = pendingJobsError
+        ? (cachedSource?.availableJobs || [])
+        : ((pendingJobs || []) as unknown as WorkerJob[]).filter(j => {
+          if (isDemoWorker) return true;
+          const matchedService = servicesForMatching.find(service => service.id === j.service_id);
+          return j.service && serviceMatchesSpecialties({
+            ...j.service,
+            parentName: matchedService?.parentName || null,
+          }, workerSpecialties, { allowEmptySpecialties: false });
+        });
+      if (pendingJobsError) {
+        logOfflineDebug('skipped cache overwrite', { dataset: 'jobs', cacheKey: makeWorkerDatasetKey('jobs', cacheScope, 'available'), reason: pendingJobsError.message });
+      }
 
       // Map icon component
       const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
@@ -1305,7 +1543,7 @@ export default function WorkerDashboard() {
       }
 
       // 4. Get Worker Submitted Jobs (Waiting for Admin Approval)
-      const { data: workerPendingJobs } = await supabase
+      const { data: workerPendingJobs, error: workerPendingJobsError } = await supabase
         .from('jobs')
         .select(WORKER_DASHBOARD_JOB_SELECT)
         .eq('worker_id', workerData.id)
@@ -1313,7 +1551,14 @@ export default function WorkerDashboard() {
         .order('created_at', { ascending: false })
         .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1);
 
-      const mappedPendingApproval = sortJobsNewestFirst(((workerPendingJobs || []) as unknown as WorkerJob[]).map(j => {
+      const workerPendingJobsSource = workerPendingJobsError
+        ? (cachedSource?.workerJobs || []).filter(job => job.status === 'pending')
+        : ((workerPendingJobs || []) as unknown as WorkerJob[]);
+      if (workerPendingJobsError) {
+        logOfflineDebug('skipped cache overwrite', { dataset: 'jobs', cacheKey: makeWorkerDatasetKey('jobs', cacheScope), reason: workerPendingJobsError.message });
+      }
+
+      const mappedPendingApproval = sortJobsNewestFirst(workerPendingJobsSource.map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
         const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
         return {
@@ -1345,7 +1590,12 @@ export default function WorkerDashboard() {
           .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
       }
 
-      const assignedJobs = (assignedJobsResult.data || []) as WorkerJob[];
+      const assignedJobs = assignedJobsResult.error
+        ? (cachedSource?.workerJobs || []).filter(job => job.status === 'assigned' || job.status === 'in_progress')
+        : (assignedJobsResult.data || []) as WorkerJob[];
+      if (assignedJobsResult.error) {
+        logOfflineDebug('skipped cache overwrite', { dataset: 'jobs', cacheKey: makeWorkerDatasetKey('jobs', cacheScope), reason: assignedJobsResult.error.message });
+      }
       
       const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
@@ -1369,108 +1619,55 @@ export default function WorkerDashboard() {
         ...mappedActive.filter(job => !mockActiveJobs.some(mockJob => mockJob.id === job.id)),
       ]);
 
-      // 6. Calculate Real Stats
+      // 6. Cache all worker jobs and calculate stats from the same source data.
+      let workerJobsResult = await supabase
+        .from('jobs')
+        .select(WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT)
+        .eq('worker_id', workerData.id)
+        .order('updated_at', { ascending: false })
+        .range(0, WORKER_DASHBOARD_ALL_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
+
+      if (workerJobsResult.error && isMissingWorkflowColumn(workerJobsResult.error.message)) {
+        workerJobsResult = await supabase
+          .from('jobs')
+          .select(WORKER_DASHBOARD_JOB_SELECT + ', payments(id, amount, method, status, paid_at, note)')
+          .eq('worker_id', workerData.id)
+          .order('updated_at', { ascending: false })
+          .range(0, WORKER_DASHBOARD_ALL_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
+      }
+
+      const workerJobs = workerJobsResult.error
+        ? (cachedSource?.workerJobs || [])
+        : (workerJobsResult.data || []) as WorkerJob[];
+      if (workerJobsResult.error) {
+        logOfflineDebug('skipped cache overwrite', { dataset: 'jobs', cacheKey: makeWorkerDatasetKey('jobs', cacheScope), reason: workerJobsResult.error.message });
+      }
+
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const nextDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const { data: workerJobs } = await supabase
-        .from('jobs')
-        .select('id, status, customer_id, quoted_price, final_amount, updated_at, payments(id, amount, status, paid_at)')
-        .eq('worker_id', workerData.id);
 
-      let income = 0;
-      let jobsDone = 0;
-      let monthlyIncome = 0;
-      const servedCustomerIds = new Set<string>();
-      const todayCustomerIds = new Set<string>();
-      const monthlyCustomerIds = new Set<string>();
-      let todayIncome = 0;
-      let legacyTodayIncome = 0;
-      let hasTodayJobPayments = false;
-      let legacyMonthlyIncome = 0;
-      let hasMonthlyJobPayments = false;
-      const firstCompletedAtByCustomer = new Map<string, Date>();
+      const { data: todayRatings, error: todayRatingsError } = await supabase
+        .from('ratings')
+        .select('score, created_at')
+        .eq('worker_id', workerData.id)
+        .gte('created_at', todayStart.toISOString())
+        .lt('created_at', nextDayStart.toISOString());
 
-      if (workerJobs) {
-        workerJobs.forEach(j => {
-          if (j.status === 'completed' || j.status === 'done') {
-            const completedDate = j.updated_at ? new Date(j.updated_at) : null;
-            const customerKey = j.customer_id || j.id;
-            if (completedDate) {
-              const firstCompletedAt = firstCompletedAtByCustomer.get(customerKey);
-              if (!firstCompletedAt || completedDate < firstCompletedAt) {
-                firstCompletedAtByCustomer.set(customerKey, completedDate);
-              }
-            }
-            const completedToday = Boolean(
-              completedDate &&
-              completedDate >= todayStart &&
-              completedDate < nextDayStart
-            );
-            const completedThisMonth = Boolean(
-              completedDate &&
-              completedDate >= monthStart &&
-              completedDate < nextMonthStart
-            );
-            servedCustomerIds.add(customerKey);
-            if (completedToday) todayCustomerIds.add(customerKey);
-            if (completedThisMonth) monthlyCustomerIds.add(customerKey);
+      const { data: monthlyRatings, error: monthlyRatingsError } = await supabase
+        .from('ratings')
+        .select('score, created_at')
+        .eq('worker_id', workerData.id)
+        .gte('created_at', monthStart.toISOString())
+        .lt('created_at', nextMonthStart.toISOString());
 
-            income += Number(j.final_amount || j.quoted_price || 0);
-            if (completedToday) {
-              legacyTodayIncome += Number(j.final_amount || j.quoted_price || 0);
-            }
-            if (completedThisMonth) {
-              legacyMonthlyIncome += Number(j.final_amount || j.quoted_price || 0);
-            }
-
-            (j.payments || []).forEach(payment => {
-              if (payment.status !== "paid" || !payment.paid_at) return;
-              const paidDate = new Date(payment.paid_at);
-              if (paidDate >= todayStart && paidDate < nextDayStart) {
-                hasTodayJobPayments = true;
-                todayIncome += Number(payment.amount || 0);
-              }
-              if (paidDate >= monthStart && paidDate < nextMonthStart) {
-                hasMonthlyJobPayments = true;
-                monthlyIncome += Number(payment.amount || 0);
-              }
-            });
-          }
-        });
-      }
-
-      jobsDone = servedCustomerIds.size;
-      if (!hasTodayJobPayments) todayIncome = legacyTodayIncome;
-      if (!hasMonthlyJobPayments) monthlyIncome = legacyMonthlyIncome;
-      const monthlyNewCustomerCount = [...firstCompletedAtByCustomer.values()]
-        .filter(firstCompletedAt => firstCompletedAt >= monthStart && firstCompletedAt < nextMonthStart)
-        .length;
-
-      const { data: todayRatings } = await supabase
-        .from("ratings")
-        .select("score, created_at")
-        .eq("worker_id", workerData.id)
-        .gte("created_at", todayStart.toISOString())
-        .lt("created_at", nextDayStart.toISOString());
-
-      const { data: monthlyRatings } = await supabase
-        .from("ratings")
-        .select("score, created_at")
-        .eq("worker_id", workerData.id)
-        .gte("created_at", monthStart.toISOString())
-        .lt("created_at", nextMonthStart.toISOString());
-
-      const todayRating = todayRatings && todayRatings.length > 0
-        ? Number((todayRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / todayRatings.length).toFixed(1))
-        : 0;
-
-      const monthlyRating = monthlyRatings && monthlyRatings.length > 0
-        ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
-        : 0;
-
+      const effectiveTodayRatings = todayRatingsError ? (cachedSource?.todayRatings || []) : ((todayRatings || []) as WorkerRatingRow[]);
+      const effectiveMonthlyRatings = monthlyRatingsError ? (cachedSource?.monthlyRatings || []) : ((monthlyRatings || []) as WorkerRatingRow[]);
+      if (todayRatingsError) logOfflineDebug('skipped cache overwrite', { dataset: 'dashboard-summary', cacheKey: makeWorkerDatasetKey('dashboard-summary', cacheScope), reason: todayRatingsError.message });
+      if (monthlyRatingsError) logOfflineDebug('skipped cache overwrite', { dataset: 'dashboard-summary', cacheKey: makeWorkerDatasetKey('dashboard-summary', cacheScope), reason: monthlyRatingsError.message });
+      const nextWorkerStats = calculateWorkerDashboardStats(workerData, workerJobs, effectiveTodayRatings, effectiveMonthlyRatings);
       const billGoMonthEnd = toBillGoDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0));
       const { data: billGoReceivablesData, error: billGoReceivablesError } = await supabase
         .from("billgo_receivables")
@@ -1483,12 +1680,27 @@ export default function WorkerDashboard() {
         .range(0, WORKER_DASHBOARD_BILLGO_LIMIT - 1);
 
       if (billGoReceivablesError) {
+        nextWorkerBillGoReceivables = cachedSource?.workerBillGoReceivables || [];
         if (!isBackground) {
-          showToast("Không thể tải danh sách khách BillGo: " + billGoReceivablesError.message, "error");
+          showToast('Không thể tải danh sách khách BillGo: ' + billGoReceivablesError.message, 'error');
         }
+        logOfflineDebug('skipped cache overwrite', { dataset: 'billgo', cacheKey: makeWorkerDatasetKey('billgo', cacheScope, 'dashboard'), reason: billGoReceivablesError.message });
       } else {
         nextWorkerBillGoReceivables = (billGoReceivablesData || []) as unknown as WorkerBillGoReceivable[];
       }
+
+      const cacheSource: WorkerDashboardCacheSource = {
+        worker: workerData,
+        availableJobs: filteredPending,
+        workerJobs,
+        inventoryProducts: nextInventoryProducts,
+        workerBillGoReceivables: nextWorkerBillGoReceivables,
+        billGoPackages: nextBillGoPackages,
+        services: nextServices,
+        todayRatings: effectiveTodayRatings,
+        monthlyRatings: effectiveMonthlyRatings,
+        monthlyGoals,
+      };
 
       setDashboardData(prev => ({
         ...prev,
@@ -1500,20 +1712,27 @@ export default function WorkerDashboard() {
         workerBillGoReceivables: nextWorkerBillGoReceivables,
         billGoPackages: nextBillGoPackages,
         services: nextServices,
-        workerStats: {
-          jobsDone: workerJobs ? jobsDone : workerData.total_jobs || 0,
-          income: income,
-          rating: workerData.avg_rating || 0,
-          todayCustomers: todayCustomerIds.size,
-          todayIncome,
-          todayRating,
-          monthlyCustomers: monthlyCustomerIds.size,
-          monthlyNewCustomers: monthlyNewCustomerCount,
-          monthlyIncome,
-          monthlyRating,
-        },
+        workerStats: nextWorkerStats,
       }));
-    } else {
+
+      const canSaveDashboardSource = !workerJobsResult.error && !pendingJobsError && !servicesError && !inventoryError && !packageError && !billGoReceivablesError && !todayRatingsError && !monthlyRatingsError;
+      const cacheWrites: Promise<unknown>[] = [
+        setCachedDataset(makeWorkerUserDatasetKey('worker-profile', user.id), { worker: workerData, storeId } satisfies WorkerProfileCache, { dataset: 'worker-profile', userId: user.id, workerId: workerData.id, storeId }),
+        setCachedDataset(makeWorkerDatasetKey('store', cacheScope), { userId: user.id, workerId: workerData.id, storeId } satisfies WorkerStoreCache, { dataset: 'store', userId: user.id, workerId: workerData.id, storeId }),
+      ];
+      if (canSaveDashboardSource) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('dashboard-summary', cacheScope), cacheSource, { dataset: 'dashboard-summary', userId: user.id, workerId: workerData.id, storeId }));
+      } else {
+        logOfflineDebug('skipped cache overwrite', { dataset: 'dashboard-summary', cacheKey: makeWorkerDatasetKey('dashboard-summary', cacheScope), reason: 'partial-fetch-error' });
+      }
+      if (!workerJobsResult.error) cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('jobs', cacheScope), workerJobs, { dataset: 'jobs', userId: user.id, workerId: workerData.id, storeId }));
+      if (!pendingJobsError) cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('jobs', cacheScope, 'available'), filteredPending, { dataset: 'jobs', variant: 'available', userId: user.id, workerId: workerData.id, storeId }));
+      if (!servicesError) cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('categories', cacheScope), nextServices, { dataset: 'categories', userId: user.id, workerId: workerData.id, storeId }));
+      if (!inventoryError) cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('inventory', cacheScope), nextInventoryProducts, { dataset: 'inventory', userId: user.id, workerId: workerData.id, storeId }));
+      if (!packageError) cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('packages', cacheScope), nextBillGoPackages, { dataset: 'packages', userId: user.id, workerId: workerData.id, storeId }));
+      if (!billGoReceivablesError) cacheWrites.push(setCachedDataset(makeWorkerDatasetKey('billgo', cacheScope, 'dashboard'), nextWorkerBillGoReceivables, { dataset: 'billgo', variant: 'dashboard', userId: user.id, workerId: workerData.id, storeId }));
+      await Promise.allSettled(cacheWrites);
+    } else if (!cachedSource) {
       setDashboardData(initialWorkerDashboardData);
     }
 

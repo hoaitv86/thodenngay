@@ -28,6 +28,8 @@ import {
   Wrench,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   CheckCircleIcon,
   XIcon,
@@ -65,74 +67,124 @@ type HistoryJob = RawHistoryJob & {
   timeStr: string;
 };
 
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
+};
+
 const WORKER_HISTORY_PAGE_SIZE = 50;
+const completedHistoryStatuses = ["completed", "done", "cancelled"];
+const historyIconMap: Record<string, IconComponent> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
+
+function mapHistoryJobs(jobs: RawHistoryJob[]) {
+  return jobs
+    .filter(job => completedHistoryStatuses.includes(job.status || ""))
+    .slice(0, WORKER_HISTORY_PAGE_SIZE)
+    .map((j) => {
+      const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
+      const fallbackDate = j.updated_at || j.scheduled_at || new Date().toISOString();
+      return {
+        ...j,
+        customerName: custName || "Khách vãng lai",
+        serviceName: j.service?.name || "Dịch vụ khác",
+        icon: j.service?.icon ? historyIconMap[j.service.icon] || BriefcaseIcon : BriefcaseIcon,
+        dateStr: new Date(fallbackDate).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }),
+        timeStr: new Date(fallbackDate).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+      };
+    });
+}
 
 export default function WorkerHistory() {
   const [loading, setLoading] = useState(true);
   const [historyJobs, setHistoryJobs] = useState<HistoryJob[]>([]);
   const supabase = useMemo(() => createClient(), []);
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      setLoading(true);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setHistoryJobs([]);
-        setLoading(false);
+  const fetchHistory = React.useCallback(async () => {
+    setLoading(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setHistoryJobs([]);
+      setLoading(false);
+      return;
+    }
+
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    let cacheScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+    const cachedJobs = cacheScope ? await getCachedDataset<RawHistoryJob[]>(makeWorkerDatasetKey("jobs", cacheScope)) : null;
+    const cachedHistoryJobs = cacheScope ? await getCachedDataset<RawHistoryJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "history")) : null;
+    const cachedSourceJobs = cachedJobs?.data || cachedHistoryJobs?.data || null;
+
+    if (cachedSourceJobs) {
+      const mapped = mapHistoryJobs(cachedSourceJobs);
+      setHistoryJobs(mapped);
+      logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cachedJobs?.key || cachedHistoryJobs?.key || null, recordCount: mapped.length });
+      setLoading(false);
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "jobs", userId: user.id, variant: "history", reason: "offline" });
+      return;
+    }
+
+    const { data: workerData, error: workerError } = await supabase
+      .from("workers")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (workerError || !workerData) {
+      if (cachedSourceJobs) {
+        logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
         return;
       }
-
-      const { data: workerData } = await supabase
-        .from('workers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-        
-      if (workerData) {
-        const { data: jobs } = await supabase
-          .from('jobs')
-          .select(`
-            id,
-            status,
-            address,
-            quoted_price,
-            updated_at,
-            scheduled_at,
-            service:services!jobs_service_id_fkey(name, icon),
-            customer:profiles!customer_id(full_name)
-          `)
-          .eq('worker_id', workerData.id)
-          .in('status', ['completed', 'done', 'cancelled'])
-          .order('updated_at', { ascending: false })
-          .range(0, WORKER_HISTORY_PAGE_SIZE - 1);
-          
-        if (jobs) {
-          const iconMap: Record<string, IconComponent> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
-          const mapped = ((jobs || []) as RawHistoryJob[]).map((j) => {
-            const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
-            const fallbackDate = j.updated_at || j.scheduled_at || new Date().toISOString();
-            return {
-              ...j,
-              customerName: custName || 'Khách vãng lai',
-              serviceName: j.service?.name || 'Dịch vụ khác',
-              icon: j.service?.icon ? iconMap[j.service.icon] || BriefcaseIcon : BriefcaseIcon,
-              dateStr: new Date(fallbackDate).toLocaleDateString('vi-VN', {
-                day: '2-digit', month: '2-digit', year: 'numeric'
-              }),
-              timeStr: new Date(fallbackDate).toLocaleTimeString('vi-VN', {
-                hour: '2-digit', minute: '2-digit'
-              })
-            };
-          });
-          setHistoryJobs(mapped);
-        }
-      }
+      setHistoryJobs([]);
       setLoading(false);
-    };
+      return;
+    }
 
-    fetchHistory();
+    cacheScope = cacheScope || { userId: user.id, workerId: workerData.id, storeId: cachedProfile?.data.storeId || null };
+
+    const { data: jobs, error: jobsError } = await supabase
+      .from("jobs")
+      .select(`
+        id,
+        status,
+        address,
+        quoted_price,
+        updated_at,
+        scheduled_at,
+        service:services!jobs_service_id_fkey(name, icon),
+        customer:profiles!customer_id(full_name)
+      `)
+      .eq("worker_id", workerData.id)
+      .in("status", completedHistoryStatuses)
+      .order("updated_at", { ascending: false })
+      .range(0, WORKER_HISTORY_PAGE_SIZE - 1);
+
+    if (jobsError) {
+      if (cachedSourceJobs) {
+        logOfflineDebug("skipped cache overwrite", { dataset: "jobs", cacheKey: makeWorkerDatasetKey("jobs", cacheScope, "history"), reason: jobsError.message });
+        return;
+      }
+      setHistoryJobs([]);
+      setLoading(false);
+      return;
+    }
+
+    const sourceJobs = (jobs || []) as RawHistoryJob[];
+    const mapped = mapHistoryJobs(sourceJobs);
+    setHistoryJobs(mapped);
+    await setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "history"), sourceJobs, { dataset: "jobs", variant: "history", userId: user.id, workerId: workerData.id, storeId: cacheScope.storeId || null });
+    setLoading(false);
   }, [supabase]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void fetchHistory(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchHistory]);
 
   return (
     <div className="flex flex-col w-full min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in">

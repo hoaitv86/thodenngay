@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import {
   BILLGO_CYCLE_OPTIONS,
@@ -111,6 +113,14 @@ interface WorkerJobDetail {
   }> | null;
 }
 
+type WorkerProfileCache = {
+  worker?: ({
+    id?: string | null;
+    user?: { full_name?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null;
+  } & Record<string, unknown>) | null;
+  storeId?: string | null;
+};
+
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 
@@ -189,9 +199,58 @@ export default function WorkerJobDetailPage() {
 
   useEffect(() => {
     const fetchJob = async () => {
+      setLoading(true);
+      const jobId = typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
+      if (!jobId) {
+        setLoading(false);
+        return;
+      }
+
+      let cacheScope: WorkerOfflineScope | null = null;
+      let cachedJob: WorkerJobDetail | null = null;
+      let cachedPackages: BillGoPackage[] | null = null;
+
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
+        const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+        const cachedWorker = cachedProfile?.data.worker;
+        if (cachedWorker?.id) {
+          setCurrentWorkerId(cachedWorker.id);
+          cacheScope = { userId: user.id, workerId: cachedWorker.id, storeId: cachedProfile?.data.storeId || null };
+        }
+        const cachedUser = cachedWorker?.user;
+        if (cachedUser?.full_name) setWorkerName(cachedUser.full_name);
+        if (cachedUser?.phone) setWorkerPhone(cachedUser.phone);
+
+        if (cacheScope) {
+          const cachedDatasets = await Promise.all([
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`)),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope)),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "history")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "customers")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "available")),
+          ]);
+          cachedJob = cachedDatasets
+            .flatMap(dataset => dataset?.data || [])
+            .find(item => item.id === jobId) || null;
+          cachedPackages = (await getCachedDataset<BillGoPackage[]>(makeWorkerDatasetKey("packages", cacheScope)))?.data || null;
+
+          if (cachedJob) {
+            setJob(cachedJob);
+            logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cacheScope ? makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`) : null, recordCount: 1 });
+            setLoading(false);
+          }
+          if (cachedPackages) setBillGoPackages(cachedPackages);
+        }
+
+        if (typeof window !== "undefined" && !window.navigator.onLine) {
+          logOfflineDebug("server fetch skipped", { dataset: "jobs", userId: user.id, variant: `detail:${jobId}`, reason: "offline" });
+          setLoading(false);
+          return;
+        }
+
         const { data: profile } = await supabase
           .from("profiles")
           .select("full_name, phone")
@@ -205,11 +264,17 @@ export default function WorkerJobDetailPage() {
           .select("id")
           .eq("user_id", user.id)
           .maybeSingle();
-        if (workerRow?.id) setCurrentWorkerId(workerRow.id);
+        if (workerRow?.id) {
+          setCurrentWorkerId(workerRow.id);
+          cacheScope = cacheScope || { userId: user.id, workerId: workerRow.id, storeId: cachedProfile?.data.storeId || null };
+        }
+      } else if (typeof window !== "undefined" && !window.navigator.onLine) {
+        setLoading(false);
+        return;
       }
 
       let result = await supabase
-        .from('jobs')
+        .from("jobs")
         .select(`
           id,
           worker_id,
@@ -228,18 +293,18 @@ export default function WorkerJobDetailPage() {
           warranty_days,
           warranty_note,
           workflow_data,
-                    task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
+          task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
           service:services!jobs_service_id_fkey(id, name, description),
           job_services(service:services(id, name, description)),
           customer:profiles!customer_id(full_name, phone, address),
           ratings(score, comment, created_at, images)
         `)
-        .eq('id', id)
+        .eq("id", jobId)
         .single();
 
       if (result.error && isMissingWorkflowColumn(result.error.message)) {
         result = await supabase
-          .from('jobs')
+          .from("jobs")
           .select(`
             id,
             worker_id,
@@ -258,20 +323,24 @@ export default function WorkerJobDetailPage() {
             warranty_days,
             warranty_note,
             workflow_data,
-                      task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
-          service:services!jobs_service_id_fkey(id, name, description),
+            task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at),
+            service:services!jobs_service_id_fkey(id, name, description),
             customer:profiles!customer_id(full_name, phone, address),
             ratings(score, comment, created_at, images)
           `)
-          .eq('id', id)
+          .eq("id", jobId)
           .single();
       }
 
       if (result.error) {
-        console.error("Error fetching job:", result.error);
-        router.push("/worker/history");
+        logOfflineDebug("skipped cache overwrite", { dataset: "jobs", cacheKey: cacheScope ? makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`) : null, reason: result.error.message });
+        if (!cachedJob) router.push("/worker/history");
       } else {
-        setJob(result.data as unknown as WorkerJobDetail);
+        const nextJob = result.data as unknown as WorkerJobDetail;
+        setJob(nextJob);
+        if (cacheScope) {
+          void setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`), [nextJob], { dataset: "jobs", variant: `detail:${jobId}`, userId: cacheScope.userId, workerId: cacheScope.workerId, storeId: cacheScope.storeId || null });
+        }
       }
 
       const { data: packageData, error: packageError } = await supabase
@@ -283,14 +352,17 @@ export default function WorkerJobDetailPage() {
         .order("name", { ascending: true });
 
       if (packageError) {
-        console.warn("Cannot load BillGo packages for receipt edit:", packageError.message);
+        logOfflineDebug("skipped cache overwrite", { dataset: "packages", cacheKey: cacheScope ? makeWorkerDatasetKey("packages", cacheScope) : null, reason: packageError.message });
+        if (cachedPackages) setBillGoPackages(cachedPackages);
       } else {
-        setBillGoPackages((packageData || []) as BillGoPackage[]);
+        const nextPackages = (packageData || []) as BillGoPackage[];
+        setBillGoPackages(nextPackages);
+        if (cacheScope) void setCachedDataset(makeWorkerDatasetKey("packages", cacheScope), nextPackages, { dataset: "packages", userId: cacheScope.userId, workerId: cacheScope.workerId, storeId: cacheScope.storeId || null });
       }
       setLoading(false);
     };
 
-    if (id) fetchJob();
+    void fetchJob();
   }, [id, router, supabase]);
 
   const openEditReceipt = () => {

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, Edit, Package, Plus, Search, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 import {
   formatInventoryCurrency,
@@ -11,6 +13,11 @@ import {
   missingWorkerInventorySchemaMessage,
   type InventoryProduct,
 } from "@/lib/worker-inventory";
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
+};
 
 export default function WorkerInventoryPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -35,21 +42,46 @@ export default function WorkerInventoryPage() {
       return;
     }
 
-    const { data: worker } = await supabase
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    const cachedScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+    const cachedProducts = cachedScope ? await getCachedDataset<InventoryProduct[]>(makeWorkerDatasetKey("inventory", cachedScope)) : null;
+
+    if (cachedProducts) {
+      setProducts(cachedProducts.data);
+      setWorkerId(cachedScope?.workerId || "");
+      logOfflineDebug("hydrated from cache", { dataset: "inventory", cacheKey: cachedProducts.key, recordCount: cachedProducts.data.length });
+      setLoading(false);
+    }
+
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      logOfflineDebug("server fetch skipped", { dataset: "inventory", userId: user.id, reason: "offline" });
+      return;
+    }
+
+    const { data: worker, error: workerError } = await supabase
       .from("workers")
       .select("id")
       .eq("user_id", user.id)
       .single();
-    const scope = worker ? await resolveWorkerUnitScope(supabase, user.id, worker.id) : null;
-    const scopedWorkerId = scope?.scopedWorkerId || worker?.id || "";
 
-    if (!worker) {
+    if (workerError || !worker) {
+      if (cachedProducts) {
+        logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
+        return;
+      }
       setMessage("Không tìm thấy hồ sơ thợ.");
       setWorkerId("");
       setProducts([]);
       setLoading(false);
       return;
     }
+
+    const scope = await resolveWorkerUnitScope(supabase, user.id, worker.id);
+    const scopedWorkerId = scope?.scopedWorkerId || worker.id;
+    const storeId = scope?.unitId || cachedProfile?.data.storeId || null;
+    const cacheScope: WorkerOfflineScope = { userId: user.id, workerId: scopedWorkerId, storeId };
     setWorkerId(scopedWorkerId);
 
     const { data, error } = await supabase
@@ -59,12 +91,23 @@ export default function WorkerInventoryPage() {
       .order("updated_at", { ascending: false });
 
     if (error) {
+      if (cachedProducts) {
+        logOfflineDebug("skipped cache overwrite", { dataset: "inventory", cacheKey: makeWorkerDatasetKey("inventory", cacheScope), reason: error.message });
+        return;
+      }
       setMessage(isMissingWorkerInventorySchemaError(error)
         ? missingWorkerInventorySchemaMessage
         : "Không thể tải danh sách sản phẩm: " + error.message);
       setProducts([]);
     } else {
-      setProducts((data || []) as InventoryProduct[]);
+      const nextProducts = (data || []) as InventoryProduct[];
+      setProducts(nextProducts);
+      await Promise.allSettled([
+        setCachedDataset(makeWorkerDatasetKey("inventory", cacheScope), nextProducts, { dataset: "inventory", userId: user.id, workerId: scopedWorkerId, storeId }),
+        scopedWorkerId !== worker.id
+          ? setCachedDataset(makeWorkerDatasetKey("inventory", { userId: user.id, workerId: worker.id, storeId }), nextProducts, { dataset: "inventory", userId: user.id, workerId: worker.id, storeId, aliasFor: scopedWorkerId })
+          : Promise.resolve(),
+      ]);
     }
     setLoading(false);
   }, [supabase]);
