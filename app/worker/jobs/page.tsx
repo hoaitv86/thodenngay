@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, CalendarClock, Clock, MapPin, Phone, Search, UserRound } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
 import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
+import { filterWorkerDashboardJobs, parseWorkerDashboardJobFilter, WORKER_DASHBOARD_JOB_FILTER_PARAM, WORKER_DASHBOARD_JOBS_SESSION_KEY, type WorkerDashboardJobFilter } from "@/lib/worker-dashboard-job-filters";
 
 type CustomerProfile = {
   id?: string | null;
@@ -16,6 +18,17 @@ type CustomerProfile = {
 type WorkerProfileCache = {
   worker?: { id?: string | null } | null;
   storeId?: string | null;
+};
+
+type WorkerDashboardSummaryCache = {
+  newJobs?: BacklogJob[] | null;
+  pendingApprovalJobs?: BacklogJob[] | null;
+  activeJobs?: BacklogJob[] | null;
+};
+
+type WorkerDashboardJobsNavigationSnapshot = {
+  capturedAt?: string | null;
+  jobs?: BacklogJob[] | null;
 };
 
 type BacklogJob = {
@@ -58,6 +71,27 @@ const statusLabels: Record<string, { label: string; className: string }> = {
   cancel_requested: {
     label: "Chờ hủy",
     className: "bg-error-container text-error",
+  },
+};
+
+const dashboardFilterLabels: Record<WorkerDashboardJobFilter, { title: string; description: string; emptyTitle: string; emptyDescription: string }> = {
+  todo: {
+    title: "Cần làm",
+    description: "Các việc mới, chờ duyệt và đang làm.",
+    emptyTitle: "Không có việc cần làm",
+    emptyDescription: "Danh sách hiện chưa có việc mới, chờ duyệt hoặc đang làm.",
+  },
+  today: {
+    title: "Tồn hôm nay",
+    description: "Các việc cần xử lý trong hôm nay.",
+    emptyTitle: "Không có việc tồn hôm nay",
+    emptyDescription: "Hiện chưa có công việc phù hợp trong hôm nay.",
+  },
+  month: {
+    title: "Tồn tháng",
+    description: "Các việc cần xử lý trong tháng này.",
+    emptyTitle: "Không có việc tồn tháng",
+    emptyDescription: "Hiện chưa có công việc phù hợp trong tháng này.",
   },
 };
 
@@ -106,8 +140,39 @@ function getAgeLabel(value?: string | null) {
   return `Tồn ${diffDays} ngày`;
 }
 
-export default function WorkerJobs() {
+function readDashboardJobsNavigationSnapshot(): WorkerDashboardJobsNavigationSnapshot | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(WORKER_DASHBOARD_JOBS_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as WorkerDashboardJobsNavigationSnapshot;
+    return Array.isArray(parsed.jobs) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectDashboardSummaryJobs(summary?: WorkerDashboardSummaryCache | null) {
+  if (!summary) return null;
+  return [
+    ...(summary.newJobs || []),
+    ...(summary.pendingApprovalJobs || []),
+    ...(summary.activeJobs || []),
+  ];
+}
+
+function getSnapshotDate(value?: string | null) {
+  if (!value) return new Date();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function WorkerJobs() {
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
+  const dashboardFilter = parseWorkerDashboardJobFilter(searchParams.get(WORKER_DASHBOARD_JOB_FILTER_PARAM));
+  const dashboardFilterLabel = dashboardFilter ? dashboardFilterLabels[dashboardFilter] : null;
   const [jobs, setJobs] = useState<BacklogJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -135,6 +200,43 @@ export default function WorkerJobs() {
       ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
       : null;
     let cachedSourceJobs: BacklogJob[] | null = null;
+
+    if (dashboardFilter) {
+      const sessionSnapshot = readDashboardJobsNavigationSnapshot();
+      let dashboardSourceJobs = sessionSnapshot?.jobs || null;
+      let filterNow = getSnapshotDate(sessionSnapshot?.capturedAt);
+      let cacheKey: string | null = null;
+
+      if (!dashboardSourceJobs && cacheScope) {
+        const cachedDashboard = await getCachedDataset<WorkerDashboardSummaryCache>(makeWorkerDatasetKey("dashboard-summary", cacheScope));
+        dashboardSourceJobs = collectDashboardSummaryJobs(cachedDashboard?.data);
+        filterNow = getSnapshotDate(cachedDashboard?.updatedAt);
+        cacheKey = cachedDashboard?.key || null;
+
+        if (!dashboardSourceJobs) {
+          const cachedJobs = await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "dashboard"));
+          dashboardSourceJobs = cachedJobs?.data || null;
+          filterNow = getSnapshotDate(cachedJobs?.updatedAt);
+          cacheKey = cachedJobs?.key || null;
+        }
+      }
+
+      if (dashboardSourceJobs) {
+        const nextJobs = filterWorkerDashboardJobs(dashboardSourceJobs, dashboardFilter, filterNow);
+        setJobs(nextJobs);
+        setLoading(false);
+        logOfflineDebug("hydrated dashboard jobs filter", { dataset: "jobs", variant: dashboardFilter, cacheKey, recordCount: nextJobs.length });
+        return;
+      }
+
+      setJobs([]);
+      setMessage(offline
+        ? "Chưa có dữ liệu công việc offline. Hãy mở Dashboard khi có mạng ít nhất một lần."
+        : "Chưa có dữ liệu việc từ Dashboard. Hãy quay lại Dashboard và thử lại.");
+      setLoading(false);
+      if (offline) logOfflineDebug("server fetch skipped", { dataset: "jobs", userId: user.id, reason: "offline-dashboard-filter" });
+      return;
+    }
 
     if (offline) {
       const cachedJobs = cacheScope
@@ -213,7 +315,7 @@ export default function WorkerJobs() {
     setJobs(nextJobs);
     await setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "backlog"), sourceJobs, { dataset: "jobs", variant: "backlog", userId: user.id, workerId: worker.id, storeId: cacheScope.storeId || null });
     setLoading(false);
-  }, [currentMonthStart, supabase]);
+  }, [currentMonthStart, dashboardFilter, supabase]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchBacklogJobs(), 0);
@@ -262,18 +364,18 @@ export default function WorkerJobs() {
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in lg:p-6">
       <header className="mb-4 overflow-hidden rounded-xl border border-primary/10 bg-white shadow-sm">
         <div className="hero-gradient px-5 py-5 text-white">
-          <p className="text-[11px] font-bold uppercase text-white/75">Tồn việc</p>
+          <p className="text-[11px] font-bold uppercase text-white/75">{dashboardFilterLabel ? "Việc của tôi" : "Tồn việc"}</p>
           <h1 className="mt-1 text-2xl font-extrabold leading-tight text-primary-fixed">
-            Việc cũ chưa làm
+            {dashboardFilterLabel?.title || "Việc cũ chưa làm"}
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">
-            Chỉ hiển thị các việc chưa hoàn thành từ những tháng trước. Việc trong tháng hiện tại không nằm ở danh sách này.
+            {dashboardFilterLabel?.description || "Chỉ hiển thị các việc chưa hoàn thành từ những tháng trước. Việc trong tháng hiện tại không nằm ở danh sách này."}
           </p>
         </div>
         <div className="grid grid-cols-3 divide-x divide-outline-variant/30 bg-white text-center">
           <div className="px-2 py-3">
             <p className="text-xl font-extrabold text-on-surface">{stats.total}</p>
-            <p className="text-[10px] font-bold uppercase text-on-surface-variant">Tồn cũ</p>
+            <p className="text-[10px] font-bold uppercase text-on-surface-variant">{dashboardFilterLabel ? "Tổng" : "Tồn cũ"}</p>
           </div>
           <div className="px-2 py-3">
             <p className="text-xl font-extrabold text-success">{stats.inProgress}</p>
@@ -309,8 +411,8 @@ export default function WorkerJobs() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary-fixed text-primary-container">
             <UserRound size={28} />
           </div>
-          <p className="mt-4 font-extrabold text-on-surface">Không có tồn việc tháng trước</p>
-          <p className="mt-1 text-sm text-on-surface-variant">Các việc chưa hoàn thành trong tháng hiện tại sẽ không hiện ở mục này.</p>
+          <p className="mt-4 font-extrabold text-on-surface">{dashboardFilterLabel?.emptyTitle || "Không có tồn việc tháng trước"}</p>
+          <p className="mt-1 text-sm text-on-surface-variant">{dashboardFilterLabel?.emptyDescription || "Các việc chưa hoàn thành trong tháng hiện tại sẽ không hiện ở mục này."}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -376,5 +478,22 @@ export default function WorkerJobs() {
         </div>
       )}
     </div>
+  );
+}
+
+
+function WorkerJobsLoading() {
+  return (
+    <div className="flex min-h-[calc(100dvh-8rem)] items-center justify-center bg-surface p-4">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-container border-t-transparent" />
+    </div>
+  );
+}
+
+export default function WorkerJobsPage() {
+  return (
+    <Suspense fallback={<WorkerJobsLoading />}>
+      <WorkerJobs />
+    </Suspense>
   );
 }

@@ -88,6 +88,13 @@ import {
   type SalesDraftItem,
 } from "@/lib/worker-sales";
 import { getJobServices, isMissingWorkflowColumn, normalizeServiceIds, type JobWithWorkflow } from "@/lib/job-workflow";
+import {
+  filterWorkerDashboardJobs,
+  getWorkerDashboardJobDate,
+  WORKER_DASHBOARD_JOB_FILTER_PARAM,
+  WORKER_DASHBOARD_JOBS_SESSION_KEY,
+  type WorkerDashboardJobFilter,
+} from "@/lib/worker-dashboard-job-filters";
 import { isDemoAccount } from "@/lib/demo-accounts";
 import { readVietnameseMoney } from "@/lib/vietnamese-money";
 import { CmsPlacement } from "@/app/components/CmsPlacement";
@@ -567,13 +574,7 @@ const getQuickServicePathLabel = (service: ServiceOption | null, services: Servi
 const getQuickServiceSuggestionLabel = (service: ServiceOption, services: ServiceOption[]) =>
   getCompactServicePathLabel(service, services, 3);
 
-const getJobCreatedDate = (job: Pick<WorkerJob, "created_at" | "scheduled_at">) => {
-  const dateValue = job.created_at || job.scheduled_at;
-  if (!dateValue) return null;
-
-  const createdDate = new Date(dateValue);
-  return Number.isNaN(createdDate.getTime()) ? null : createdDate;
-};
+const getJobCreatedDate = getWorkerDashboardJobDate;
 
 const sortJobsNewestFirst = <T extends Pick<WorkerJob, "created_at" | "scheduled_at">>(jobs: T[]) =>
   [...jobs].sort((a, b) => {
@@ -1499,7 +1500,7 @@ export default function WorkerDashboard() {
           .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
       }
       const assignedJobs = (assignedJobsResult.data || []) as WorkerJob[];
-      
+
       const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
         const route = getRouteEstimate(
@@ -2732,10 +2733,10 @@ export default function WorkerDashboard() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
-    
+
     // Add to selected files
     setSelectedFiles(prev => [...prev, ...files]);
-    
+
     // Create preview URLs
     const urls = files.map(file => URL.createObjectURL(file));
     setPreviewUrls(prev => [...prev, ...urls]);
@@ -3168,7 +3169,7 @@ export default function WorkerDashboard() {
       // 2. Update job status to completed & save images
       const { data: updatedJobs, error: updateError } = await supabase
         .from('jobs')
-        .update({ 
+        .update({
           status: 'completed',
           images: imageUrls,
           completion_items: cleanedItems,
@@ -3337,21 +3338,30 @@ export default function WorkerDashboard() {
   const returningCustomers = Math.max(totalCustomers - monthNewCustomers, 0);
   const showMonthlyGoalDetails = monthlyGoalExpanded || monthlyGoalFormOpen || Boolean(monthlyGoalError);
   const mobileDashboardJobs = [...newJobs, ...pendingApprovalJobs, ...activeJobs];
-  const mobileTodoCount = mobileDashboardJobs.length;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
-  const mobileTodayBacklogCount = mobileDashboardJobs.filter(job => {
-    const jobDate = getJobCreatedDate(job);
-    return jobDate ? jobDate >= todayStart : false;
-  }).length;
-  const mobileMonthBacklogCount = mobileDashboardJobs.filter(job => {
-    const jobDate = getJobCreatedDate(job);
-    return jobDate ? jobDate >= monthStart : false;
-  }).length;
+  const mobileTodoJobs = filterWorkerDashboardJobs(mobileDashboardJobs, "todo");
+  const mobileTodayBacklogJobs = filterWorkerDashboardJobs(mobileDashboardJobs, "today");
+  const mobileMonthBacklogJobs = filterWorkerDashboardJobs(mobileDashboardJobs, "month");
+  const mobileTodoCount = mobileTodoJobs.length;
+  const mobileTodayBacklogCount = mobileTodayBacklogJobs.length;
+  const mobileMonthBacklogCount = mobileMonthBacklogJobs.length;
   const mobileGoalOffset = 100 - monthlyRevenueProgress;
   const mobilePriorityJobs = sortJobsNewestFirst(mobileDashboardJobs).slice(0, mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD ? 2 : 1);
   const showMobilePriorityJobs = mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD && mobilePriorityJobs.length > 0;
+  const saveDashboardJobsSnapshotForNavigation = () => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.sessionStorage.setItem(
+        WORKER_DASHBOARD_JOBS_SESSION_KEY,
+        JSON.stringify({
+          capturedAt: new Date().toISOString(),
+          jobs: mobileDashboardJobs.map(stripDashboardJobForCache),
+        }),
+      );
+    } catch {
+      // Navigation still works; /worker/jobs will fall back to IndexedDB or server data.
+    }
+  };
 
   return (
     <div className="flex flex-col w-full relative">
@@ -3462,9 +3472,9 @@ export default function WorkerDashboard() {
 
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: "Cần làm", value: mobileTodoCount, tone: "error", icon: BellIcon, nextTab: "new" as const },
-            { label: "Tồn hôm nay", value: mobileTodayBacklogCount, tone: "warning", icon: CalendarIcon, nextTab: "active" as const },
-            { label: "Tồn tháng", value: mobileMonthBacklogCount, tone: "primary", icon: CalendarIcon, nextTab: "active" as const },
+            { label: "Cần làm", value: mobileTodoCount, tone: "error", icon: BellIcon, filter: "todo" as WorkerDashboardJobFilter },
+            { label: "Tồn hôm nay", value: mobileTodayBacklogCount, tone: "warning", icon: CalendarIcon, filter: "today" as WorkerDashboardJobFilter },
+            { label: "Tồn tháng", value: mobileMonthBacklogCount, tone: "primary", icon: CalendarIcon, filter: "month" as WorkerDashboardJobFilter },
           ].map(item => {
             const Icon = item.icon;
             const toneClass = item.tone === "error"
@@ -3474,11 +3484,14 @@ export default function WorkerDashboard() {
                 : "border-primary/30 bg-primary-fixed/65 text-primary";
 
             return (
-              <button
+              <Link
                 key={item.label}
-                type="button"
-                onClick={() => setTab(item.nextTab)}
-                className={"min-h-32 rounded-xl border p-2.5 text-left shadow-sm min-[390px]:p-3 " + toneClass}
+                href={"/worker/jobs?" + WORKER_DASHBOARD_JOB_FILTER_PARAM + "=" + item.filter}
+                onClick={saveDashboardJobsSnapshotForNavigation}
+                aria-label={"Mở Việc của tôi: " + item.label}
+                data-dashboard-job-count={item.value}
+                data-dashboard-job-filter={item.filter}
+                className={"block min-h-32 rounded-xl border p-2.5 text-left shadow-sm transition-transform active:scale-[0.98] min-[390px]:p-3 " + toneClass}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70">
@@ -3489,7 +3502,7 @@ export default function WorkerDashboard() {
                 <p className="mt-2 text-xs font-extrabold uppercase leading-tight">{item.label}</p>
                 <p className="mt-1 text-4xl font-extrabold leading-none min-[390px]:text-5xl">{item.value}</p>
                 <p className="mt-1 text-base font-extrabold leading-none">việc</p>
-              </button>
+              </Link>
             );
           })}
         </div>
@@ -4668,13 +4681,13 @@ export default function WorkerDashboard() {
                 )}
 
                 <div className="grid grid-cols-[1fr_1.7fr] gap-3 pt-1">
-                  <button 
+                  <button
                     onClick={() => handleDeclineJob(job.id)}
                     className="rounded-lg border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-error transition-all hover:bg-error hover:text-white active:scale-[0.98]"
                   >
                     Từ chối
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleAcceptJob(job.id)}
                     className="rounded-lg bg-secondary-container px-4 py-3 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
                   >
@@ -5474,11 +5487,11 @@ export default function WorkerDashboard() {
       {activeJobToComplete && (
         <div className="fixed inset-0 z-[70] flex items-stretch justify-center overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
           <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl animate-fade-in-up sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl">
-            
+
             {/* Modal Header */}
             <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-outline-variant/50">
               <h2 className="text-lg font-bold text-on-surface">Hoàn thành công việc</h2>
-              <button 
+              <button
                 onClick={() => {
                   if (!uploadingImages) {
                     setActiveJobToComplete(null);
@@ -5983,7 +5996,7 @@ export default function WorkerDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-bold text-on-surface block">Hình ảnh thực tế sau khi làm</label>
                 <p className="text-xs text-on-surface-variant">Hãy chụp và tải ảnh kết quả công việc để khách hàng nghiệm thu.</p>
-                
+
                 {/* File picker */}
                 <div className="mt-2">
                   <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-outline-variant/60 rounded-xl cursor-pointer hover:bg-surface-container-low transition-colors">
@@ -5992,11 +6005,11 @@ export default function WorkerDashboard() {
                       <p className="text-xs font-bold text-primary">Tải ảnh lên (Nhiều ảnh)</p>
                       <p className="text-[10px] text-on-surface-variant mt-1">PNG, JPG, JPEG</p>
                     </div>
-                    <input 
-                      type="file" 
-                      multiple 
-                      accept="image/*" 
-                      className="hidden" 
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      className="hidden"
                       onChange={handleFileChange}
                       disabled={uploadingImages}
                     />
@@ -6027,7 +6040,7 @@ export default function WorkerDashboard() {
             {/* Modal Footer */}
             <div className="shrink-0 border-t border-outline-variant/50 bg-surface-container-lowest p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:rounded-b-2xl sm:p-5">
               <div className="flex justify-end gap-3">
-              <button 
+              <button
                 type="button"
                 onClick={() => {
                   setActiveJobToComplete(null);
@@ -6041,8 +6054,8 @@ export default function WorkerDashboard() {
               >
                 Hủy bỏ
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={handleConfirmCompleteJob}
                 className="btn-primary !w-auto flex-[1.4] !py-2 !px-5 text-sm !bg-success !border-success sm:min-w-[140px] sm:flex-none"
                 disabled={uploadingImages}
