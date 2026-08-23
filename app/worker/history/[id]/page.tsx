@@ -196,10 +196,12 @@ export default function WorkerJobDetailPage() {
   const [editReason, setEditReason] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
+  const [detailMessage, setDetailMessage] = useState("");
 
   useEffect(() => {
     const fetchJob = async () => {
       setLoading(true);
+      setDetailMessage("");
       const jobId = typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
       if (!jobId) {
         setLoading(false);
@@ -226,11 +228,14 @@ export default function WorkerJobDetailPage() {
         if (cacheScope) {
           const cachedDatasets = await Promise.all([
             getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`)),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope)),
             getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "history")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog")),
             getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "customers")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "active")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "pending")),
             getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "available")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "dashboard")),
+            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope)),
           ]);
           cachedJob = cachedDatasets
             .flatMap(dataset => dataset?.data || [])
@@ -246,6 +251,10 @@ export default function WorkerJobDetailPage() {
         }
 
         if (typeof window !== "undefined" && !window.navigator.onLine) {
+          if (!cachedJob) {
+            setDetailMessage("Chưa có dữ liệu offline cho mục này");
+            logOfflineDebug("dataset load", { dataset: "jobs", userId: user.id, variant: `detail:${jobId}`, snapshotFound: false, reason: "offline-missing-detail" });
+          }
           logOfflineDebug("server fetch skipped", { dataset: "jobs", userId: user.id, variant: `detail:${jobId}`, reason: "offline" });
           setLoading(false);
           return;
@@ -269,6 +278,8 @@ export default function WorkerJobDetailPage() {
           cacheScope = cacheScope || { userId: user.id, workerId: workerRow.id, storeId: cachedProfile?.data.storeId || null };
         }
       } else if (typeof window !== "undefined" && !window.navigator.onLine) {
+        setDetailMessage("Chưa có dữ liệu offline cho mục này");
+        logOfflineDebug("dataset load", { dataset: "jobs", variant: `detail:${jobId}`, snapshotFound: false, reason: "missing-offline-identity" });
         setLoading(false);
         return;
       }
@@ -334,7 +345,9 @@ export default function WorkerJobDetailPage() {
 
       if (result.error) {
         logOfflineDebug("skipped cache overwrite", { dataset: "jobs", cacheKey: cacheScope ? makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`) : null, reason: result.error.message });
-        if (!cachedJob) router.push("/worker/history");
+        if (!cachedJob) {
+          setDetailMessage("Chưa có dữ liệu offline cho mục này");
+        }
       } else {
         const nextJob = result.data as unknown as WorkerJobDetail;
         setJob(nextJob);
@@ -805,7 +818,24 @@ export default function WorkerJobDetailPage() {
     );
   }
 
-  if (!job) return null;
+  if (!job) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+        <div className="rounded-xl border border-outline-variant/30 bg-white p-6 shadow-sm">
+          <p className="text-sm font-bold text-on-surface">
+            {detailMessage || "Không tìm thấy công việc."}
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/worker/history")}
+            className="btn-outline mt-4 !w-auto !px-4 !py-2 text-sm font-bold"
+          >
+            Quay lại Lịch sử
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const isCompleted = job.status === 'completed' || job.status === 'done';
   const customerName = Array.isArray(job.customer) ? job.customer[0]?.full_name : job.customer?.full_name;
@@ -1709,5 +1739,3 @@ export default function WorkerJobDetailPage() {
     </div>
   );
 }
-
-

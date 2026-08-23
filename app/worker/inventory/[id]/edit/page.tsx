@@ -5,6 +5,8 @@ import type React from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug } from "@/lib/offline/cache";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   buildInventoryProductPayload,
   emptyInventoryProductForm,
@@ -18,6 +20,11 @@ import {
 const InventoryProductForm = dynamic(() =>
   import("../../InventoryProductForm").then(mod => mod.InventoryProductForm)
 );
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null; specialties?: unknown } | null;
+  storeId?: string | null;
+};
 
 export default function EditInventoryProductPage() {
   const { id } = useParams<{ id: string }>();
@@ -37,7 +44,33 @@ export default function EditInventoryProductPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMessage("Bạn chưa đăng nhập.");
+      setMessage(isBrowserOffline() ? "Chưa có dữ liệu offline cho mục này" : "Bạn chưa đăng nhập.");
+      setLoading(false);
+      return;
+    }
+
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    const cachedScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+
+    if (isBrowserOffline()) {
+      const cachedProducts = cachedScope
+        ? await getCachedDataset<InventoryProduct[]>(makeWorkerDatasetKey("inventory", cachedScope))
+        : null;
+      const cachedProduct = cachedProducts?.data.find(product => product.id === id) || null;
+      if (cachedProduct) {
+        setWorkerId(cachedScope?.workerId || "");
+        setCategorySuggestions(getInventoryCategorySuggestionsForSpecialties(
+          Array.isArray(cachedProfile?.data.worker?.specialties) ? cachedProfile.data.worker.specialties : []
+        ));
+        setValues(productToFormValues(cachedProduct));
+        logOfflineDebug("hydrated from cache", { dataset: "inventory", cacheKey: cachedProducts?.key || null, recordCount: 1, route: `/worker/inventory/${id}/edit` });
+      } else {
+        setMessage("Chưa có dữ liệu offline cho mục này");
+        logOfflineDebug("dataset load", { dataset: "inventory", cacheKey: cachedScope ? makeWorkerDatasetKey("inventory", cachedScope) : null, snapshotFound: false, route: `/worker/inventory/${id}/edit` });
+      }
+      logOfflineDebug("server fetch skipped", { dataset: "inventory", userId: user.id, reason: "offline", route: `/worker/inventory/${id}/edit` });
       setLoading(false);
       return;
     }

@@ -13,10 +13,20 @@ const WORKER_APP_SHELL_PATHS = [
   "/worker/customers",
   "/worker/billgo",
   "/worker/history",
+  "/worker/history/__offline-shell__",
   "/worker/profile",
   "/worker/chat",
   "/worker/inventory",
+  "/worker/inventory/__offline-shell__/edit",
+  "/worker/inventory/__offline-shell__/delete",
   "/worker/sales",
+];
+const WORKER_DETAIL_ROUTE_PATTERNS = [
+  /^\/worker\/history\/[^/]+$/,
+  /^\/worker\/inventory\/[^/]+\/(edit|delete)$/,
+  /^\/worker\/customers\/[^/]+$/,
+  /^\/worker\/jobs\/[^/]+$/,
+  /^\/worker\/billgo\/[^/]+$/,
 ];
 
 function publishNetworkState() {
@@ -25,6 +35,22 @@ function publishNetworkState() {
       detail: { online: window.navigator.onLine, checkedAt: new Date().toISOString() },
     })
   );
+}
+
+function isWorkerDetailRoute(pathname: string) {
+  return WORKER_DETAIL_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+function collectWorkerDetailUrls(urls: Set<string>) {
+  document.querySelectorAll<HTMLAnchorElement>('a[href^="/worker/"]').forEach((anchor) => {
+    try {
+      const parsed = new URL(anchor.href, window.location.origin);
+      if (parsed.origin !== window.location.origin) return;
+      if (isWorkerDetailRoute(parsed.pathname)) urls.add(parsed.href);
+    } catch {
+      // Ignore malformed href values.
+    }
+  });
 }
 
 function collectAppShellUrls() {
@@ -45,11 +71,14 @@ function collectAppShellUrls() {
   const shouldCacheWorkerRoutes = Boolean(workerIdentity) || window.location.pathname.startsWith("/worker");
   if (shouldCacheWorkerRoutes) {
     WORKER_APP_SHELL_PATHS.forEach((path) => urls.add(new URL(path, window.location.origin).href));
+    collectWorkerDetailUrls(urls);
     console.info("[TDN-OFFLINE]", "worker route shell cache", {
       route: window.location.pathname,
       identityFound: Boolean(workerIdentity),
       redirectReason: null,
-      routes: WORKER_APP_SHELL_PATHS,
+      routes: Array.from(urls)
+        .map((url) => new URL(url).pathname)
+        .filter((path) => path.startsWith("/worker")),
     });
   }
 
@@ -74,14 +103,23 @@ function collectAppShellUrls() {
 function sendAppShellCacheMessage(registration: ServiceWorkerRegistration) {
   if (!window.navigator.onLine) return;
 
+  let debounceId = 0;
   const send = () => {
-    const worker = registration.active || navigator.serviceWorker.controller;
-    if (!worker) return;
-    worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls: collectAppShellUrls() });
+    window.clearTimeout(debounceId);
+    debounceId = window.setTimeout(() => {
+      const worker = registration.active || navigator.serviceWorker.controller;
+      if (!worker || !window.navigator.onLine) return;
+      worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls: collectAppShellUrls() });
+    }, 100);
   };
 
   send();
   window.setTimeout(send, 1500);
+  window.setTimeout(send, 4000);
+
+  const observer = new MutationObserver(() => send());
+  observer.observe(document.body, { childList: true, subtree: true });
+  window.setTimeout(() => observer.disconnect(), 10000);
 }
 
 export default function OfflineRuntime() {

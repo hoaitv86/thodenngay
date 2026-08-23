@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tdn-app-shell-v3";
+const CACHE_VERSION = "tdn-app-shell-v5";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
   "/",
@@ -12,6 +12,14 @@ const PRECACHE_URLS = [
   "/android-chrome-512x512.png"
 ];
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
+const WORKER_DYNAMIC_NAVIGATION_FALLBACKS = [
+  { pattern: /^\/worker\/history\/[^/]+$/, shell: "/worker/history/__offline-shell__", fallback: "/worker/history" },
+  { pattern: /^\/worker\/inventory\/[^/]+\/edit$/, shell: "/worker/inventory/__offline-shell__/edit", fallback: "/worker/inventory" },
+  { pattern: /^\/worker\/inventory\/[^/]+\/delete$/, shell: "/worker/inventory/__offline-shell__/delete", fallback: "/worker/inventory" },
+  { pattern: /^\/worker\/customers\/[^/]+$/, fallback: "/worker/customers" },
+  { pattern: /^\/worker\/jobs\/[^/]+$/, fallback: "/worker/jobs" },
+  { pattern: /^\/worker\/billgo\/[^/]+$/, fallback: "/worker/billgo" }
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -65,6 +73,55 @@ function shouldCacheAsset(requestUrl) {
       || requestUrl.pathname.endsWith(".webmanifest"));
 }
 
+function getWorkerNavigationFallbacks(pathname) {
+  const fallbacks = [];
+  const matched = WORKER_DYNAMIC_NAVIGATION_FALLBACKS.find((item) => item.pattern.test(pathname));
+  if (matched?.shell) fallbacks.push(matched.shell);
+  if (matched?.fallback) fallbacks.push(matched.fallback);
+  if (pathname === "/worker" || pathname.startsWith("/worker/")) fallbacks.push("/worker");
+  return [...new Set(fallbacks)];
+}
+
+async function matchAny(cache, paths) {
+  for (const path of paths) {
+    const matched = await cache.match(path, { ignoreSearch: true });
+    if (matched) return matched;
+  }
+  return null;
+}
+
+async function warmHtmlAssets(cache, response) {
+  try {
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/html")) return;
+
+    const html = await response.text();
+    const assets = new Set();
+    const attributePattern = /\b(?:src|href)=["']([^"']+)["']/g;
+    let match;
+    while ((match = attributePattern.exec(html))) {
+      try {
+        const assetUrl = new URL(match[1], self.location.origin);
+        if (shouldCacheAsset(assetUrl)) assets.add(assetUrl.href);
+      } catch {
+        // Ignore malformed HTML attributes.
+      }
+    }
+
+    await Promise.all(Array.from(assets).map((url) => cacheUrl(cache, url)));
+  } catch {
+    // Route HTML is still useful even if linked assets cannot be warmed.
+  }
+}
+
+async function putAppShell(cache, request, response) {
+  const requestUrl = new URL(request.url);
+  await cache.put(request, response.clone());
+  await cache.put(requestUrl.pathname + requestUrl.search, response.clone());
+  await warmHtmlAssets(cache, response.clone());
+  console.info("[TDN-OFFLINE]", "app shell saved", { route: requestUrl.pathname });
+}
+
 async function cacheUrl(cache, url) {
   try {
     const requestUrl = new URL(url, self.location.origin);
@@ -74,8 +131,7 @@ async function cacheUrl(cache, url) {
     const response = await fetch(request);
     if (!response || !response.ok) return;
 
-    await cache.put(request, response.clone());
-    await cache.put(requestUrl.pathname + requestUrl.search, response.clone());
+    await putAppShell(cache, request, response);
   } catch {
     // Best-effort warm cache: one failed file must not abort offline readiness.
   }
@@ -83,14 +139,26 @@ async function cacheUrl(cache, url) {
 
 async function networkFirstNavigation(request) {
   const cache = await caches.open(CACHE_VERSION);
+  const requestUrl = new URL(request.url);
   try {
     const response = await fetch(request);
-    if (response && response.ok) await cache.put(request, response.clone());
+    if (response && response.ok) await putAppShell(cache, request, response.clone());
     return response;
   } catch {
-    return (await cache.match(request))
-      || (await cache.match(new URL(request.url).pathname, { ignoreSearch: true }))
-      || (await cache.match(APP_SHELL_FALLBACK_URL, { ignoreSearch: true }))
+    const directMatch = (await cache.match(request))
+      || (await cache.match(requestUrl.pathname, { ignoreSearch: true }));
+    if (directMatch) return directMatch;
+
+    const workerShellMatch = await matchAny(cache, getWorkerNavigationFallbacks(requestUrl.pathname));
+    if (workerShellMatch) return workerShellMatch;
+
+    if (requestUrl.pathname === "/worker" || requestUrl.pathname.startsWith("/worker/")) {
+      return (await cache.match("/", { ignoreSearch: true }))
+        || (await cache.match(APP_SHELL_FALLBACK_URL, { ignoreSearch: true }))
+        || Response.error();
+    }
+
+    return (await cache.match(APP_SHELL_FALLBACK_URL, { ignoreSearch: true }))
       || (await cache.match("/", { ignoreSearch: true }))
       || Response.error();
   }

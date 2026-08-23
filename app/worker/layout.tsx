@@ -95,6 +95,21 @@ const mobileMoreGroups: MobileMoreGroup[] = [
 ];
 
 const activeRoleCookieMaxAge = 60 * 60 * 24 * 30;
+const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
+const WORKER_OFFLINE_SHELL_PATHS = [
+  "/worker",
+  "/worker/jobs",
+  "/worker/customers",
+  "/worker/billgo",
+  "/worker/history",
+  "/worker/history/__offline-shell__",
+  "/worker/profile",
+  "/worker/chat",
+  "/worker/inventory",
+  "/worker/inventory/__offline-shell__/edit",
+  "/worker/inventory/__offline-shell__/delete",
+  "/worker/sales",
+];
 
 function setActiveRoleCookie(role: "customer" | "worker") {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
@@ -459,6 +474,76 @@ export default function WorkerLayout({
     }
   };
 
+  useEffect(() => {
+    const postWorkerShellCache = (registration: ServiceWorkerRegistration) => {
+      if (!window.navigator.onLine) return;
+      const worker = registration.active || navigator.serviceWorker.controller;
+      if (!worker) return;
+
+      const urls = WORKER_OFFLINE_SHELL_PATHS.map((path) => new URL(path, window.location.origin).href);
+      console.info("[TDN-OFFLINE]", "worker route shell cache", {
+        route: window.location.pathname,
+        identityFound: true,
+        redirectReason: null,
+        routes: WORKER_OFFLINE_SHELL_PATHS,
+      });
+      worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls });
+    };
+
+    const warmWorkerShells = () => {
+      if (!("serviceWorker" in navigator) || !window.navigator.onLine) return;
+      void navigator.serviceWorker.ready
+        .then((registration) => {
+          postWorkerShellCache(registration);
+          window.setTimeout(() => postWorkerShellCache(registration), 1500);
+          window.setTimeout(() => postWorkerShellCache(registration), 4000);
+          window.setTimeout(() => postWorkerShellCache(registration), 8000);
+        })
+        .catch((error) => {
+          console.warn("[TDN-OFFLINE]", "worker route shell cache error", error);
+        });
+    };
+
+    warmWorkerShells();
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("controllerchange", warmWorkerShells);
+    }
+
+    const handleOfflineWorkerNavigation = (event: MouseEvent) => {
+      if (window.navigator.onLine || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (!(event.target instanceof Element)) return;
+
+      const anchor = event.target.closest<HTMLAnchorElement>('a[href]');
+      if (!anchor || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self")) return;
+
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname !== "/worker" && !url.pathname.startsWith("/worker/")) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) return;
+
+      event.preventDefault();
+      console.info("[TDN-OFFLINE]", "document navigation fallback", {
+        route: url.pathname,
+        identityFound: Boolean(getOfflineWorkerAuthSnapshot()),
+        redirectReason: null,
+      });
+      window.location.assign(`${url.pathname}${url.search}${url.hash}`);
+    };
+
+    document.addEventListener("click", handleOfflineWorkerNavigation, true);
+    return () => {
+      document.removeEventListener("click", handleOfflineWorkerNavigation, true);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("controllerchange", warmWorkerShells);
+      }
+    };
+  }, []);
   const isActiveItem = (item: WorkerFeatureDefinition) => {
     if (item.id === "create_job" || item.id === "more") return false;
     if (item.exactActive) return pathname === item.route;

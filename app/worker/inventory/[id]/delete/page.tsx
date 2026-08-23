@@ -5,10 +5,17 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug } from "@/lib/offline/cache";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   formatInventoryCurrency,
   type InventoryProduct,
 } from "@/lib/worker-inventory";
+
+type WorkerProfileCache = {
+  worker?: { id?: string | null } | null;
+  storeId?: string | null;
+};
 
 export default function DeleteInventoryProductPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,7 +33,30 @@ export default function DeleteInventoryProductPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setMessage("Bạn chưa đăng nhập.");
+      setMessage(isBrowserOffline() ? "Chưa có dữ liệu offline cho mục này" : "Bạn chưa đăng nhập.");
+      setLoading(false);
+      return;
+    }
+
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
+    const cachedScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
+      ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
+      : null;
+
+    if (isBrowserOffline()) {
+      const cachedProducts = cachedScope
+        ? await getCachedDataset<InventoryProduct[]>(makeWorkerDatasetKey("inventory", cachedScope))
+        : null;
+      const cachedProduct = cachedProducts?.data.find(item => item.id === id) || null;
+      if (cachedProduct) {
+        setWorkerId(cachedScope?.workerId || "");
+        setProduct(cachedProduct);
+        logOfflineDebug("hydrated from cache", { dataset: "inventory", cacheKey: cachedProducts?.key || null, recordCount: 1, route: `/worker/inventory/${id}/delete` });
+      } else {
+        setMessage("Chưa có dữ liệu offline cho mục này");
+        logOfflineDebug("dataset load", { dataset: "inventory", cacheKey: cachedScope ? makeWorkerDatasetKey("inventory", cachedScope) : null, snapshotFound: false, route: `/worker/inventory/${id}/delete` });
+      }
+      logOfflineDebug("server fetch skipped", { dataset: "inventory", userId: user.id, reason: "offline", route: `/worker/inventory/${id}/delete` });
       setLoading(false);
       return;
     }
