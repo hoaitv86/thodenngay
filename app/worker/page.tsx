@@ -2002,6 +2002,20 @@ export default function WorkerDashboard() {
     fetchData(true);
   };
 
+  const handleToggleAvailabilityRef = React.useRef<() => void>(() => {});
+
+  useEffect(() => {
+    handleToggleAvailabilityRef.current = () => {
+      void handleToggleAvailability();
+    };
+  });
+
+  useEffect(() => {
+    const handleAvailabilityToggleRequest = () => handleToggleAvailabilityRef.current();
+    window.addEventListener("worker:toggle-availability-request", handleAvailabilityToggleRequest);
+    return () => window.removeEventListener("worker:toggle-availability-request", handleAvailabilityToggleRequest);
+  }, []);
+
   const handleQuickServiceChange = (serviceId: string) => {
     setQuickJob(prev => {
       const nextIds = prev.serviceIds.includes(serviceId)

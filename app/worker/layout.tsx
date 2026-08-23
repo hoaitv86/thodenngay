@@ -23,6 +23,7 @@ import { resolveWorkerFeatureModuleState } from "@/lib/worker-modules";
 import {
   BellIcon,
   BriefcaseIcon,
+  ChevronRightIcon,
   DollarSignIcon,
   LayoutDashboardIcon,
   LogoIcon,
@@ -114,11 +115,11 @@ export default function WorkerLayout({
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [userName, setUserName] = useState("Thợ");
-  const [userAddress, setUserAddress] = useState("");
   const [isAvailable, setIsAvailable] = useState(true);
   const [menuContext, setMenuContext] = useState(defaultMenuContext);
   const [moreOpen, setMoreOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [notificationUserId, setNotificationUserId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<WorkerNotification[]>([]);
 
@@ -367,7 +368,6 @@ export default function WorkerLayout({
       if (!isMounted) return;
 
       if (profile?.full_name) setUserName(profile.full_name);
-      setUserAddress(typeof profile?.address === "string" ? profile.address : "");
       setIsAvailable(worker?.is_available !== false);
       if (!offline && worker?.status === "active") {
         void fetchWorkerNotifications(user.id);
@@ -450,7 +450,12 @@ export default function WorkerLayout({
     setActiveRoleCookie("customer");
     setMoreOpen(false);
     setNotificationOpen(false);
+    setRoleMenuOpen(false);
     window.location.assign("/customer/home");
+  };
+
+  const handleRequestAvailabilityToggle = () => {
+    window.dispatchEvent(new CustomEvent("worker:toggle-availability-request"));
   };
 
   const handleCreateJobNav = () => {
@@ -698,25 +703,25 @@ export default function WorkerLayout({
       </aside>
 
       <div className="flex min-h-dvh w-full flex-col md:pl-64">
-        <header className={`sticky top-0 z-40 ${isWorkerHomePage ? "bg-primary text-white md:glass md:bg-white/90 md:text-on-surface" : "glass"} flex ${isWorkerHomePage ? "min-h-44 items-start px-4 pb-10 pt-[calc(1rem+env(safe-area-inset-top))] md:h-20 md:min-h-0 md:items-center md:px-8 md:py-0" : "h-16 items-center px-4 sm:px-6 lg:h-20 lg:px-8"} justify-between`}>
-          <div className={`flex items-center gap-3 ${isWorkerHomePage ? "min-w-0 flex-1 md:flex-none" : ""}`}>
+        <header className={`sticky top-0 z-40 ${isWorkerHomePage ? "bg-primary text-white md:glass md:bg-white/90 md:text-on-surface" : "glass"} flex ${isWorkerHomePage ? "min-h-[7.25rem] items-center px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:h-20 md:min-h-0 md:px-8 md:py-0" : "h-16 items-center px-4 sm:px-6 lg:h-20 lg:px-8"} justify-between`}>
+          <div className={`flex items-center gap-2.5 ${isWorkerHomePage ? "min-w-0 flex-1 md:flex-none" : ""}`}>
             <div className={`${isWorkerHomePage ? "hidden" : "flex"} h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm md:hidden`}>
               <LogoIcon size={24} />
             </div>
             {isWorkerHomePage && (
-              <div className="relative mr-1 flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-2 border-white/80 bg-white shadow-lg md:hidden">
-                <LogoIcon size={48} />
-                <span className={`absolute bottom-1 right-0 h-5 w-5 rounded-full border-[3px] border-white ${isAvailable ? "bg-success" : "bg-outline-variant"}`} />
+              <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-white/80 bg-white shadow-lg min-[390px]:h-16 min-[390px]:w-16 md:hidden">
+                <LogoIcon size={36} className="min-[390px]:h-10 min-[390px]:w-10" />
+                <span className={`absolute bottom-0 right-0 h-4 w-4 rounded-full border-[3px] border-white min-[390px]:h-5 min-[390px]:w-5 ${isAvailable ? "bg-success" : "bg-outline-variant"}`} />
               </div>
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 md:flex-none">
               {isWorkerHomePage ? (
                 <>
-                  <span className="block truncate text-sm font-bold leading-tight text-white/90 md:text-on-surface-variant">
+                  <span className="block truncate text-[13px] font-bold leading-tight text-white/90 md:text-on-surface-variant">
                     Xin chào,
                   </span>
-                  <span className="mt-0.5 block truncate text-xl font-bold leading-tight text-white min-[390px]:text-2xl md:text-primary">
-                    {userName}!
+                  <span className="mt-0.5 block truncate text-lg font-bold leading-tight text-white min-[390px]:text-xl md:text-primary">
+                    {userName}
                   </span>
                 </>
               ) : (
@@ -724,21 +729,69 @@ export default function WorkerLayout({
                   Trang thợ
                 </span>
               )}
-              <div className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${isAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
-                <span className={`max-w-[180px] truncate text-[10px] font-bold uppercase sm:max-w-none ${isWorkerHomePage ? "text-white/90 md:text-success" : isAvailable ? "text-success" : "text-on-surface-variant"}`}>
-                  {userName} {isAvailable ? "đang online" : "đang offline"}
-                </span>
-              </div>
-              {isWorkerHomePage && userAddress && (
-                <div className="mt-2 flex min-w-0 items-center gap-1.5 text-sm font-bold text-white/90 md:hidden">
-                  <span className="text-white">•</span>
-                  <span className="truncate">{userAddress}</span>
+              {isWorkerHomePage ? (
+                <button
+                  type="button"
+                  onClick={handleRequestAvailabilityToggle}
+                  className={`mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full text-xs font-extrabold leading-none transition-opacity active:scale-[0.98] md:text-success ${isAvailable ? "text-success" : "text-white/75"}`}
+                  aria-pressed={isAvailable}
+                  title={isAvailable ? "Bấm để chuyển Offline" : "Bấm để chuyển Online"}
+                >
+                  <span className={`h-2 w-1.5 rounded-full ${isAvailable ? "animate-pulse bg-success" : "bg-white/60 md:bg-outline-variant"}`} />
+                  <span className="truncate">{isAvailable ? "Đang online" : "Đang offline"}</span>
+                  <ChevronRightIcon size={14} />
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${isAvailable ? "animate-pulse bg-success" : "bg-outline-variant"}`} />
+                  <span className={`max-w-[180px] truncate text-[10px] font-bold uppercase sm:max-w-none ${isAvailable ? "text-success" : "text-on-surface-variant"}`}>
+                    {isAvailable ? "Đang online" : "Đang offline"}
+                  </span>
                 </div>
               )}
             </div>
           </div>
-          <div className={`flex items-center ${isWorkerHomePage ? "gap-3 md:gap-2" : "gap-2"}`}>
+          <div className={`flex shrink-0 items-center ${isWorkerHomePage ? "gap-1.5 min-[390px]:gap-2 md:gap-2" : "gap-2"}`}>
+            {isWorkerHomePage && (
+              <div className="relative md:hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRoleMenuOpen((open) => !open);
+                    setNotificationOpen(false);
+                    setMoreOpen(false);
+                  }}
+                  className="inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 text-sm font-extrabold text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/15 min-[390px]:h-11 min-[390px]:px-3"
+                  aria-expanded={roleMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <span aria-hidden="true">👷</span>
+                  <span>Thợ</span>
+                  <span aria-hidden="true" className="text-base leading-none">▾</span>
+                </button>
+                {roleMenuOpen && (
+                  <div className="absolute right-0 top-12 z-50 w-52 overflow-hidden rounded-xl border border-outline-variant/25 bg-white text-on-surface shadow-[0_18px_48px_rgba(15,23,42,0.18)]" role="menu">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-extrabold text-primary"
+                      onClick={() => setRoleMenuOpen(false)}
+                      role="menuitem"
+                    >
+                      <span>Chế độ Thợ</span>
+                      <span aria-hidden="true">✓</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-extrabold text-on-surface-variant hover:bg-primary-fixed hover:text-primary"
+                      onClick={handleSwitchToCustomerMode}
+                      role="menuitem"
+                    >
+                      <span>Chế độ Khách hàng</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleSwitchToCustomerMode}
@@ -761,11 +814,12 @@ export default function WorkerLayout({
               onClick={() => {
                 setNotificationOpen((open) => !open);
                 setMoreOpen(false);
+                setRoleMenuOpen(false);
                 void markNotificationsRead();
               }}
             >
-            <button className={`relative flex shrink-0 items-center justify-center border bg-white p-0 shadow-sm transition-colors hover:bg-surface-container ${isWorkerHomePage ? "h-14 w-14 rounded-full border-white/40 text-on-surface md:h-9 md:w-9 md:rounded-lg md:border-primary-container/15" : "h-9 w-9 rounded-lg border-primary-container/15 text-on-surface-variant"}`} aria-label={"Th\u00f4ng b\u00e1o"}>
-              <BellIcon size={isWorkerHomePage ? 23 : 16} />
+            <button className={`relative flex shrink-0 items-center justify-center border bg-white p-0 shadow-sm transition-colors hover:bg-surface-container ${isWorkerHomePage ? "h-10 w-10 rounded-full border-white/40 text-on-surface min-[390px]:h-11 min-[390px]:w-11 md:h-9 md:w-9 md:rounded-lg md:border-primary-container/15" : "h-9 w-9 rounded-lg border-primary-container/15 text-on-surface-variant"}`} aria-label={"Th\u00f4ng b\u00e1o"}>
+              <BellIcon size={isWorkerHomePage ? 20 : 16} />
               {unreadNotificationCount > 0 && (
                 <span className={`absolute flex items-center justify-center rounded-full border-2 border-white bg-error px-1 font-extrabold leading-none text-white ${isWorkerHomePage ? "-right-0.5 -top-0.5 h-6 min-w-6 text-xs" : "right-0.5 top-0.5 h-4 min-w-4 text-[9px]"}`}>
                   {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
@@ -835,9 +889,9 @@ export default function WorkerLayout({
               <Link
                 href="/worker/chat"
                 aria-label="Tin nhắn"
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white p-0 text-on-surface shadow-sm transition-colors hover:bg-surface-container md:hidden"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white p-0 text-on-surface shadow-sm transition-colors hover:bg-surface-container min-[390px]:h-11 min-[390px]:w-11 md:hidden"
               >
-                <MessageCircle size={24} />
+                <MessageCircle size={21} />
               </Link>
             )}
             <button
