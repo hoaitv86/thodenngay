@@ -41,7 +41,7 @@ import {
 } from "@/lib/billgo-packages";
 import { createClient } from "@/lib/supabase/client";
 import { enqueueOfflineMutation, getCachedDataset, isLikelyOfflineError, logOfflineDebug, setCachedDataset, syncOfflineMutations } from "@/lib/offline/cache";
-import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   BILLGO_SERVICE_ICON_CONFIG,
   BILLGO_SERVICE_ICON_TYPES,
@@ -1000,14 +1000,14 @@ export default function WorkerBillGoPage() {
   const fetchAreas = useCallback(async () => {
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("areas", cacheScope) : null;
-    const cached = cacheKey ? await getCachedDataset<AreaOption[]>(cacheKey) : null;
+    const offline = isBrowserOffline();
+    const cached = offline && cacheKey ? await getCachedDataset<AreaOption[]>(cacheKey) : null;
 
-    if (cached) {
-      setAreas(cached.data);
-      logOfflineDebug("hydrated from cache", { dataset: "areas", cacheKey, recordCount: cached.data.length });
-    }
-
-    if (typeof window !== "undefined" && !window.navigator.onLine) {
+    if (offline) {
+      if (cached) {
+        setAreas(cached.data);
+        logOfflineDebug("hydrated from cache", { dataset: "areas", cacheKey, recordCount: cached.data.length });
+      }
       logOfflineDebug("server fetch skipped", { dataset: "areas", cacheKey, reason: "offline" });
       return;
     }
@@ -1028,14 +1028,14 @@ export default function WorkerBillGoPage() {
   const fetchPackages = useCallback(async () => {
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("packages", cacheScope) : null;
-    const cached = cacheKey ? await getCachedDataset<BillGoPackage[]>(cacheKey) : null;
+    const offline = isBrowserOffline();
+    const cached = offline && cacheKey ? await getCachedDataset<BillGoPackage[]>(cacheKey) : null;
 
-    if (cached) {
-      setPackages(cached.data);
-      logOfflineDebug("hydrated from cache", { dataset: "packages", cacheKey, recordCount: cached.data.length });
-    }
-
-    if (typeof window !== "undefined" && !window.navigator.onLine) {
+    if (offline) {
+      if (cached) {
+        setPackages(cached.data);
+        logOfflineDebug("hydrated from cache", { dataset: "packages", cacheKey, recordCount: cached.data.length });
+      }
       logOfflineDebug("server fetch skipped", { dataset: "packages", cacheKey, reason: "offline" });
       return;
     }
@@ -1078,16 +1078,18 @@ export default function WorkerBillGoPage() {
     const requestKey = params.toString();
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("billgo", cacheScope, requestKey) : null;
-    const cached = cacheKey ? await getCachedDataset<BillGoListCacheResult>(cacheKey) : null;
+    const offline = isBrowserOffline();
+    const cached = offline && cacheKey ? await getCachedDataset<BillGoListCacheResult>(cacheKey) : null;
 
-    if (cached) {
-      applyBillGoListResult(cached.data);
-      setMessage("");
+    if (offline) {
+      if (cached) {
+        applyBillGoListResult(cached.data);
+        setMessage("");
+        logOfflineDebug("hydrated from cache", { dataset: "billgo", cacheKey, recordCount: cached.data.rows?.length || 0 });
+      } else {
+        setMessage("Chưa có dữ liệu BillGo offline. Hãy mở màn này khi có mạng ít nhất một lần.");
+      }
       setLoading(false);
-      logOfflineDebug("hydrated from cache", { dataset: "billgo", cacheKey, recordCount: cached.data.rows?.length || 0 });
-    }
-
-    if (typeof window !== "undefined" && !window.navigator.onLine) {
       logOfflineDebug("server fetch skipped", { dataset: "billgo", cacheKey, reason: "offline" });
       return;
     }
@@ -3371,8 +3373,3 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     </div>
   );
 }
-
-
-
-
-

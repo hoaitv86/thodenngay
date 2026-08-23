@@ -13,7 +13,7 @@ import {
 } from "@/config/workerFeatureRegistry";
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
-import { makeWorkerDatasetKey, makeWorkerUserDatasetKey } from "@/lib/offline/worker-data";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey } from "@/lib/offline/worker-data";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
 import { resolveWorkerFeatureModuleState } from "@/lib/worker-modules";
@@ -280,7 +280,7 @@ export default function WorkerLayout({
 
       const storeId = memberships?.find((item) => item.unit_id)?.unit_id || null;
 
-      if (!profile && !worker && (!memberships || memberships.length === 0)) {
+      if (isBrowserOffline() && !profile && !worker && (!memberships || memberships.length === 0)) {
         const [cachedContext, cachedWorkerProfile] = await Promise.all([
           getCachedDataset<{ profile: typeof profile; worker: typeof worker; memberships: WorkerMembershipRow[] }>(legacyCacheKey),
           getCachedDataset<WorkerProfileCache>(profileCacheKey),

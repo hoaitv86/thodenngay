@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, CalendarClock, Clock, MapPin, Phone, Search, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
-import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 
 type CustomerProfile = {
   id?: string | null;
@@ -129,25 +129,29 @@ export default function WorkerJobs() {
       return;
     }
 
+    const offline = isBrowserOffline();
     const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
     let cacheScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
       ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
       : null;
-    const cachedJobs = cacheScope
-      ? await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope))
-      : null;
-    const cachedBacklogJobs = cacheScope
-      ? await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog"))
-      : null;
-    const cachedSourceJobs = cachedJobs?.data || cachedBacklogJobs?.data || null;
+    let cachedSourceJobs: BacklogJob[] | null = null;
 
-    if (cachedSourceJobs) {
-      setJobs(filterBacklogJobs(cachedSourceJobs, currentMonthStart));
-      logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cachedJobs?.key || cachedBacklogJobs?.key || null, recordCount: cachedSourceJobs.length });
+    if (offline) {
+      const cachedJobs = cacheScope
+        ? await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "dashboard"))
+        : null;
+      const cachedBacklogJobs = cacheScope
+        ? await getCachedDataset<BacklogJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog"))
+        : null;
+      cachedSourceJobs = cachedBacklogJobs?.data || cachedJobs?.data || null;
+
+      if (cachedSourceJobs) {
+        setJobs(filterBacklogJobs(cachedSourceJobs, currentMonthStart));
+        logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cachedBacklogJobs?.key || cachedJobs?.key || null, recordCount: cachedSourceJobs.length });
+      } else {
+        setMessage("Chưa có dữ liệu công việc offline. Hãy mở màn này khi có mạng ít nhất một lần.");
+      }
       setLoading(false);
-    }
-
-    if (typeof window !== "undefined" && !window.navigator.onLine) {
       logOfflineDebug("server fetch skipped", { dataset: "jobs", userId: user.id, reason: "offline" });
       return;
     }

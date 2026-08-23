@@ -49,6 +49,8 @@ import {
 } from "../components/icons";
 
 import { createClient } from "@/lib/supabase/client";
+import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { getRouteEstimate, isGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents, getCompactServicePathLabel, groupServicesForDisplay, searchSelectableServices } from "@/lib/service-hierarchy";
@@ -196,6 +198,19 @@ interface WorkerJob {
 type WorkerDashboardJobQueryResult = {
   data: WorkerJob[] | null;
   error: { message: string } | null;
+};
+
+const DASHBOARD_JOB_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
+
+const withDashboardJobIcon = (job: WorkerJob): WorkerJob => ({
+  ...job,
+  icon: DASHBOARD_JOB_ICON_MAP[job.service?.icon || ""] || BriefcaseIcon,
+});
+
+const stripDashboardJobForCache = (job: WorkerJob): WorkerJob => {
+  const clone = { ...job };
+  delete clone.icon;
+  return clone;
 };
 
 type WorkerBillGoReceivable = {
@@ -400,6 +415,28 @@ type WorkerMonthlyGoalDraft = {
   totalCustomersTarget: string;
   newCustomersTarget: string;
 };
+
+type WorkerProfileCache = {
+  worker?: WorkerWithProfile | null;
+  storeId?: string | null;
+};
+
+type WorkerDashboardOfflineSnapshot = {
+  worker: WorkerWithProfile;
+  newJobs: WorkerJob[];
+  pendingApprovalJobs: WorkerJob[];
+  activeJobs: WorkerJob[];
+  inventoryProducts: InventoryProduct[];
+  workerBillGoReceivables: WorkerBillGoReceivable[];
+  billGoPackages: BillGoPackage[];
+  services: ServiceOption[];
+  workerStats: WorkerDashboardStats;
+  monthlyGoal: WorkerMonthlyGoal | null;
+  monthlyGoalDraft: WorkerMonthlyGoalDraft;
+  monthlyGoalFormOpen: boolean;
+};
+
+type WorkerMonthlyGoalState = Pick<WorkerDashboardOfflineSnapshot, "monthlyGoal" | "monthlyGoalDraft" | "monthlyGoalFormOpen">;
 
 const DEFAULT_WORKER_MONTHLY_GOAL = {
   revenueTarget: 20000000,
@@ -701,6 +738,50 @@ export default function WorkerDashboard() {
   const [monthlyGoalExpanded, setMonthlyGoalExpanded] = useState(false);
   const [monthlyGoalSaving, setMonthlyGoalSaving] = useState(false);
   const [monthlyGoalError, setMonthlyGoalError] = useState("");
+  const applyDashboardOfflineSnapshot = React.useCallback((snapshot: WorkerDashboardOfflineSnapshot) => {
+    setDashboardData({
+      worker: snapshot.worker,
+      newJobs: snapshot.newJobs.map(withDashboardJobIcon),
+      pendingApprovalJobs: snapshot.pendingApprovalJobs,
+      activeJobs: snapshot.activeJobs,
+      inventoryProducts: snapshot.inventoryProducts,
+      workerBillGoReceivables: snapshot.workerBillGoReceivables,
+      billGoPackages: snapshot.billGoPackages,
+      services: snapshot.services,
+      workerStats: snapshot.workerStats,
+    });
+    setMonthlyGoalError("");
+    setMonthlyGoal(snapshot.monthlyGoal);
+    setMonthlyGoalDraft(snapshot.monthlyGoalDraft);
+    setMonthlyGoalFormOpen(snapshot.monthlyGoalFormOpen);
+  }, []);
+
+  const restoreDashboardOfflineSnapshot = React.useCallback(async (userId: string) => {
+    const profileKey = makeWorkerUserDatasetKey("worker-profile", userId);
+    const cachedProfile = await getCachedDataset<WorkerProfileCache>(profileKey);
+    const cachedWorkerId = cachedProfile?.data.worker?.id || null;
+    if (!cachedWorkerId) {
+      logOfflineDebug("dataset load", { dataset: "dashboard-summary", userId, snapshotFound: false, reason: "missing-worker-profile" });
+      return false;
+    }
+
+    const cacheScope: WorkerOfflineScope = {
+      userId,
+      workerId: cachedWorkerId,
+      storeId: cachedProfile?.data.storeId || null,
+    };
+    const cacheKey = makeWorkerDatasetKey("dashboard-summary", cacheScope);
+    const cachedDashboard = await getCachedDataset<WorkerDashboardOfflineSnapshot>(cacheKey);
+    if (!cachedDashboard) return false;
+
+    applyDashboardOfflineSnapshot(cachedDashboard.data);
+    logOfflineDebug("hydrated from cache", {
+      dataset: "dashboard-summary",
+      cacheKey,
+      recordCount: cachedDashboard.data.activeJobs.length + cachedDashboard.data.pendingApprovalJobs.length + cachedDashboard.data.newJobs.length,
+    });
+    return true;
+  }, [applyDashboardOfflineSnapshot]);
   const quickServiceGroups = React.useMemo(() => buildAdminServiceGroups(services), [services]);
   const getTechnicalDetailOptions = React.useCallback((serviceId?: string | null) =>
     services
@@ -1101,7 +1182,7 @@ export default function WorkerDashboard() {
     return () => window.removeEventListener("worker:open-quick-job", openQuickJob);
   }, []);
 
-  const loadWorkerMonthlyGoal = React.useCallback(async (workerId: string, isBackground = false) => {
+  const loadWorkerMonthlyGoal = React.useCallback(async (workerId: string, isBackground = false): Promise<WorkerMonthlyGoalState | null> => {
     const { data, error } = await supabase
       .from("worker_monthly_goals")
       .select("id, worker_id, goal_month, revenue_target, total_customers_target, new_customers_target, skipped")
@@ -1113,7 +1194,7 @@ export default function WorkerDashboard() {
       if (!isBackground) {
         setMonthlyGoalError("Chưa tải được mục tiêu tháng. Hãy chạy migration worker_monthly_goals.");
       }
-      return;
+      return null;
     }
 
     const goals = (data || []) as unknown as WorkerMonthlyGoal[];
@@ -1133,13 +1214,20 @@ export default function WorkerDashboard() {
         }
         : DEFAULT_WORKER_MONTHLY_GOAL;
 
+    const nextDraft = makeGoalDraft(suggestion);
+    const nextFormOpen = !currentGoal ? true : currentGoal.skipped ? false : false;
     setMonthlyGoalError("");
     setMonthlyGoal(currentGoal);
-    setMonthlyGoalDraft(makeGoalDraft(suggestion));
+    setMonthlyGoalDraft(nextDraft);
     if (!currentGoal) setMonthlyGoalFormOpen(true);
     if (currentGoal?.skipped) setMonthlyGoalFormOpen(false);
-  }, [currentGoalMonth, previousGoalMonth, supabase]);
 
+    return {
+      monthlyGoal: currentGoal,
+      monthlyGoalDraft: nextDraft,
+      monthlyGoalFormOpen: nextFormOpen,
+    };
+  }, [currentGoalMonth, previousGoalMonth, supabase]);
   const saveWorkerMonthlyGoal = async (skipped = false) => {
     if (!worker?.id) return;
 
@@ -1183,6 +1271,17 @@ export default function WorkerDashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    if (isBrowserOffline()) {
+      const restored = await restoreDashboardOfflineSnapshot(user.id);
+      if (!restored) {
+        logOfflineDebug("server fetch skipped", { dataset: "dashboard-summary", userId: user.id, reason: "offline-no-cache" });
+      } else {
+        logOfflineDebug("server fetch skipped", { dataset: "dashboard-summary", userId: user.id, reason: "offline" });
+      }
+      if (!isBackground) setLoading(false);
+      return;
+    }
+
     // 2. Get worker profile
     const { data: workerData } = await supabase
       .from('workers')
@@ -1199,7 +1298,7 @@ export default function WorkerDashboard() {
 
     if (normalizedWorkerData) {
       const workerData = normalizedWorkerData;
-      await loadWorkerMonthlyGoal(workerData.id, isBackground);
+      const monthlyGoalState = await loadWorkerMonthlyGoal(workerData.id, isBackground);
       const workerIsAvailable = workerData.is_available !== false;
       const workerSpecialties = workerData.specialties || [];
       const isDemoWorker = isDemoAccount(workerData.user);
@@ -1429,7 +1528,7 @@ export default function WorkerDashboard() {
       const nextDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const { data: workerJobs } = await supabase
+      const { data: workerJobs, error: workerJobsError } = await supabase
         .from('jobs')
         .select('id, status, customer_id, quoted_price, final_amount, updated_at, payments(id, amount, status, paid_at)')
         .eq('worker_id', workerData.id);
@@ -1503,14 +1602,14 @@ export default function WorkerDashboard() {
         .filter(firstCompletedAt => firstCompletedAt >= monthStart && firstCompletedAt < nextMonthStart)
         .length;
 
-      const { data: todayRatings } = await supabase
+      const { data: todayRatings, error: todayRatingsError } = await supabase
         .from("ratings")
         .select("score, created_at")
         .eq("worker_id", workerData.id)
         .gte("created_at", todayStart.toISOString())
         .lt("created_at", nextDayStart.toISOString());
 
-      const { data: monthlyRatings } = await supabase
+      const { data: monthlyRatings, error: monthlyRatingsError } = await supabase
         .from("ratings")
         .select("score, created_at")
         .eq("worker_id", workerData.id)
@@ -1544,8 +1643,7 @@ export default function WorkerDashboard() {
         nextWorkerBillGoReceivables = (billGoReceivablesData || []) as unknown as WorkerBillGoReceivable[];
       }
 
-      setDashboardData(prev => ({
-        ...prev,
+      const nextDashboardData: WorkerDashboardData = {
         worker: workerData,
         newJobs: mappedNew,
         pendingApprovalJobs: mappedPendingApproval,
@@ -1566,7 +1664,76 @@ export default function WorkerDashboard() {
           monthlyIncome,
           monthlyRating,
         },
+      };
+
+      setDashboardData(prev => ({
+        ...prev,
+        ...nextDashboardData,
       }));
+
+      const profileKey = makeWorkerUserDatasetKey("worker-profile", user.id);
+      const cachedProfile = await getCachedDataset<WorkerProfileCache>(profileKey);
+      const storeId = cachedProfile?.data.storeId || null;
+      const cacheScope: WorkerOfflineScope = { userId: user.id, workerId: workerData.id, storeId };
+      const fallbackMonthlyGoalState: WorkerMonthlyGoalState = {
+        monthlyGoal: null,
+        monthlyGoalDraft: makeGoalDraft(DEFAULT_WORKER_MONTHLY_GOAL),
+        monthlyGoalFormOpen: false,
+      };
+      const dashboardSnapshot: WorkerDashboardOfflineSnapshot = {
+        worker: workerData,
+        newJobs: mappedNew.map(stripDashboardJobForCache),
+        pendingApprovalJobs: mappedPendingApproval.map(stripDashboardJobForCache),
+        activeJobs: mappedActive.map(stripDashboardJobForCache),
+        inventoryProducts: nextInventoryProducts,
+        workerBillGoReceivables: nextWorkerBillGoReceivables,
+        billGoPackages: nextBillGoPackages,
+        services: nextServices,
+        workerStats: nextDashboardData.workerStats,
+        ...(monthlyGoalState || fallbackMonthlyGoalState),
+      };
+      const cacheWrites: Promise<unknown>[] = [
+        setCachedDataset(profileKey, { worker: workerData, storeId } satisfies WorkerProfileCache, { dataset: "worker-profile", userId: user.id, workerId: workerData.id, storeId }),
+        setCachedDataset(makeWorkerDatasetKey("store", cacheScope), { userId: user.id, workerId: workerData.id, storeId }, { dataset: "store", userId: user.id, workerId: workerData.id, storeId }),
+      ];
+
+      const canCacheDashboard = !pendingJobsResult.error && !workerPendingJobsResult.error && !assignedJobsResult.error && !workerJobsError && !todayRatingsError && !monthlyRatingsError && !servicesError && !billGoReceivablesError;
+      if (canCacheDashboard) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("dashboard-summary", cacheScope), dashboardSnapshot, { dataset: "dashboard-summary", userId: user.id, workerId: workerData.id, storeId }));
+      } else {
+        logOfflineDebug("skipped cache overwrite", { dataset: "dashboard-summary", cacheKey: makeWorkerDatasetKey("dashboard-summary", cacheScope), reason: "partial-fetch-error" });
+      }
+
+      if (!pendingJobsResult.error) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "available"), filteredPending, { dataset: "jobs", variant: "available", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!workerPendingJobsResult.error) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "pending"), (workerPendingJobs || []) as WorkerJob[], { dataset: "jobs", variant: "pending", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!assignedJobsResult.error) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "active"), assignedJobs.map(stripDashboardJobForCache), { dataset: "jobs", variant: "active", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!pendingJobsResult.error && !workerPendingJobsResult.error && !assignedJobsResult.error) {
+        const dashboardJobs = [
+          ...filteredPending,
+          ...((workerPendingJobs || []) as WorkerJob[]),
+          ...assignedJobs,
+        ].map(stripDashboardJobForCache);
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "dashboard"), dashboardJobs, { dataset: "jobs", variant: "dashboard", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!servicesError) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("categories", cacheScope), nextServices, { dataset: "categories", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!packageError) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("packages", cacheScope), nextBillGoPackages, { dataset: "packages", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!billGoReceivablesError) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("billgo", cacheScope, "dashboard"), nextWorkerBillGoReceivables, { dataset: "billgo", variant: "dashboard", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      if (!inventoryError) {
+        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("inventory", cacheScope), nextInventoryProducts, { dataset: "inventory", userId: user.id, workerId: workerData.id, storeId }));
+      }
+      await Promise.allSettled(cacheWrites);
     } else {
       setDashboardData(initialWorkerDashboardData);
     }
@@ -5943,4 +6110,3 @@ export default function WorkerDashboard() {
     </div>
   );
 }
-

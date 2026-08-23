@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
-import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
+import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import {
   BriefcaseIcon,
   CalendarIcon,
@@ -137,33 +137,35 @@ export default function WorkerCustomersPage() {
       return;
     }
 
+    const offline = isBrowserOffline();
     const cachedProfile = await getCachedDataset<WorkerProfileCache>(makeWorkerUserDatasetKey("worker-profile", user.id));
     let cacheScope: WorkerOfflineScope | null = cachedProfile?.data.worker?.id
       ? { userId: user.id, workerId: cachedProfile.data.worker.id, storeId: cachedProfile.data.storeId || null }
       : null;
-    const cachedCustomers = cacheScope
-      ? await getCachedDataset<CustomerSummary[]>(makeWorkerDatasetKey("customers", cacheScope))
-      : null;
-    const cachedJobs = cacheScope
-      ? await getCachedDataset<RawWorkerCustomerJob[]>(makeWorkerDatasetKey("jobs", cacheScope))
-      : null;
-    const cachedCustomerSourceJobs = cacheScope
-      ? await getCachedDataset<RawWorkerCustomerJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "customers"))
-      : null;
-    const cachedSourceJobs = cachedJobs?.data || cachedCustomerSourceJobs?.data || null;
+    let hasCachedCustomers = false;
 
-    if (cachedSourceJobs) {
-      const nextCustomers = buildCustomerSummaries(cachedSourceJobs);
-      setCustomers(nextCustomers);
-      logOfflineDebug("hydrated from cache", { dataset: "customers", cacheKey: cachedJobs?.key || cachedCustomerSourceJobs?.key || null, recordCount: nextCustomers.length });
-      setLoading(false);
-    } else if (cachedCustomers) {
-      setCustomers(cachedCustomers.data);
-      logOfflineDebug("hydrated from cache", { dataset: "customers", cacheKey: cachedCustomers.key, recordCount: cachedCustomers.data.length });
-      setLoading(false);
-    }
+    if (offline) {
+      const cachedCustomers = cacheScope
+        ? await getCachedDataset<CustomerSummary[]>(makeWorkerDatasetKey("customers", cacheScope))
+        : null;
+      const cachedCustomerSourceJobs = cacheScope
+        ? await getCachedDataset<RawWorkerCustomerJob[]>(makeWorkerDatasetKey("jobs", cacheScope, "customers"))
+        : null;
+      const cachedSourceJobs = cachedCustomerSourceJobs?.data || null;
 
-    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      if (cachedSourceJobs) {
+        const nextCustomers = buildCustomerSummaries(cachedSourceJobs);
+        setCustomers(nextCustomers);
+        hasCachedCustomers = true;
+        logOfflineDebug("hydrated from cache", { dataset: "customers", cacheKey: cachedCustomerSourceJobs?.key || null, recordCount: nextCustomers.length });
+      } else if (cachedCustomers) {
+        setCustomers(cachedCustomers.data);
+        hasCachedCustomers = true;
+        logOfflineDebug("hydrated from cache", { dataset: "customers", cacheKey: cachedCustomers.key, recordCount: cachedCustomers.data.length });
+      } else {
+        setError("Chưa có dữ liệu khách hàng offline. Hãy mở màn này khi có mạng ít nhất một lần.");
+      }
+      setLoading(false);
       logOfflineDebug("server fetch skipped", { dataset: "customers", userId: user.id, reason: "offline" });
       return;
     }
@@ -174,7 +176,6 @@ export default function WorkerCustomersPage() {
       .eq("user_id", user.id)
       .single();
 
-    const hasCachedCustomers = Boolean(cachedSourceJobs || cachedCustomers);
     if (workerError || !workerData) {
       if (hasCachedCustomers) {
         logOfflineDebug("server fetch error", { dataset: "worker-profile", userId: user.id, reason: workerError?.message || "missing-worker" });
