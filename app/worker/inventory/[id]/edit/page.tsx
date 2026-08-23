@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug } from "@/lib/offline/cache";
 import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
+import { findCachedWorkerRecordById } from "@/lib/offline/worker-detail-cache";
 import {
   buildInventoryProductPayload,
   emptyInventoryProductForm,
@@ -55,17 +56,22 @@ export default function EditInventoryProductPage() {
       : null;
 
     if (isBrowserOffline()) {
-      const cachedProducts = cachedScope
-        ? await getCachedDataset<InventoryProduct[]>(makeWorkerDatasetKey("inventory", cachedScope))
-        : null;
-      const cachedProduct = cachedProducts?.data.find(product => product.id === id) || null;
+      const cachedProductResult = await findCachedWorkerRecordById<InventoryProduct>({
+        dataset: "inventory",
+        userId: user.id,
+        recordId: id,
+        scopes: cachedScope ? [cachedScope] : [],
+        variants: [null],
+      });
+      const cachedProduct = cachedProductResult?.record || null;
       if (cachedProduct) {
-        setWorkerId(cachedScope?.workerId || "");
+        const cachedWorkerId = typeof cachedProductResult?.dataset.meta?.workerId === "string" ? cachedProductResult.dataset.meta.workerId : cachedScope?.workerId || "";
+        setWorkerId(cachedWorkerId);
         setCategorySuggestions(getInventoryCategorySuggestionsForSpecialties(
           Array.isArray(cachedProfile?.data.worker?.specialties) ? cachedProfile.data.worker.specialties : []
         ));
         setValues(productToFormValues(cachedProduct));
-        logOfflineDebug("hydrated from cache", { dataset: "inventory", cacheKey: cachedProducts?.key || null, recordCount: 1, route: `/worker/inventory/${id}/edit` });
+        logOfflineDebug("hydrated from cache", { dataset: "inventory", cacheKey: cachedProductResult?.cacheKey || null, recordCount: 1, route: `/worker/inventory/${id}/edit` });
       } else {
         setMessage("Chưa có dữ liệu offline cho mục này");
         logOfflineDebug("dataset load", { dataset: "inventory", cacheKey: cachedScope ? makeWorkerDatasetKey("inventory", cachedScope) : null, snapshotFound: false, route: `/worker/inventory/${id}/edit` });

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
 import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
+import { findCachedWorkerRecordById } from "@/lib/offline/worker-detail-cache";
 import { getJobServices, isMissingWorkflowColumn, type JobWithWorkflow } from "@/lib/job-workflow";
 import {
   BILLGO_CYCLE_OPTIONS,
@@ -225,30 +226,24 @@ export default function WorkerJobDetailPage() {
         if (cachedUser?.full_name) setWorkerName(cachedUser.full_name);
         if (cachedUser?.phone) setWorkerPhone(cachedUser.phone);
 
+        const cachedJobResult = await findCachedWorkerRecordById<WorkerJobDetail>({
+          dataset: "jobs",
+          userId: user.id,
+          recordId: jobId,
+          scopes: cacheScope ? [cacheScope] : [],
+          variants: [`detail:${jobId}`, "history", "customers", "backlog", "active", "pending", "available", "dashboard", null],
+        });
+        cachedJob = cachedJobResult?.record || null;
         if (cacheScope) {
-          const cachedDatasets = await Promise.all([
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`)),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "history")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "customers")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "backlog")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "active")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "pending")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "available")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope, "dashboard")),
-            getCachedDataset<WorkerJobDetail[]>(makeWorkerDatasetKey("jobs", cacheScope)),
-          ]);
-          cachedJob = cachedDatasets
-            .flatMap(dataset => dataset?.data || [])
-            .find(item => item.id === jobId) || null;
           cachedPackages = (await getCachedDataset<BillGoPackage[]>(makeWorkerDatasetKey("packages", cacheScope)))?.data || null;
-
-          if (cachedJob) {
-            setJob(cachedJob);
-            logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cacheScope ? makeWorkerDatasetKey("jobs", cacheScope, `detail:${jobId}`) : null, recordCount: 1 });
-            setLoading(false);
-          }
-          if (cachedPackages) setBillGoPackages(cachedPackages);
         }
+
+        if (cachedJob) {
+          setJob(cachedJob);
+          logOfflineDebug("hydrated from cache", { dataset: "jobs", cacheKey: cachedJobResult?.cacheKey || null, recordCount: 1 });
+          setLoading(false);
+        }
+        if (cachedPackages) setBillGoPackages(cachedPackages);
 
         if (typeof window !== "undefined" && !window.navigator.onLine) {
           if (!cachedJob) {

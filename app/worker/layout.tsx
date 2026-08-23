@@ -15,6 +15,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
 import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey } from "@/lib/offline/worker-data";
+import { collectWorkerOfflineDetailPaths, WORKER_OFFLINE_SHELL_PATHS } from "@/lib/offline/worker-detail-cache";
 import { getOfflineWorkerAuthSnapshot } from "@/lib/offline/session";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
@@ -96,20 +97,6 @@ const mobileMoreGroups: MobileMoreGroup[] = [
 
 const activeRoleCookieMaxAge = 60 * 60 * 24 * 30;
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
-const WORKER_OFFLINE_SHELL_PATHS = [
-  "/worker",
-  "/worker/jobs",
-  "/worker/customers",
-  "/worker/billgo",
-  "/worker/history",
-  "/worker/history/__offline-shell__",
-  "/worker/profile",
-  "/worker/chat",
-  "/worker/inventory",
-  "/worker/inventory/__offline-shell__/edit",
-  "/worker/inventory/__offline-shell__/delete",
-  "/worker/sales",
-];
 
 function setActiveRoleCookie(role: "customer" | "worker") {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
@@ -475,17 +462,26 @@ export default function WorkerLayout({
   };
 
   useEffect(() => {
-    const postWorkerShellCache = (registration: ServiceWorkerRegistration) => {
+    const postWorkerShellCache = async (registration: ServiceWorkerRegistration) => {
       if (!window.navigator.onLine) return;
       const worker = registration.active || navigator.serviceWorker.controller;
       if (!worker) return;
 
-      const urls = WORKER_OFFLINE_SHELL_PATHS.map((path) => new URL(path, window.location.origin).href);
+      const shellPaths = new Set(WORKER_OFFLINE_SHELL_PATHS);
+      try {
+        const detailPaths = await collectWorkerOfflineDetailPaths(notificationUserId);
+        detailPaths.forEach((path) => shellPaths.add(path));
+      } catch (error) {
+        console.warn("[TDN-OFFLINE]", "worker detail route path scan error", error);
+      }
+
+      const routes = Array.from(shellPaths);
+      const urls = routes.map((path) => new URL(path, window.location.origin).href);
       console.info("[TDN-OFFLINE]", "worker route shell cache", {
         route: window.location.pathname,
         identityFound: true,
         redirectReason: null,
-        routes: WORKER_OFFLINE_SHELL_PATHS,
+        routes,
       });
       worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls });
     };
@@ -494,19 +490,26 @@ export default function WorkerLayout({
       if (!("serviceWorker" in navigator) || !window.navigator.onLine) return;
       void navigator.serviceWorker.ready
         .then((registration) => {
-          postWorkerShellCache(registration);
-          window.setTimeout(() => postWorkerShellCache(registration), 1500);
-          window.setTimeout(() => postWorkerShellCache(registration), 4000);
-          window.setTimeout(() => postWorkerShellCache(registration), 8000);
+          void postWorkerShellCache(registration);
+          window.setTimeout(() => void postWorkerShellCache(registration), 1500);
+          window.setTimeout(() => void postWorkerShellCache(registration), 4000);
+          window.setTimeout(() => void postWorkerShellCache(registration), 8000);
         })
         .catch((error) => {
           console.warn("[TDN-OFFLINE]", "worker route shell cache error", error);
         });
     };
 
+    let warmDebounceId = 0;
+    const scheduleWarmWorkerShells = () => {
+      window.clearTimeout(warmDebounceId);
+      warmDebounceId = window.setTimeout(warmWorkerShells, 250);
+    };
+
     warmWorkerShells();
+    window.addEventListener("tdn:offline-dataset-saved", scheduleWarmWorkerShells);
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("controllerchange", warmWorkerShells);
+      navigator.serviceWorker.addEventListener("controllerchange", scheduleWarmWorkerShells);
     }
 
     const handleOfflineWorkerNavigation = (event: MouseEvent) => {
@@ -539,11 +542,13 @@ export default function WorkerLayout({
     document.addEventListener("click", handleOfflineWorkerNavigation, true);
     return () => {
       document.removeEventListener("click", handleOfflineWorkerNavigation, true);
+      window.clearTimeout(warmDebounceId);
+      window.removeEventListener("tdn:offline-dataset-saved", scheduleWarmWorkerShells);
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.removeEventListener("controllerchange", warmWorkerShells);
+        navigator.serviceWorker.removeEventListener("controllerchange", scheduleWarmWorkerShells);
       }
     };
-  }, []);
+  }, [notificationUserId]);
   const isActiveItem = (item: WorkerFeatureDefinition) => {
     if (item.id === "create_job" || item.id === "more") return false;
     if (item.exactActive) return pathname === item.route;

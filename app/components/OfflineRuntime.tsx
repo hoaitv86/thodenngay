@@ -3,31 +3,11 @@
 import { useEffect } from "react";
 import { getOfflineWorkerAuthSnapshot, rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
 import { syncOfflineMutations } from "@/lib/offline/cache";
+import { isWorkerDetailRoute, WORKER_OFFLINE_SHELL_PATHS } from "@/lib/offline/worker-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
-const WORKER_APP_SHELL_PATHS = [
-  "/worker",
-  "/worker/jobs",
-  "/worker/customers",
-  "/worker/billgo",
-  "/worker/history",
-  "/worker/history/__offline-shell__",
-  "/worker/profile",
-  "/worker/chat",
-  "/worker/inventory",
-  "/worker/inventory/__offline-shell__/edit",
-  "/worker/inventory/__offline-shell__/delete",
-  "/worker/sales",
-];
-const WORKER_DETAIL_ROUTE_PATTERNS = [
-  /^\/worker\/history\/[^/]+$/,
-  /^\/worker\/inventory\/[^/]+\/(edit|delete)$/,
-  /^\/worker\/customers\/[^/]+$/,
-  /^\/worker\/jobs\/[^/]+$/,
-  /^\/worker\/billgo\/[^/]+$/,
-];
 
 function publishNetworkState() {
   window.dispatchEvent(
@@ -35,10 +15,6 @@ function publishNetworkState() {
       detail: { online: window.navigator.onLine, checkedAt: new Date().toISOString() },
     })
   );
-}
-
-function isWorkerDetailRoute(pathname: string) {
-  return WORKER_DETAIL_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
 }
 
 function collectWorkerDetailUrls(urls: Set<string>) {
@@ -70,7 +46,7 @@ function collectAppShellUrls() {
   const workerIdentity = getOfflineWorkerAuthSnapshot();
   const shouldCacheWorkerRoutes = Boolean(workerIdentity) || window.location.pathname.startsWith("/worker");
   if (shouldCacheWorkerRoutes) {
-    WORKER_APP_SHELL_PATHS.forEach((path) => urls.add(new URL(path, window.location.origin).href));
+    WORKER_OFFLINE_SHELL_PATHS.forEach((path) => urls.add(new URL(path, window.location.origin).href));
     collectWorkerDetailUrls(urls);
     console.info("[TDN-OFFLINE]", "worker route shell cache", {
       route: window.location.pathname,

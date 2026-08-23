@@ -105,6 +105,19 @@ export async function getCachedDataset<T>(key: string): Promise<OfflineDataset<T
   return result || null;
 }
 
+export async function getAllCachedDatasets<T = unknown>(): Promise<OfflineDataset<T>[]> {
+  if (!hasIndexedDb()) {
+    logOfflineDebug("dataset scan skipped", { reason: "indexeddb-unavailable" });
+    return [];
+  }
+  const db = await openOfflineDb();
+  const transaction = db.transaction(DATASET_STORE, "readonly");
+  const store = transaction.objectStore(DATASET_STORE);
+  const result = await requestToPromise<OfflineDataset<T>[]>(store.getAll());
+  logOfflineDebug("dataset scan", { recordCount: result.length });
+  return result;
+}
+
 export async function setCachedDataset<T>(key: string, data: T, meta?: Record<string, unknown>) {
   if (!hasIndexedDb()) {
     logOfflineDebug("dataset save skipped", { key, reason: "indexeddb-unavailable" });
@@ -114,11 +127,15 @@ export async function setCachedDataset<T>(key: string, data: T, meta?: Record<st
   const transaction = db.transaction(DATASET_STORE, "readwrite");
   const store = transaction.objectStore(DATASET_STORE);
   await requestToPromise(store.put({ key, data, meta, updatedAt: new Date().toISOString() }));
+  const recordCount = getOfflineRecordCount(data);
   logOfflineDebug("dataset save", {
     key,
-    recordCount: getOfflineRecordCount(data),
+    recordCount,
     meta: meta || null,
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("tdn:offline-dataset-saved", { detail: { key, meta: meta || null, recordCount } }));
+  }
 }
 
 export function isLikelyOfflineError(error: unknown) {

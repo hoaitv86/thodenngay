@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tdn-app-shell-v5";
+const CACHE_VERSION = "tdn-app-shell-v6";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
   "/",
@@ -153,8 +153,8 @@ async function networkFirstNavigation(request) {
     if (workerShellMatch) return workerShellMatch;
 
     if (requestUrl.pathname === "/worker" || requestUrl.pathname.startsWith("/worker/")) {
-      return (await cache.match("/", { ignoreSearch: true }))
-        || (await cache.match(APP_SHELL_FALLBACK_URL, { ignoreSearch: true }))
+      return (await cache.match("/worker", { ignoreSearch: true }))
+        || (await cache.match("/", { ignoreSearch: true }))
         || Response.error();
     }
 
