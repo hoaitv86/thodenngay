@@ -44,6 +44,7 @@ const isMissingBillGoTv360SchemaError = (error?: { message?: string | null; code
     || error.message.includes("tv360_service_type")
   ));
 
+
 type BillGoSubscriptionListRow = {
   id: string;
   customer_id?: string | null;
@@ -2114,7 +2115,6 @@ export async function PATCH(request: Request) {
   const paidAt = asText(body.paidAt) || new Date().toISOString();
   const method = allowedPaymentMethods.has(asText(body.method)) ? asText(body.method) : "cash";
   const note = asText(body.note);
-  const idempotencyKey = asText(body.idempotencyKey).slice(0, 160) || null;
 
   if (!receivableId || paidAmount < 0) return jsonError("Thông tin thu tiền không hợp lệ.");
 
@@ -2128,23 +2128,6 @@ export async function PATCH(request: Request) {
 
   if (receivableError || !receivable) return jsonError("Không tìm thấy kỳ cước.", 404);
 
-  if (idempotencyKey) {
-    const { data: existingPayment, error: existingPaymentError } = await admin
-      .from("payments")
-      .select("id, billgo_receipts(receipt_code, lookup_code, qr_payload)")
-      .eq("receivable_id", receivableId)
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-    if (existingPayment) {
-      const existingReceipt = Array.isArray(existingPayment.billgo_receipts)
-        ? existingPayment.billgo_receipts[0]
-        : existingPayment.billgo_receipts;
-      return NextResponse.json({ ok: true, status: receivable.status, receipt: existingReceipt || null, idempotent: true });
-    }
-    if (existingPaymentError && existingPaymentError.code !== "42703") {
-      return jsonError("Không thể kiểm tra giao dịch đã đồng bộ: " + existingPaymentError.message, 409);
-    }
-  }
 
   if (receivable.status === "paid" || receivable.status === "promo") return jsonError("Kỳ cước này đã được xử lý.", 409);
 
@@ -2172,7 +2155,6 @@ export async function PATCH(request: Request) {
     collected_by: userId,
     note,
   };
-  if (idempotencyKey) paymentInsert.idempotency_key = idempotencyKey;
 
   let { data: payment, error: paymentError } = await admin
     .from("payments")
@@ -2180,31 +2162,6 @@ export async function PATCH(request: Request) {
     .select("id")
     .single();
 
-  if (paymentError && paymentError.code === "42703" && idempotencyKey) {
-    delete paymentInsert.idempotency_key;
-    const retryPayment = await admin
-      .from("payments")
-      .insert(paymentInsert)
-      .select("id")
-      .single();
-    payment = retryPayment.data;
-    paymentError = retryPayment.error;
-  }
-
-  if (paymentError && paymentError.code === "23505" && idempotencyKey) {
-    const { data: existingPayment } = await admin
-      .from("payments")
-      .select("id, billgo_receipts(receipt_code, lookup_code, qr_payload)")
-      .eq("receivable_id", receivable.id)
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-    if (existingPayment) {
-      const existingReceipt = Array.isArray(existingPayment.billgo_receipts)
-        ? existingPayment.billgo_receipts[0]
-        : existingPayment.billgo_receipts;
-      return NextResponse.json({ ok: true, status: receivable.status, receipt: existingReceipt || null, idempotent: true });
-    }
-  }
 
   if (paymentError || !payment) return jsonError(paymentError?.message || "Không thể lưu giao dịch thu tiền.");
 

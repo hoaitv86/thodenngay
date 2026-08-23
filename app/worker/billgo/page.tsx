@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -884,7 +884,7 @@ export default function WorkerBillGoPage() {
     cycle: "" as BillGoCycle | "",
     effectivePeriodStart: todayInput(),
   });
-  const [selectedSubscriptionIds, setSelectedSubscriptionIds] = useState<string[]>([]);
+  const [selectedReceivableIds, setSelectedReceivableIds] = useState<string[]>([]);
   const [billingPeriodFilter, setBillingPeriodFilter] = useState<BillingPeriodQuickFilter | null>(null);
   const [showBulkCycle, setShowBulkCycle] = useState(false);
   const [bulkCycleForm, setBulkCycleForm] = useState({
@@ -1234,13 +1234,17 @@ export default function WorkerBillGoPage() {
     debt: serverTotals.totalDebt,
   }), [serverTotals]);
   const visibleRows = viewMode === "area" ? areaRows : filteredRows;
-  const visibleSubscriptionIds = useMemo(() => Array.from(new Set(visibleRows.map(row => row.item.subscription?.id).filter(Boolean) as string[])), [visibleRows]);
-  const selectedSubscriptionIdSet = useMemo(() => new Set(selectedSubscriptionIds), [selectedSubscriptionIds]);
-  const selectedVisibleCount = visibleSubscriptionIds.filter(id => selectedSubscriptionIdSet.has(id)).length;
-  const allVisibleSelected = visibleSubscriptionIds.length > 0 && selectedVisibleCount === visibleSubscriptionIds.length;
+  const visibleReceivableIds = useMemo(() => Array.from(new Set(visibleRows.map(row => row.item.id).filter(Boolean))), [visibleRows]);
+  const selectedReceivableIdSet = useMemo(() => new Set(selectedReceivableIds), [selectedReceivableIds]);
+  const selectedVisibleCount = visibleReceivableIds.filter(id => selectedReceivableIdSet.has(id)).length;
+  const allVisibleSelected = visibleReceivableIds.length > 0 && selectedVisibleCount === visibleReceivableIds.length;
   const selectedVisibleRows = useMemo(
-    () => visibleRows.filter(row => row.item.subscription?.id && selectedSubscriptionIdSet.has(row.item.subscription.id)),
-    [selectedSubscriptionIdSet, visibleRows],
+    () => visibleRows.filter(row => selectedReceivableIdSet.has(row.item.id)),
+    [selectedReceivableIdSet, visibleRows],
+  );
+  const selectedCycleSubscriptionIds = useMemo(
+    () => Array.from(new Set(selectedVisibleRows.map(row => row.item.subscription?.id).filter((id): id is string => Boolean(id)))),
+    [selectedVisibleRows],
   );
   const selectedCollectableRows = useMemo(
     () => selectedVisibleRows.filter(row => row.summary.debt > 0 && !["pending_cycle", "not_due", "paid", "promo"].includes(row.summary.status)),
@@ -1267,7 +1271,7 @@ export default function WorkerBillGoPage() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setSelectedSubscriptionIds(previous => previous.filter(id => rowViews.some(row => row.item.subscription?.id === id)));
+      setSelectedReceivableIds(previous => previous.filter(id => rowViews.some(row => row.item.id === id)));
     }, 0);
     return () => window.clearTimeout(timeoutId);
   }, [rowViews]);
@@ -1296,7 +1300,7 @@ export default function WorkerBillGoPage() {
     setStatusFilter("unpaid");
     setDueFilter("all");
     setPage(1);
-    setSelectedSubscriptionIds([]);
+    setSelectedReceivableIds([]);
   };
 
   const clearBillingPeriodFilter = () => {
@@ -1305,7 +1309,7 @@ export default function WorkerBillGoPage() {
     setStatusFilter("all");
     setDueFilter("all");
     setPage(1);
-    setSelectedSubscriptionIds([]);
+    setSelectedReceivableIds([]);
   };
 
   const selectedSubAreaIndex = selectedAreaSubAreas.findIndex(subArea => subArea.id === selectedSubAreaId);
@@ -2117,20 +2121,20 @@ export default function WorkerBillGoPage() {
     }
   };
 
-  const toggleSubscriptionSelection = (subscriptionId: string, checked: boolean) => {
-    setSelectedSubscriptionIds(previous => {
+  const toggleReceivableSelection = (receivableId: string, checked: boolean) => {
+    setSelectedReceivableIds(previous => {
       const next = new Set(previous);
-      if (checked) next.add(subscriptionId);
-      else next.delete(subscriptionId);
+      if (checked) next.add(receivableId);
+      else next.delete(receivableId);
       return Array.from(next);
     });
   };
 
   const toggleVisibleSelection = () => {
-    setSelectedSubscriptionIds(previous => {
+    setSelectedReceivableIds(previous => {
       const next = new Set(previous);
-      if (allVisibleSelected) visibleSubscriptionIds.forEach(id => next.delete(id));
-      else visibleSubscriptionIds.forEach(id => next.add(id));
+      if (allVisibleSelected) visibleReceivableIds.forEach(id => next.delete(id));
+      else visibleReceivableIds.forEach(id => next.add(id));
       return Array.from(next);
     });
   };
@@ -2186,7 +2190,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
         }
       }
 
-      setSelectedSubscriptionIds([]);
+      setSelectedReceivableIds([]);
       if (queued === 0) await refreshBillGoKeepingScroll();
       else if (window.navigator.onLine) void syncOfflineMutations();
       const skippedSuffix = skippedSelectedCollectionCount > 0 ? ` Đã bỏ qua ${skippedSelectedCollectionCount} khách không đủ điều kiện.` : "";
@@ -2203,9 +2207,9 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
 
   const submitBulkCycle = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (selectedSubscriptionIds.length === 0) return;
+    if (selectedCycleSubscriptionIds.length === 0) return;
     const cycleLabel = getBillGoCycleOption(bulkCycleForm.cycle).label;
-    const ok = window.confirm("Gan chu ky " + cycleLabel + " cho " + selectedSubscriptionIds.length + " khach hang da chon? Cac ky da thu se duoc giu nguyen.");
+    const ok = window.confirm("Gan chu ky " + cycleLabel + " cho " + selectedCycleSubscriptionIds.length + " khach hang da chon? Cac ky da thu se duoc giu nguyen.");
     if (!ok) return;
     setSaving(true);
     setMessage("");
@@ -2215,7 +2219,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "assign_cycle_bulk",
-          subscriptionIds: selectedSubscriptionIds,
+          subscriptionIds: selectedCycleSubscriptionIds,
           cycle: bulkCycleForm.cycle,
           effectivePeriodStart: bulkCycleForm.effectivePeriodStart,
           note: bulkCycleForm.note,
@@ -2224,9 +2228,9 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Khong the gan chu ky hang loat.");
       const errorCount = Array.isArray(result.errors) ? result.errors.length : 0;
-      setMessage(errorCount > 0 ? "Da gan chu ky cho " + (result.updated || 0) + " khach, " + errorCount + " khach bi loi." : "Da gan chu ky cho " + (result.updated || selectedSubscriptionIds.length) + " khach hang.");
+      setMessage(errorCount > 0 ? "Da gan chu ky cho " + (result.updated || 0) + " khach, " + errorCount + " khach bi loi." : "Da gan chu ky cho " + (result.updated || selectedCycleSubscriptionIds.length) + " khach hang.");
       setShowBulkCycle(false);
-      setSelectedSubscriptionIds([]);
+      setSelectedReceivableIds([]);
       setViewMode("cycle");
       setActiveTab(bulkCycleForm.cycle);
       await refreshBillGoKeepingScroll();
@@ -2296,18 +2300,16 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
 
     return (
       <article key={item.id} className="grid gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm lg:grid-cols-[32px_minmax(190px,1.5fr)_120px_190px_130px_130px_110px] lg:items-center">
-        {item.subscription?.id && (
-          <label className="flex items-center gap-2 text-xs font-bold text-on-surface-variant lg:justify-center">
-            <input
-              type="checkbox"
-              className="h-5 w-5 rounded border-outline-variant accent-primary"
-              checked={selectedSubscriptionIdSet.has(item.subscription.id)}
-              onChange={event => toggleSubscriptionSelection(item.subscription!.id, event.target.checked)}
-              aria-label={`Chon ${row.customerName}`}
-            />
-            <span className="lg:hidden">Chon khach hang</span>
-          </label>
-        )}
+        <label className="flex items-center gap-2 text-xs font-bold text-on-surface-variant lg:justify-center">
+          <input
+            type="checkbox"
+            className="h-5 w-5 rounded border-outline-variant accent-primary"
+            checked={selectedReceivableIdSet.has(item.id)}
+            onChange={event => toggleReceivableSelection(item.id, event.target.checked)}
+            aria-label={`Chon ${row.customerName}`}
+          />
+          <span className="lg:hidden">Chon khach hang</span>
+        </label>
         <div className="flex items-start justify-between gap-3 lg:contents">
           <div className="min-w-0">
             <h3 className="truncate text-base font-extrabold text-on-surface">{row.customerName}</h3>
@@ -2981,14 +2983,14 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
             {allVisibleSelected ? "Bo chon trang hien tai" : "Chon tat ca tren trang"}
           </label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <span className="text-sm font-bold text-on-surface-variant">Da chon {selectedSubscriptionIds.length} khach</span>
+            <span className="text-sm font-bold text-on-surface-variant">Da chon {selectedReceivableIds.length} khach</span>
             <button type="button" disabled={saving || selectedCollectableRows.length === 0} onClick={() => void submitBulkCollection()} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
               <CheckCircle2 size={16} /> Xác nhận đã thu
             </button>
-            <button type="button" disabled={selectedSubscriptionIds.length === 0} onClick={() => setShowBulkCycle(true)} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
+            <button type="button" disabled={selectedCycleSubscriptionIds.length === 0} onClick={() => setShowBulkCycle(true)} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
               <RotateCcw size={16} /> Gan chu ky
             </button>
-            {selectedSubscriptionIds.length > 0 && <button type="button" onClick={() => setSelectedSubscriptionIds([])} className="btn-outline !w-full !px-4 !py-2 sm:!w-auto">Bo chon</button>}
+            {selectedReceivableIds.length > 0 && <button type="button" onClick={() => setSelectedReceivableIds([])} className="btn-outline !w-full !px-4 !py-2 sm:!w-auto">Bo chon</button>}
           </div>
         </div>
       )}
@@ -3231,7 +3233,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <button type="button" onClick={() => setShowBulkCycle(false)} className="btn-outline !w-auto !px-3 !py-2">Dong</button>
             </div>
             <div className="mt-4 rounded-lg bg-primary-fixed p-3 text-sm font-bold text-primary">
-              Ap dung cho {selectedSubscriptionIds.length} khach hang da chon. Cac phieu thu va ky da thu se duoc giu nguyen.
+              Ap dung cho {selectedCycleSubscriptionIds.length} khach hang da chon. Cac phieu thu va ky da thu se duoc giu nguyen.
             </div>
             <div className="mt-4 grid gap-3">
               <select className="input-field" value={bulkCycleForm.cycle} onChange={event => setBulkCycleForm(previous => ({ ...previous, cycle: event.target.value as BillGoCycle }))}>
@@ -3244,7 +3246,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <textarea className="input-field min-h-20" placeholder="Ghi chu thay doi" value={bulkCycleForm.note} onChange={event => setBulkCycleForm(previous => ({ ...previous, note: event.target.value }))} />
               <p className="text-xs text-on-surface-variant">He thong chi dieu chinh cac ky chua thu va ky tuong lai tu thang bat dau da chon.</p>
             </div>
-            <button disabled={saving || selectedSubscriptionIds.length === 0} className="btn-primary mt-4 !w-full">
+            <button disabled={saving || selectedCycleSubscriptionIds.length === 0} className="btn-primary mt-4 !w-full">
               {saving ? "Dang gan chu ky..." : "Xac nhan gan chu ky"}
             </button>
           </form>
