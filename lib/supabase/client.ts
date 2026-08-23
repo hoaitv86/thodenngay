@@ -27,6 +27,38 @@ const makeBlockedMutation = () => {
 const isDemoSession = () =>
   typeof window !== "undefined" && window.localStorage.getItem(DEMO_SESSION_STORAGE_KEY) === "true";
 
+const isBrowserOffline = () => typeof window !== "undefined" && !window.navigator.onLine;
+
+const getAuthFailureText = (error: unknown) => {
+  if (!error) return "";
+  if (error instanceof Error) return `${error.name} ${error.message}`;
+  if (typeof error === "object") {
+    const record = error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown };
+    return [record.name, record.message, record.code, record.status].filter(Boolean).join(" ");
+  }
+  return String(error);
+};
+
+const isLikelyAuthNetworkError = (error: unknown) =>
+  /AuthRetryableFetchError|Failed to fetch|fetch failed|NetworkError|Load failed|timeout|timed out|ECONNRESET|ENOTFOUND|ETIMEDOUT/i.test(getAuthFailureText(error));
+
+const logOfflineAuth = (event: string, details: Record<string, unknown> = {}) => {
+  if (typeof console === "undefined") return;
+  console.info("[TDN-OFFLINE]", event, details);
+};
+
+const getOfflineUserResult = (source: string, reason?: unknown) => {
+  const offlineUser = getOfflineAuthenticatedUser();
+  logOfflineAuth(offlineUser ? "identity fallback" : "identity fallback skipped", {
+    route: typeof window !== "undefined" ? window.location.pathname : null,
+    source,
+    identityFound: Boolean(offlineUser),
+    redirectReason: offlineUser ? null : "missing-offline-identity",
+    reason: getAuthFailureText(reason) || (isBrowserOffline() ? "offline" : "auth-network-error"),
+  });
+  return offlineUser ? { data: { user: offlineUser }, error: null } : null;
+};
+
 const withDemoReadonlyGuard = <T extends object>(client: T): T => {
   if (typeof window === "undefined") return client;
 
@@ -56,24 +88,45 @@ const withDemoReadonlyGuard = <T extends object>(client: T): T => {
             if (authProp === "getUser") {
               return async (...args: unknown[]) => {
                 const getUser = Reflect.get(authTarget, authProp, authReceiver);
-                const result = await getUser.apply(authTarget, args);
-                if (result?.data?.user) {
-                  rememberOfflineAuthenticatedUser(result.data.user);
+                try {
+                  const result = await getUser.apply(authTarget, args);
+                  if (result?.data?.user) {
+                    rememberOfflineAuthenticatedUser(result.data.user);
+                    return result;
+                  }
+                  if (isBrowserOffline() || isLikelyAuthNetworkError(result?.error)) {
+                    const offlineResult = getOfflineUserResult("getUser", result?.error);
+                    if (offlineResult) return offlineResult;
+                  }
                   return result;
+                } catch (error) {
+                  if (isBrowserOffline() || isLikelyAuthNetworkError(error)) {
+                    const offlineResult = getOfflineUserResult("getUser", error);
+                    if (offlineResult) return offlineResult;
+                  }
+                  throw error;
                 }
-                if (!window.navigator.onLine) {
-                  const offlineUser = getOfflineAuthenticatedUser();
-                  if (offlineUser) return { data: { user: offlineUser }, error: null };
-                }
-                return result;
               };
             }
             if (authProp === "getSession") {
               return async (...args: unknown[]) => {
                 const getSession = Reflect.get(authTarget, authProp, authReceiver);
-                const result = await getSession.apply(authTarget, args);
-                if (result?.data?.session?.user) rememberOfflineAuthenticatedUser(result.data.session.user);
-                return result;
+                try {
+                  const result = await getSession.apply(authTarget, args);
+                  if (result?.data?.session?.user) rememberOfflineAuthenticatedUser(result.data.session.user);
+                  return result;
+                } catch (error) {
+                  if (isBrowserOffline() || isLikelyAuthNetworkError(error)) {
+                    logOfflineAuth("session fetch skipped", {
+                      route: window.location.pathname,
+                      identityFound: Boolean(getOfflineAuthenticatedUser()),
+                      redirectReason: null,
+                      reason: getAuthFailureText(error) || "offline",
+                    });
+                    return { data: { session: null }, error };
+                  }
+                  throw error;
+                }
               };
             }
             if (authProp === "updateUser") {

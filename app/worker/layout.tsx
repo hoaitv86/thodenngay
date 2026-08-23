@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MessageCircle, MoreHorizontal, Package, Plus, ShoppingCart } from "lucide-react";
@@ -14,6 +15,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
 import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey } from "@/lib/offline/worker-data";
+import { getOfflineWorkerAuthSnapshot } from "@/lib/offline/session";
 import { ACTIVE_ROLE_COOKIE } from "@/lib/account-roles";
 import { isWorkerUnitMemberRole, type WorkerUnitMemberRole } from "@/lib/worker-unit-permissions";
 import { resolveWorkerFeatureModuleState } from "@/lib/worker-modules";
@@ -256,56 +258,101 @@ export default function WorkerLayout({
     };
 
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const route = pathname || "/worker";
+      const offline = isBrowserOffline();
+      const offlineSnapshot = offline ? getOfflineWorkerAuthSnapshot() : null;
+      let user: User | null = null;
+      let authError: unknown = null;
+
+      try {
+        const result = await supabase.auth.getUser();
+        user = result.data.user;
+        authError = result.error;
+      } catch (error) {
+        authError = error;
+      }
+
+      if (!user && offlineSnapshot) user = offlineSnapshot.user;
+
+      if (offline) {
+        const identityFound = Boolean(user && offlineSnapshot);
+        logOfflineDebug("route guard", {
+          route,
+          identityFound,
+          redirectReason: identityFound ? null : "missing-offline-worker-identity",
+          authError: authError instanceof Error ? authError.message : authError ? String(authError) : null,
+        });
+        if (!identityFound) {
+          router.replace("/login");
+          return;
+        }
+      }
+
       if (!user) return;
       if (isMounted) setNotificationUserId(user.id);
 
       const legacyCacheKey = `worker:context:${user.id}`;
       const profileCacheKey = makeWorkerUserDatasetKey("worker-profile", user.id);
-      let [{ data: profile }, { data: worker }, memberships] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("full_name, role, phone, email, address")
-          .eq("id", user.id)
-          .single(),
-        supabase
-          .from("workers")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        loadMemberships(user.id),
-      ]);
+      let profile: { full_name?: string | null; role?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null = null;
+      let worker: WorkerProfileCache["worker"] | null = null;
+      let memberships: WorkerMembershipRow[] = [];
+      let storeId: string | null = null;
 
-      const storeId = memberships?.find((item) => item.unit_id)?.unit_id || null;
-
-      if (isBrowserOffline() && !profile && !worker && (!memberships || memberships.length === 0)) {
+      if (offline) {
         const [cachedContext, cachedWorkerProfile] = await Promise.all([
           getCachedDataset<{ profile: typeof profile; worker: typeof worker; memberships: WorkerMembershipRow[] }>(legacyCacheKey),
           getCachedDataset<WorkerProfileCache>(profileCacheKey),
         ]);
+
         if (cachedContext) {
           profile = cachedContext.data.profile;
           worker = cachedContext.data.worker;
-          memberships = cachedContext.data.memberships;
-          logOfflineDebug("hydrated from cache", { dataset: "worker-profile", cacheKey: cachedContext.key });
+          memberships = cachedContext.data.memberships || [];
+          logOfflineDebug("hydrated from cache", { route, dataset: "worker-profile", cacheKey: cachedContext.key });
         }
+
         if (!worker && cachedWorkerProfile?.data.worker) {
-          worker = cachedWorkerProfile.data.worker as typeof worker;
-          const cachedUser = cachedWorkerProfile.data.worker.user;
-          if (!profile && cachedUser) {
-            profile = {
-              full_name: cachedUser.full_name || null,
-              role: "worker",
-              phone: cachedUser.phone || null,
-              email: cachedUser.email || null,
-              address: cachedUser.address || null,
-            } as unknown as typeof profile;
-          }
-          logOfflineDebug("hydrated from cache", { dataset: "worker-profile", cacheKey: cachedWorkerProfile.key });
+          worker = cachedWorkerProfile.data.worker;
+          logOfflineDebug("hydrated from cache", { route, dataset: "worker-profile", cacheKey: cachedWorkerProfile.key });
         }
+
+        const cachedUser = worker?.user;
+        if (!profile) {
+          profile = {
+            full_name: cachedUser?.full_name || (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null),
+            role: "worker",
+            phone: cachedUser?.phone || user.phone || null,
+            email: cachedUser?.email || user.email || null,
+            address: cachedUser?.address || null,
+          };
+        }
+
+        if (!worker && offlineSnapshot?.worker) {
+          worker = offlineSnapshot.worker as WorkerProfileCache["worker"];
+        }
+
+        storeId = memberships.find((item) => item.unit_id)?.unit_id || cachedWorkerProfile?.data.storeId || null;
+        logOfflineDebug("route guard allow", { route, identityFound: true, redirectReason: null, storeId, workerId: worker?.id || null });
       } else {
+        const [{ data: profileData }, { data: workerData }, membershipRows] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("full_name, role, phone, email, address")
+            .eq("id", user.id)
+            .single(),
+          supabase
+            .from("workers")
+            .select("*")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          loadMemberships(user.id),
+        ]);
+
+        profile = profileData;
+        worker = workerData;
+        memberships = membershipRows || [];
+        storeId = memberships.find((item) => item.unit_id)?.unit_id || null;
+
         void setCachedDataset(legacyCacheKey, { profile, worker, memberships }, { dataset: "worker-profile", userId: user.id, workerId: worker?.id || null, storeId });
         if (worker?.id) {
           void setCachedDataset(profileCacheKey, { worker, storeId } satisfies WorkerProfileCache, { dataset: "worker-profile", userId: user.id, workerId: worker.id, storeId });
@@ -318,7 +365,7 @@ export default function WorkerLayout({
       if (profile?.full_name) setUserName(profile.full_name);
       setUserAddress(typeof profile?.address === "string" ? profile.address : "");
       setIsAvailable(worker?.is_available !== false);
-      if (worker?.status === "active") {
+      if (!offline && worker?.status === "active") {
         void fetchWorkerNotifications(user.id);
       } else {
         setNotifications([]);
@@ -353,7 +400,6 @@ export default function WorkerLayout({
         enabledFeatures,
       });
     };
-
     void getUser();
 
     const handleAvailabilityChange = (event: Event) => {
@@ -367,7 +413,7 @@ export default function WorkerLayout({
       isMounted = false;
       window.removeEventListener("worker:availability-changed", handleAvailabilityChange);
     };
-  }, [fetchWorkerNotifications, supabase]);
+  }, [fetchWorkerNotifications, pathname, router, supabase]);
 
   useEffect(() => {
     if (!notificationUserId) return;

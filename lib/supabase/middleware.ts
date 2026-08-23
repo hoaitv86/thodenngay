@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import type { User } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
 import {
   ACTIVE_ROLE_COOKIE,
@@ -13,7 +14,6 @@ type WorkerMembershipForAccess = {
 
 const workerRolePriority: WorkerModuleRole[] = ['owner', 'manager', 'technician', 'bill_collector', 'sales_inventory'];
 
-
 function getWorkerUnitRole(memberships: WorkerMembershipForAccess[] = []): WorkerModuleRole {
   const roles = memberships.map((item) => item.member_role).filter(Boolean);
   for (const role of workerRolePriority) {
@@ -22,7 +22,6 @@ function getWorkerUnitRole(memberships: WorkerMembershipForAccess[] = []): Worke
   return 'worker';
 }
 
-
 function canOpenWorkerPath(path: string, unitRole: WorkerModuleRole, enabledFeatures: WorkerFeatureModuleState) {
   if (path === '/worker' || path.startsWith('/worker/profile')) return true;
   if (path.startsWith('/worker/billgo')) return enabledFeatures.billgo;
@@ -30,6 +29,30 @@ function canOpenWorkerPath(path: string, unitRole: WorkerModuleRole, enabledFeat
   if (path.startsWith('/worker/jobs') || path.startsWith('/worker/customers') || path.startsWith('/worker/history') || path.startsWith('/worker/chat')) return ['owner', 'manager', 'technician', 'worker'].includes(unitRole);
   if (path.startsWith('/worker/wallet')) return ['owner', 'manager'].includes(unitRole);
   return true;
+}
+
+function hasSupabaseAuthCookie(request: NextRequest) {
+  return request.cookies
+    .getAll()
+    .some((cookie) => cookie.name.startsWith('sb-') && cookie.name.includes('auth-token') && Boolean(cookie.value));
+}
+
+function getAuthFailureText(error: unknown) {
+  if (!error) return '';
+  if (error instanceof Error) return `${error.name} ${error.message}`;
+  if (typeof error === 'object') {
+    const record = error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown };
+    return [record.name, record.message, record.code, record.status].filter(Boolean).join(' ');
+  }
+  return String(error);
+}
+
+function isLikelyAuthNetworkError(error: unknown) {
+  return /AuthRetryableFetchError|Failed to fetch|fetch failed|NetworkError|Load failed|timeout|timed out|ECONNRESET|ENOTFOUND|ETIMEDOUT/i.test(getAuthFailureText(error));
+}
+
+function logOfflineRoute(event: string, details: Record<string, unknown>) {
+  console.info('[TDN-OFFLINE]', event, details);
 }
 
 export async function updateSession(request: NextRequest) {
@@ -64,9 +87,15 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Refresh session. Avoid writing logic between createServerClient and getUser().
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: User | null = null;
+  let authError: unknown = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+    authError = result.error;
+  } catch (error) {
+    authError = error;
+  }
 
   const publicPaths = [
     '/login',
@@ -86,17 +115,36 @@ export async function updateSession(request: NextRequest) {
     '/chinh-sach-tho',
     '/chinh-sach-khach-hang',
   ];
-  const isPublicPath = publicPaths.some((path) =>
-    request.nextUrl.pathname === path || request.nextUrl.pathname.startsWith('/api/auth')
+  const path = request.nextUrl.pathname;
+  const isPublicPath = publicPaths.some((publicPath) =>
+    path === publicPath || path.startsWith('/api/auth')
   );
 
   if (!user && !isPublicPath) {
+    const identityFound = hasSupabaseAuthCookie(request);
+    const authNetworkError = isLikelyAuthNetworkError(authError);
+
+    if (path.startsWith('/worker') && identityFound && authNetworkError) {
+      logOfflineRoute('route guard allow', {
+        route: path,
+        identityFound,
+        redirectReason: null,
+        reason: getAuthFailureText(authError) || 'auth-network-error',
+      });
+      return supabaseResponse;
+    }
+
+    logOfflineRoute('redirect', {
+      route: path,
+      identityFound,
+      redirectReason: getAuthFailureText(authError) || 'missing-auth-user',
+    });
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
+  if (user && (path === '/login' || path === '/register')) {
     const url = request.nextUrl.clone();
     url.pathname = '/redirect';
     return NextResponse.redirect(url);
@@ -125,7 +173,6 @@ export async function updateSession(request: NextRequest) {
         .eq('status', 'active'),
     ]);
     if (profile) {
-      const path = request.nextUrl.pathname;
       const role = resolveActiveRole({
         legacyRole: profile.role,
         worker,
@@ -140,6 +187,7 @@ export async function updateSession(request: NextRequest) {
       }
 
       if (path.startsWith('/worker') && !isWorkerRole(role)) {
+        logOfflineRoute('redirect', { route: path, identityFound: true, redirectReason: 'not-worker-role' });
         const url = request.nextUrl.clone();
         url.pathname = '/redirect';
         return NextResponse.redirect(url);
@@ -153,6 +201,7 @@ export async function updateSession(request: NextRequest) {
       });
 
       if (path.startsWith('/worker') && !canOpenWorkerPath(path, workerUnitRole, enabledWorkerFeatures)) {
+        logOfflineRoute('redirect', { route: path, identityFound: true, redirectReason: 'worker-feature-disabled' });
         const url = request.nextUrl.clone();
         url.pathname = '/worker/profile';
         return NextResponse.redirect(url);

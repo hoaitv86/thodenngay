@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { AccountRole } from "@/lib/account-roles";
+import { isWorkerRole, resolveActiveRole, type AccountRole } from "@/lib/account-roles";
 
 const OFFLINE_AUTH_USER_KEY = "tdn.offline.auth.user.v1";
 
@@ -23,6 +23,9 @@ export type OfflineAuthSnapshot = {
   worker: { status?: string | null } | null;
   userRoles: Array<{ role?: AccountRole | string | null; is_active?: boolean | null }>;
   lastAuthenticatedAt: string;
+};
+export type OfflineWorkerAuthSnapshot = OfflineAuthSnapshot & {
+  activeRole: AccountRole;
 };
 
 function canUseBrowserStorage() {
@@ -133,6 +136,20 @@ export function getOfflineAuthSnapshot(): OfflineAuthSnapshot | null {
   };
 }
 
+export function getOfflineWorkerAuthSnapshot(): OfflineWorkerAuthSnapshot | null {
+  const snapshot = getOfflineAuthSnapshot();
+  if (!snapshot) return null;
+
+  const activeRole = resolveActiveRole({
+    legacyRole: snapshot.legacyRole,
+    worker: snapshot.worker,
+    userRoles: snapshot.userRoles,
+    preferredRole: snapshot.preferredRole,
+  });
+
+  if (!isWorkerRole(activeRole)) return null;
+  return { ...snapshot, activeRole };
+}
 export function hasOfflineAuthenticatedUser() {
   return Boolean(getOfflineAuthenticatedUser());
 }

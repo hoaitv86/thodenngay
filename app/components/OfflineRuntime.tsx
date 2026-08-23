@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect } from "react";
-import { rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
+import { getOfflineWorkerAuthSnapshot, rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
 import { syncOfflineMutations } from "@/lib/offline/cache";
 import { createClient } from "@/lib/supabase/client";
 
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
+const WORKER_APP_SHELL_PATHS = [
+  "/worker",
+  "/worker/jobs",
+  "/worker/customers",
+  "/worker/billgo",
+  "/worker/history",
+  "/worker/profile",
+  "/worker/chat",
+  "/worker/inventory",
+  "/worker/sales",
+];
 
 function publishNetworkState() {
   window.dispatchEvent(
@@ -29,6 +40,18 @@ function collectAppShellUrls() {
     new URL("/android-chrome-192x192.png", window.location.origin).href,
     new URL("/android-chrome-512x512.png", window.location.origin).href,
   ]);
+
+  const workerIdentity = getOfflineWorkerAuthSnapshot();
+  const shouldCacheWorkerRoutes = Boolean(workerIdentity) || window.location.pathname.startsWith("/worker");
+  if (shouldCacheWorkerRoutes) {
+    WORKER_APP_SHELL_PATHS.forEach((path) => urls.add(new URL(path, window.location.origin).href));
+    console.info("[TDN-OFFLINE]", "worker route shell cache", {
+      route: window.location.pathname,
+      identityFound: Boolean(workerIdentity),
+      redirectReason: null,
+      routes: WORKER_APP_SHELL_PATHS,
+    });
+  }
 
   document
     .querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
