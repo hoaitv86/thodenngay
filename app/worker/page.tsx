@@ -133,8 +133,15 @@ type QuickCustomerOption = {
 
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
 const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
-const WORKER_DASHBOARD_JOB_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
-const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data, task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at), service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), job_services(service:services(id, name, description, base_price, icon, parent_service_id)), customer:profiles!customer_id(id, full_name, phone, address, gps_location), payments(id, amount, method, status, paid_at, note)";
+const WORKER_DASHBOARD_JOB_BASE_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data";
+const WORKER_DASHBOARD_JOB_RELATION_SELECT = "service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
+const WORKER_DASHBOARD_JOB_ATTACHMENTS_SELECT = "task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at)";
+const WORKER_DASHBOARD_JOB_PAYMENTS_SELECT = "payments(id, amount, method, status, paid_at, note)";
+const WORKER_DASHBOARD_JOB_SERVICES_SELECT = "job_services(service:services(id, name, description, base_price, icon, parent_service_id))";
+const WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS = `${WORKER_DASHBOARD_JOB_BASE_SELECT}, ${WORKER_DASHBOARD_JOB_RELATION_SELECT}`;
+const WORKER_DASHBOARD_JOB_SELECT = `${WORKER_DASHBOARD_JOB_BASE_SELECT}, ${WORKER_DASHBOARD_JOB_ATTACHMENTS_SELECT}, ${WORKER_DASHBOARD_JOB_RELATION_SELECT}`;
+const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = `${WORKER_DASHBOARD_JOB_SELECT}, ${WORKER_DASHBOARD_JOB_SERVICES_SELECT}, ${WORKER_DASHBOARD_JOB_PAYMENTS_SELECT}`;
+const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT_WITHOUT_ATTACHMENTS = `${WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS}, ${WORKER_DASHBOARD_JOB_SERVICES_SELECT}, ${WORKER_DASHBOARD_JOB_PAYMENTS_SELECT}`;
 
 interface WorkerJob {
   id: string;
@@ -185,6 +192,11 @@ interface WorkerJob {
   } | null;
   [key: string]: unknown;
 }
+
+type WorkerDashboardJobQueryResult = {
+  data: WorkerJob[] | null;
+  error: { message: string } | null;
+};
 
 type WorkerBillGoReceivable = {
   id: string;
@@ -1262,12 +1274,23 @@ export default function WorkerDashboard() {
       }
 
       // 3. Get New Jobs (Pending)
-      const { data: pendingJobs } = await supabase
+      let pendingJobsResult = await supabase
         .from('jobs')
         .select(WORKER_DASHBOARD_JOB_SELECT)
         .eq('status', 'pending')
         .is('worker_id', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }) as unknown as WorkerDashboardJobQueryResult;
+
+      if (pendingJobsResult.error && isMissingWorkflowColumn(pendingJobsResult.error.message)) {
+        pendingJobsResult = await supabase
+          .from('jobs')
+          .select(WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS)
+          .eq('status', 'pending')
+          .is('worker_id', null)
+          .order('created_at', { ascending: false }) as unknown as WorkerDashboardJobQueryResult;
+      }
+
+      const pendingJobs = pendingJobsResult.data;
 
       // Filter pending jobs matching worker specialties
       const filteredPending = ((pendingJobs || []) as unknown as WorkerJob[]).filter(j => {
@@ -1305,13 +1328,25 @@ export default function WorkerDashboard() {
       }
 
       // 4. Get Worker Submitted Jobs (Waiting for Admin Approval)
-      const { data: workerPendingJobs } = await supabase
+      let workerPendingJobsResult = await supabase
         .from('jobs')
         .select(WORKER_DASHBOARD_JOB_SELECT)
         .eq('worker_id', workerData.id)
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
-        .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1);
+        .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
+
+      if (workerPendingJobsResult.error && isMissingWorkflowColumn(workerPendingJobsResult.error.message)) {
+        workerPendingJobsResult = await supabase
+          .from('jobs')
+          .select(WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS)
+          .eq('worker_id', workerData.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
+      }
+
+      const workerPendingJobs = workerPendingJobsResult.data;
 
       const mappedPendingApproval = sortJobsNewestFirst(((workerPendingJobs || []) as unknown as WorkerJob[]).map(j => {
         const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
@@ -1333,18 +1368,37 @@ export default function WorkerDashboard() {
         .eq('worker_id', workerData.id)
         .in('status', ['assigned', 'in_progress'])
         .order('created_at', { ascending: false })
-        .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
+        .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
 
       if (assignedJobsResult.error && isMissingWorkflowColumn(assignedJobsResult.error.message)) {
         assignedJobsResult = await supabase
           .from('jobs')
-          .select(WORKER_DASHBOARD_JOB_SELECT + ", payments(id, amount, method, status, paid_at, note)")
+          .select(WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT_WITHOUT_ATTACHMENTS)
           .eq('worker_id', workerData.id)
           .in('status', ['assigned', 'in_progress'])
           .order('created_at', { ascending: false })
-          .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as { data: WorkerJob[] | null; error: { message: string } | null };
+          .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
       }
 
+      if (assignedJobsResult.error && isMissingWorkflowColumn(assignedJobsResult.error.message)) {
+        assignedJobsResult = await supabase
+          .from('jobs')
+          .select(`${WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS}, ${WORKER_DASHBOARD_JOB_PAYMENTS_SELECT}`)
+          .eq('worker_id', workerData.id)
+          .in('status', ['assigned', 'in_progress'])
+          .order('created_at', { ascending: false })
+          .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
+      }
+
+      if (assignedJobsResult.error && isMissingWorkflowColumn(assignedJobsResult.error.message)) {
+        assignedJobsResult = await supabase
+          .from('jobs')
+          .select(WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS)
+          .eq('worker_id', workerData.id)
+          .in('status', ['assigned', 'in_progress'])
+          .order('created_at', { ascending: false })
+          .range(0, WORKER_DASHBOARD_JOB_LIMIT - 1) as unknown as WorkerDashboardJobQueryResult;
+      }
       const assignedJobs = (assignedJobsResult.data || []) as WorkerJob[];
       
       const mappedActive = sortJobsNewestFirst((assignedJobs || []).map(j => {
