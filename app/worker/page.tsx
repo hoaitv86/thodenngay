@@ -91,8 +91,6 @@ import { getJobServices, isMissingWorkflowColumn, normalizeServiceIds, type JobW
 import {
   filterWorkerDashboardJobs,
   getWorkerDashboardJobDate,
-  WORKER_DASHBOARD_JOB_FILTER_PARAM,
-  WORKER_DASHBOARD_JOBS_SESSION_KEY,
   type WorkerDashboardJobFilter,
 } from "@/lib/worker-dashboard-job-filters";
 import { isDemoAccount } from "@/lib/demo-accounts";
@@ -686,6 +684,7 @@ export default function WorkerDashboard() {
       workerStats: typeof updater === "function" ? (updater as (current: WorkerDashboardStats) => WorkerDashboardStats)(prev.workerStats) : updater,
     }));
   }, []);
+  const [expandedMobileJobFilter, setExpandedMobileJobFilter] = useState<WorkerDashboardJobFilter | null>(null);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [toast, setToast] = useState<ToastState>({ message: "", type: null, customerLogin: null, customerPassword: null });
   const [directionsView, setDirectionsView] = useState<{
@@ -3347,21 +3346,17 @@ export default function WorkerDashboard() {
   const mobileGoalOffset = 100 - monthlyRevenueProgress;
   const mobilePriorityJobs = sortJobsNewestFirst(mobileDashboardJobs).slice(0, mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD ? 2 : 1);
   const showMobilePriorityJobs = mobileTodoCount > MOBILE_FEW_JOBS_THRESHOLD && mobilePriorityJobs.length > 0;
-  const saveDashboardJobsSnapshotForNavigation = () => {
-    if (typeof window === "undefined") return;
-
-    try {
-      window.sessionStorage.setItem(
-        WORKER_DASHBOARD_JOBS_SESSION_KEY,
-        JSON.stringify({
-          capturedAt: new Date().toISOString(),
-          jobs: mobileDashboardJobs.map(stripDashboardJobForCache),
-        }),
-      );
-    } catch {
-      // Navigation still works; /worker/jobs will fall back to IndexedDB or server data.
-    }
+  const mobileJobsByFilter: Record<WorkerDashboardJobFilter, WorkerJob[]> = {
+    todo: mobileTodoJobs,
+    today: mobileTodayBacklogJobs,
+    month: mobileMonthBacklogJobs,
   };
+  const mobileJobFilterLabels: Record<WorkerDashboardJobFilter, string> = {
+    todo: "Cần làm",
+    today: "Tồn hôm nay",
+    month: "Tồn tháng",
+  };
+  const expandedMobileJobs = expandedMobileJobFilter ? sortJobsNewestFirst(mobileJobsByFilter[expandedMobileJobFilter]) : [];
 
   return (
     <div className="flex flex-col w-full relative">
@@ -3484,28 +3479,89 @@ export default function WorkerDashboard() {
                 : "border-primary/30 bg-primary-fixed/65 text-primary";
 
             return (
-              <Link
+              <button
                 key={item.label}
-                href={"/worker/jobs?" + WORKER_DASHBOARD_JOB_FILTER_PARAM + "=" + item.filter}
-                onClick={saveDashboardJobsSnapshotForNavigation}
-                aria-label={"Mở Việc của tôi: " + item.label}
+                type="button"
+                onClick={() => setExpandedMobileJobFilter(current => current === item.filter ? null : item.filter)}
+                aria-expanded={expandedMobileJobFilter === item.filter}
+                aria-controls="mobile-dashboard-job-list"
+                aria-label={(expandedMobileJobFilter === item.filter ? "Thu gọn " : "Hiển thị ") + item.label}
                 data-dashboard-job-count={item.value}
                 data-dashboard-job-filter={item.filter}
-                className={"block min-h-32 rounded-xl border p-2.5 text-left shadow-sm transition-transform active:scale-[0.98] min-[390px]:p-3 " + toneClass}
+                className={"block min-h-32 w-full rounded-xl border p-2.5 text-left shadow-sm transition-all active:scale-[0.98] min-[390px]:p-3 " + toneClass + (expandedMobileJobFilter === item.filter ? " ring-2 ring-primary/35" : "")}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70">
                     <Icon size={20} />
                   </span>
-                  <ChevronRightIcon size={18} className="rounded-full bg-white/80 p-0.5 text-on-surface-variant shadow-sm" />
+                  <ChevronRightIcon size={18} className={"rounded-full bg-white/80 p-0.5 text-on-surface-variant shadow-sm transition-transform " + (expandedMobileJobFilter === item.filter ? "rotate-90 text-primary" : "")} />
                 </div>
                 <p className="mt-2 text-xs font-extrabold uppercase leading-tight">{item.label}</p>
                 <p className="mt-1 text-4xl font-extrabold leading-none min-[390px]:text-5xl">{item.value}</p>
                 <p className="mt-1 text-base font-extrabold leading-none">việc</p>
-              </Link>
+              </button>
             );
           })}
         </div>
+
+        {expandedMobileJobFilter && (
+          <div
+            id="mobile-dashboard-job-list"
+            data-dashboard-inline-filter={expandedMobileJobFilter}
+            data-dashboard-inline-count={expandedMobileJobs.length}
+            className="overflow-hidden rounded-xl border border-outline-variant/40 bg-white shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-outline-variant/40 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-extrabold uppercase text-on-surface-variant">Danh sách công việc</p>
+                <h2 className="truncate text-base font-extrabold text-on-surface">{mobileJobFilterLabels[expandedMobileJobFilter]}</h2>
+              </div>
+              <span className="shrink-0 rounded-full bg-primary-fixed px-3 py-1 text-xs font-extrabold text-primary-container">{expandedMobileJobs.length} việc</span>
+            </div>
+            {expandedMobileJobs.length > 0 ? (
+              <div className="divide-y divide-outline-variant/40">
+                {expandedMobileJobs.map(job => {
+                  const isNewJob = newJobs.some(item => item.id === job.id);
+                  const isPendingJob = pendingApprovalJobs.some(item => item.id === job.id);
+                  const statusLabel = isNewJob ? "Mới" : isPendingJob ? "Chờ duyệt" : job.status === "in_progress" ? "Đang làm" : "Đã nhận";
+                  const statusClass = isNewJob ? "bg-error text-white" : isPendingJob ? "bg-warning text-white" : "bg-primary-fixed text-primary";
+
+                  return (
+                    <Link
+                      key={job.id}
+                      href={`/worker/history/${job.id}`}
+                      data-dashboard-inline-job
+                      className="block px-3 py-3 transition-colors active:bg-surface-container-low"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex min-w-0 items-center gap-2">
+                            <span className={"shrink-0 rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase " + statusClass}>{statusLabel}</span>
+                            <span className="truncate text-[11px] font-bold text-on-surface-variant">{getUnworkedAgeLabel(job)}</span>
+                          </div>
+                          <h3 className="line-clamp-2 text-sm font-extrabold leading-tight text-on-surface">{job.serviceName || job.description || job.job_code}</h3>
+                          <p className="mt-1 truncate text-xs font-bold text-on-surface-variant">{job.customerName || job.job_code}</p>
+                          <div className="mt-1 flex items-start gap-1.5 text-xs font-semibold text-on-surface-variant">
+                            <MapPinIcon size={13} className="mt-0.5 shrink-0 text-primary" />
+                            <span className="line-clamp-1">{job.address || "Chưa có địa chỉ"}</span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-2 text-right">
+                          <strong className="max-w-[6.8rem] truncate text-sm text-error">{job.price || formatCurrency(Number(job.quoted_price || 0))}</strong>
+                          <ChevronRightIcon size={18} className="text-on-surface-variant" />
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div data-dashboard-inline-empty className="px-4 py-6 text-center text-sm font-bold text-on-surface-variant">
+                Chưa có công việc phù hợp.
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Monthly Goal */}
