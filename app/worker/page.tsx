@@ -1671,69 +1671,75 @@ export default function WorkerDashboard() {
         ...nextDashboardData,
       }));
 
-      const profileKey = makeWorkerUserDatasetKey("worker-profile", user.id);
-      const cachedProfile = await getCachedDataset<WorkerProfileCache>(profileKey);
-      const storeId = cachedProfile?.data.storeId || null;
-      const cacheScope: WorkerOfflineScope = { userId: user.id, workerId: workerData.id, storeId };
-      const fallbackMonthlyGoalState: WorkerMonthlyGoalState = {
-        monthlyGoal: null,
-        monthlyGoalDraft: makeGoalDraft(DEFAULT_WORKER_MONTHLY_GOAL),
-        monthlyGoalFormOpen: false,
-      };
-      const dashboardSnapshot: WorkerDashboardOfflineSnapshot = {
-        worker: workerData,
-        newJobs: mappedNew.map(stripDashboardJobForCache),
-        pendingApprovalJobs: mappedPendingApproval.map(stripDashboardJobForCache),
-        activeJobs: mappedActive.map(stripDashboardJobForCache),
-        inventoryProducts: nextInventoryProducts,
-        workerBillGoReceivables: nextWorkerBillGoReceivables,
-        billGoPackages: nextBillGoPackages,
-        services: nextServices,
-        workerStats: nextDashboardData.workerStats,
-        ...(monthlyGoalState || fallbackMonthlyGoalState),
-      };
-      const cacheWrites: Promise<unknown>[] = [
-        setCachedDataset(profileKey, { worker: workerData, storeId } satisfies WorkerProfileCache, { dataset: "worker-profile", userId: user.id, workerId: workerData.id, storeId }),
-        setCachedDataset(makeWorkerDatasetKey("store", cacheScope), { userId: user.id, workerId: workerData.id, storeId }, { dataset: "store", userId: user.id, workerId: workerData.id, storeId }),
-      ];
+      if (!isBackground) setLoading(false);
 
-      const canCacheDashboard = !pendingJobsResult.error && !workerPendingJobsResult.error && !assignedJobsResult.error && !workerJobsError && !todayRatingsError && !monthlyRatingsError && !servicesError && !billGoReceivablesError;
-      if (canCacheDashboard) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("dashboard-summary", cacheScope), dashboardSnapshot, { dataset: "dashboard-summary", userId: user.id, workerId: workerData.id, storeId }));
-      } else {
-        logOfflineDebug("skipped cache overwrite", { dataset: "dashboard-summary", cacheKey: makeWorkerDatasetKey("dashboard-summary", cacheScope), reason: "partial-fetch-error" });
-      }
+      void (async () => {
+        const profileKey = makeWorkerUserDatasetKey("worker-profile", user.id);
+        const cachedProfile = await getCachedDataset<WorkerProfileCache>(profileKey);
+        const storeId = cachedProfile?.data.storeId || null;
+        const cacheScope: WorkerOfflineScope = { userId: user.id, workerId: workerData.id, storeId };
+        const fallbackMonthlyGoalState: WorkerMonthlyGoalState = {
+          monthlyGoal: null,
+          monthlyGoalDraft: makeGoalDraft(DEFAULT_WORKER_MONTHLY_GOAL),
+          monthlyGoalFormOpen: false,
+        };
+        const dashboardSnapshot: WorkerDashboardOfflineSnapshot = {
+          worker: workerData,
+          newJobs: mappedNew.map(stripDashboardJobForCache),
+          pendingApprovalJobs: mappedPendingApproval.map(stripDashboardJobForCache),
+          activeJobs: mappedActive.map(stripDashboardJobForCache),
+          inventoryProducts: nextInventoryProducts,
+          workerBillGoReceivables: nextWorkerBillGoReceivables,
+          billGoPackages: nextBillGoPackages,
+          services: nextServices,
+          workerStats: nextDashboardData.workerStats,
+          ...(monthlyGoalState || fallbackMonthlyGoalState),
+        };
+        const cacheWrites: Promise<unknown>[] = [
+          setCachedDataset(profileKey, { worker: workerData, storeId } satisfies WorkerProfileCache, { dataset: "worker-profile", userId: user.id, workerId: workerData.id, storeId }),
+          setCachedDataset(makeWorkerDatasetKey("store", cacheScope), { userId: user.id, workerId: workerData.id, storeId }, { dataset: "store", userId: user.id, workerId: workerData.id, storeId }),
+        ];
 
-      if (!pendingJobsResult.error) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "available"), filteredPending, { dataset: "jobs", variant: "available", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!workerPendingJobsResult.error) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "pending"), (workerPendingJobs || []) as WorkerJob[], { dataset: "jobs", variant: "pending", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!assignedJobsResult.error) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "active"), assignedJobs.map(stripDashboardJobForCache), { dataset: "jobs", variant: "active", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!pendingJobsResult.error && !workerPendingJobsResult.error && !assignedJobsResult.error) {
-        const dashboardJobs = [
-          ...filteredPending,
-          ...((workerPendingJobs || []) as WorkerJob[]),
-          ...assignedJobs,
-        ].map(stripDashboardJobForCache);
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "dashboard"), dashboardJobs, { dataset: "jobs", variant: "dashboard", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!servicesError) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("categories", cacheScope), nextServices, { dataset: "categories", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!packageError) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("packages", cacheScope), nextBillGoPackages, { dataset: "packages", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!billGoReceivablesError) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("billgo", cacheScope, "dashboard"), nextWorkerBillGoReceivables, { dataset: "billgo", variant: "dashboard", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      if (!inventoryError) {
-        cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("inventory", cacheScope), nextInventoryProducts, { dataset: "inventory", userId: user.id, workerId: workerData.id, storeId }));
-      }
-      await Promise.allSettled(cacheWrites);
+        const canCacheDashboard = !pendingJobsResult.error && !workerPendingJobsResult.error && !assignedJobsResult.error && !workerJobsError && !todayRatingsError && !monthlyRatingsError && !servicesError && !billGoReceivablesError;
+        if (canCacheDashboard) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("dashboard-summary", cacheScope), dashboardSnapshot, { dataset: "dashboard-summary", userId: user.id, workerId: workerData.id, storeId }));
+        } else {
+          logOfflineDebug("skipped cache overwrite", { dataset: "dashboard-summary", cacheKey: makeWorkerDatasetKey("dashboard-summary", cacheScope), reason: "partial-fetch-error" });
+        }
+
+        if (!pendingJobsResult.error) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "available"), filteredPending, { dataset: "jobs", variant: "available", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!workerPendingJobsResult.error) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "pending"), (workerPendingJobs || []) as WorkerJob[], { dataset: "jobs", variant: "pending", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!assignedJobsResult.error) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "active"), assignedJobs.map(stripDashboardJobForCache), { dataset: "jobs", variant: "active", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!pendingJobsResult.error && !workerPendingJobsResult.error && !assignedJobsResult.error) {
+          const dashboardJobs = [
+            ...filteredPending,
+            ...((workerPendingJobs || []) as WorkerJob[]),
+            ...assignedJobs,
+          ].map(stripDashboardJobForCache);
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("jobs", cacheScope, "dashboard"), dashboardJobs, { dataset: "jobs", variant: "dashboard", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!servicesError) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("categories", cacheScope), nextServices, { dataset: "categories", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!packageError) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("packages", cacheScope), nextBillGoPackages, { dataset: "packages", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!billGoReceivablesError) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("billgo", cacheScope, "dashboard"), nextWorkerBillGoReceivables, { dataset: "billgo", variant: "dashboard", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        if (!inventoryError) {
+          cacheWrites.push(setCachedDataset(makeWorkerDatasetKey("inventory", cacheScope), nextInventoryProducts, { dataset: "inventory", userId: user.id, workerId: workerData.id, storeId }));
+        }
+        await Promise.allSettled(cacheWrites);
+      })().catch((error) => {
+        console.warn("[TDN-OFFLINE]", "dashboard cache write error", error);
+      });
     } else {
       setDashboardData(initialWorkerDashboardData);
     }

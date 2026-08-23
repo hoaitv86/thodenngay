@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tdn-app-shell-v6";
+const CACHE_VERSION = "tdn-app-shell-v7";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
   "/",
@@ -24,7 +24,7 @@ const WORKER_DYNAMIC_NAVIGATION_FALLBACKS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then((cache) => Promise.all(PRECACHE_URLS.map((url) => cacheUrl(cache, url))))
+      .then((cache) => cacheUrlBatch(cache, PRECACHE_URLS))
       .then(() => self.skipWaiting())
   );
 });
@@ -41,9 +41,7 @@ self.addEventListener("message", (event) => {
   if (event.data?.type !== CACHE_APP_SHELL_MESSAGE || !Array.isArray(event.data.urls)) return;
 
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) =>
-      Promise.all(event.data.urls.map((url) => cacheUrl(cache, url)))
-    )
+    caches.open(CACHE_VERSION).then((cache) => cacheUrlBatch(cache, event.data.urls))
   );
 });
 
@@ -82,6 +80,19 @@ function getWorkerNavigationFallbacks(pathname) {
   return [...new Set(fallbacks)];
 }
 
+function normalizeCacheUrls(urls) {
+  const normalized = new Set();
+  for (const url of urls) {
+    try {
+      const requestUrl = new URL(url, self.location.origin);
+      if (shouldHandleRequest(requestUrl)) normalized.add(requestUrl.href);
+    } catch {
+      // Ignore malformed warm-cache URLs.
+    }
+  }
+  return Array.from(normalized);
+}
+
 async function matchAny(cache, paths) {
   for (const path of paths) {
     const matched = await cache.match(path, { ignoreSearch: true });
@@ -90,48 +101,85 @@ async function matchAny(cache, paths) {
   return null;
 }
 
-async function warmHtmlAssets(cache, response) {
+async function matchCachedUrl(cache, requestUrl, request) {
+  return (request ? await cache.match(request, { ignoreSearch: false }) : null)
+    || await cache.match(requestUrl.href, { ignoreSearch: false })
+    || await cache.match(requestUrl.pathname + requestUrl.search, { ignoreSearch: false })
+    || await cache.match(requestUrl.pathname, { ignoreSearch: true });
+}
+
+async function warmHtmlAssets(cache, response, options = {}) {
   try {
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("text/html")) return;
 
     const html = await response.text();
     const assets = new Set();
+    const skipUrls = options.skipUrls || new Set();
+    const warmedUrls = options.warmedUrls || new Set();
     const attributePattern = /\b(?:src|href)=["']([^"']+)["']/g;
     let match;
     while ((match = attributePattern.exec(html))) {
       try {
         const assetUrl = new URL(match[1], self.location.origin);
-        if (shouldCacheAsset(assetUrl)) assets.add(assetUrl.href);
+        if (!shouldCacheAsset(assetUrl)) continue;
+        if (skipUrls.has(assetUrl.href) || warmedUrls.has(assetUrl.href)) continue;
+        if (await matchCachedUrl(cache, assetUrl)) continue;
+        warmedUrls.add(assetUrl.href);
+        assets.add(assetUrl.href);
       } catch {
         // Ignore malformed HTML attributes.
       }
     }
 
-    await Promise.all(Array.from(assets).map((url) => cacheUrl(cache, url)));
+    await Promise.all(Array.from(assets).map((url) => cacheUrl(cache, url, { skipHtmlAssets: true, skipUrls, warmedUrls })));
   } catch {
     // Route HTML is still useful even if linked assets cannot be warmed.
   }
 }
 
-async function putAppShell(cache, request, response) {
+async function putAppShell(cache, request, response, options = {}) {
   const requestUrl = new URL(request.url);
   await cache.put(request, response.clone());
   await cache.put(requestUrl.pathname + requestUrl.search, response.clone());
-  await warmHtmlAssets(cache, response.clone());
+  if (options.warmAssets !== false) {
+    await warmHtmlAssets(cache, response.clone(), options);
+  }
   console.info("[TDN-OFFLINE]", "app shell saved", { route: requestUrl.pathname });
 }
 
-async function cacheUrl(cache, url) {
+async function cacheUrlBatch(cache, urls) {
+  const normalizedUrls = normalizeCacheUrls(urls);
+  const directAssetUrls = new Set(
+    normalizedUrls.filter((url) => {
+      try {
+        return shouldCacheAsset(new URL(url));
+      } catch {
+        return false;
+      }
+    })
+  );
+  const warmedUrls = new Set(directAssetUrls);
+  await Promise.all(normalizedUrls.map((url) => cacheUrl(cache, url, { skipUrls: directAssetUrls, warmedUrls })));
+}
+
+async function cacheUrl(cache, url, options = {}) {
   try {
     const requestUrl = new URL(url, self.location.origin);
     if (!shouldHandleRequest(requestUrl)) return;
 
-    const request = new Request(requestUrl.href, { cache: "reload", credentials: "same-origin" });
+    const isAsset = shouldCacheAsset(requestUrl);
+    const cached = isAsset ? await matchCachedUrl(cache, requestUrl) : null;
+    if (cached) return;
+
+    const request = new Request(requestUrl.href, { cache: isAsset ? "default" : "reload", credentials: "same-origin" });
     const response = await fetch(request);
     if (!response || !response.ok) return;
 
-    await putAppShell(cache, request, response);
+    await putAppShell(cache, request, response, {
+      ...options,
+      warmAssets: !isAsset && options.skipHtmlAssets !== true,
+    });
   } catch {
     // Best-effort warm cache: one failed file must not abort offline readiness.
   }
@@ -142,7 +190,7 @@ async function networkFirstNavigation(request) {
   const requestUrl = new URL(request.url);
   try {
     const response = await fetch(request);
-    if (response && response.ok) await putAppShell(cache, request, response.clone());
+    if (response && response.ok) await putAppShell(cache, request, response.clone(), { warmAssets: false });
     return response;
   } catch {
     const directMatch = (await cache.match(request))

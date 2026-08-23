@@ -97,6 +97,8 @@ const mobileMoreGroups: MobileMoreGroup[] = [
 
 const activeRoleCookieMaxAge = 60 * 60 * 24 * 30;
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
+const WORKER_STATIC_SHELL_WARM_SESSION_KEY = "tdn.offline.workerStaticShellWarmed.v1";
+const WORKER_DETAIL_SHELL_WARM_SESSION_KEY = "tdn.offline.workerDetailShellWarmed.v1";
 
 function setActiveRoleCookie(role: "customer" | "worker") {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
@@ -462,20 +464,58 @@ export default function WorkerLayout({
   };
 
   useEffect(() => {
-    const postWorkerShellCache = async (registration: ServiceWorkerRegistration) => {
-      if (!window.navigator.onLine) return;
-      const worker = registration.active || navigator.serviceWorker.controller;
-      if (!worker) return;
-
-      const shellPaths = new Set(WORKER_OFFLINE_SHELL_PATHS);
+    const readSessionValue = (key: string) => {
       try {
-        const detailPaths = await collectWorkerOfflineDetailPaths(notificationUserId);
-        detailPaths.forEach((path) => shellPaths.add(path));
-      } catch (error) {
-        console.warn("[TDN-OFFLINE]", "worker detail route path scan error", error);
+        return window.sessionStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    };
+
+    const writeSessionValue = (key: string, value: string) => {
+      try {
+        window.sessionStorage.setItem(key, value);
+      } catch {
+        // Session storage can be unavailable in hardened WebViews.
+      }
+    };
+
+    const removeSessionValue = (key: string) => {
+      try {
+        window.sessionStorage.removeItem(key);
+      } catch {
+        // Session storage can be unavailable in hardened WebViews.
+      }
+    };
+
+    const detailWarmKey = `${WORKER_DETAIL_SHELL_WARM_SESSION_KEY}:${notificationUserId || "anonymous"}`;
+
+    const readWarmedDetailPaths = () => {
+      try {
+        const value = readSessionValue(detailWarmKey);
+        return new Set<string>(value ? JSON.parse(value) : []);
+      } catch {
+        return new Set<string>();
+      }
+    };
+
+    const writeWarmedDetailPaths = (paths: Set<string>) => {
+      writeSessionValue(detailWarmKey, JSON.stringify(Array.from(paths).sort()));
+    };
+
+    const getWorkerController = (registration: ServiceWorkerRegistration) => registration.active || navigator.serviceWorker.controller;
+
+    const postWorkerStaticShellCache = (registration: ServiceWorkerRegistration, force = false) => {
+      if (!window.navigator.onLine) return;
+      if (!force && readSessionValue(WORKER_STATIC_SHELL_WARM_SESSION_KEY) === "1") {
+        console.info("[TDN-OFFLINE]", "worker route shell cache skipped", { reason: "session-warmed", route: window.location.pathname });
+        return;
       }
 
-      const routes = Array.from(shellPaths);
+      const worker = getWorkerController(registration);
+      if (!worker) return;
+
+      const routes = Array.from(new Set(WORKER_OFFLINE_SHELL_PATHS));
       const urls = routes.map((path) => new URL(path, window.location.origin).href);
       console.info("[TDN-OFFLINE]", "worker route shell cache", {
         route: window.location.pathname,
@@ -483,33 +523,72 @@ export default function WorkerLayout({
         redirectReason: null,
         routes,
       });
+      writeSessionValue(WORKER_STATIC_SHELL_WARM_SESSION_KEY, "1");
       worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls });
     };
 
-    const warmWorkerShells = () => {
+    const postWorkerDetailShellCache = async (registration: ServiceWorkerRegistration, force = false) => {
+      if (!window.navigator.onLine) return;
+      const worker = getWorkerController(registration);
+      if (!worker) return;
+
+      let detailPaths: string[] = [];
+      try {
+        detailPaths = await collectWorkerOfflineDetailPaths(notificationUserId);
+      } catch (error) {
+        console.warn("[TDN-OFFLINE]", "worker detail route path scan error", error);
+        return;
+      }
+
+      const warmedPaths = force ? new Set<string>() : readWarmedDetailPaths();
+      const routes = Array.from(new Set(detailPaths)).filter((path) => !warmedPaths.has(path));
+      if (routes.length === 0) {
+        console.info("[TDN-OFFLINE]", "worker detail route cache skipped", { reason: "no-new-detail-routes", route: window.location.pathname });
+        return;
+      }
+
+      routes.forEach((path) => warmedPaths.add(path));
+      writeWarmedDetailPaths(warmedPaths);
+      worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls: routes.map((path) => new URL(path, window.location.origin).href) });
+      console.info("[TDN-OFFLINE]", "worker detail route cache", { route: window.location.pathname, routes });
+    };
+
+    const warmWorkerShells = (options: { forceStatic?: boolean; forceDetails?: boolean } = {}) => {
       if (!("serviceWorker" in navigator) || !window.navigator.onLine) return;
       void navigator.serviceWorker.ready
         .then((registration) => {
-          void postWorkerShellCache(registration);
-          window.setTimeout(() => void postWorkerShellCache(registration), 1500);
-          window.setTimeout(() => void postWorkerShellCache(registration), 4000);
-          window.setTimeout(() => void postWorkerShellCache(registration), 8000);
+          postWorkerStaticShellCache(registration, Boolean(options.forceStatic));
+          void postWorkerDetailShellCache(registration, Boolean(options.forceDetails));
         })
         .catch((error) => {
           console.warn("[TDN-OFFLINE]", "worker route shell cache error", error);
         });
     };
 
-    let warmDebounceId = 0;
-    const scheduleWarmWorkerShells = () => {
-      window.clearTimeout(warmDebounceId);
-      warmDebounceId = window.setTimeout(warmWorkerShells, 250);
+    let detailDebounceId = 0;
+    const scheduleWarmWorkerDetails = (event?: Event) => {
+      const dataset = (event as CustomEvent<{ meta?: { dataset?: string } }> | undefined)?.detail?.meta?.dataset;
+      if (dataset && dataset !== "jobs" && dataset !== "inventory") return;
+
+      window.clearTimeout(detailDebounceId);
+      detailDebounceId = window.setTimeout(() => {
+        if (!("serviceWorker" in navigator) || !window.navigator.onLine) return;
+        void navigator.serviceWorker.ready.then((registration) => {
+          void postWorkerDetailShellCache(registration);
+        });
+      }, 1500);
+    };
+
+    const handleControllerChange = () => {
+      removeSessionValue(WORKER_STATIC_SHELL_WARM_SESSION_KEY);
+      removeSessionValue(detailWarmKey);
+      warmWorkerShells({ forceStatic: true, forceDetails: true });
     };
 
     warmWorkerShells();
-    window.addEventListener("tdn:offline-dataset-saved", scheduleWarmWorkerShells);
+    window.addEventListener("tdn:offline-dataset-saved", scheduleWarmWorkerDetails);
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("controllerchange", scheduleWarmWorkerShells);
+      navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     }
 
     const handleOfflineWorkerNavigation = (event: MouseEvent) => {
@@ -542,10 +621,10 @@ export default function WorkerLayout({
     document.addEventListener("click", handleOfflineWorkerNavigation, true);
     return () => {
       document.removeEventListener("click", handleOfflineWorkerNavigation, true);
-      window.clearTimeout(warmDebounceId);
-      window.removeEventListener("tdn:offline-dataset-saved", scheduleWarmWorkerShells);
+      window.clearTimeout(detailDebounceId);
+      window.removeEventListener("tdn:offline-dataset-saved", scheduleWarmWorkerDetails);
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.removeEventListener("controllerchange", scheduleWarmWorkerShells);
+        navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       }
     };
   }, [notificationUserId]);

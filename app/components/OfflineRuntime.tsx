@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { getOfflineWorkerAuthSnapshot, rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
+import { rememberOfflineAuthenticatedUser } from "@/lib/offline/session";
 import { syncOfflineMutations } from "@/lib/offline/cache";
-import { isWorkerDetailRoute, WORKER_OFFLINE_SHELL_PATHS } from "@/lib/offline/worker-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
+const APP_SHELL_WARM_SIGNATURE_KEY = "tdn.offline.appShellWarmSignature.v1";
 
 function publishNetworkState() {
   window.dispatchEvent(
@@ -15,18 +15,6 @@ function publishNetworkState() {
       detail: { online: window.navigator.onLine, checkedAt: new Date().toISOString() },
     })
   );
-}
-
-function collectWorkerDetailUrls(urls: Set<string>) {
-  document.querySelectorAll<HTMLAnchorElement>('a[href^="/worker/"]').forEach((anchor) => {
-    try {
-      const parsed = new URL(anchor.href, window.location.origin);
-      if (parsed.origin !== window.location.origin) return;
-      if (isWorkerDetailRoute(parsed.pathname)) urls.add(parsed.href);
-    } catch {
-      // Ignore malformed href values.
-    }
-  });
 }
 
 function collectAppShellUrls() {
@@ -42,21 +30,6 @@ function collectAppShellUrls() {
     new URL("/android-chrome-192x192.png", window.location.origin).href,
     new URL("/android-chrome-512x512.png", window.location.origin).href,
   ]);
-
-  const workerIdentity = getOfflineWorkerAuthSnapshot();
-  const shouldCacheWorkerRoutes = Boolean(workerIdentity) || window.location.pathname.startsWith("/worker");
-  if (shouldCacheWorkerRoutes) {
-    WORKER_OFFLINE_SHELL_PATHS.forEach((path) => urls.add(new URL(path, window.location.origin).href));
-    collectWorkerDetailUrls(urls);
-    console.info("[TDN-OFFLINE]", "worker route shell cache", {
-      route: window.location.pathname,
-      identityFound: Boolean(workerIdentity),
-      redirectReason: null,
-      routes: Array.from(urls)
-        .map((url) => new URL(url).pathname)
-        .filter((path) => path.startsWith("/worker")),
-    });
-  }
 
   document
     .querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
@@ -76,26 +49,41 @@ function collectAppShellUrls() {
   return Array.from(urls);
 }
 
+function getWarmSignature(urls: string[]) {
+  return urls.slice().sort().join("\n");
+}
+
+function readSessionValue(key: string) {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionValue(key: string, value: string) {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Session storage can be unavailable in hardened WebViews.
+  }
+}
+
 function sendAppShellCacheMessage(registration: ServiceWorkerRegistration) {
   if (!window.navigator.onLine) return;
 
-  let debounceId = 0;
-  const send = () => {
-    window.clearTimeout(debounceId);
-    debounceId = window.setTimeout(() => {
-      const worker = registration.active || navigator.serviceWorker.controller;
-      if (!worker || !window.navigator.onLine) return;
-      worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls: collectAppShellUrls() });
-    }, 100);
-  };
+  const worker = registration.active || navigator.serviceWorker.controller;
+  if (!worker) return;
 
-  send();
-  window.setTimeout(send, 1500);
-  window.setTimeout(send, 4000);
+  const urls = collectAppShellUrls();
+  const signature = getWarmSignature(urls);
+  if (readSessionValue(APP_SHELL_WARM_SIGNATURE_KEY) === signature) {
+    console.info("[TDN-OFFLINE]", "app shell cache skipped", { reason: "same-url-list", route: window.location.pathname });
+    return;
+  }
 
-  const observer = new MutationObserver(() => send());
-  observer.observe(document.body, { childList: true, subtree: true });
-  window.setTimeout(() => observer.disconnect(), 10000);
+  writeSessionValue(APP_SHELL_WARM_SIGNATURE_KEY, signature);
+  worker.postMessage({ type: CACHE_APP_SHELL_MESSAGE, urls });
 }
 
 export default function OfflineRuntime() {
@@ -128,7 +116,6 @@ export default function OfflineRuntime() {
                 detail: { scope: registration.scope },
               })
             );
-            sendAppShellCacheMessage(registration);
             void navigator.serviceWorker.ready.then(sendAppShellCacheMessage);
           })
           .catch((error) => {
