@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   buildWorkerSpecialtyGroups,
   expandWorkerSpecialties,
@@ -383,72 +382,30 @@ export default function AdminWorkers() {
     setProcessing(true);
 
     try {
-      // Create non-session-persisting supabase client to avoid signing out the admin
-      const tempSupabase = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false
-          }
-        }
-      );
-
-      const { data: authData, error: authError } = await tempSupabase.auth.signUp({
-        email: newWorkerFormData.email,
-        password: newWorkerFormData.password,
-        options: {
-          data: {
-            full_name: newWorkerFormData.name,
-            role: 'worker',
-            specialties: newWorkerFormData.specialties
-          }
-        }
+      const response = await fetch("/api/admin/workers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newWorkerFormData),
       });
+      const data = await response.json();
 
-      if (authError) {
-        showToast("Lỗi đăng ký: " + authError.message, "error");
-        setProcessing(false);
+      if (!response.ok) {
+        showToast(data.error || "Không thể thêm thợ mới.", "error");
         return;
       }
 
-      if (authData.user) {
-        // Update profile
-        await supabase
-          .from('profiles')
-          .update({
-            phone: newWorkerFormData.phone || null,
-            address: newWorkerFormData.address || null,
-            status: 'active'
-          })
-          .eq('id', authData.user.id);
-
-        // Update worker details
-        const approvedAt = newWorkerFormData.status === 'active' ? new Date().toISOString() : null;
-        await supabase
-          .from('workers')
-          .update({
-            specialties: newWorkerFormData.specialties,
-            status: newWorkerFormData.status,
-            approved_at: approvedAt
-          })
-          .eq('user_id', authData.user.id);
-
-        showToast(`Đã thêm thợ "${newWorkerFormData.name}" thành công!`, 'success');
-        setIsAddModalOpen(false);
-        setNewWorkerFormData({
-          name: "",
-          email: "",
-          password: "",
-          phone: "",
-          address: "",
-          specialties: [] as string[],
-          status: "active"
-        });
-        fetchWorkers();
-      }
+      showToast(`Đã thêm thợ "${newWorkerFormData.name}" thành công!`, "success");
+      setIsAddModalOpen(false);
+      setNewWorkerFormData({
+        name: "",
+        email: "",
+        password: "",
+        phone: "",
+        address: "",
+        specialties: [] as string[],
+        status: "active"
+      });
+      fetchWorkers();
     } catch (err: unknown) {
       showToast("Lỗi hệ thống: " + getErrorMessage(err), "error");
       console.error(err);
