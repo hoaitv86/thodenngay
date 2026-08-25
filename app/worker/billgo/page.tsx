@@ -1268,7 +1268,7 @@ export default function WorkerBillGoPage() {
   );
   const selectedCollectableRows = useMemo(
     () => selectedVisibleRows.filter(row => {
-      const isNoAmountRow = getBillGoServiceIconType(row.item.subscription?.service_type || activeServiceType) === "electricity";
+      const isNoAmountRow = isBillGoNoAmountServiceType(row.item.subscription?.service_type || activeServiceType);
       if (["pending_cycle", "not_due", "paid", "promo"].includes(row.summary.status)) return false;
       return isNoAmountRow || row.summary.debt > 0;
     }),
@@ -1341,7 +1341,7 @@ export default function WorkerBillGoPage() {
   const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
   const formServiceTypeForBilling = form.serviceType === "mobile" ? `mobile_${form.mobileBillingType}` : form.serviceType;
-  const isNoAmountForm = form.serviceType === "electricity";
+  const isNoAmountForm = isBillGoNoAmountServiceType(formServiceTypeForBilling);
   const hasFormCycle = Boolean(form.cycle);
   const defaultFormStartDate = form.serviceType === "mobile" && form.mobileBillingType === "postpaid" ? previousMonthFirstInput() : currentMonthFirstInput();
   const formBilling = useMemo(() => hasFormCycle ? getBillGoServiceBillingPeriod(form.startDate || defaultFormStartDate, form.cycle, formServiceTypeForBilling, form.mobileBillingType) : null, [defaultFormStartDate, form.cycle, form.mobileBillingType, form.startDate, formServiceTypeForBilling, hasFormCycle]);
@@ -1997,7 +1997,7 @@ export default function WorkerBillGoPage() {
   };
 
   const openCollect = (item: Receivable) => {
-    if (getBillGoServiceIconType(item.subscription?.service_type || activeServiceType) === "electricity") {
+    if (isBillGoNoAmountServiceType(item.subscription?.service_type || activeServiceType)) {
       void markNoAmountPeriodStatus(item, "paid");
       return;
     }
@@ -2234,7 +2234,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     let queued = 0;
     try {
       for (const row of selectedCollectableRows) {
-        const isNoAmountRow = getBillGoServiceIconType(row.item.subscription?.service_type || activeServiceType) === "electricity";
+        const isNoAmountRow = isBillGoNoAmountServiceType(row.item.subscription?.service_type || activeServiceType);
         const payload = isNoAmountRow
           ? { action: "mark_period_status", receivableId: row.item.id, status: "paid", paidAt: todayInput(), note: "Xác nhận đã thu hàng loạt" }
           : {
@@ -2850,7 +2850,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 </div>
               )}              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
-              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
+              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
               <datalist id="billgo-account-suggestions">
                 {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
               </datalist>
@@ -2863,7 +2863,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                   {electricityProviderOptions.map(provider => <option key={provider.label} value={provider.label}>{provider.label} ({provider.prefix})</option>)}
                 </select>
               ) : (
-                <input className="input-field" placeholder={`Nhà cung cấp ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
+                <input className="input-field" placeholder={form.serviceType === "installment" ? "Đơn vị thu" : `Nhà cung cấp ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
               )}              <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
               <datalist id="billgo-area-suggestions">
                 {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
@@ -3094,10 +3094,10 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
       )}
 
       {viewMode === "cycle" && <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
-        {(activeServiceType === "electricity" ? [
+        {(isBillGoNoAmountServiceType(activeServiceType) ? [
           ["Tổng khách", String(totals.totalCustomers)],
-          ["Chưa thu", String(totalUncollectedCustomers)],
-          ["Đã thu", String(totals.paid)],
+          [activeServiceType === "installment" ? "Chưa đóng" : "Chưa thu", String(totalUncollectedCustomers)],
+          [activeServiceType === "installment" ? "Đã đóng" : "Đã thu", String(totals.paid)],
           ["Chưa chu kỳ", String(totals.pendingCycle || 0)],
         ] : [
           ["Tổng khách", String(totals.totalCustomers)],
@@ -3124,7 +3124,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <span className="text-sm font-bold text-on-surface-variant">Da chon {selectedReceivableIds.length} khach</span>
             <button type="button" disabled={saving || selectedCollectableRows.length === 0} onClick={() => void submitBulkCollection()} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
-              <CheckCircle2 size={16} /> Xác nhận đã thu
+              <CheckCircle2 size={16} /> {activeServiceType === "installment" ? "Xác nhận đã đóng" : "Xác nhận đã thu"}
             </button>
             <button type="button" disabled={selectedCycleSubscriptionIds.length === 0} onClick={() => setShowBulkCycle(true)} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
               <RotateCcw size={16} /> Gan chu ky
@@ -3514,4 +3514,3 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     </div>
   );
 }
-
