@@ -572,6 +572,62 @@ const getQuickServicePathLabel = (service: ServiceOption | null, services: Servi
 const getQuickServiceSuggestionLabel = (service: ServiceOption, services: ServiceOption[]) =>
   getCompactServicePathLabel(service, services, 3);
 
+const toTitleCaseFirstLetter = (value: string) =>
+  value ? value.charAt(0).toLocaleUpperCase("vi-VN") + value.slice(1) : value;
+
+const stripLeadingServiceLabel = (value: string, serviceLabel: string) => {
+  const trimmed = value.trim();
+  const label = serviceLabel.trim();
+  if (!trimmed || !label) return trimmed;
+
+  if (normalizeServiceText(trimmed).startsWith(normalizeServiceText(label))) {
+    return toTitleCaseFirstLetter(trimmed.slice(label.length).replace(/^[\s·•/|:,-]+/, "").trim());
+  }
+
+  return trimmed;
+};
+
+const getRootServiceLabel = (service: ServiceOption | null, services: ServiceOption[]) => {
+  if (!service) return "";
+  const serviceById = new Map(services.map(item => [item.id, item]));
+  let current: ServiceOption = service;
+  const visited = new Set<string>([service.id]);
+  let parentId = service.parent_service_id || null;
+
+  while (parentId && !visited.has(parentId)) {
+    const parent = serviceById.get(parentId);
+    if (!parent) break;
+    current = parent;
+    visited.add(current.id);
+    parentId = parent.parent_service_id || null;
+  }
+
+  return current.name || service.name || "";
+};
+
+const getDashboardInlineJobTitle = (job: WorkerJob, services: ServiceOption[]) => {
+  const serviceById = new Map(services.map(item => [item.id, item]));
+  const linkedServices = getJobServices(job)
+    .map(service => serviceById.get(service.id || "") || (service.id ? service as ServiceOption : null))
+    .filter((service): service is ServiceOption => Boolean(service));
+  const service = serviceById.get(job.service_detail_id || "")
+    || serviceById.get(job.service_id || "")
+    || linkedServices[0]
+    || job.service
+    || null;
+  const serviceLabel = getRootServiceLabel(service, services) || job.serviceName || job.service?.name || "Dịch vụ";
+  const rawIssue = job.description?.trim()
+    || serviceById.get(job.service_detail_id || "")?.name
+    || linkedServices.find(item => normalizeServiceText(item.name || "") !== normalizeServiceText(serviceLabel))?.name
+    || job.serviceName
+    || job.job_code
+    || "Công việc";
+  const issueLabel = stripLeadingServiceLabel(rawIssue, serviceLabel);
+
+  if (!issueLabel || normalizeServiceText(issueLabel) === normalizeServiceText(serviceLabel)) return serviceLabel;
+  return `${serviceLabel} · ${issueLabel}`;
+};
+
 const getJobCreatedDate = getWorkerDashboardJobDate;
 
 const sortJobsNewestFirst = <T extends Pick<WorkerJob, "created_at" | "scheduled_at">>(jobs: T[]) =>
@@ -1404,10 +1460,12 @@ export default function WorkerDashboard() {
       // Map icon component
       const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = { ZapIcon, DropletIcon, CameraIcon, CogIcon, Bolt, Droplets, Cctv, Network, Laptop, Printer, Cpu, Router, Wifi, Cable, PlusCircle, Settings, ShieldCheck, Smartphone, Users, AirVent, Truck, Sofa, Hammer, Monitor, Star, Blocks, Wrench };
       const mappedNew = workerIsAvailable ? sortJobsNewestFirst(filteredPending.map(j => {
+        const custName = Array.isArray(j.customer) ? j.customer[0]?.full_name : j.customer?.full_name;
         const route = getRouteEstimate(workerProfileGps, getJobCustomerGps(j));
 
         return {
           ...j,
+          customerName: custName || "Khách hàng",
           serviceName: j.service?.name || undefined,
           icon: iconMap[j.service?.icon || ""] || BriefcaseIcon,
           price: new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(j.quoted_price),
@@ -3530,6 +3588,10 @@ export default function WorkerDashboard() {
                   const isPendingJob = pendingApprovalJobs.some(item => item.id === job.id);
                   const statusLabel = isNewJob ? "Mới" : isPendingJob ? "Chờ duyệt" : job.status === "in_progress" ? "Đang làm" : "Đã nhận";
                   const statusClass = isNewJob ? "bg-error text-white" : isPendingJob ? "bg-warning text-white" : "bg-primary-fixed text-primary";
+                  const isCompletableJob = !isNewJob && !isPendingJob && ["assigned", "in_progress"].includes(String(job.status));
+                  const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
+                  const inlineCustomerName = job.customerName || customer?.full_name || "Khách hàng";
+                  const inlineJobTitle = getDashboardInlineJobTitle(job, services);
 
                   return (
                     <div
@@ -3547,8 +3609,8 @@ export default function WorkerDashboard() {
                               <span className={"shrink-0 rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase " + statusClass}>{statusLabel}</span>
                               <span className="truncate text-[11px] font-bold text-on-surface-variant">{getUnworkedAgeLabel(job)}</span>
                             </div>
-                            <h3 className="line-clamp-2 text-sm font-extrabold leading-tight text-on-surface">{job.serviceName || job.description || job.job_code}</h3>
-                            <p className="mt-1 truncate text-xs font-bold text-on-surface-variant">{job.customerName || job.job_code}</p>
+                            <h3 className="line-clamp-2 text-sm font-extrabold leading-tight text-on-surface">{inlineJobTitle}</h3>
+                            <p className="mt-1 truncate text-xs font-bold text-on-surface-variant">Khách hàng: <span className="text-on-surface">{inlineCustomerName}</span></p>
                             <div className="mt-1 flex items-start gap-1.5 text-xs font-semibold text-on-surface-variant">
                               <MapPinIcon size={13} className="mt-0.5 shrink-0 text-primary" />
                               <span className="line-clamp-1">{job.address || "Chưa có địa chỉ"}</span>
@@ -3578,8 +3640,15 @@ export default function WorkerDashboard() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => triggerCompleteJob(job)}
-                          className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-success px-2.5 py-2 text-xs font-extrabold text-white shadow-sm transition-all active:scale-[0.98]"
+                          onClick={() => {
+                            if (!isCompletableJob) {
+                              showToast("Chỉ hoàn thành công việc đã nhận hoặc đang làm.", "info");
+                              return;
+                            }
+                            triggerCompleteJob(job);
+                          }}
+                          className={"inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isCompletableJob ? "bg-success text-white" : "bg-surface-container text-on-surface-variant")}
+                          aria-disabled={!isCompletableJob}
                         >
                           <span aria-hidden="true">✓</span>
                           Hoàn thành
