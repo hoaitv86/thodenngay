@@ -101,6 +101,7 @@ export async function updateSession(request: NextRequest) {
     '/login',
     '/register',
     '/',
+    '/hanh-trinh',
     '/offline-sw.js',
     '/site.webmanifest',
     '/favicon.ico',
@@ -116,9 +117,10 @@ export async function updateSession(request: NextRequest) {
     '/chinh-sach-khach-hang',
   ];
   const path = request.nextUrl.pathname;
-  const isPublicPath = publicPaths.some((publicPath) =>
-    path === publicPath || path.startsWith('/api/auth')
-  );
+  const isPublicJourneyPath = path === '/hanh-trinh' || path.startsWith('/hanh-trinh/');
+  const isPublicPath = publicPaths.some((publicPath) => path === publicPath)
+    || path.startsWith('/api/auth')
+    || isPublicJourneyPath;
 
   if (!user && !isPublicPath) {
     const identityFound = hasSupabaseAuthCookie(request);

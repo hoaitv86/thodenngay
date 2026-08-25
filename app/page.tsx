@@ -803,6 +803,9 @@ export default async function HomePage() {
               <a href="#how-it-works" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Cách hoạt động
               </a>
+              <Link href="/hanh-trinh" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
+                Hành trình
+              </Link>
               <a href="#reviews" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Đánh giá
               </a>
@@ -828,6 +831,13 @@ export default async function HomePage() {
               </Link>
             </div>
           </div>
+          <nav id="mobile-public-nav" className="flex gap-2 overflow-x-auto border-t border-outline-variant/20 py-2 md:hidden" aria-label="Menu chính">
+            <a href="#services" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Dịch vụ</a>
+            <a href="#how-it-works" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Cách hoạt động</a>
+            <Link href="/hanh-trinh" className="shrink-0 rounded-full bg-primary-fixed px-3 py-1.5 text-xs font-extrabold text-primary-container">Hành trình</Link>
+            <a href="#reviews" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Đánh giá</a>
+            <a href="#download-app" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Tải app</a>
+          </nav>
         </div>
       </header>
 
@@ -1307,6 +1317,7 @@ export default async function HomePage() {
             <div className="justify-self-center md:justify-self-auto">
               <h4 className="font-semibold mb-4">{"Th\u00f4ng tin"}</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
+                <li><Link href="/hanh-trinh" className="hover:text-white transition-colors">Hành trình</Link></li>
                 {cmsPages.map((page) => (
                   <li key={page.slug}>
                     <Link href={`/${page.slug}`} className="hover:text-white transition-colors">

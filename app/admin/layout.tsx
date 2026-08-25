@@ -15,6 +15,7 @@ import {
   Menu,
   MessageCircle,
   FileText,
+  Route,
   MapPin,
   UserCog,
   DatabaseBackup,
@@ -42,6 +43,7 @@ const navItems: NavItem[] = [
   { href: "/admin/payments", label: "BillGo", icon: CreditCard, module: "billgo" },
   { href: "/admin/areas", label: "Địa bàn", icon: MapPin, module: "services" },
   { href: "/admin/content", label: "Quản lý nội dung", icon: FileText, module: "content" },
+  { href: "/admin/journey", label: "Hành trình", icon: Route, module: "content" },
   { href: "/admin/admins", label: "Super Admin", icon: UserCog, superAdminOnly: true },
   { href: "/admin/backups", label: "Sao lưu & Khôi phục", icon: DatabaseBackup, superAdminOnly: true },
   { href: "/admin/settings", label: "Cài đặt", icon: Settings, superAdminOnly: true },
@@ -168,8 +170,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return;
     }
 
-    const module = getModuleForPath(pathname);
-    if (module && !isSuperAdmin && !allowedModules.has(module)) {
+    const activeModule = getModuleForPath(pathname);
+    if (activeModule && !isSuperAdmin && !allowedModules.has(activeModule)) {
       router.replace(visibleNavItems[0]?.href || "/admin/admins");
     }
   }, [allowedModules, isSuperAdmin, pathname, permissionsLoaded, requiresPasswordChange, router, visibleNavItems]);
