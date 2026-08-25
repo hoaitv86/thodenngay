@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 import type { ReactElement } from "react";
 import ApkDownloadSection from "./components/ApkDownloadSection";
 import { CmsPlacement } from "./components/CmsPlacement";
+import HomepageNearbyWorkers, { type HomepageNearbyWorker } from "./components/HomepageNearbyWorkers";
 import {
   LogoIcon,
   ZapIcon,
@@ -208,12 +209,37 @@ const defaultServices = [
   },
 ];
 
-const stats = [
-  { value: "2,500+", label: "Lượt đặt dịch vụ" },
-  { value: "150+", label: "Thợ chuyên nghiệp" },
-  { value: "4.8", label: "Đánh giá trung bình" },
-  { value: "<5 phút", label: "Thời gian phản hồi" },
-];
+type HomepageMetricData = {
+  totalJobs: number | null;
+  completedJobs: number | null;
+  activeWorkers: number | null;
+  availableWorkers: number | null;
+  averageRating: number | null;
+  ratingCount: number;
+};
+
+function formatHomepageCount(value: number | null) {
+  return typeof value === "number" ? value.toLocaleString("vi-VN") : "Đang cập nhật";
+}
+
+function formatHomepageRating(value: number | null) {
+  if (!value || !Number.isFinite(value)) return "Chưa có";
+
+  return value.toLocaleString("vi-VN", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
+function formatHomepageCompletionRate(metrics: HomepageMetricData) {
+  if (typeof metrics.totalJobs !== "number" || typeof metrics.completedJobs !== "number") {
+    return "Đang cập nhật";
+  }
+
+  if (metrics.totalJobs <= 0) return "Chưa có";
+
+  return String(Math.round((metrics.completedJobs / metrics.totalJobs) * 100)) + "%";
+}
 
 const steps = [
   {
@@ -265,6 +291,7 @@ type DispatchWorkerProfile = {
   full_name?: string | null;
   phone?: string | null;
   address?: string | null;
+  avatar_url?: string | null;
   gps_location?: GpsLocation | null;
 };
 
@@ -276,14 +303,7 @@ type DispatchWorker = {
   profiles?: DispatchWorkerProfile | DispatchWorkerProfile[] | null;
 };
 
-type HomepageDispatchWorker = {
-  id: string;
-  name: string;
-  specialty: string;
-  rating: string;
-  totalJobs: number;
-  gpsLabel: string;
-};
+type HomepageDispatchWorker = HomepageNearbyWorker;
 
 type HomepageReviewProfile = {
   full_name?: string | null;
@@ -522,10 +542,22 @@ const getHomepageData = unstable_cache(
     dispatchWorkers: HomepageDispatchWorker[];
     customerReviews: HomepageCustomerReview[];
     cmsPages: HomepageCmsPage[];
+    homepageMetrics: HomepageMetricData;
   }> => {
     const supabase = getPublicSupabase();
 
-    const [settingsResult, servicesResult, workersResult, ratingsResult, cmsPagesResult] = await Promise.all([
+    const [
+      settingsResult,
+      servicesResult,
+      workersResult,
+      ratingsResult,
+      cmsPagesResult,
+      totalJobsResult,
+      completedJobsResult,
+      activeWorkersResult,
+      availableWorkersResult,
+      ratingScoresResult,
+    ] = await Promise.all([
       supabase
         .from("system_settings")
         .select("app_name, hotline, support_email, company_address, facebook_url, zalo_url, maintenance_mode, terms_url, privacy_url, apk_backup_download_url")
@@ -538,7 +570,7 @@ const getHomepageData = unstable_cache(
         .order("name", { ascending: true }),
       supabase
         .from("workers")
-        .select("id,specialties,avg_rating,total_jobs,profiles(full_name,phone,address,gps_location)")
+        .select("id,specialties,avg_rating,total_jobs,profiles(full_name,phone,address,avatar_url,gps_location)")
         .eq("status", "active")
         .eq("is_available", true)
         .order("avg_rating", { ascending: false })
@@ -558,6 +590,11 @@ const getHomepageData = unstable_cache(
         .contains("display_locations", ["footer"])
         .order("sort_order", { ascending: true })
         .order("title", { ascending: true }),
+      supabase.from("jobs").select("id", { count: "exact", head: true }),
+      supabase.from("jobs").select("id", { count: "exact", head: true }).in("status", ["completed", "done"]),
+      supabase.from("workers").select("id", { count: "exact", head: true }).eq("status", "active"),
+      supabase.from("workers").select("id", { count: "exact", head: true }).eq("status", "active").eq("is_available", true),
+      supabase.from("ratings").select("score").not("score", "is", null).limit(5000),
     ]);
 
     if (settingsResult.error) {
@@ -579,6 +616,25 @@ const getHomepageData = unstable_cache(
     if (cmsPagesResult.error) {
       console.warn("Could not load CMS footer pages:", cmsPagesResult.error.message);
     }
+    if (totalJobsResult.error) {
+      console.warn("Could not load homepage total jobs:", totalJobsResult.error.message);
+    }
+
+    if (completedJobsResult.error) {
+      console.warn("Could not load homepage completed jobs:", completedJobsResult.error.message);
+    }
+
+    if (activeWorkersResult.error) {
+      console.warn("Could not load homepage active workers:", activeWorkersResult.error.message);
+    }
+
+    if (availableWorkersResult.error) {
+      console.warn("Could not load homepage available workers:", availableWorkersResult.error.message);
+    }
+
+    if (ratingScoresResult.error) {
+      console.warn("Could not load homepage rating scores:", ratingScoresResult.error.message);
+    }
 
     const settings = settingsResult.data;
     const dispatchWorkers = ((workersResult.data || []) as DispatchWorker[])
@@ -598,7 +654,7 @@ const getHomepageData = unstable_cache(
           specialty,
           rating: rating > 0 ? rating.toFixed(1) : "Mới",
           totalJobs: worker.total_jobs || 0,
-          gpsLabel: `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`,
+          avatarUrl: profile.avatar_url || null,
         };
       })
       .filter((worker): worker is HomepageDispatchWorker => Boolean(worker))
@@ -624,6 +680,20 @@ const getHomepageData = unstable_cache(
       })
       .filter((review): review is HomepageCustomerReview => Boolean(review));
 
+    const ratingScores = ((ratingScoresResult.data || []) as Array<{ score?: number | null }>)
+      .map((row) => Number(row.score || 0))
+      .filter((score) => Number.isFinite(score) && score > 0);
+    const averageRating = ratingScores.length > 0
+      ? ratingScores.reduce((total, score) => total + score, 0) / ratingScores.length
+      : null;
+    const homepageMetrics: HomepageMetricData = {
+      totalJobs: totalJobsResult.error ? null : totalJobsResult.count ?? 0,
+      completedJobs: completedJobsResult.error ? null : completedJobsResult.count ?? 0,
+      activeWorkers: activeWorkersResult.error ? null : activeWorkersResult.count ?? 0,
+      availableWorkers: availableWorkersResult.error ? null : availableWorkersResult.count ?? 0,
+      averageRating,
+      ratingCount: ratingScores.length,
+    };
     return {
       systemSettings: settings
         ? {
@@ -643,6 +713,7 @@ const getHomepageData = unstable_cache(
       dispatchWorkers,
       customerReviews,
       cmsPages: mergeFooterCmsPages(cmsPagesResult.data as HomepageCmsPage[] | null),
+      homepageMetrics,
     };
   },
   ["homepage-data"],
@@ -650,7 +721,7 @@ const getHomepageData = unstable_cache(
 );
 
 export default async function HomePage() {
-  const [{ systemSettings, dbServices, dispatchWorkers, customerReviews, cmsPages }, apkDownloadData] = await Promise.all([
+  const [{ systemSettings, dbServices, dispatchWorkers, customerReviews, cmsPages, homepageMetrics }, apkDownloadData] = await Promise.all([
     getHomepageData(),
     getApkDownloadData(),
   ]);
@@ -680,48 +751,77 @@ export default async function HomePage() {
       })
     : shuffleItems(defaultServices);
 
+  const homepageStats = [
+    {
+      value: formatHomepageCount(homepageMetrics.totalJobs),
+      label: "Lượt đặt dịch vụ",
+      note: "Tổng đơn trong hệ thống",
+      icon: UsersIcon,
+    },
+    {
+      value: formatHomepageCount(homepageMetrics.activeWorkers),
+      label: "Thợ chuyên nghiệp",
+      note: "Hồ sơ thợ đang hoạt động",
+      icon: BriefcaseIcon,
+    },
+    {
+      value: formatHomepageRating(homepageMetrics.averageRating),
+      label: "Đánh giá trung bình",
+      note: homepageMetrics.ratingCount > 0 ? `${homepageMetrics.ratingCount.toLocaleString("vi-VN")} đánh giá thật` : "Chưa có đánh giá",
+      icon: StarIcon,
+    },
+    {
+      value: formatHomepageCount(homepageMetrics.availableWorkers),
+      label: "Thợ đang trực",
+      note: "Có thể nhận việc ngay",
+      icon: ClockIcon,
+    },
+    {
+      value: formatHomepageCompletionRate(homepageMetrics),
+      label: "Hoàn thành",
+      note: typeof homepageMetrics.completedJobs === "number" ? `${homepageMetrics.completedJobs.toLocaleString("vi-VN")} việc đã xong` : "Đang cập nhật",
+      icon: ShieldCheckIcon,
+    },
+  ];
+
   return (
-    <div className="flex flex-col min-h-screen">
-      {/* ===== HEADER / NAVBAR ===== */}
-      <header className="sticky top-0 z-50 border-b border-outline-variant/20 bg-white/92 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 gap-3 lg:h-[72px]">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-3 group" id="nav-logo">
-              <LogoIcon size={36} />
-              <span className="text-xl font-bold text-primary-container tracking-tight">
+    <div className="flex min-h-screen flex-col bg-surface">
+      <header className="sticky top-0 z-50 border-b border-outline-variant/20 bg-white/95 backdrop-blur-xl">
+        <div className="mx-auto max-w-[94rem] px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between gap-4 lg:h-[72px]">
+            <Link href="/" className="group flex min-w-0 items-center gap-3" id="nav-logo">
+              <LogoIcon size={40} />
+              <span className="truncate text-xl font-extrabold text-primary-container sm:text-2xl">
                 {systemSettings.app_name}
               </span>
             </Link>
 
-            {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center gap-7 rounded-full border border-outline-variant/25 bg-surface-container-lowest/80 px-4 py-2">
-              <a href="#services" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
+            <nav className="hidden items-center gap-8 md:flex">
+              <a href="#services" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Dịch vụ
               </a>
-              <a href="#how-it-works" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
+              <a href="#how-it-works" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Cách hoạt động
               </a>
-              <a href="#reviews" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
+              <a href="#reviews" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Đánh giá
               </a>
-              <a href="#download-app" className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary-container">
+              <a href="#download-app" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Tải app
               </a>
             </nav>
 
-            {/* Auth Actions */}
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <Link
                 href="/login"
-                className="btn-outline !min-h-10 !w-auto !px-3 !py-2 text-sm sm:!px-5"
+                className="inline-flex min-h-10 items-center justify-center rounded-lg border border-outline-variant/45 bg-white px-3 py-2 text-sm font-extrabold text-primary-container shadow-sm transition-all hover:border-primary/35 hover:bg-primary-fixed/50 sm:min-w-32 sm:px-5"
                 id="nav-login"
               >
                 Đăng nhập
               </Link>
               <Link
                 href="/register"
-                className="btn-primary text-sm !py-2.5 !px-5 hidden sm:inline-flex"
+                className="hidden min-h-10 items-center justify-center rounded-lg bg-primary px-5 py-2 text-sm font-extrabold !text-white shadow-sm transition-all hover:bg-primary-container sm:inline-flex sm:min-w-32"
                 id="nav-register"
               >
                 Đăng ký
@@ -734,51 +834,52 @@ export default async function HomePage() {
       <CmsPlacement location="featured_notice" variant="banner" limit={2} />
       <CmsPlacement location="popup" variant="popup" limit={1} />
 
-      {/* ===== HERO SECTION ===== */}
-      <section className="relative min-h-[700px] overflow-hidden bg-primary text-on-primary sm:min-h-[760px]">
+      <section className="relative overflow-hidden bg-primary-container text-on-primary">
+        <div className="absolute inset-0 bg-[linear-gradient(115deg,#0759df_0%,#0759df_48%,#0874ff_100%)]" />
         <Image
           src="/hero-technician.webp"
-          alt="Kỹ thuật viên Thợ đến ngay kiểm tra sửa chữa tại nhà"
+          alt="Kỹ thuật viên Thợ Đến Ngay áo xanh"
           fill
           priority
           sizes="100vw"
-          className="object-cover object-[62%_center]"
+          className="object-cover object-center opacity-16 mix-blend-screen"
         />
-        <div className="absolute inset-0 bg-linear-to-r from-primary-container via-primary/92 to-primary/16" />
-        <div className="absolute inset-0 bg-linear-to-t from-primary-container/80 via-transparent to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-36 bg-linear-to-t from-surface to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-surface to-transparent" />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,39,120,0.24),rgba(0,39,120,0)_46%,rgba(0,39,120,0.18))]" />
 
-        <div className="relative mx-auto flex min-h-[700px] max-w-7xl items-center px-4 pb-28 pt-14 sm:min-h-[760px] sm:px-6 sm:pb-36 sm:pt-20 lg:px-8">
-          <div className="max-w-2xl">
-            {/* Badge */}
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/14 px-3.5 py-1.5 shadow-sm backdrop-blur-sm">
-              <span className="w-2 h-2 bg-primary-fixed rounded-full animate-pulse" />
-              <span className="text-xs font-semibold text-white/95">Đang hoạt động 24/7 tại Nghĩa Lâm Ninh Bình</span>
+        <div className="relative mx-auto grid max-w-[94rem] gap-8 px-4 pb-24 pt-10 sm:px-6 sm:pb-28 sm:pt-14 lg:min-h-[690px] lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.8fr)_minmax(360px,0.9fr)] lg:items-center lg:gap-8 lg:px-8">
+          <div className="z-10 max-w-2xl">
+            <div className="mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-white/22 bg-white/10 px-4 py-2 shadow-sm backdrop-blur-sm">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-success" />
+              <span className="truncate text-sm font-extrabold !text-white sm:text-base">
+                Đang hoạt động 24/7 tại Nghĩa Lâm, Ninh Bình
+              </span>
             </div>
 
-            <h1 className="mb-5 max-w-3xl text-5xl font-extrabold leading-[1.02] tracking-tight !text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
-              Thợ giỏi,{" "}
-              <span className="!text-primary-fixed drop-shadow-[0_2px_12px_rgba(0,0,0,0.35)]">đến ngay</span>{" "}
-              khi bạn cần
+            <h1 className="max-w-3xl text-5xl font-black italic leading-[0.96] !text-white drop-shadow-[0_5px_24px_rgba(0,0,0,0.35)] sm:text-7xl xl:text-[6.6rem]">
+              THỢ GIỎI,
+              <span className="mt-2 block !text-primary-fixed drop-shadow-[0_5px_18px_rgba(0,0,0,0.30)]">
+                ĐẾN NGAY
+              </span>
             </h1>
 
-            <p className="mb-8 max-w-xl text-base leading-7 !text-white/90 drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)] sm:text-lg">
-              Nền tảng kết nối bạn với thợ sửa chữa chuyên nghiệp, được xác minh.
-              Đặt dịch vụ điện, nước, camera, cơ khí chỉ trong vài bước.
+            <p className="mt-7 max-w-2xl text-base font-medium leading-7 !text-white/92 drop-shadow-[0_2px_10px_rgba(0,0,0,0.22)] sm:text-lg">
+              Kết nối bạn với thợ sửa chữa chuyên nghiệp, được xác minh. Dịch vụ điện, nước, camera, cơ khí chỉ trong vài bước.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
                 href="/register"
-                className="btn-secondary !px-6 !py-3.5 sm:!w-auto sm:!px-8"
+                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg bg-white px-6 py-3 text-sm font-black uppercase text-primary-container shadow-[0_14px_34px_rgba(0,18,48,0.24)] transition-all hover:-translate-y-0.5 hover:bg-primary-fixed sm:w-auto sm:px-8"
                 id="hero-cta"
               >
+                <ZapIcon size={18} />
                 Đặt dịch vụ ngay
-                <ArrowRightIcon size={20} />
+                <ArrowRightIcon size={18} />
               </Link>
               <a
-                href={`tel:${systemSettings.hotline.replace(/\s+/g, '')}`}
-                className="btn-outline !border-white/30 !bg-white/8 !px-6 !py-3.5 !text-white hover:!border-white/50 hover:!bg-white/14 sm:!w-auto sm:!px-8"
+                href={`tel:${systemSettings.hotline.replace(/\s+/g, "")}`}
+                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg border border-white/45 bg-white/8 px-6 py-3 text-sm font-black uppercase !text-white shadow-sm backdrop-blur transition-all hover:border-white/70 hover:bg-white/16 sm:w-auto sm:px-8"
                 id="hero-call"
               >
                 <PhoneIcon size={20} />
@@ -786,86 +887,78 @@ export default async function HomePage() {
               </a>
             </div>
 
-            {/* Trust indicators */}
-            <div className="mt-8 grid grid-cols-1 gap-3 text-white/82 sm:flex sm:flex-wrap sm:items-center sm:gap-6">
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 backdrop-blur-sm">
-                <ShieldCheckIcon size={18} />
-                <span className="text-label-sm">Thợ xác minh</span>
+            <div className="mt-8 grid gap-3 text-white/85 sm:grid-cols-3">
+              <div className="flex items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
+                <ShieldCheckIcon size={24} className="shrink-0 !text-white" />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-extrabold !text-white">Thợ xác minh</div>
+                  <div className="truncate text-xs !text-white/72">Lý lịch rõ ràng</div>
+                </div>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 backdrop-blur-sm">
-                <ClockIcon size={18} />
-                <span className="text-label-sm">Phản hồi &lt; 5 phút</span>
+              <div className="flex items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
+                <ClockIcon size={24} className="shrink-0 !text-white" />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-extrabold !text-white">Phản hồi &lt; 5 phút</div>
+                  <div className="truncate text-xs !text-white/72">Hỗ trợ nhanh chóng</div>
+                </div>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 backdrop-blur-sm">
-                <StarIcon size={18} className="text-primary-fixed" />
-                <span className="text-label-sm">4.8/5 sao</span>
+              <div className="flex items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
+                <StarIcon size={24} className="shrink-0 !text-primary-fixed" />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-extrabold !text-white">4.8/5 sao</div>
+                  <div className="truncate text-xs !text-white/72">Đánh giá từ khách hàng</div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="absolute bottom-24 right-4 hidden w-[380px] rounded-xl border border-white/20 bg-primary-container/95 p-5 text-white shadow-[0_26px_86px_rgba(0,18,48,0.46)] backdrop-blur-xl lg:block">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase !text-primary-fixed">Đang điều phối</p>
-                <p className="mt-1 text-lg font-bold !text-white">Thợ có GPS thật</p>
-                <p className="mt-1 text-xs !text-white/68">Danh sách thợ active đã bật định vị</p>
+          <div className="relative z-0 order-3 mx-auto flex h-[350px] w-full max-w-[430px] items-end justify-center sm:h-[470px] lg:order-none lg:h-[620px] lg:max-w-none">
+            <Image
+              src="/hero-technician.webp"
+              alt="Người thợ áo xanh Thợ Đến Ngay"
+              fill
+              priority
+              sizes="(min-width: 1024px) 31vw, 92vw"
+              className="object-contain object-bottom drop-shadow-[0_28px_60px_rgba(0,18,48,0.35)]"
+            />
+            <div className="absolute right-2 top-6 hidden rounded-full border border-white/18 bg-white/12 px-5 py-4 text-center shadow-[0_18px_44px_rgba(0,18,48,0.24)] backdrop-blur-md sm:block lg:right-0 lg:top-20">
+              <div className="flex items-center justify-center gap-2 text-sm font-extrabold !text-white/90">
+                <MapPinIcon size={18} />
+                Định vị thật
               </div>
-              <div className="shrink-0 rounded-full border border-success-container/40 bg-success-container px-3 py-1 text-xs font-bold text-success">
-                Live GPS
-              </div>
+              <div className="mt-1 text-3xl font-black !text-white">Live GPS</div>
+              <div className="text-sm font-bold !text-white/82">Theo vị trí thật</div>
             </div>
-            {dispatchWorkers.length > 0 ? (
-              <div className="space-y-3">
-                {dispatchWorkers.map((worker) => (
-                  <div key={worker.id} className="rounded-lg border border-white/12 bg-white/12 p-3 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-sm font-bold text-primary-container">
-                        {getInitials(worker.name)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold !text-white">{worker.name}</p>
-                        <p className="truncate text-xs !text-white/68">{worker.specialty}</p>
-                      </div>
-                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/14 px-2 py-1 text-xs font-bold !text-primary-fixed">
-                        <StarIcon size={13} />
-                        {worker.rating}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3 rounded-md bg-white/10 px-3 py-2">
-                      <span className="truncate text-xs font-medium !text-white/72">
-                        GPS: {worker.gpsLabel}
-                      </span>
-                      <span className="text-xs font-bold !text-white">{worker.totalJobs} jobs</span>
-                    </div>
+          </div>
+
+          <div className="z-10 order-2 lg:order-none">
+            <HomepageNearbyWorkers workers={dispatchWorkers} />
+          </div>
+        </div>
+      </section>
+
+      <section className="relative z-10 -mt-16 pb-8">
+        <div className="mx-auto max-w-[86rem] px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-outline-variant/25 bg-white/96 p-4 shadow-[0_18px_50px_rgba(15,35,66,0.12)] backdrop-blur sm:grid-cols-2 lg:grid-cols-5 lg:p-5">
+            {homepageStats.map((stat) => {
+              const StatIcon = stat.icon;
+
+              return (
+                <div key={stat.label} className="flex items-center gap-4 border-outline-variant/40 px-2 py-3 sm:px-4 lg:border-r lg:last:border-r-0">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[0_10px_28px_rgba(37,99,235,0.28)]">
+                    <StatIcon size={28} />
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-white/12 bg-white/12 p-4">
-                <p className="text-sm font-bold !text-white">Chưa có thợ active bật GPS</p>
-                <p className="mt-1 text-xs leading-5 !text-white/70">
-                  Khi thợ cập nhật vị trí trong hồ sơ, danh sách này sẽ tự hiển thị trên trang chủ.
-                </p>
-              </div>
-            )}
+                  <div className="min-w-0">
+                    <div className="truncate text-2xl font-black text-primary-container">{stat.value}</div>
+                    <div className="truncate text-sm font-extrabold text-on-surface">{stat.label}</div>
+                    <div className="truncate text-xs font-medium text-on-surface-variant">{stat.note}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
-
-      {/* ===== STATS BAR ===== */}
-      <section className="relative z-10 -mt-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 gap-3 rounded-xl border border-outline-variant/25 bg-white/96 p-3 shadow-[0_18px_50px_rgba(15,35,66,0.10)] backdrop-blur md:grid-cols-4 md:gap-5 md:p-5">
-            {stats.map((s) => (
-              <div key={s.label} className="rounded-lg bg-surface-container-lowest px-3 py-4 text-center">
-                <div className="text-2xl font-bold text-primary-container sm:text-3xl">{s.value}</div>
-                <div className="mt-1 text-xs font-medium text-on-surface-variant sm:text-sm">{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <CmsPlacement location="home" title={"N\u1ed9i dung n\u1ed5i b\u1eadt"} limit={3} />
       <CmsPlacement location="news" title={"Tin t\u1ee9c"} limit={3} />
 
