@@ -337,9 +337,9 @@ const previousMonthFirstInput = () => {
   const today = new Date();
   return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
 };
-const currentMonthDayInput = (day: number) => {
+const currentMonthFirstInput = () => {
   const today = new Date();
-  return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth(), day));
+  return toBillGoDateInput(new Date(today.getFullYear(), today.getMonth(), 1));
 };
 const monthInput = (date = currentDate) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
@@ -811,10 +811,10 @@ const upfrontSignupCycles = new Set<BillGoCycle>(["two_months", "three_months", 
 const applySignupCycleDefaults = <T extends { cycle: BillGoCycle | ""; startDate: string; dueDate: string }>(form: T, cycle: BillGoCycle | ""): T => {
   if (!cycle) return { ...form, cycle, startDate: "", dueDate: "" };
   if (cycle === "monthly") {
-    return { ...form, cycle, startDate: previousMonthFirstInput(), dueDate: "" };
+    return { ...form, cycle, startDate: form.startDate || previousMonthFirstInput(), dueDate: "" };
   }
   if (upfrontSignupCycles.has(cycle)) {
-    return { ...form, cycle, startDate: currentMonthDayInput(1), dueDate: currentMonthDayInput(28) };
+    return { ...form, cycle, startDate: form.startDate || currentMonthFirstInput(), dueDate: "" };
   }
   return { ...form, cycle };
 };
@@ -2855,7 +2855,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
             </div>
             <p className="mt-3 text-xs text-on-surface-variant">
-              {hasFormCycle && formBilling ? `Kỳ cước ${monthLabel(form.startDate)}: ${dateLabel(formBilling.periodStart)} - ${dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: ${dateLabel(formDueDate)}. ` : "Khách hàng sẽ được lưu ở trạng thái Chưa thiết lập chu kỳ, chưa tạo kỳ thu và chưa tính tiền cần thu. "}{hasFormCycle ? (form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo kỳ cước hiện tại ở trạng thái Chưa thu.") : ""} {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+              {hasFormCycle && formBilling ? `Kỳ cước ${monthLabel(form.startDate)}: ${dateLabel(formBilling.periodStart)} - ${dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: ${dateLabel(formDueDate)}. ` : "Khách hàng sẽ được lưu ở trạng thái Chưa thiết lập chu kỳ, chưa tạo kỳ thu và chưa tính tiền cần thu. "}{hasFormCycle ? (form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo theo kỳ đã chọn ở trạng thái Chưa thu.") : ""} {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
