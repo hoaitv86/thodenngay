@@ -835,19 +835,11 @@ export default async function HomePage() {
       <CmsPlacement location="popup" variant="popup" limit={1} />
 
       <section className="relative overflow-hidden bg-primary-container text-on-primary">
-        <div className="absolute inset-0 bg-[linear-gradient(115deg,#0759df_0%,#0759df_48%,#0874ff_100%)]" />
-        <Image
-          src="/hero-technician.webp"
-          alt="Kỹ thuật viên Thợ Đến Ngay áo xanh"
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover object-center opacity-16 mix-blend-screen"
-        />
+        <div className="absolute inset-0 bg-[linear-gradient(115deg,#064ecb_0%,#075ee8_52%,#0874ff_100%)]" />
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-surface to-transparent" />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,39,120,0.24),rgba(0,39,120,0)_46%,rgba(0,39,120,0.18))]" />
 
-        <div className="relative mx-auto grid max-w-[94rem] gap-8 px-4 pb-24 pt-10 sm:px-6 sm:pb-28 sm:pt-14 lg:min-h-[690px] lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.8fr)_minmax(360px,0.9fr)] lg:items-center lg:gap-8 lg:px-8">
+        <div className="relative mx-auto grid max-w-[94rem] gap-6 px-4 pb-24 pt-10 sm:px-6 sm:pb-28 sm:pt-14 md:grid-cols-2 md:items-center lg:gap-8 lg:px-8 xl:min-h-[690px] xl:grid-cols-3">
           <div className="z-10 max-w-2xl">
             <div className="mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-white/22 bg-white/10 px-4 py-2 shadow-sm backdrop-blur-sm">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-success" />
@@ -856,9 +848,9 @@ export default async function HomePage() {
               </span>
             </div>
 
-            <h1 className="max-w-3xl text-5xl font-black italic leading-[0.96] !text-white drop-shadow-[0_5px_24px_rgba(0,0,0,0.35)] sm:text-7xl xl:text-[6.6rem]">
+            <h1 className="max-w-3xl text-5xl font-black italic leading-[0.96] !text-white drop-shadow-[0_5px_24px_rgba(0,0,0,0.35)] sm:text-6xl xl:text-[6.6rem]">
               THỢ GIỎI,
-              <span className="mt-2 block !text-primary-fixed drop-shadow-[0_5px_18px_rgba(0,0,0,0.30)]">
+              <span className="mt-2 block drop-shadow-[0_5px_18px_rgba(0,0,0,0.30)]" style={{ color: "#FACC15" }}>
                 ĐẾN NGAY
               </span>
             </h1>
@@ -912,7 +904,7 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="relative z-0 order-3 mx-auto flex h-[350px] w-full max-w-[430px] items-end justify-center sm:h-[470px] lg:order-none lg:h-[620px] lg:max-w-none">
+          <div className="relative z-0 order-3 mx-auto flex h-[350px] w-full max-w-[430px] items-end justify-center sm:h-[470px] md:col-span-2 md:h-[420px] xl:order-none xl:col-span-1 xl:h-[620px] xl:max-w-none">
             <Image
               src="/hero-technician.webp"
               alt="Người thợ áo xanh Thợ Đến Ngay"
@@ -931,7 +923,7 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="z-10 order-2 lg:order-none">
+          <div className="z-10 order-2 xl:order-none">
             <HomepageNearbyWorkers workers={dispatchWorkers} />
           </div>
         </div>
