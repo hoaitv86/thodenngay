@@ -5,15 +5,21 @@ import { DEMO_ACTION_BLOCK_MESSAGE, isDemoAccount } from "@/lib/demo-accounts";
 import {
   BILLGO_ALL_TAB,
   BILLGO_CYCLE_OPTIONS,
+  BILLGO_MOBILE_CYCLE_VALUES,
   BillGoCycle,
   buildBillGoCoverageMonths,
   buildBillGoReceiptCode,
   buildBillGoReceiptLookupCode,
+  getBillGoBillingModel,
   getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
   getBillGoNextPeriodStartDate,
+  getBillGoServiceBillingPeriod,
+  getBillGoServiceCollectableAmount,
+  getBillGoServiceCycleOption,
   getBillGoStoredStatus,
+  isBillGoNoAmountServiceType,
   toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
@@ -23,6 +29,20 @@ import { canCollectBillGo, canManageBillGo } from "@/lib/worker-unit-permissions
 import { getAssignedBillGoAreaFilters, isBillGoSubscriptionInAssignedArea, resolveWorkerUnitScope, type WorkerUnitScope } from "@/lib/worker-unit-server";
 
 const allowedCycles = new Set(BILLGO_CYCLE_OPTIONS.map(option => option.value));
+const allowedMainServiceTypes = new Set(["internet", "mobile", "electricity", "installment"]);
+const billGoServiceFilterTypes: Record<string, string[]> = {
+  internet: ["internet", "tv360", "receiver", "sales_recurring"],
+  mobile: ["mobile", "mobile_prepaid", "mobile_postpaid"],
+  electricity: ["electricity"],
+  installment: ["installment"],
+};
+const getBillGoServiceFilterTypes = (serviceType: string) => billGoServiceFilterTypes[serviceType] || billGoServiceFilterTypes.internet;
+const getStoredBillGoServiceType = (serviceType: string, billingModel: string) =>
+  serviceType === "mobile" ? `mobile_${billingModel === "prepaid" ? "prepaid" : "postpaid"}` : serviceType;
+const getBillGoServiceLabel = (serviceType: string) => {
+  const normalized = String(serviceType || "internet").toLowerCase();
+  return normalized.includes("mobile") ? "Di động" : normalized === "electricity" ? "Tiền điện" : normalized === "installment" ? "Trả góp" : "Internet";
+};
 const allowedPaymentMethods = new Set(["cash", "bank_transfer", "other"]);
 const DEFAULT_BILLGO_PAGE_SIZE = 30;
 const MAX_BILLGO_PAGE_SIZE = 50;
@@ -322,17 +342,20 @@ const buildReceivableDraft = (
     cycle?: string | null;
     monthly_fee?: number | string | null;
     amount_per_cycle?: number | string | null;
+    service_type?: string | null;
   },
   userId: string,
   periodStart: string,
 ) => {
   const cycle = String(subscription.current_cycle || subscription.cycle || "monthly") as BillGoCycle;
-  const option = getBillGoCycleOption(cycle);
+  const serviceType = String(subscription.service_type || "internet");
+  const option = getBillGoServiceCycleOption(cycle, serviceType);
   const monthlyFee = toMoneyNumber(subscription.monthly_fee ?? subscription.amount_per_cycle);
-  const billing = getBillGoBillingPeriod(periodStart, cycle);
+  const billing = getBillGoServiceBillingPeriod(periodStart, cycle, serviceType);
   const billingParts = getBillingParts(billing.collectionMonth);
   const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
-  const nextBilling = getBillGoBillingPeriod(nextPeriodStart, cycle);
+  const nextBilling = getBillGoServiceBillingPeriod(nextPeriodStart, cycle, serviceType);
+  const serviceLabel = getBillGoServiceLabel(serviceType);
 
   return {
     customer_id: subscription.customer_id,
@@ -340,9 +363,9 @@ const buildReceivableDraft = (
     subscription_id: subscription.id,
     type: "subscription_fee",
     package_id: subscription.package_id,
-    package_name_at_collection: subscription.package_name || "Internet",
-    title: `Thu cước ${subscription.package_name || "Internet"}`,
-    total_amount: getBillGoCollectableAmount(monthlyFee, cycle),
+    package_name_at_collection: subscription.package_name || serviceLabel,
+    title: `Thu ${serviceLabel} ${subscription.package_name || ""}`.trim(),
+    total_amount: getBillGoServiceCollectableAmount(monthlyFee, cycle, serviceType),
     due_date: billing.dueDate,
     period_start: billing.periodStart,
     period_end: billing.periodEnd,
@@ -362,8 +385,6 @@ const buildReceivableDraft = (
     created_by: userId,
   };
 };
-
-
 type BillGoCycleChangeResult = {
   subscriptionId: string;
   customerName?: string | null;
@@ -382,7 +403,7 @@ const applyBillGoCycleChange = async (
 ): Promise<{ data?: BillGoCycleChangeResult; error?: string }> => {
   const { data: subscription, error: subscriptionError } = await db
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, covered_until, next_period_start, status")
+    .select("id, customer_id, worker_id, customer_name, package_id, package_name, service_type, current_cycle, cycle, monthly_fee, amount_per_cycle, covered_until, next_period_start, status")
     .eq("id", subscriptionId)
     .eq("worker_id", workerId)
     .is("deleted_at", null)
@@ -395,14 +416,14 @@ const applyBillGoCycleChange = async (
     || todayInputForServer()
   );
   const oldCycle = String(subscription.current_cycle || subscription.cycle || "pending_cycle");
-  const cycleOption = getBillGoCycleOption(newCycle);
-  const billing = getBillGoBillingPeriod(effectivePeriodStart, newCycle);
+  const serviceType = String(subscription.service_type || "internet");
+  const cycleOption = getBillGoServiceCycleOption(newCycle, serviceType);
+  const billing = getBillGoServiceBillingPeriod(effectivePeriodStart, newCycle, serviceType);
   const nextPeriodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
-  const nextBilling = getBillGoBillingPeriod(nextPeriodStart, newCycle);
+  const nextBilling = getBillGoServiceBillingPeriod(nextPeriodStart, newCycle, serviceType);
   const billingParts = getBillingParts(billing.collectionMonth);
   const monthlyFee = toMoneyNumber(subscription.monthly_fee ?? subscription.amount_per_cycle);
-  const totalAmount = getBillGoCollectableAmount(monthlyFee, newCycle);
-
+  const totalAmount = getBillGoServiceCollectableAmount(monthlyFee, newCycle, serviceType);
   const updatePayload: Record<string, unknown> = {
     current_cycle: newCycle,
     cycle: newCycle,
@@ -815,9 +836,11 @@ const ensureDueReceivables = async (
   workerId: string,
   userId: string,
   monthFilter: string,
+  serviceFilter = "internet",
 ) => {
   const { year, month } = parseMonthFilter(monthFilter);
   const collectionMonth = monthStartInput(year, month);
+  const serviceTypes = getBillGoServiceFilterTypes(serviceFilter);
   const todayInput = todayInputForServer();
   const todayMonth = firstOfMonth(todayInput);
   const targetCollectionMonth = compareBillGoMonth(collectionMonth, todayMonth) < 0 ? collectionMonth : todayMonth;
@@ -832,10 +855,11 @@ const ensureDueReceivables = async (
 
   const { data: subscriptions, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
-    .select("id, customer_id, worker_id, customer_name, package_id, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start, next_due_date, covered_until")
+    .select("id, customer_id, worker_id, customer_name, package_id, package_name, service_type, current_cycle, cycle, monthly_fee, amount_per_cycle, status, deleted_at, start_date, next_period_start, next_due_date, covered_until")
     .eq("worker_id", workerId)
     .eq("status", "active")
     .is("deleted_at", null)
+    .in("service_type", serviceTypes)
     .or(`next_period_start.is.null,next_period_start.lte.${targetCollectionMonth}`);
   if (subscriptionError) return { error: subscriptionError.message };
   if (!subscriptions || subscriptions.length === 0) return { created: 0 };
@@ -875,7 +899,7 @@ const ensureDueReceivables = async (
     const drafts = [];
 
     for (let guard = 0; guard < 60; guard += 1) {
-      const billing = getBillGoBillingPeriod(periodStart, cycle);
+      const billing = getBillGoServiceBillingPeriod(periodStart, cycle, subscription.service_type || "internet");
       if (compareBillGoMonth(billing.collectionMonth, targetCollectionMonth) > 0) {
         nextPointers.set(subscription.id, { next_period_start: billing.periodStart, next_due_date: billing.dueDate });
         break;
@@ -887,7 +911,7 @@ const ensureDueReceivables = async (
       }
 
       periodStart = getBillGoNextPeriodStartDate(billing.periodEnd);
-      const nextBilling = getBillGoBillingPeriod(periodStart, cycle);
+      const nextBilling = getBillGoServiceBillingPeriod(periodStart, cycle, subscription.service_type || "internet");
       nextPointers.set(subscription.id, { next_period_start: nextBilling.periodStart, next_due_date: nextBilling.dueDate });
     }
 
@@ -999,15 +1023,18 @@ export async function GET(request: Request) {
   const areaId = asText(searchParams.get("areaId"));
   const subAreaId = asText(searchParams.get("subAreaId"));
   const searchQuery = asText(searchParams.get("q")).toLocaleLowerCase("vi");
+  const requestedServiceType = asText(searchParams.get("serviceType")) || "internet";
+  const serviceFilter = allowedMainServiceTypes.has(requestedServiceType) ? requestedServiceType : "internet";
+  const serviceTypes = getBillGoServiceFilterTypes(serviceFilter);
   const cycleFilter = allowedCycles.has(requestedCycle as BillGoCycle) ? requestedCycle : BILLGO_ALL_TAB;
   const statusFilter = allowedListStatuses.has(requestedStatus) ? requestedStatus : "all";
   const dueFilter = allowedDueFilters.has(requestedDue) ? requestedDue : "all";
   const { year, month } = parseMonthFilter(monthFilter);
   const assignedFilters = scope.role === "bill_collector" ? await getAssignedBillGoAreaFilters(admin, userId) : null;
-  const ensured = canManageBillGoScope(scope) ? await ensureDueReceivables(admin, workerId, userId, monthFilter) : { created: 0 };
+  const ensured = canManageBillGoScope(scope) ? await ensureDueReceivables(admin, workerId, userId, monthFilter, serviceFilter) : { created: 0 };
   if ("error" in ensured && ensured.error) return jsonError(ensured.error);
 
-  if (!assignedFilters) {
+  if (!assignedFilters && serviceFilter === "internet") {
     const optimizedStartedAt = performance.now();
     const { data: optimizedPayload, error: optimizedError } = await admin.rpc("billgo_customer_list_page", {
       p_worker_id: workerId,
@@ -1034,6 +1061,7 @@ export async function GET(request: Request) {
         totals: payload.totals || {},
         meta: {
           mode: "list_rpc",
+          serviceType: serviceFilter,
           totalMs: Math.round(performance.now() - requestStartedAt),
           queryMs: Math.round(performance.now() - optimizedStartedAt),
           page: Number(payload.page || page),
@@ -1053,7 +1081,8 @@ export async function GET(request: Request) {
       .select(includeTv360Columns ? billGoSubscriptionTv360Select : billGoSubscriptionBaseSelect)
       .eq("worker_id", workerId)
       .not("status", "in", "(cancelled,deleted)")
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .in("service_type", serviceTypes);
     if (areaId) query = query.eq("area_id", areaId);
     if (subAreaId) query = query.eq("sub_area_id", subAreaId);
     if (searchQuery) {
@@ -1209,6 +1238,7 @@ export async function GET(request: Request) {
 
   const meta = {
     mode: "list",
+    serviceType: serviceFilter,
     totalMs: Math.round(performance.now() - requestStartedAt),
     subscriptionCount: hydratedSubscriptions.length,
     candidateRowCount: currentRows.length,
@@ -1239,9 +1269,11 @@ export async function POST(request: Request) {
   const addressDetail = asText(body.addressDetail) || address;
   const provider = asText(body.provider);
   const requestedServiceType = asText(body.serviceType) || "internet";
-  const allowedMainServiceTypes = new Set(["internet", "mobile", "electricity", "installment"]);
   const serviceType = allowedMainServiceTypes.has(requestedServiceType) ? requestedServiceType : "internet";
-  const serviceLabel = serviceType === "mobile" ? "Di \u0111\u1ed9ng" : serviceType === "electricity" ? "Ti\u1ec1n \u0111i\u1ec7n" : serviceType === "installment" ? "Tr\u1ea3 g\u00f3p" : "Internet";
+  const mobileBillingModel = asText(body.mobileBillingType || body.billingModel || body.billingMode) === "prepaid" ? "prepaid" : "postpaid";
+  const storedServiceType = getStoredBillGoServiceType(serviceType, mobileBillingModel);
+  const serviceLabel = getBillGoServiceLabel(storedServiceType);
+  const isNoAmountService = isBillGoNoAmountServiceType(storedServiceType);
   const packageId = asText(body.packageId) || null;
   let selectedPackage: BillGoPackageSelection | null = null;
   if (packageId) {
@@ -1252,18 +1284,21 @@ export async function POST(request: Request) {
       .eq("is_active", true)
       .maybeSingle();
     if (packageError) return jsonError(packageError.message);
-    if (!packageRow) return jsonError("G\u00f3i c\u01b0\u1edbc kh\u00f4ng c\u00f2n \u00e1p d\u1ee5ng.", 404);
+    if (!packageRow) return jsonError("Gói cước không còn áp dụng.", 404);
     selectedPackage = packageRow as BillGoPackageSelection;
   }
-  if (selectedPackage && selectedPackage.type !== "internet") return jsonError("G\u00f3i c\u01b0\u1edbc ch\u00ednh kh\u00f4ng h\u1ee3p l\u1ec7 cho d\u1ecbch v\u1ee5 \u0111ang ch\u1ecdn.", 400);
-  if (serviceType !== "internet" && selectedPackage) return jsonError("D\u1ecbch v\u1ee5 n\u00e0y ch\u01b0a d\u00f9ng g\u00f3i Internet c\u00f3 s\u1eb5n. Vui l\u00f2ng nh\u1eadp t\u00ean g\u00f3i v\u00e0 gi\u00e1 c\u01b0\u1edbc.", 400);
+  if (selectedPackage && selectedPackage.type !== "internet") return jsonError("Gói cước chính không hợp lệ cho dịch vụ đang chọn.", 400);
+  if (serviceType !== "internet" && selectedPackage) return jsonError("Dịch vụ này chưa dùng gói Internet có sẵn. Vui lòng nhập tên gói và giá cước.", 400);
   const packageName = selectedPackage?.name || asText(body.packageName) || serviceLabel;
-  const monthlyFee = selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
-  const cycle = asText(body.cycle);
-  const hasCycle = allowedCycles.has(cycle as BillGoCycle);
-  const allowedPackageCycles = selectedPackage?.allowed_cycles?.length
-    ? Array.from(new Set([...selectedPackage.allowed_cycles, ...BILLGO_SIGNUP_CYCLES]))
-    : BILLGO_SIGNUP_CYCLES;
+  const monthlyFee = isNoAmountService ? 0 : selectedPackage ? toMoneyNumber(selectedPackage.monthly_price) : toMoneyNumber(body.monthlyFee ?? body.amount);
+  const requestedCycle = asText(body.cycle);
+  const cycle = (isNoAmountService ? "monthly" : requestedCycle) as BillGoCycle | "";
+  const allowedPackageCycles = serviceType === "mobile"
+    ? BILLGO_MOBILE_CYCLE_VALUES
+    : selectedPackage?.allowed_cycles?.length
+      ? Array.from(new Set([...selectedPackage.allowed_cycles, ...BILLGO_SIGNUP_CYCLES]))
+      : BILLGO_SIGNUP_CYCLES;
+  const hasCycle = isNoAmountService || (allowedCycles.has(cycle as BillGoCycle) && allowedPackageCycles.includes(cycle as BillGoCycle));
   const startDate = asText(body.startDate);
   const dueDate = asText(body.dueDate);
   const note = asText(body.note);
@@ -1330,7 +1365,7 @@ export async function POST(request: Request) {
       .ilike("internet_account", account)
       .is("deleted_at", null)
       .not("status", "in", "(cancelled,deleted)");
-    query = query.eq("service_type", serviceType);
+    query = query.in("service_type", getBillGoServiceFilterTypes(serviceType));
     if (includeTv360Columns) {
       query = query.is("parent_subscription_id", null);
     }
@@ -1346,7 +1381,7 @@ export async function POST(request: Request) {
   if (duplicateError) return jsonError("Không thể kiểm tra account BillGo: " + duplicateError.message);
   if (duplicate) return jsonError("Account này đã có trong BillGo.", 409);
 
-  const firstBilling = hasCycle ? getBillGoBillingPeriod(startDate, cycle) : null;
+  const firstBilling = hasCycle ? getBillGoServiceBillingPeriod(startDate, cycle, storedServiceType, mobileBillingModel) : null;
   const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
   if ("error" in location) return jsonError(location.error || "Kh\u00f4ng th\u1ec3 t\u1ea1o \u0111\u1ecba b\u00e0n kh\u00e1ch h\u00e0ng.");
 
@@ -1356,7 +1391,7 @@ export async function POST(request: Request) {
       customer_id: null, worker_id: workerId, customer_name: customerName, phone, internet_account: account, customer_address: address,
       area_id: location.areaId, sub_area_id: location.subAreaId, address_detail: addressDetail, legacy_address: address || null,
       provider: selectedPackage?.provider || provider || null, package_id: selectedPackage?.id || null, package_name: packageName,
-      service_type: serviceType, cycle: hasCycle ? cycle : null, current_cycle: hasCycle ? cycle : null, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
+      service_type: storedServiceType, cycle: hasCycle ? cycle : null, current_cycle: hasCycle ? cycle : null, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
       start_date: firstBilling?.periodStart || null, next_due_date: firstBilling?.dueDate || null, next_period_start: firstBilling?.periodStart || null,
       status: hasCycle ? "active" : "pending_cycle", note, created_by: userId, last_changed_by: userId,
     })
@@ -1368,7 +1403,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ subscriptionId: subscription.id, receivableId: null, collectionMonth: null, nextPeriodStart: null, coveredUntil: null, pendingCycle: true, receipt: null }, { status: 201 });
   }
 
-  const subscriptionDraft = { id: subscription.id, customer_id: null, worker_id: workerId, package_id: selectedPackage?.id || null, package_name: packageName, current_cycle: cycle, cycle, monthly_fee: monthlyFee, amount_per_cycle: monthlyFee };
+  const subscriptionDraft = { id: subscription.id, customer_id: null, worker_id: workerId, package_id: selectedPackage?.id || null, package_name: packageName, service_type: storedServiceType, current_cycle: cycle, cycle, monthly_fee: monthlyFee, amount_per_cycle: monthlyFee };
   const rowsToInsert = [];
   const paidThroughStart = paidThroughMonth ? firstOfMonth(paidThroughMonth) : "";
   let nextPeriodStart = firstBilling.periodStart;
@@ -1504,8 +1539,58 @@ export async function PATCH(request: Request) {
   const action = asText(body.action);
   const managerActions = new Set(["import_preview", "import_apply", "bulk_entry_apply", "update_customer", "change_cycle", "assign_cycle_bulk", "pause", "reactivate", "soft_delete", "assign_area_bulk"]);
   if (managerActions.has(action) && !canManageBillGoScope(scope)) return jsonError("Bạn không có quyền quản lý dữ liệu BillGo.", 403);
-  if (action === "collect" && !canCollectBillGoScope(scope)) return jsonError("Bạn không có quyền thu cước BillGo.", 403);
+  if ((action === "collect" || action === "mark_period_status") && !canCollectBillGoScope(scope)) return jsonError("Bạn không có quyền thu cước BillGo.", 403);
 
+  if (action === "mark_period_status") {
+    const receivableId = asText(body.receivableId);
+    const nextStatus = asText(body.status) === "paid" ? "paid" : "unpaid";
+    if (!receivableId) return jsonError("Thiếu kỳ BillGo cần cập nhật.");
+
+    const { data: receivable, error: receivableError } = await admin
+      .from("billgo_receivables")
+      .select(`id, worker_id, subscription_id, period_start, period_end, due_date, status, subscription:billgo_subscriptions(${billGoSubscriptionBaseSelect})`)
+      .eq("id", receivableId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (receivableError) return jsonError("Không thể tải kỳ BillGo: " + receivableError.message);
+    if (!receivable) return jsonError("Không tìm thấy kỳ BillGo.", 404);
+
+    const subscription = firstRelation((receivable as { subscription?: unknown }).subscription as never) as BillGoSubscriptionListRow | null;
+    const serviceType = String(subscription?.service_type || "internet");
+    if (!isBillGoNoAmountServiceType(serviceType)) return jsonError("Dịch vụ này cần dùng luồng thu tiền hiện tại.", 400);
+
+    if (scope.role === "bill_collector") {
+      const assignedFilters = await getAssignedBillGoAreaFilters(admin, userId);
+      if (!isBillGoSubscriptionInAssignedArea(subscription || {}, assignedFilters)) return jsonError("Bạn không được phân công địa bàn của khách này.", 403);
+    }
+
+    const paidAt = asText(body.paidAt) || new Date().toISOString();
+    const note = asText(body.note);
+    const updatePayload = nextStatus === "paid"
+      ? { status: "paid", paid_amount: 0, paid_at: paidAt, payment_method: "other", collected_by: userId, note }
+      : { status: "unpaid", paid_amount: 0, paid_at: null, payment_method: null, collected_by: null, note };
+
+    const { error: updateError } = await admin
+      .from("billgo_receivables")
+      .update(updatePayload)
+      .eq("id", receivableId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null);
+    if (updateError) return jsonError(updateError.message);
+
+    if (subscription?.id) {
+      if (nextStatus === "paid") {
+        const nextStart = getBillGoNextPeriodStartDate(String(receivable.period_end || receivable.period_start));
+        const nextBilling = getBillGoServiceBillingPeriod(nextStart, subscription.current_cycle || subscription.cycle || "monthly", serviceType);
+        await admin.from("billgo_subscriptions").update({ covered_until: receivable.period_end, next_period_start: nextBilling.periodStart, next_due_date: nextBilling.dueDate, last_changed_by: userId }).eq("id", subscription.id).eq("worker_id", workerId).is("deleted_at", null);
+      } else {
+        await admin.from("billgo_subscriptions").update({ next_period_start: receivable.period_start, next_due_date: receivable.due_date, last_changed_by: userId }).eq("id", subscription.id).eq("worker_id", workerId).is("deleted_at", null);
+      }
+    }
+
+    return NextResponse.json({ ok: true, receivableId, status: nextStatus });
+  }
   if (action === "import_preview" || action === "import_apply" || action === "bulk_entry_apply") {
     const rows = Array.isArray(body.rows) ? body.rows as BillGoImportRow[] : [];
     if (rows.length === 0) return jsonError("Chưa có dữ liệu khách hàng để lưu.");
@@ -1896,7 +1981,7 @@ export async function PATCH(request: Request) {
     });
     if (action === "reactivate") {
       const monthFilter = effectivePeriodStart.slice(0, 7);
-      await ensureDueReceivables(admin, workerId, userId, monthFilter);
+      await ensureDueReceivables(admin, workerId, userId, monthFilter, "internet");
     }
     return NextResponse.json({ ok: true });
   }

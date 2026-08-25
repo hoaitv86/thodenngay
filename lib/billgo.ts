@@ -19,6 +19,7 @@ export type BillGoReceivableLike = {
 };
 
 export type BillGoCycle = "monthly" | "two_months" | "three_months" | "six_months" | "yearly";
+export type BillGoBillingModel = "prepaid" | "postpaid";
 export type BillGoComputedStatus = "pending_cycle" | "not_due" | "unpaid" | "partial" | "overdue" | "paid" | "promo";
 export type BillGoStoredStatus = BillGoComputedStatus | "not_due" | "due" | "cancelled" | "deleted";
 
@@ -144,6 +145,110 @@ export const getBillGoFirstOfMonth = (value: string | Date) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return toBillGoDateInput(new Date());
   return toBillGoDateInput(new Date(date.getFullYear(), date.getMonth(), 1));
+};
+
+export const BILLGO_MOBILE_CYCLE_VALUES: BillGoCycle[] = ["monthly", "three_months", "six_months", "yearly"];
+
+const firstOfBillGoMonth = (value: string | Date) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return toBillGoDateInput(new Date(safeDate.getFullYear(), safeDate.getMonth(), 1));
+};
+
+const endOfBillGoMonth = (value: string | Date) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return toBillGoDateInput(new Date(safeDate.getFullYear(), safeDate.getMonth() + 1, 0));
+};
+
+export const getBillGoBillingModel = (serviceType?: string | null, fallback: BillGoBillingModel = "postpaid"): BillGoBillingModel => {
+  const normalized = String(serviceType || "").toLowerCase();
+  if (normalized.includes("prepaid")) return "prepaid";
+  if (normalized.includes("postpaid")) return "postpaid";
+  return fallback;
+};
+
+export const isBillGoMobileServiceType = (serviceType?: string | null) =>
+  String(serviceType || "").toLowerCase().includes("mobile");
+
+export const isBillGoNoAmountServiceType = (serviceType?: string | null) => {
+  const normalized = String(serviceType || "").toLowerCase();
+  return normalized === "electricity" || normalized === "installment";
+};
+
+export const getBillGoServiceCycleOption = (cycle: string, serviceType?: string | null) => {
+  const base = getBillGoCycleOption(cycle);
+  if (isBillGoNoAmountServiceType(serviceType)) {
+    return { ...base, label: "1 tháng", shortLabel: "1 tháng", paidMonths: 1, bonusMonths: 0 };
+  }
+  if (isBillGoMobileServiceType(serviceType) && base.value === "yearly") {
+    return { ...base, label: "12 tháng", shortLabel: "12 tháng", paidMonths: 12, bonusMonths: 0 };
+  }
+  if (isBillGoMobileServiceType(serviceType) && base.value === "monthly") {
+    return { ...base, label: "1 tháng", shortLabel: "1 tháng" };
+  }
+  return base;
+};
+
+export const getBillGoServiceCollectableAmount = (monthlyFee?: number | string | null, cycle = "monthly", serviceType?: string | null) => {
+  if (isBillGoNoAmountServiceType(serviceType)) return 0;
+  const option = getBillGoServiceCycleOption(cycle, serviceType);
+  return Math.max(toMoneyNumber(monthlyFee), 0) * option.paidMonths;
+};
+
+export const getBillGoServiceBillingPeriod = (
+  startDate: string | Date,
+  cycle: string,
+  serviceType?: string | null,
+  billingModel?: BillGoBillingModel,
+) => {
+  const normalizedService = String(serviceType || "internet").toLowerCase();
+  if (!isBillGoMobileServiceType(normalizedService) && !isBillGoNoAmountServiceType(normalizedService)) {
+    return getBillGoBillingPeriod(startDate, cycle);
+  }
+
+  const periodStart = firstOfBillGoMonth(startDate);
+  const option = getBillGoServiceCycleOption(cycle, normalizedService);
+  const periodEnd = toBillGoDateInput(addBillGoMonths(periodStart, option.paidMonths + option.bonusMonths));
+  const normalizedPeriodEnd = toBillGoDateInput(new Date(new Date(periodEnd).getFullYear(), new Date(periodEnd).getMonth(), 0));
+
+  if (isBillGoNoAmountServiceType(normalizedService)) {
+    const periodMonth = new Date(periodStart);
+    const dueDate = normalizedService === "electricity"
+      ? toBillGoDateInput(new Date(periodMonth.getFullYear(), periodMonth.getMonth() + 1, 20))
+      : toBillGoDateInput(new Date(periodMonth.getFullYear(), periodMonth.getMonth(), 20));
+    return {
+      periodStart,
+      periodEnd: endOfBillGoMonth(periodStart),
+      dueDate,
+      collectionMonth: periodStart,
+      usageMonth: periodStart,
+      billingMonths: 1,
+      bonusMonths: 0,
+      totalServiceMonths: 1,
+    };
+  }
+
+  const model = getBillGoBillingModel(normalizedService, billingModel || "postpaid");
+  const start = new Date(periodStart);
+  const end = new Date(normalizedPeriodEnd);
+  const dueDate = model === "postpaid"
+    ? toBillGoDateInput(new Date(end.getFullYear(), end.getMonth() + 1, 19))
+    : toBillGoDateInput(new Date(start.getFullYear(), start.getMonth(), 19));
+  const collectionMonth = model === "postpaid"
+    ? toBillGoDateInput(new Date(end.getFullYear(), end.getMonth() + 1, 1))
+    : periodStart;
+
+  return {
+    periodStart,
+    periodEnd: normalizedPeriodEnd,
+    dueDate,
+    collectionMonth,
+    usageMonth: periodStart,
+    billingMonths: option.paidMonths,
+    bonusMonths: option.bonusMonths,
+    totalServiceMonths: option.paidMonths + option.bonusMonths,
+  };
 };
 
 export const getBillGoBillingParts = (collectionMonth: string | Date) => {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -23,13 +23,20 @@ import {
   BILLGO_ACCOUNT_SUGGESTIONS,
   BILLGO_ALL_TAB,
   BILLGO_CYCLE_OPTIONS,
+  BILLGO_MOBILE_CYCLE_VALUES,
+  BillGoBillingModel,
   BillGoCycle,
   formatBillGoCurrency,
+  getBillGoBillingModel,
   getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
   getBillGoNextPeriodStartDate,
   getBillGoReceivableSummary,
+  getBillGoServiceBillingPeriod,
+  getBillGoServiceCollectableAmount,
+  getBillGoServiceCycleOption,
+  isBillGoNoAmountServiceType,
   toBillGoDateInput,
   toMoneyNumber,
 } from "@/lib/billgo";
@@ -391,6 +398,13 @@ const methodLabels: Record<string, string> = {
 };
 
 const providerSuggestions = ["Viettel", "VNPT", "FPT"];
+const electricityProviderOptions = [
+  { label: "EVN Hà Nội", prefix: "PD" },
+  { label: "EVN TP. Hồ Chí Minh", prefix: "PE" },
+  { label: "EVN miền Bắc", prefix: "PA" },
+  { label: "EVN miền Trung", prefix: "PQ" },
+  { label: "EVN miền Nam", prefix: "PB" },
+];
 const signupCycleOptions = BILLGO_CYCLE_OPTIONS.filter(option => BILLGO_SIGNUP_CYCLES.includes(option.value));
 
 const billGoImportHeaders = [
@@ -697,6 +711,7 @@ const initialForm = () => ({
   subAreaName: "",
   addressDetail: "",
   serviceType: "internet" as BillGoServiceIconType,
+  mobileBillingType: "postpaid" as BillGoBillingModel,
   provider: "Viettel",
   packageId: "",
   packageName: "",
@@ -827,6 +842,7 @@ export default function WorkerBillGoPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
+  const [activeServiceType, setActiveServiceType] = useState<BillGoServiceIconType>("internet");
   const [viewMode, setViewMode] = useState<"cycle" | "area">("cycle");
   const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>(BILLGO_ALL_TAB);
   const [monthFilter, setMonthFilter] = useState(monthInput());
@@ -947,6 +963,7 @@ export default function WorkerBillGoPage() {
         const raw = window.localStorage.getItem(BILLGO_VIEW_STATE_KEY);
         if (!raw) return;
         const saved = JSON.parse(raw) as Partial<{
+          activeServiceType: BillGoServiceIconType;
           viewMode: "cycle" | "area";
           activeTab: BillGoCycle | typeof BILLGO_ALL_TAB;
           monthFilter: string;
@@ -958,6 +975,7 @@ export default function WorkerBillGoPage() {
           query: string;
           billingPeriodFilter: BillingPeriodQuickFilter | null;
         }>;
+        if (saved.activeServiceType) setActiveServiceType(getBillGoServiceIconType(saved.activeServiceType));
         if (saved.viewMode) setViewMode(saved.viewMode);
         if (saved.activeTab) setActiveTab(saved.activeTab);
         if (saved.billingPeriodFilter?.month) {
@@ -984,6 +1002,7 @@ export default function WorkerBillGoPage() {
   useEffect(() => {
     if (!viewStateHydrated) return;
     window.localStorage.setItem(BILLGO_VIEW_STATE_KEY, JSON.stringify({
+      activeServiceType,
       viewMode,
       activeTab,
       monthFilter,
@@ -995,7 +1014,7 @@ export default function WorkerBillGoPage() {
       query,
       billingPeriodFilter,
     }));
-  }, [activeTab, areaStatusFilter, billingPeriodFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
+  }, [activeServiceType, activeTab, areaStatusFilter, billingPeriodFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const fetchAreas = useCallback(async () => {
     const cacheScope = await loadBillGoOfflineScope();
@@ -1067,6 +1086,7 @@ export default function WorkerBillGoPage() {
       limit: String(BILLGO_PAGE_SIZE),
       due: dueFilter,
       q: query.trim(),
+      serviceType: activeServiceType,
     });
     if (viewMode === "cycle" && activeTab !== BILLGO_ALL_TAB) params.set("cycle", activeTab);
     params.set("status", viewMode === "area" ? areaStatusFilter : statusFilter);
@@ -1117,7 +1137,7 @@ export default function WorkerBillGoPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, applyBillGoListResult, areaStatusFilter, dueFilter, loadBillGoOfflineScope, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+  }, [activeServiceType, activeTab, applyBillGoListResult, areaStatusFilter, dueFilter, loadBillGoOfflineScope, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
 
   useEffect(() => {
     if (!viewStateHydrated) return;
@@ -1139,7 +1159,7 @@ export default function WorkerBillGoPage() {
     if (!viewStateHydrated) return;
     const timeoutId = window.setTimeout(() => setPage(1), 0);
     return () => window.clearTimeout(timeoutId);
-  }, [activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
+  }, [activeServiceType, activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const getBillGoAddress = useCallback((subscription?: Subscription | null) => {
     const subAreaName = areas
@@ -1316,10 +1336,13 @@ export default function WorkerBillGoPage() {
   const previousSubArea = selectedSubAreaIndex > 0 ? selectedAreaSubAreas[selectedSubAreaIndex - 1] : null;
   const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
+  const formServiceTypeForBilling = form.serviceType === "mobile" ? `mobile_${form.mobileBillingType}` : form.serviceType;
+  const isNoAmountForm = false;
   const hasFormCycle = Boolean(form.cycle);
-  const formBilling = useMemo(() => hasFormCycle ? getBillGoBillingPeriod(form.startDate || previousMonthFirstInput(), form.cycle) : null, [form.cycle, form.startDate, hasFormCycle]);
+  const defaultFormStartDate = form.serviceType === "mobile" && form.mobileBillingType === "postpaid" ? previousMonthFirstInput() : currentMonthFirstInput();
+  const formBilling = useMemo(() => hasFormCycle ? getBillGoServiceBillingPeriod(form.startDate || defaultFormStartDate, form.cycle, formServiceTypeForBilling, form.mobileBillingType) : null, [defaultFormStartDate, form.cycle, form.mobileBillingType, form.startDate, formServiceTypeForBilling, hasFormCycle]);
   const formDueDate = form.dueDate || formBilling?.dueDate || "";
-  const primaryFormTotal = useMemo(() => hasFormCycle ? getBillGoCollectableAmount(form.monthlyFee, form.cycle) : 0, [form.cycle, form.monthlyFee, hasFormCycle]);
+  const primaryFormTotal = useMemo(() => hasFormCycle ? getBillGoServiceCollectableAmount(form.monthlyFee, form.cycle, formServiceTypeForBilling) : 0, [form.cycle, form.monthlyFee, formServiceTypeForBilling, hasFormCycle]);
   const selectedFormServiceConfig = BILLGO_SERVICE_ICON_CONFIG[form.serviceType];
   const isInternetForm = form.serviceType === "internet";
   const tv360FormTotal = useMemo(() => form.hasTv360
@@ -1427,20 +1450,39 @@ export default function WorkerBillGoPage() {
       }
       if (key === "serviceType") {
         const nextServiceType = getBillGoServiceIconType(value);
+        const isNoAmountService = isBillGoNoAmountServiceType(nextServiceType);
+        const nextCycle = nextServiceType === "internet" ? "" : "monthly";
+        const nextStartDate = nextServiceType === "mobile" && prev.mobileBillingType === "postpaid" ? previousMonthFirstInput() : currentMonthFirstInput();
         return {
           ...prev,
           serviceType: nextServiceType,
-          provider: nextServiceType === "internet" ? prev.provider || "Viettel" : prev.provider,
+          provider: nextServiceType === "internet" ? prev.provider || "Viettel" : nextServiceType === "mobile" ? prev.provider || "Viettel" : nextServiceType === "electricity" ? electricityProviderOptions[0]?.label || prev.provider : prev.provider,
           packageId: "",
-          packageName: "",
-          monthlyFee: "",
+          packageName: isNoAmountService ? BILLGO_SERVICE_ICON_CONFIG[nextServiceType].label : "",
+          monthlyFee: isNoAmountService ? "0" : "",
+          cycle: nextCycle as BillGoCycle | "",
+          startDate: nextCycle ? nextStartDate : "",
+          dueDate: "",
           hasTv360: nextServiceType === "internet" ? prev.hasTv360 : false,
           tv360Accounts: nextServiceType === "internet" ? prev.tv360Accounts : [],
         };
       }
+      if (key === "mobileBillingType") {
+        const nextBillingType = value === "prepaid" ? "prepaid" : "postpaid";
+        return {
+          ...prev,
+          mobileBillingType: nextBillingType,
+          startDate: prev.serviceType === "mobile" ? (nextBillingType === "postpaid" ? previousMonthFirstInput() : currentMonthFirstInput()) : prev.startDate,
+          dueDate: "",
+        };
+      }
       if (key === "isLegacyCustomer") return { ...prev, isLegacyCustomer: value === "true", paidThroughMonth: value === "true" ? prev.paidThroughMonth : "" };
       if (key === "hasTv360") return prev.serviceType === "internet" ? { ...prev, hasTv360: value === "true", tv360Accounts: value === "true" ? (prev.tv360Accounts.length > 0 ? prev.tv360Accounts : [createTv360AccountForm()]) : [] } : prev;
-      if (key === "cycle") return applySignupCycleDefaults(prev, value as BillGoCycle | "");
+      if (key === "cycle") {
+        if (prev.serviceType === "internet") return applySignupCycleDefaults(prev, value as BillGoCycle | "");
+        const nextCycle = value as BillGoCycle | "";
+        return { ...prev, cycle: nextCycle, startDate: nextCycle ? (prev.startDate || (prev.serviceType === "mobile" && prev.mobileBillingType === "postpaid" ? previousMonthFirstInput() : currentMonthFirstInput())) : "", dueDate: "" };
+      }
       if (key === "packageId") {
         const selectedPackage = internetPackages.find(item => item.id === value);
         if (!selectedPackage) return { ...prev, packageId: "", packageName: "", monthlyFee: "" };
@@ -1883,6 +1925,7 @@ export default function WorkerBillGoPage() {
       if (typeof result.collectionMonth === "string" && result.collectionMonth.length >= 7) {
         setMonthFilter(result.collectionMonth.slice(0, 7));
       }
+      setActiveServiceType(form.serviceType);
       setViewMode("cycle");
       if (addedCycle) setActiveTab(addedCycle);
       setStatusFilter(result.pendingCycle ? "pending_cycle" : "all");
@@ -1937,7 +1980,6 @@ export default function WorkerBillGoPage() {
       note: "",
     });
   };
-
   const applyPendingCollection = useCallback((item: Receivable, amount: number, paidAt: string, method: string, note?: string) => {
     const total = toMoneyNumber(item.total_amount);
     const nextPaid = toMoneyNumber(item.paid_amount) + amount;
@@ -2290,8 +2332,10 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
 
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
-    const cycle = row.cycle ? getBillGoCycleOption(row.cycle) : null;
-    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
+    const itemServiceType = item.subscription?.service_type || activeServiceType;
+    const cycle = row.cycle ? getBillGoServiceCycleOption(row.cycle, itemServiceType) : null;
+    const statusLabel = summary.statusLabel;
+    const collectLabel = "Thu";    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
     const canOpenReceiptHistory = receiptEntries.length > 0 || summary.paid > 0 || summary.status === "paid" || summary.status === "partial";
     const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
@@ -2323,12 +2367,12 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
           </div>
           <div className="relative flex shrink-0 items-center justify-end gap-2 text-right">
             <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${summary.status === "paid" ? "bg-success-container text-success" : summary.status === "partial" ? "bg-warning-container text-warning" : summary.status === "overdue" ? "bg-error-container text-error" : summary.status === "promo" ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant"}`}>
-              {summary.statusLabel}
+              {statusLabel}
             </span>
             {canCollect && (
               <button type="button" title="Xác nhận thu tiền" onClick={() => openCollect(item)} className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-extrabold text-white">
                 <CheckCircle2 size={16} />
-                <span className="lg:hidden">Thu</span>
+                <span className="lg:hidden">{collectLabel}</span>
               </button>
             )}
             {canOpenReceiptHistory && (
@@ -2370,8 +2414,8 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
           <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
           <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
         </div>
-
         <div className="mt-3 grid gap-1 text-xs text-on-surface-variant lg:mt-0">
+          {getBillGoServiceIconType(itemServiceType) === "mobile" && <p>Loại thuê bao: {getBillGoBillingModel(itemServiceType) === "prepaid" ? "Trả trước" : "Trả sau"}</p>}
           <p>Chu kỳ: {cycle?.label || "Chưa thiết lập chu kỳ"}</p>
           <p>Sử dụng: {cycle ? item.service_months || ((item.billing_months || 0) + (item.bonus_months || 0)) || cycle.paidMonths + cycle.bonusMonths : 0} tháng</p>
           <p>Kỳ cước: {item.period_start || "Chưa có"} - {item.period_end || "Chưa có"}</p>
@@ -2430,11 +2474,20 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
       <div className="mt-4 grid grid-cols-4 gap-2 overflow-x-auto pb-1">
         {BILLGO_SERVICE_ICON_TYPES.map(type => {
           const config = BILLGO_SERVICE_ICON_CONFIG[type];
-          const isActive = type === "internet";
+          const isActive = type === activeServiceType;
           return (
             <button
               key={type}
               type="button"
+              onClick={() => {
+                setActiveServiceType(type);
+                setViewMode("cycle");
+                setActiveTab(BILLGO_ALL_TAB);
+                setStatusFilter("all");
+                setDueFilter("all");
+                setPage(1);
+                setSelectedReceivableIds([]);
+              }}
               className={[
                 "flex min-w-24 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-extrabold",
                 isActive ? config.tone.border + " " + config.tone.softBg + " " + config.tone.text + " shadow-[inset_0_-3px_0_currentColor]" : "border-outline-variant/50 bg-white text-on-surface hover:bg-surface-container-low",
@@ -2725,9 +2778,23 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                   })}
                 </div>
               </div>
-              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
+              {form.serviceType === "mobile" && (
+                <div className="grid gap-2 sm:col-span-2 xl:col-span-3">
+                  <p className="text-xs font-extrabold uppercase text-on-surface-variant">Loại thuê bao</p>
+                  <div className="grid grid-cols-2 gap-2 sm:max-w-md">
+                    {([
+                      ["postpaid", "Trả sau"],
+                      ["prepaid", "Trả trước"],
+                    ] as Array<[BillGoBillingModel, string]>).map(([value, label]) => (
+                      <button key={value} type="button" onClick={() => updateForm("mobileBillingType", value)} className={["rounded-lg border px-3 py-2 text-sm font-extrabold", form.mobileBillingType === value ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-[inset_0_-3px_0_currentColor]" : "border-outline-variant/50 bg-white text-on-surface hover:bg-surface-container-low"].join(" ")}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
-              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : `M\u00e3/t\u00e0i kho\u1ea3n ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
+              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
               <datalist id="billgo-account-suggestions">
                 {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
               </datalist>
@@ -2735,10 +2802,13 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
                   {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
                 </select>
+              ) : form.serviceType === "electricity" ? (
+                <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
+                  {electricityProviderOptions.map(provider => <option key={provider.label} value={provider.label}>{provider.label} ({provider.prefix})</option>)}
+                </select>
               ) : (
-                <input className="input-field" placeholder={`Nh\u00e0 cung c\u1ea5p ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
-              )}
-              <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
+                <input className="input-field" placeholder={form.serviceType === "installment" ? "Đơn vị thu" : `Nhà cung cấp ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
+              )}              <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
               <datalist id="billgo-area-suggestions">
                 {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
               </datalist>
@@ -2746,6 +2816,8 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <datalist id="billgo-customer-address-suggestions">
                 {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
               </datalist>
+              {!isNoAmountForm && (
+                <>
               <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
              {isInternetForm ? "Ch\u1ecdn g\u00f3i c\u01b0\u1edbc" : `G\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`}
                 <input
@@ -2776,13 +2848,19 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               </div>
               <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder={isInternetForm ? "T\u00ean g\u00f3i t\u1ea1i th\u1eddi \u0111i\u1ec3m \u0111\u0103ng k\u00fd" : `T\u00ean g\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`} value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
               <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
-              <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)}>
+              <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)} disabled={isNoAmountForm}>
                 <option value="">Chưa thiết lập</option>
                 {signupCycleOptions
-                  .filter(option => !isInternetForm || getSignupCycleValues(selectedFormPackage?.allowed_cycles).has(option.value))
-                  .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  .filter(option => isInternetForm
+                    ? getSignupCycleValues(selectedFormPackage?.allowed_cycles).has(option.value)
+                    : form.serviceType === "mobile"
+                      ? BILLGO_MOBILE_CYCLE_VALUES.includes(option.value)
+                      : option.value === "monthly")
+                  .map(option => <option key={option.value} value={option.value}>{getBillGoServiceCycleOption(option.value, formServiceTypeForBilling).label}</option>)}
               </select>
               <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
+                </>
+              )}
               {isInternetForm && (
               <section className="rounded-lg border border-outline-variant/50 bg-surface-container-lowest p-3 sm:col-span-2 xl:col-span-3">
                 <label className="flex items-center justify-between gap-3 text-sm font-bold text-on-surface">
@@ -2855,7 +2933,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <textarea className="input-field min-h-20 sm:col-span-2 xl:col-span-3" placeholder="Ghi chú" value={form.note} onChange={e => updateForm("note", e.target.value)} />
             </div>
             <p className="mt-3 text-xs text-on-surface-variant">
-              {hasFormCycle && formBilling ? `Kỳ cước ${monthLabel(form.startDate)}: ${dateLabel(formBilling.periodStart)} - ${dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: ${dateLabel(formDueDate)}. ` : "Khách hàng sẽ được lưu ở trạng thái Chưa thiết lập chu kỳ, chưa tạo kỳ thu và chưa tính tiền cần thu. "}{hasFormCycle ? (form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo theo kỳ đã chọn ở trạng thái Chưa thu.") : ""} {form.cycle === "yearly" ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
+              {hasFormCycle && formBilling ? `Kỳ cước ${monthLabel(form.startDate)}: ${dateLabel(formBilling.periodStart)} - ${dateLabel(formBilling.periodEnd)}. Hạn nộp tiền: ${dateLabel(formDueDate)}. ` : "Khách hàng sẽ được lưu ở trạng thái Chưa thiết lập chu kỳ, chưa tạo kỳ thu và chưa tính tiền cần thu. "}{hasFormCycle ? (form.isLegacyCustomer && form.paidThroughMonth ? `Đã thu đến kỳ tháng ${form.paidThroughMonth.slice(5, 7)}/${form.paidThroughMonth.slice(0, 4)}; hệ thống tự xác định kỳ tiếp theo.` : "Khách hàng mới sẽ được tạo theo kỳ đã chọn ở trạng thái Chưa thu.") : ""} {form.cycle === "yearly" && isInternetForm ? "Khách trả 12 tháng và được dùng 13 tháng." : ""}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-outline-variant/25 bg-white p-4 shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
@@ -2975,7 +3053,6 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
           </div>
         ))}
       </div>}
-
       {visibleRows.length > 0 && (
         <div className="mt-4 flex flex-col gap-2 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <label className="flex items-center gap-2 text-sm font-bold text-on-surface">
@@ -3375,3 +3452,5 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     </div>
   );
 }
+
+
