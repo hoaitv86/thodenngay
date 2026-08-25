@@ -835,12 +835,14 @@ export default async function HomePage() {
       <CmsPlacement location="popup" variant="popup" limit={1} />
 
       <section className="relative overflow-hidden bg-primary-container text-on-primary">
-        <div className="absolute inset-0 bg-[linear-gradient(115deg,#064ecb_0%,#075ee8_52%,#0874ff_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(115deg,#0554d4_0%,#0765ee_48%,#0878ff_100%)]" />
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-surface to-transparent" />
+        <div className="absolute bottom-0 right-[18%] hidden h-[72%] w-[34%] rounded-t-full border border-cyan-300/10 bg-cyan-300/8 blur-3xl xl:block" />
+        <div className="absolute bottom-0 left-[44%] hidden h-72 w-[42%] bg-[linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0))] opacity-30 xl:block" />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,39,120,0.24),rgba(0,39,120,0)_46%,rgba(0,39,120,0.18))]" />
 
-        <div className="relative mx-auto grid max-w-[94rem] gap-6 px-4 pb-24 pt-10 sm:px-6 sm:pb-28 sm:pt-14 md:grid-cols-2 md:items-center lg:gap-8 lg:px-8 xl:min-h-[690px] xl:grid-cols-3">
-          <div className="z-10 max-w-2xl">
+        <div className="relative mx-auto grid max-w-[94rem] gap-6 px-4 pb-20 pt-10 sm:px-6 sm:pb-24 sm:pt-12 md:grid-cols-2 md:items-center lg:gap-8 lg:px-8 xl:min-h-[620px] xl:grid-cols-[minmax(0,1.12fr)_minmax(300px,0.84fr)_minmax(380px,0.92fr)] xl:pb-20 xl:pt-12 2xl:min-h-[650px]">
+          <div className="z-10 min-w-0 max-w-[42rem]">
             <div className="mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-white/22 bg-white/10 px-4 py-2 shadow-sm backdrop-blur-sm">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-success" />
               <span className="truncate text-sm font-extrabold !text-white sm:text-base">
@@ -848,10 +850,11 @@ export default async function HomePage() {
               </span>
             </div>
 
-            <h1 className="max-w-3xl text-5xl font-black italic leading-[0.96] !text-white drop-shadow-[0_5px_24px_rgba(0,0,0,0.35)] sm:text-6xl xl:text-[6.6rem]">
+            <h1 className="max-w-full text-[2.35rem] font-black italic leading-[0.96] !text-white drop-shadow-[0_5px_24px_rgba(0,0,0,0.35)] min-[390px]:text-[2.65rem] sm:text-6xl xl:text-[5.35rem] 2xl:text-[6.6rem]">
               THỢ GIỎI,
-              <span className="mt-2 block drop-shadow-[0_5px_18px_rgba(0,0,0,0.30)]" style={{ color: "#FACC15" }}>
+              <span className="mt-2 flex max-w-full items-center gap-3 whitespace-nowrap drop-shadow-[0_5px_18px_rgba(0,0,0,0.30)]" style={{ color: "#FACC15" }}>
                 ĐẾN NGAY
+                <ZapIcon size={58} className="hidden shrink-0 sm:block" strokeWidth={3} />
               </span>
             </h1>
 
@@ -904,16 +907,16 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="relative z-0 order-3 mx-auto flex h-[350px] w-full max-w-[430px] items-end justify-center sm:h-[470px] md:col-span-2 md:h-[420px] xl:order-none xl:col-span-1 xl:h-[620px] xl:max-w-none">
+          <div className="relative z-0 order-2 mx-auto flex h-[360px] min-w-0 w-full max-w-[520px] items-end justify-center sm:h-[470px] md:col-span-2 md:h-[480px] xl:order-none xl:col-span-1 xl:h-[610px] xl:max-w-none 2xl:h-[640px]">
             <Image
-              src="/hero-technician.webp"
+              src="/hero-technician-blue.webp"
               alt="Người thợ áo xanh Thợ Đến Ngay"
               fill
               priority
-              sizes="(min-width: 1024px) 31vw, 92vw"
-              className="object-contain object-bottom drop-shadow-[0_28px_60px_rgba(0,18,48,0.35)]"
+              sizes="(min-width: 1536px) 34vw, (min-width: 1280px) 29vw, 92vw"
+              className="object-contain object-bottom mix-blend-screen drop-shadow-[0_28px_60px_rgba(0,18,48,0.35)]"
             />
-            <div className="absolute right-2 top-6 hidden rounded-full border border-white/18 bg-white/12 px-5 py-4 text-center shadow-[0_18px_44px_rgba(0,18,48,0.24)] backdrop-blur-md sm:block lg:right-0 lg:top-20">
+            <div className="absolute right-2 top-8 hidden rounded-full border border-cyan-200/30 bg-cyan-300/14 px-5 py-4 text-center shadow-[0_18px_44px_rgba(0,18,48,0.24)] backdrop-blur-md sm:block xl:-right-2 xl:top-20">
               <div className="flex items-center justify-center gap-2 text-sm font-extrabold !text-white/90">
                 <MapPinIcon size={18} />
                 Định vị thật
@@ -923,7 +926,7 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="z-10 order-2 xl:order-none">
+          <div className="z-10 min-w-0 order-3 xl:order-none xl:self-start">
             <HomepageNearbyWorkers workers={dispatchWorkers} />
           </div>
         </div>
