@@ -108,11 +108,11 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
   }, []);
 
   return (
-    <aside className="rounded-xl border border-white/25 bg-white/10 p-4 text-white shadow-[0_26px_86px_rgba(0,18,48,0.34)] backdrop-blur-xl sm:p-5">
+    <aside className="flex flex-col rounded-[1.25rem] border border-white/25 bg-white/10 p-4 text-white shadow-[0_26px_86px_rgba(0,18,48,0.34)] backdrop-blur-xl sm:p-5 xl:h-[638px]">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase !text-white">Đang điều phối</p>
-          <h2 className="mt-1 text-2xl font-extrabold leading-tight !text-white">Thợ gần bạn nhất</h2>
+          <h2 className="mt-1 text-2xl font-extrabold leading-tight !text-white xl:text-[1.65rem]">Thợ gần bạn nhất</h2>
           <p className="mt-1 text-sm leading-5 !text-white/78">{getLocationMessage(locationState)}</p>
         </div>
         <span className="shrink-0 rounded-full bg-success px-3 py-1.5 text-xs font-extrabold !text-white">
@@ -121,17 +121,17 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
       </div>
 
       {nearbyWorkers.length > 0 ? (
-        <div className="space-y-3">
+        <div className="flex flex-1 flex-col gap-3">
           {nearbyWorkers.slice(0, 3).map((worker, index) => (
-            <article key={worker.id} className="rounded-lg border border-white/14 bg-white/14 p-3 shadow-sm">
+            <article key={worker.id} className="rounded-lg border border-white/14 bg-white/14 p-3 shadow-sm xl:p-3.5">
               <div className="flex items-center gap-3">
-                <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-sm font-extrabold text-primary-container">
+                <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-sm font-extrabold text-primary-container xl:h-16 xl:w-16">
                   {worker.avatarUrl ? (
                     <Image
                       src={worker.avatarUrl}
                       alt={worker.name}
                       fill
-                      sizes="56px"
+                      sizes="64px"
                       className="object-cover"
                       unoptimized
                     />
@@ -162,7 +162,7 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
               </div>
             </article>
           ))}
-          <Link href="/register" className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-extrabold !text-white shadow-sm transition-all hover:bg-primary-container active:scale-[0.98]">
+          <Link href="/register" className="mt-auto flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-extrabold !text-white shadow-sm transition-all hover:bg-primary-container active:scale-[0.98] xl:min-h-12">
             Xem thêm thợ gần bạn
             <ArrowRightIcon size={18} />
           </Link>
@@ -178,4 +178,3 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
     </aside>
   );
 }
-

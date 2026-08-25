@@ -8,6 +8,13 @@ import { createClient } from "@/lib/supabase/client";
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
 const APP_SHELL_WARM_SIGNATURE_KEY = "tdn.offline.appShellWarmSignature.v1";
+const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const LOCAL_DEV_SW_RELOAD_KEY = "tdn.localDev.swCleanupReloaded.v1";
+const TDN_CACHE_KEY_PREFIX = "tdn-";
+
+function isLocalDevHost() {
+  return process.env.NODE_ENV !== "production" && LOCAL_DEV_HOSTS.has(window.location.hostname);
+}
 
 function publishNetworkState() {
   window.dispatchEvent(
@@ -69,6 +76,48 @@ function writeSessionValue(key: string, value: string) {
   }
 }
 
+function removeSessionValue(key: string) {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Session storage can be unavailable in hardened WebViews.
+  }
+}
+
+async function clearLocalDevOfflineRuntime() {
+  if (!("serviceWorker" in navigator)) return;
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(
+      registrations
+        .filter((registration) => registration.scope.startsWith(window.location.origin))
+        .map((registration) => registration.unregister())
+    );
+  } catch (error) {
+    console.warn("[TDN-OFFLINE] local dev service worker cleanup failed", error);
+  }
+
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key.startsWith(TDN_CACHE_KEY_PREFIX)).map((key) => caches.delete(key)));
+    }
+  } catch (error) {
+    console.warn("[TDN-OFFLINE] local dev cache cleanup failed", error);
+  }
+
+  if (navigator.serviceWorker.controller) {
+    if (readSessionValue(LOCAL_DEV_SW_RELOAD_KEY) !== "1") {
+      writeSessionValue(LOCAL_DEV_SW_RELOAD_KEY, "1");
+      window.location.reload();
+    }
+    return;
+  }
+
+  removeSessionValue(LOCAL_DEV_SW_RELOAD_KEY);
+}
+
 function sendAppShellCacheMessage(registration: ServiceWorkerRegistration) {
   if (!window.navigator.onLine) return;
 
@@ -106,7 +155,9 @@ export default function OfflineRuntime() {
       if (session?.user) rememberOfflineAuthenticatedUser(session.user);
     });
 
-    if ("serviceWorker" in navigator) {
+    if (isLocalDevHost()) {
+      void clearLocalDevOfflineRuntime();
+    } else if ("serviceWorker" in navigator) {
       const registerServiceWorker = () => {
         navigator.serviceWorker
           .register("/offline-sw.js", { scope: "/" })

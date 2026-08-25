@@ -787,7 +787,7 @@ export default async function HomePage() {
   return (
     <div className="flex min-h-screen flex-col bg-surface">
       <header className="sticky top-0 z-50 border-b border-outline-variant/20 bg-white/95 backdrop-blur-xl">
-        <div className="mx-auto max-w-[94rem] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-none px-4 sm:px-6 lg:px-12">
           <div className="flex h-16 items-center justify-between gap-4 lg:h-[72px]">
             <Link href="/" className="group flex min-w-0 items-center gap-3" id="nav-logo">
               <LogoIcon size={40} />
@@ -797,8 +797,8 @@ export default async function HomePage() {
             </Link>
 
             <nav className="hidden items-center gap-8 md:flex">
-              <a href="#services" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
-                Dịch vụ
+              <a href="#services" className="inline-flex items-center gap-1 text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
+                Dịch vụ <span className="text-base leading-none">⌄</span>
               </a>
               <a href="#how-it-works" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Cách hoạt động
@@ -834,38 +834,52 @@ export default async function HomePage() {
       <CmsPlacement location="featured_notice" variant="banner" limit={2} />
       <CmsPlacement location="popup" variant="popup" limit={1} />
 
-      <section className="relative overflow-hidden bg-primary-container text-on-primary">
-        <div className="absolute inset-0 bg-[linear-gradient(115deg,#0554d4_0%,#0765ee_48%,#0878ff_100%)]" />
-        <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-surface to-transparent" />
-        <div className="absolute bottom-0 right-[18%] hidden h-[72%] w-[34%] rounded-t-full border border-cyan-300/10 bg-cyan-300/8 blur-3xl xl:block" />
-        <div className="absolute bottom-0 left-[44%] hidden h-72 w-[42%] bg-[linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0))] opacity-30 xl:block" />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,39,120,0.24),rgba(0,39,120,0)_46%,rgba(0,39,120,0.18))]" />
+      <section className="relative overflow-hidden bg-primary-container text-on-primary xl:h-[742px]">
+        <div className="absolute inset-0 bg-[linear-gradient(112deg,#044ec3_0%,#075edb_42%,#0878ff_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_56%_18%,rgba(56,189,248,0.34),transparent_20%),radial-gradient(circle_at_72%_48%,rgba(14,165,233,0.22),transparent_28%),linear-gradient(90deg,rgba(0,32,105,0.28),rgba(0,32,105,0)_47%,rgba(0,32,105,0.16))]" />
+        <div className="absolute bottom-0 left-[34%] hidden h-[72%] w-[42%] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0)_36%),repeating-linear-gradient(90deg,rgba(255,255,255,0.10)_0_1px,transparent_1px_74px)] opacity-30 xl:block" />
+        <div className="absolute bottom-0 right-0 hidden h-[76%] w-[46%] bg-[linear-gradient(180deg,rgba(8,145,178,0.20),rgba(7,89,190,0.04)_44%,rgba(1,25,94,0.18)),repeating-linear-gradient(0deg,rgba(255,255,255,0.08)_0_1px,transparent_1px_86px)] opacity-35 xl:block" />
+        <div className="absolute bottom-[3.25rem] left-[40%] hidden h-[17rem] w-[42%] opacity-16 xl:block">
+          <span className="absolute bottom-0 left-[2%] h-28 w-10 rounded-t-sm bg-[#063f9f]/55" />
+          <span className="absolute bottom-0 left-[14%] h-44 w-14 rounded-t-sm bg-[#0b58bc]/42" />
+          <span className="absolute bottom-0 left-[29%] h-36 w-12 rounded-t-sm bg-[#0750ad]/48" />
+          <span className="absolute bottom-0 left-[45%] h-56 w-16 rounded-t-sm bg-[#064494]/38" />
+          <span className="absolute bottom-0 left-[63%] h-40 w-12 rounded-t-sm bg-[#0a5fc6]/44" />
+          <span className="absolute bottom-0 left-[78%] h-64 w-14 rounded-t-sm bg-[#063d8e]/34" />
+        </div>
+        <div className="absolute left-[39%] top-[19%] hidden h-44 w-44 rounded-full border border-white/8 bg-white/5 xl:block" />
+        <div className="absolute left-[42%] top-[25%] hidden h-px w-36 rotate-[34deg] border-t border-dashed border-white/22 xl:block" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-linear-to-t from-surface via-surface/18 to-transparent" />
 
-        <div className="relative mx-auto grid max-w-[94rem] gap-6 px-4 pb-20 pt-10 sm:px-6 sm:pb-24 sm:pt-12 md:grid-cols-2 md:items-center lg:gap-8 lg:px-8 xl:min-h-[620px] xl:grid-cols-[minmax(0,1.12fr)_minmax(300px,0.84fr)_minmax(380px,0.92fr)] xl:pb-20 xl:pt-12 2xl:min-h-[650px]">
-          <div className="z-10 min-w-0 max-w-[42rem]">
-            <div className="mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-white/22 bg-white/10 px-4 py-2 shadow-sm backdrop-blur-sm">
+        <div className="relative mx-auto grid max-w-[100rem] gap-8 px-4 pb-24 pt-10 sm:px-6 sm:pb-28 sm:pt-12 md:grid-cols-2 md:items-center lg:px-8 xl:h-full xl:grid-cols-[39fr_29fr_32fr] xl:items-start xl:gap-8 xl:px-16 xl:pb-0 xl:pt-0 2xl:gap-9">
+          <div className="relative z-20 min-w-0 max-w-[34rem] xl:pt-[58px]">
+            <div className="mb-8 inline-flex max-w-full items-center gap-2 rounded-full border border-white/24 bg-white/10 px-4 py-2.5 shadow-sm backdrop-blur-sm">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-success" />
               <span className="truncate text-sm font-extrabold !text-white sm:text-base">
                 Đang hoạt động 24/7 tại Nghĩa Lâm, Ninh Bình
               </span>
             </div>
 
-            <h1 className="max-w-full text-[2.35rem] font-black italic leading-[0.96] !text-white drop-shadow-[0_5px_24px_rgba(0,0,0,0.35)] min-[390px]:text-[2.65rem] sm:text-6xl xl:text-[5.35rem] 2xl:text-[6.6rem]">
-              THỢ GIỎI,
-              <span className="mt-2 flex max-w-full items-center gap-3 whitespace-nowrap drop-shadow-[0_5px_18px_rgba(0,0,0,0.30)]" style={{ color: "#FACC15" }}>
+            <h1 className="relative max-w-full text-[2.55rem] font-black italic leading-[0.94] !text-white drop-shadow-[0_8px_26px_rgba(0,0,0,0.32)] min-[390px]:text-[2.85rem] sm:text-6xl xl:text-[4.08rem] 2xl:text-[4.55rem]">
+              <span className="block whitespace-nowrap">THỢ GIỎI</span>
+              <span className="relative mt-2 block whitespace-nowrap text-[#FACC15] drop-shadow-[0_8px_22px_rgba(0,0,0,0.28)]">
                 ĐẾN NGAY
-                <ZapIcon size={58} className="hidden shrink-0 sm:block" strokeWidth={3} />
+                <span
+                  className="absolute -right-[0.72rem] top-[-0.22rem] hidden h-[4.02rem] w-[1.92rem] -rotate-[2deg] bg-[#FACC15] drop-shadow-[0_8px_18px_rgba(0,0,0,0.25)] xl:block 2xl:-right-[0.82rem] 2xl:h-[4.48rem] 2xl:w-[2.1rem]"
+                  style={{ clipPath: "polygon(44% 0, 100% 0, 63% 37%, 100% 37%, 18% 100%, 43% 51%, 0 51%)" }}
+                  aria-hidden="true"
+                />
               </span>
             </h1>
 
-            <p className="mt-7 max-w-2xl text-base font-medium leading-7 !text-white/92 drop-shadow-[0_2px_10px_rgba(0,0,0,0.22)] sm:text-lg">
+            <p className="mt-8 max-w-[32.5rem] text-base font-semibold leading-7 !text-white/94 drop-shadow-[0_2px_10px_rgba(0,0,0,0.20)] sm:text-lg">
               Kết nối bạn với thợ sửa chữa chuyên nghiệp, được xác minh. Dịch vụ điện, nước, camera, cơ khí chỉ trong vài bước.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
                 href="/register"
-                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg bg-white px-6 py-3 text-sm font-black uppercase text-primary-container shadow-[0_14px_34px_rgba(0,18,48,0.24)] transition-all hover:-translate-y-0.5 hover:bg-primary-fixed sm:w-auto sm:px-8"
+                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg bg-white px-6 py-3 text-sm font-black uppercase text-primary-container shadow-[0_14px_34px_rgba(0,18,48,0.24)] transition-all hover:-translate-y-0.5 hover:bg-primary-fixed sm:min-w-[264px] sm:px-8"
                 id="hero-cta"
               >
                 <ZapIcon size={18} />
@@ -873,8 +887,8 @@ export default async function HomePage() {
                 <ArrowRightIcon size={18} />
               </Link>
               <a
-                href={`tel:${systemSettings.hotline.replace(/\s+/g, "")}`}
-                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg border border-white/45 bg-white/8 px-6 py-3 text-sm font-black uppercase !text-white shadow-sm backdrop-blur transition-all hover:border-white/70 hover:bg-white/16 sm:w-auto sm:px-8"
+                href={"tel:" + systemSettings.hotline.replace(/\s+/g, "")}
+                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg border border-white/45 bg-white/8 px-6 py-3 text-sm font-black uppercase !text-white shadow-sm backdrop-blur transition-all hover:border-white/70 hover:bg-white/16 sm:min-w-[220px] sm:px-8"
                 id="hero-call"
               >
                 <PhoneIcon size={20} />
@@ -882,22 +896,22 @@ export default async function HomePage() {
               </a>
             </div>
 
-            <div className="mt-8 grid gap-3 text-white/85 sm:grid-cols-3">
-              <div className="flex items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
+            <div className="mt-8 grid gap-3 text-white/85 sm:grid-cols-3 xl:max-w-[32.5rem]">
+              <div className="flex min-w-0 items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
                 <ShieldCheckIcon size={24} className="shrink-0 !text-white" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold !text-white">Thợ xác minh</div>
                   <div className="truncate text-xs !text-white/72">Lý lịch rõ ràng</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
+              <div className="flex min-w-0 items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
                 <ClockIcon size={24} className="shrink-0 !text-white" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold !text-white">Phản hồi &lt; 5 phút</div>
                   <div className="truncate text-xs !text-white/72">Hỗ trợ nhanh chóng</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
+              <div className="flex min-w-0 items-center gap-3 rounded-lg border border-white/14 bg-white/10 px-4 py-3 backdrop-blur-sm">
                 <StarIcon size={24} className="shrink-0 !text-primary-fixed" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold !text-white">4.8/5 sao</div>
@@ -907,34 +921,36 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="relative z-0 order-2 mx-auto flex h-[360px] min-w-0 w-full max-w-[520px] items-end justify-center sm:h-[470px] md:col-span-2 md:h-[480px] xl:order-none xl:col-span-1 xl:h-[610px] xl:max-w-none 2xl:h-[640px]">
+          <div className="relative z-10 order-2 mx-auto flex h-[410px] min-w-0 w-full max-w-[28rem] items-end justify-center sm:h-[520px] md:col-span-2 md:h-[540px] xl:order-none xl:col-span-1 xl:-ml-[6.65rem] xl:h-[742px] xl:w-[38.6rem] xl:max-w-none xl:overflow-visible 2xl:-ml-[7.15rem] 2xl:w-[39.2rem]">
+            <div className="absolute bottom-14 left-1/2 hidden h-[31rem] w-[23rem] -translate-x-1/2 rounded-full bg-cyan-300/16 blur-3xl xl:block" />
             <Image
-              src="/hero-technician-cutout.webp"
+              src="/hero-technician-final.png"
               alt="Người thợ áo xanh Thợ Đến Ngay"
               fill
               priority
-              sizes="(min-width: 1536px) 34vw, (min-width: 1280px) 29vw, 92vw"
-              className="object-contain object-bottom drop-shadow-[0_28px_60px_rgba(0,18,48,0.35)]"
+              sizes="(min-width: 1536px) 628px, (min-width: 1280px) 618px, 92vw"
+              className="object-contain object-bottom drop-shadow-[0_28px_60px_rgba(0,18,48,0.36)] xl:translate-y-1 xl:scale-[1.02] xl:origin-bottom"
             />
-            <div className="absolute right-2 top-8 hidden rounded-full border border-cyan-200/30 bg-cyan-300/14 px-5 py-4 text-center shadow-[0_18px_44px_rgba(0,18,48,0.24)] backdrop-blur-md sm:block xl:-right-2 xl:top-20">
-              <div className="flex items-center justify-center gap-2 text-sm font-extrabold !text-white/90">
+            <div className="absolute right-1 top-10 hidden h-32 w-32 rounded-full border border-cyan-100/40 bg-cyan-300/14 px-4 py-4 text-center shadow-[0_18px_44px_rgba(0,18,48,0.24),inset_0_0_24px_rgba(125,211,252,0.24)] backdrop-blur-md sm:block xl:right-[1.35rem] xl:top-[4.75rem] xl:h-[7.25rem] xl:w-[7.25rem] xl:px-3 xl:py-3 2xl:right-[1.2rem]">
+              <span className="pointer-events-none absolute inset-[-7px] rounded-full border-2 border-cyan-200/40" />
+              <div className="flex items-center justify-center gap-1.5 text-sm font-extrabold xl:gap-1 xl:text-[0.72rem] !text-white/90">
                 <MapPinIcon size={18} />
                 Định vị thật
               </div>
-              <div className="mt-1 text-3xl font-black !text-white">Live GPS</div>
-              <div className="text-sm font-bold !text-white/82">Theo vị trí thật</div>
+              <div className="mt-1 text-[1.78rem] font-black leading-none xl:text-[1.42rem] !text-white">Live GPS</div>
+              <div className="text-sm font-bold !text-white/82 xl:text-xs">Theo vị trí thật</div>
             </div>
           </div>
 
-          <div className="z-10 min-w-0 order-3 xl:order-none xl:self-start">
+          <div className="relative z-20 min-w-0 order-3 xl:order-none xl:self-start xl:pt-[30px]">
             <HomepageNearbyWorkers workers={dispatchWorkers} />
           </div>
         </div>
       </section>
 
-      <section className="relative z-10 -mt-16 pb-8">
-        <div className="mx-auto max-w-[86rem] px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 gap-3 rounded-xl border border-outline-variant/25 bg-white/96 p-4 shadow-[0_18px_50px_rgba(15,35,66,0.12)] backdrop-blur sm:grid-cols-2 lg:grid-cols-5 lg:p-5">
+      <section className="relative z-30 -mt-[52px] pb-8">
+        <div className="mx-auto max-w-[92rem] px-4 sm:px-6 lg:px-8">
+          <div className="grid min-h-[132px] grid-cols-1 gap-3 rounded-xl border border-outline-variant/25 bg-white/96 p-5 shadow-[0_20px_55px_rgba(15,35,66,0.14)] backdrop-blur sm:grid-cols-2 lg:grid-cols-5 lg:p-5">
             {homepageStats.map((stat) => {
               const StatIcon = stat.icon;
 

@@ -1,3 +1,5 @@
+const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const IS_LOCAL_DEV_HOST = LOCAL_DEV_HOSTS.has(self.location.hostname);
 const CACHE_VERSION = "tdn-app-shell-v7";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
@@ -22,6 +24,11 @@ const WORKER_DYNAMIC_NAVIGATION_FALLBACKS = [
 ];
 
 self.addEventListener("install", (event) => {
+  if (IS_LOCAL_DEV_HOST) {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+
   event.waitUntil(
     caches.open(CACHE_VERSION)
       .then((cache) => cacheUrlBatch(cache, PRECACHE_URLS))
@@ -30,6 +37,16 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  if (IS_LOCAL_DEV_HOST) {
+    event.waitUntil(
+      caches.keys()
+        .then((keys) => Promise.all(keys.filter((key) => key.startsWith("tdn-")).map((key) => caches.delete(key))))
+        .then(() => self.registration.unregister())
+        .then(() => self.clients.claim())
+    );
+    return;
+  }
+
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))))
@@ -38,6 +55,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  if (IS_LOCAL_DEV_HOST) return;
   if (event.data?.type !== CACHE_APP_SHELL_MESSAGE || !Array.isArray(event.data.urls)) return;
 
   event.waitUntil(
@@ -236,6 +254,8 @@ async function staleWhileRevalidate(request) {
 }
 
 self.addEventListener("fetch", (event) => {
+  if (IS_LOCAL_DEV_HOST) return;
+
   const request = event.request;
   if (request.method !== "GET") return;
 
