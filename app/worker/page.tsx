@@ -3560,14 +3560,36 @@ export default function WorkerDashboard() {
                           </div>
                         </div>
                       </Link>
-                      <div className="mt-2 flex justify-end">
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openQuickJobEdit(job)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-primary-container/25 bg-primary-fixed px-2.5 py-2 text-xs font-extrabold text-primary-container shadow-sm transition-all active:scale-[0.98]"
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDirections(job)}
+                          className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-primary-container px-2.5 py-2 text-xs font-extrabold text-white shadow-sm transition-all active:scale-[0.98]"
+                        >
+                          <MapPinIcon size={15} />
+                          Chỉ đường
+                        </button>
                         <button
                           type="button"
                           onClick={() => triggerCompleteJob(job)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3 py-2 text-xs font-extrabold text-white shadow-sm transition-all active:scale-[0.98]"
+                          className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-success px-2.5 py-2 text-xs font-extrabold text-white shadow-sm transition-all active:scale-[0.98]"
                         >
                           <span aria-hidden="true">✓</span>
                           Hoàn thành
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openCancelRequestModal(job)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-error/25 bg-error-container px-2.5 py-2 text-xs font-extrabold text-error shadow-sm transition-all active:scale-[0.98]"
+                        >
+                          Hủy
                         </button>
                       </div>
                     </div>
