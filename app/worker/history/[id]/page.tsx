@@ -53,6 +53,8 @@ const VIETTEL_GIFT_CAMERA_OPTIONS = [
   "Camera Viettel ngoài trời",
 ];
 const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
+const DEFAULT_CANCEL_REASON = "Khách hàng từ chối lắp đặt/sửa chữa";
+const CANCELABLE_JOB_STATUSES = new Set(["assigned", "in_progress"]);
 
 type ReceiptEditEntry = {
   editedAt: string;
@@ -198,6 +200,10 @@ export default function WorkerJobDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
   const [detailMessage, setDetailMessage] = useState("");
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState(DEFAULT_CANCEL_REASON);
+  const [requestingCancel, setRequestingCancel] = useState(false);
+  const [cancelFeedback, setCancelFeedback] = useState("");
 
   useEffect(() => {
     const fetchJob = async () => {
@@ -373,6 +379,62 @@ export default function WorkerJobDetailPage() {
     void fetchJob();
   }, [id, router, supabase]);
 
+  const openCancelModal = () => {
+    setCancelReason(DEFAULT_CANCEL_REASON);
+    setCancelFeedback("");
+    setCancelModalOpen(true);
+  };
+
+  const requestCancelJob = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!job || requestingCancel) return;
+
+    const reason = cancelReason.trim();
+    if (!reason) {
+      setCancelFeedback("Vui lòng nhập lý do huỷ.");
+      return;
+    }
+
+    setRequestingCancel(true);
+    setCancelFeedback("");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Không tìm thấy phiên đăng nhập.");
+      }
+
+      const { data: updatedJobs, error } = await supabase
+        .from("jobs")
+        .update({
+          status: "cancel_requested",
+          cancellation_reason: reason,
+          cancellation_requested_by: user.id,
+          cancellation_requested_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+        .in("status", ["assigned", "in_progress"])
+        .select("id, status, updated_at");
+
+      if (error) {
+        throw new Error("Không thể gửi yêu cầu huỷ: " + error.message);
+      }
+
+      if (!updatedJobs || updatedJobs.length === 0) {
+        throw new Error("Job không còn ở trạng thái có thể yêu cầu huỷ.");
+      }
+
+      const updatedJob = updatedJobs[0] as Pick<WorkerJobDetail, "status" | "updated_at">;
+      setJob(current => current ? { ...current, status: updatedJob.status || "cancel_requested", updated_at: updatedJob.updated_at || new Date().toISOString() } : current);
+      setCancelModalOpen(false);
+      setCancelReason(DEFAULT_CANCEL_REASON);
+      setCancelFeedback("Đã gửi yêu cầu huỷ, chờ admin duyệt.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Không thể gửi yêu cầu huỷ.";
+      setCancelFeedback(message);
+    } finally {
+      setRequestingCancel(false);
+    }
+  };
   const openEditReceipt = () => {
     if (!job) return;
     const workflowBillGo = job.workflow_data?.billgo || {};
@@ -835,6 +897,12 @@ export default function WorkerJobDetailPage() {
   const isCompleted = job.status === 'completed' || job.status === 'done';
   const customerName = Array.isArray(job.customer) ? job.customer[0]?.full_name : job.customer?.full_name;
   const customerPhone = Array.isArray(job.customer) ? job.customer[0]?.phone : job.customer?.phone;
+  const customerAddress = Array.isArray(job.customer) ? job.customer[0]?.address : job.customer?.address;
+  const directionDestination = (job.address || customerAddress || "").trim();
+  const mobileDirectionsUrl = directionDestination
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(directionDestination)}`
+    : "";
+  const canUseMobileJobActions = CANCELABLE_JOB_STATUSES.has(job.status || "");
   const completedDate = new Date(job.updated_at || job.scheduled_at);
   const scheduledDate = new Date(job.scheduled_at);
   const completionItems: CompletionItem[] = Array.isArray(job.completion_items) && job.completion_items.length > 0
@@ -990,6 +1058,45 @@ export default function WorkerJobDetailPage() {
           </div>
         </div>
 
+
+        {canUseMobileJobActions && (
+          <div className="md:hidden space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={openCancelModal}
+                className="flex min-h-12 items-center justify-center rounded-xl border border-error/25 bg-error-container px-4 py-3 text-sm font-extrabold text-on-error-container shadow-sm"
+              >
+                Hủy
+              </button>
+              {mobileDirectionsUrl ? (
+                <a
+                  href={mobileDirectionsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary-container px-4 py-3 text-sm font-extrabold text-white shadow-sm"
+                >
+                  <MapPinIcon size={18} />
+                  Chỉ đường
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-surface-container px-4 py-3 text-sm font-extrabold text-on-surface-variant opacity-70"
+                >
+                  <MapPinIcon size={18} />
+                  Chỉ đường
+                </button>
+              )}
+            </div>
+            {cancelFeedback && (
+              <div className="rounded-xl border border-outline-variant/30 bg-white px-4 py-3 text-sm font-semibold text-on-surface shadow-sm">
+                {cancelFeedback}
+              </div>
+            )}
+          </div>
+        )}
         {/* Service Info */}
         <div className="space-y-3">
           <h3 className="text-label-sm font-bold text-on-surface-variant uppercase tracking-widest">Dịch vụ</h3>
@@ -1270,6 +1377,61 @@ export default function WorkerJobDetailPage() {
           </div>
         )}
 
+        {cancelModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 md:hidden">
+            <form onSubmit={requestCancelJob} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-extrabold uppercase tracking-widest text-error">Yêu cầu huỷ</p>
+                  <h2 className="mt-1 text-lg font-bold text-on-surface">Huỷ công việc</h2>
+                  <p className="mt-1 text-sm text-on-surface-variant">Yêu cầu sẽ được gửi để admin duyệt như luồng hiện tại.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCancelModalOpen(false)}
+                  className="rounded-full bg-surface-container p-2 text-on-surface-variant"
+                  disabled={requestingCancel}
+                >
+                  <XIcon size={18} />
+                </button>
+              </div>
+
+              <label className="mt-4 block">
+                <span className="text-xs font-bold text-on-surface-variant">Lý do huỷ</span>
+                <textarea
+                  value={cancelReason}
+                  onChange={(event) => setCancelReason(event.target.value)}
+                  className="mt-1 min-h-24 w-full rounded-xl border border-outline-variant/35 bg-white px-3 py-2 text-sm text-on-surface outline-none focus:border-primary-container"
+                  disabled={requestingCancel}
+                />
+              </label>
+
+              {cancelFeedback && (
+                <div className="mt-3 rounded-xl border border-error/20 bg-error-container/60 p-3 text-sm font-semibold text-on-error-container">
+                  {cancelFeedback}
+                </div>
+              )}
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCancelModalOpen(false)}
+                  className="rounded-xl border border-outline-variant/35 bg-white px-4 py-3 text-sm font-bold text-on-surface"
+                  disabled={requestingCancel}
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-error px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                  disabled={requestingCancel}
+                >
+                  {requestingCancel ? "Đang gửi..." : "Gửi yêu cầu"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
         {editModalOpen && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
             <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:max-w-3xl sm:rounded-2xl sm:p-5">
