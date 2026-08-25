@@ -909,12 +909,12 @@ export default async function HomePage() {
 
           <div className="relative z-0 order-2 mx-auto flex h-[360px] min-w-0 w-full max-w-[520px] items-end justify-center sm:h-[470px] md:col-span-2 md:h-[480px] xl:order-none xl:col-span-1 xl:h-[610px] xl:max-w-none 2xl:h-[640px]">
             <Image
-              src="/hero-technician-blue.webp"
+              src="/hero-technician-cutout.webp"
               alt="Người thợ áo xanh Thợ Đến Ngay"
               fill
               priority
               sizes="(min-width: 1536px) 34vw, (min-width: 1280px) 29vw, 92vw"
-              className="object-contain object-bottom mix-blend-screen drop-shadow-[0_28px_60px_rgba(0,18,48,0.35)]"
+              className="object-contain object-bottom drop-shadow-[0_28px_60px_rgba(0,18,48,0.35)]"
             />
             <div className="absolute right-2 top-8 hidden rounded-full border border-cyan-200/30 bg-cyan-300/14 px-5 py-4 text-center shadow-[0_18px_44px_rgba(0,18,48,0.24)] backdrop-blur-md sm:block xl:-right-2 xl:top-20">
               <div className="flex items-center justify-center gap-2 text-sm font-extrabold !text-white/90">
