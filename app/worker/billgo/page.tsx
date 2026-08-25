@@ -1267,8 +1267,12 @@ export default function WorkerBillGoPage() {
     [selectedVisibleRows],
   );
   const selectedCollectableRows = useMemo(
-    () => selectedVisibleRows.filter(row => row.summary.debt > 0 && !["pending_cycle", "not_due", "paid", "promo"].includes(row.summary.status)),
-    [selectedVisibleRows],
+    () => selectedVisibleRows.filter(row => {
+      const isNoAmountRow = getBillGoServiceIconType(row.item.subscription?.service_type || activeServiceType) === "electricity";
+      if (["pending_cycle", "not_due", "paid", "promo"].includes(row.summary.status)) return false;
+      return isNoAmountRow || row.summary.debt > 0;
+    }),
+    [activeServiceType, selectedVisibleRows],
   );
   const skippedSelectedCollectionCount = Math.max(selectedVisibleRows.length - selectedCollectableRows.length, 0);
   const selectedCollectionTotal = useMemo(
@@ -1337,7 +1341,7 @@ export default function WorkerBillGoPage() {
   const nextSubArea = selectedSubAreaIndex >= 0 && selectedSubAreaIndex < selectedAreaSubAreas.length - 1 ? selectedAreaSubAreas[selectedSubAreaIndex + 1] : null;
 
   const formServiceTypeForBilling = form.serviceType === "mobile" ? `mobile_${form.mobileBillingType}` : form.serviceType;
-  const isNoAmountForm = false;
+  const isNoAmountForm = form.serviceType === "electricity";
   const hasFormCycle = Boolean(form.cycle);
   const defaultFormStartDate = form.serviceType === "mobile" && form.mobileBillingType === "postpaid" ? previousMonthFirstInput() : currentMonthFirstInput();
   const formBilling = useMemo(() => hasFormCycle ? getBillGoServiceBillingPeriod(form.startDate || defaultFormStartDate, form.cycle, formServiceTypeForBilling, form.mobileBillingType) : null, [defaultFormStartDate, form.cycle, form.mobileBillingType, form.startDate, formServiceTypeForBilling, hasFormCycle]);
@@ -1970,7 +1974,33 @@ export default function WorkerBillGoPage() {
       setMessage(error instanceof Error ? error.message : "Không thể tải phiếu thu BillGo.");
     }
   };
+  const markNoAmountPeriodStatus = async (item: Receivable, status: "paid" | "unpaid") => {
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_period_status", receivableId: item.id, status, paidAt: todayInput() }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể cập nhật trạng thái BillGo.");
+      setRows(previous => previous.map(row => row.id === item.id ? { ...row, status, paid_amount: 0, paid_at: status === "paid" ? todayInput() : null, payment_method: status === "paid" ? "other" : null } : row));
+      setSelectedReceivableIds(previous => previous.filter(id => id !== item.id));
+      setMessage(status === "paid" ? "Đã xác nhận kỳ này." : "Đã đánh dấu chưa đóng.");
+      await refreshBillGoKeepingScroll();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể cập nhật trạng thái BillGo.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openCollect = (item: Receivable) => {
+    if (getBillGoServiceIconType(item.subscription?.service_type || activeServiceType) === "electricity") {
+      void markNoAmountPeriodStatus(item, "paid");
+      return;
+    }
     const summary = getBillGoReceivableSummary(item);
     setCollecting(item);
     setCollectForm({
@@ -2204,15 +2234,18 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     let queued = 0;
     try {
       for (const row of selectedCollectableRows) {
-        const payload = {
-          action: "collect",
-          receivableId: row.item.id,
-          amount: row.summary.debt,
-          paidAt: todayInput(),
-          method: "cash",
-          note: "Xác nhận đã thu hàng loạt",
-          idempotencyKey: createOfflineMutationId("billgo-collect"),
-        };
+        const isNoAmountRow = getBillGoServiceIconType(row.item.subscription?.service_type || activeServiceType) === "electricity";
+        const payload = isNoAmountRow
+          ? { action: "mark_period_status", receivableId: row.item.id, status: "paid", paidAt: todayInput(), note: "Xác nhận đã thu hàng loạt" }
+          : {
+              action: "collect",
+              receivableId: row.item.id,
+              amount: row.summary.debt,
+              paidAt: todayInput(),
+              method: "cash",
+              note: "Xác nhận đã thu hàng loạt",
+              idempotencyKey: createOfflineMutationId("billgo-collect"),
+            };
         try {
           const response = await fetch("/api/worker/billgo", {
             method: "PATCH",
@@ -2226,7 +2259,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
             completed += 1;
           }
         } catch (error) {
-          if (!isLikelyOfflineError(error)) throw error;
+          if (!isLikelyOfflineError(error) || isNoAmountRow) throw error;
           await queueBillGoCollection(row.item, payload);
           queued += 1;
         }
@@ -2334,8 +2367,15 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     const { item, summary } = row;
     const itemServiceType = item.subscription?.service_type || activeServiceType;
     const cycle = row.cycle ? getBillGoServiceCycleOption(row.cycle, itemServiceType) : null;
-    const statusLabel = summary.statusLabel;
-    const collectLabel = "Thu";    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
+    const isNoAmountRow = isBillGoNoAmountServiceType(itemServiceType);
+    const isInstallmentRow = getBillGoServiceIconType(itemServiceType) === "installment";
+    const statusLabel = isNoAmountRow
+      ? summary.status === "paid"
+        ? isInstallmentRow ? "Đã đóng" : "Đã thu"
+        : isInstallmentRow ? "Chưa đóng" : "Chưa thu"
+      : summary.statusLabel;
+    const collectLabel = isInstallmentRow ? "Xác nhận đóng" : isNoAmountRow ? "Xác nhận thu" : "Thu";
+    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
     const receiptEntries = getReceiptEntries(item);
     const canOpenReceiptHistory = receiptEntries.length > 0 || summary.paid > 0 || summary.status === "paid" || summary.status === "partial";
     const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
@@ -2386,8 +2426,13 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               </summary>
               <div className="absolute right-0 z-10 mt-2 w-56 overflow-hidden rounded-lg border border-outline-variant/40 bg-white py-1 text-left text-sm shadow-lg">
                 <button type="button" disabled={!canCollect} onClick={() => openCollect(item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low disabled:opacity-45">
-                  <CircleDollarSign size={16} /> Thu tiền
+                  <CircleDollarSign size={16} /> {isNoAmountRow ? collectLabel : "Thu tiền"}
                 </button>
+                {isNoAmountRow && summary.status === "paid" && (
+                  <button type="button" onClick={() => void markNoAmountPeriodStatus(item, "unpaid")} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
+                    <RotateCcw size={16} /> {isInstallmentRow ? "Đánh dấu chưa đóng" : "Đánh dấu chưa thu"}
+                  </button>
+                )}
                 <button type="button" onClick={() => void openAction("detail", item)} className="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-container-low">
                   <Eye size={16} /> {detailLoadingId === item.id ? "Đang tải..." : "Xem chi tiết"}
                 </button>
@@ -2409,11 +2454,22 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-sm lg:contents">
-          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
-          <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
+          {isNoAmountRow ? (
+            <>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Tháng đóng<br /><strong>{monthYearLabel(item.period_start || item.collection_month || `${monthFilter}-01`)}</strong></div>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Trạng thái<br /><strong className={summary.status === "paid" ? "text-success" : "text-error"}>{statusLabel}</strong></div>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Dịch vụ<br /><strong>{BILLGO_SERVICE_ICON_CONFIG[getBillGoServiceIconType(itemServiceType)].label}</strong></div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
+            </>
+          )}
         </div>
+
         <div className="mt-3 grid gap-1 text-xs text-on-surface-variant lg:mt-0">
           {getBillGoServiceIconType(itemServiceType) === "mobile" && <p>Loại thuê bao: {getBillGoBillingModel(itemServiceType) === "prepaid" ? "Trả trước" : "Trả sau"}</p>}
           <p>Chu kỳ: {cycle?.label || "Chưa thiết lập chu kỳ"}</p>
@@ -2426,7 +2482,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
 
         {canCollect && (
           <button type="button" onClick={() => openCollect(item)} className="btn-primary mt-1 !w-full lg:hidden">
-            <CheckCircle2 size={18} /> Xác nhận thu tiền
+            <CheckCircle2 size={18} /> {isNoAmountRow ? collectLabel : "Xác nhận thu tiền"}
           </button>
         )}
       </article>
@@ -2794,7 +2850,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 </div>
               )}              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
-              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
+              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
               <datalist id="billgo-account-suggestions">
                 {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
               </datalist>
@@ -2807,7 +2863,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                   {electricityProviderOptions.map(provider => <option key={provider.label} value={provider.label}>{provider.label} ({provider.prefix})</option>)}
                 </select>
               ) : (
-                <input className="input-field" placeholder={form.serviceType === "installment" ? "Đơn vị thu" : `Nhà cung cấp ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
+                <input className="input-field" placeholder={`Nhà cung cấp ${selectedFormServiceConfig.label}`} value={form.provider} onChange={e => updateForm("provider", e.target.value)} />
               )}              <input list="billgo-area-suggestions" className="input-field" placeholder="Xã/phường" value={form.areaName} onChange={e => updateForm("areaName", e.target.value)} />
               <datalist id="billgo-area-suggestions">
                 {areas.filter(area => area.is_active !== false).map(area => <option key={area.id} value={area.name} />)}
@@ -3038,7 +3094,12 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
       )}
 
       {viewMode === "cycle" && <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
-        {[
+        {(activeServiceType === "electricity" ? [
+          ["Tổng khách", String(totals.totalCustomers)],
+          ["Chưa thu", String(totalUncollectedCustomers)],
+          ["Đã thu", String(totals.paid)],
+          ["Chưa chu kỳ", String(totals.pendingCycle || 0)],
+        ] : [
           ["Tổng khách", String(totals.totalCustomers)],
           ["Chưa chu kỳ", String(totals.pendingCycle || 0)],
           ["Chưa thu", String(totalUncollectedCustomers)],
@@ -3046,13 +3107,14 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
           ["Thu thiếu", String(totals.partial)],
           ["Cần thu", formatBillGoCurrency(totals.totalReceivable)],
           ["Còn phải thu", formatBillGoCurrency(totals.totalDebt)],
-        ].map(([label, value]) => (
+        ]).map(([label, value]) => (
           <div key={label} className="rounded-lg border border-outline-variant/40 bg-white p-4">
             <p className="text-xs font-bold uppercase text-on-surface-variant">{label}</p>
             <p className="mt-1 text-lg font-extrabold text-on-surface">{value}</p>
           </div>
         ))}
       </div>}
+
       {visibleRows.length > 0 && (
         <div className="mt-4 flex flex-col gap-2 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <label className="flex items-center gap-2 text-sm font-bold text-on-surface">
@@ -3452,5 +3514,4 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     </div>
   );
 }
-
 
