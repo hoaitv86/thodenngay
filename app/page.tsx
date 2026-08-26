@@ -872,11 +872,11 @@ export default async function HomePage() {
 
             <h1 className="relative max-w-full text-[2.55rem] font-black italic leading-[0.94] !text-white drop-shadow-[0_8px_26px_rgba(0,0,0,0.32)] min-[390px]:text-[2.85rem] sm:text-6xl xl:text-[4.08rem] 2xl:text-[4.55rem]">
               <span className="block whitespace-nowrap">THỢ GIỎI</span>
-              <span className="relative mt-2 block whitespace-nowrap text-[#FACC15] drop-shadow-[0_8px_22px_rgba(0,0,0,0.28)]">
+              <span className="relative mt-1 block w-fit whitespace-nowrap text-[1.16em] !text-[#FACC15] drop-shadow-[0_8px_22px_rgba(0,0,0,0.28)]">
                 ĐẾN NGAY
                 <span
-                  className="absolute -right-[0.72rem] top-[-0.22rem] hidden h-[4.02rem] w-[1.92rem] -rotate-[2deg] bg-[#FACC15] drop-shadow-[0_8px_18px_rgba(0,0,0,0.25)] xl:block 2xl:-right-[0.82rem] 2xl:h-[4.48rem] 2xl:w-[2.1rem]"
-                  style={{ clipPath: "polygon(44% 0, 100% 0, 63% 37%, 100% 37%, 18% 100%, 43% 51%, 0 51%)" }}
+                  className="absolute -right-[0.44em] top-[-0.48em] hidden h-[1.20em] w-[0.45em] origin-bottom-left rotate-[21deg] bg-[#FACC15] drop-shadow-[0_8px_18px_rgba(0,0,0,0.25)] xl:block"
+                  style={{ clipPath: "polygon(48% 0, 100% 0, 66% 34%, 100% 34%, 14% 100%, 38% 54%, 0 54%)" }}
                   aria-hidden="true"
                 />
               </span>
@@ -889,20 +889,20 @@ export default async function HomePage() {
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
                 href="/register"
-                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg bg-white px-6 py-3 text-sm font-black uppercase text-primary-container shadow-[0_14px_34px_rgba(0,18,48,0.24)] transition-all hover:-translate-y-0.5 hover:bg-primary-fixed sm:min-w-[264px] sm:px-8"
+                className="inline-flex min-h-14 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-white px-4 py-3 text-base font-black uppercase leading-none text-primary-container shadow-[0_14px_34px_rgba(0,18,48,0.24)] transition-all hover:-translate-y-0.5 hover:bg-primary-fixed sm:min-w-[248px] sm:px-4"
                 id="hero-cta"
               >
-                <ZapIcon size={18} />
+                <ZapIcon size={17} />
                 Đặt dịch vụ ngay
-                <ArrowRightIcon size={18} />
+                <ArrowRightIcon size={17} />
               </Link>
               <a
                 href={"tel:" + systemSettings.hotline.replace(/\s+/g, "")}
-                className="inline-flex min-h-14 items-center justify-center gap-3 rounded-lg border border-white/45 bg-white/8 px-6 py-3 text-sm font-black uppercase !text-white shadow-sm backdrop-blur transition-all hover:border-white/70 hover:bg-white/16 sm:min-w-[220px] sm:px-8"
+                className="inline-flex min-h-14 min-w-[250px] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-white/45 bg-white/8 px-4 py-3 text-base font-black uppercase leading-none !text-white shadow-sm backdrop-blur transition-all hover:border-white/70 hover:bg-white/16 sm:min-w-[258px] sm:px-4"
                 id="hero-call"
               >
-                <PhoneIcon size={20} />
-                Gọi: {systemSettings.hotline}
+                <PhoneIcon size={18} className="shrink-0" />
+                GỌI: 0966 556 546
               </a>
             </div>
 
