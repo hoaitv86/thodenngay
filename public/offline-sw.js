@@ -14,6 +14,7 @@ const PRECACHE_URLS = [
   "/android-chrome-512x512.png"
 ];
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
+const REFRESH_DEPLOY_CACHE_MESSAGE = "TDN_REFRESH_DEPLOY_CACHE";
 const WORKER_DYNAMIC_NAVIGATION_FALLBACKS = [
   { pattern: /^\/worker\/history\/[^/]+$/, shell: "/worker/history/__offline-shell__", fallback: "/worker/history" },
   { pattern: /^\/worker\/inventory\/[^/]+\/edit$/, shell: "/worker/inventory/__offline-shell__/edit", fallback: "/worker/inventory" },
@@ -56,10 +57,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (IS_LOCAL_DEV_HOST) return;
-  if (event.data?.type !== CACHE_APP_SHELL_MESSAGE || !Array.isArray(event.data.urls)) return;
+  if (![CACHE_APP_SHELL_MESSAGE, REFRESH_DEPLOY_CACHE_MESSAGE].includes(event.data?.type) || !Array.isArray(event.data.urls)) return;
 
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cacheUrlBatch(cache, event.data.urls))
+    caches.open(CACHE_VERSION).then((cache) => cacheUrlBatch(cache, event.data.urls, {
+      force: event.data.type === REFRESH_DEPLOY_CACHE_MESSAGE,
+    }))
   );
 });
 
@@ -166,7 +169,7 @@ async function putAppShell(cache, request, response, options = {}) {
   console.info("[TDN-OFFLINE]", "app shell saved", { route: requestUrl.pathname });
 }
 
-async function cacheUrlBatch(cache, urls) {
+async function cacheUrlBatch(cache, urls, options = {}) {
   const normalizedUrls = normalizeCacheUrls(urls);
   const directAssetUrls = new Set(
     normalizedUrls.filter((url) => {
@@ -178,7 +181,7 @@ async function cacheUrlBatch(cache, urls) {
     })
   );
   const warmedUrls = new Set(directAssetUrls);
-  await Promise.all(normalizedUrls.map((url) => cacheUrl(cache, url, { skipUrls: directAssetUrls, warmedUrls })));
+  await Promise.all(normalizedUrls.map((url) => cacheUrl(cache, url, { ...options, skipUrls: directAssetUrls, warmedUrls })));
 }
 
 async function cacheUrl(cache, url, options = {}) {
@@ -188,9 +191,9 @@ async function cacheUrl(cache, url, options = {}) {
 
     const isAsset = shouldCacheAsset(requestUrl);
     const cached = isAsset ? await matchCachedUrl(cache, requestUrl) : null;
-    if (cached) return;
+    if (cached && !options.force) return;
 
-    const request = new Request(requestUrl.href, { cache: isAsset ? "default" : "reload", credentials: "same-origin" });
+    const request = new Request(requestUrl.href, { cache: options.force ? "reload" : isAsset ? "default" : "reload", credentials: "same-origin" });
     const response = await fetch(request);
     if (!response || !response.ok) return;
 
