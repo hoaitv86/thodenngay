@@ -20,6 +20,7 @@ type CmsFormState = {
   status: CmsStatus;
   is_published: boolean;
   sort_order: string;
+  updated_at: string | null;
 };
 
 const emptyForm: CmsFormState = {
@@ -35,6 +36,7 @@ const emptyForm: CmsFormState = {
   status: "published",
   is_published: true,
   sort_order: "0",
+  updated_at: null,
 };
 
 function slugify(value: string) {
@@ -88,7 +90,10 @@ export default function AdminContentPage() {
     setLoading(false);
   }, [supabase]);
 
-  useEffect(() => { void loadPosts(); }, [loadPosts]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadPosts(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadPosts]);
 
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== form.content_html) {
@@ -124,6 +129,7 @@ export default function AdminContentPage() {
       status: post.status || (post.is_published ? "published" : "draft"),
       is_published: post.status ? post.status === "published" : post.is_published,
       sort_order: String(post.sort_order || 0),
+      updated_at: post.updated_at || null,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -133,8 +139,8 @@ export default function AdminContentPage() {
     const payload = defaultCmsPages.map((page) => ({
       slug: page.slug,
       title: page.title,
-      excerpt: page.excerpt,
-      content_html: page.contentHtml,
+      excerpt: null,
+      content_html: "",
       cover_image_url: null,
       image_urls: [],
       display_locations: page.displayLocations,
@@ -142,13 +148,13 @@ export default function AdminContentPage() {
       status: page.status,
       is_published: page.status === "published",
       sort_order: page.sortOrder,
-      published_at: new Date().toISOString(),
+      published_at: page.status === "published" ? new Date().toISOString() : null,
     }));
-    const { error } = await supabase.from("cms_posts").upsert(payload, { onConflict: "slug" });
+    const { error } = await supabase.from("cms_posts").upsert(payload, { onConflict: "slug", ignoreDuplicates: true });
     setSaving(false);
-    if (error) showMessage("error", "Khong tao duoc bai mac dinh: " + error.message);
+    if (error) showMessage("error", "Khong tao duoc trang noi dung: " + error.message);
     else {
-      showMessage("success", "Da tao/cap nhat bai viet mac dinh.");
+      showMessage("success", "Da tao cac trang noi dung con thieu trong Supabase.");
       await loadPosts();
     }
   };
@@ -285,12 +291,12 @@ export default function AdminContentPage() {
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-headline-md text-on-surface">{"Quản lý nội dung"}</h1>
-          <p className="text-body-sm text-on-surface-variant">{"Bài viết CMS, rich text, nhiều ảnh, trạng thái và vị trí hiển thị."}</p>
+          <h1 className="text-headline-md text-on-surface">{"Trang nội dung"}</h1>
+          <p className="text-body-sm text-on-surface-variant">{"Sửa tiêu đề, nội dung, trạng thái công khai và thời điểm cập nhật của các trang tĩnh."}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/content" className="btn-outline !py-2.5"><FileText size={16} /> {"Bài viết"}</Link>
-          <button type="button" onClick={seedDefaults} disabled={saving} className="btn-outline !py-2.5"><FileText size={16} /> {"Tạo bài mặc định"}</button>
+          <button type="button" onClick={seedDefaults} disabled={saving} className="btn-outline !py-2.5"><FileText size={16} /> {"Tạo 5 trang trống"}</button>
           <button type="button" onClick={resetForm} className="btn-primary !py-2.5"><Plus size={16} /> {"Bài viết mới"}</button>
         </div>
       </div>
@@ -300,8 +306,9 @@ export default function AdminContentPage() {
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed text-primary-container"><Edit3 size={20} /></div>
             <div>
-              <h2 className="font-bold text-on-surface">{form.id ? "Chỉnh sửa bài viết" : "Tạo bài viết"}</h2>
-              <p className="text-xs text-on-surface-variant">Admin &gt; {"Quản lý nội dung"} &gt; {"Bài viết"}</p>
+              <h2 className="font-bold text-on-surface">{form.id ? "Chỉnh sửa trang nội dung" : "Tạo trang nội dung"}</h2>
+              <p className="text-xs text-on-surface-variant">Admin &gt; {"Trang nội dung"}</p>
+              {form.id && <p className="text-xs font-semibold text-on-surface-variant">{"Cập nhật lần cuối"}: {form.updated_at ? new Date(form.updated_at).toLocaleString("vi-VN") : "-"}</p>}
             </div>
           </div>
           <label className="relative inline-flex cursor-pointer items-center">
@@ -376,7 +383,7 @@ export default function AdminContentPage() {
 
       <section className="admin-table-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-outline-variant/30 p-4 md:flex-row md:items-center md:justify-between">
-          <div><h2 className="font-bold text-on-surface">{"Danh sách bài viết"}</h2><p className="text-xs text-on-surface-variant">{posts.length} {"bài viết trong CMS"}</p></div>
+          <div><h2 className="font-bold text-on-surface">{"Danh sách trang nội dung"}</h2><p className="text-xs text-on-surface-variant">{posts.length} {"trang trong CMS"}</p></div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input type="search" className="input-field min-w-[220px]" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />
             <select className="input-field sm:w-44" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value as "all" | CmsDisplayLocation)}><option value="all">All locations</option>{cmsDisplayLocations.map((location) => <option key={location} value={location}>{cmsDisplayLocationLabels[location]}</option>)}</select>

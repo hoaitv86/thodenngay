@@ -5,7 +5,7 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { defaultCmsPages, type CmsDisplayLocation, type CmsPost } from "@/lib/cms";
+import { type CmsDisplayLocation, type CmsPost } from "@/lib/cms";
 
 type CmsPlacementProps = {
   location: CmsDisplayLocation;
@@ -13,26 +13,6 @@ type CmsPlacementProps = {
   limit?: number;
   variant?: "cards" | "compact" | "banner" | "popup";
 };
-
-function fallbackPosts(location: CmsDisplayLocation, limit: number) {
-  return defaultCmsPages
-    .filter((page) => page.displayLocations.includes(location))
-    .slice(0, limit)
-    .map((page) => ({
-      id: page.slug,
-      slug: page.slug,
-      title: page.title,
-      excerpt: page.excerpt,
-      content_html: page.contentHtml,
-      cover_image_url: null,
-      image_urls: [],
-      display_locations: page.displayLocations,
-      content_type: page.contentType,
-      status: page.status,
-      is_published: page.status === "published",
-      sort_order: page.sortOrder,
-    } satisfies CmsPost));
-}
 
 export function CmsPlacement({ location, title, limit = 3, variant = "cards" }: CmsPlacementProps) {
   const supabase = useMemo(() => createClient(), []);
@@ -54,7 +34,7 @@ export function CmsPlacement({ location, title, limit = 3, variant = "cards" }: 
         .limit(limit);
 
       if (!mounted) return;
-      if (error || !data?.length) setPosts(fallbackPosts(location, limit));
+      if (error || !data?.length) setPosts([]);
       else setPosts(data as CmsPost[]);
     }
 

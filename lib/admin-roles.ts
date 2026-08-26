@@ -25,7 +25,7 @@ export const ADMIN_MODULES: Array<{ key: AdminModule; label: string; description
   { key: "services", label: "Dịch vụ", description: "Quản lý danh mục dịch vụ và giá" },
   { key: "billgo", label: "BillGo", description: "Quản lý công nợ, thu tiền và gói cước" },
   { key: "sales", label: "Bán hàng", description: "Theo dõi đơn bán hàng và doanh thu" },
-  { key: "content", label: "Bài viết", description: "Quản lý nội dung, trang tĩnh và CMS" },
+  { key: "content", label: "Trang nội dung", description: "Quản lý nội dung, trang tĩnh và CMS" },
   { key: "analytics", label: "Thống kê", description: "Xem dashboard và báo cáo tổng quan" },
 ];
 

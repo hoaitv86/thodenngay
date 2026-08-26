@@ -42,7 +42,7 @@ const navItems: NavItem[] = [
   { href: "/admin/notifications", label: "Thông báo", icon: Bell, module: "analytics" },
   { href: "/admin/payments", label: "BillGo", icon: CreditCard, module: "billgo" },
   { href: "/admin/areas", label: "Địa bàn", icon: MapPin, module: "services" },
-  { href: "/admin/content", label: "Quản lý nội dung", icon: FileText, module: "content" },
+  { href: "/admin/content", label: "Trang nội dung", icon: FileText, module: "content" },
   { href: "/admin/journey", label: "Hành trình", icon: Route, module: "content" },
   { href: "/admin/admins", label: "Super Admin", icon: UserCog, superAdminOnly: true },
   { href: "/admin/backups", label: "Sao lưu & Khôi phục", icon: DatabaseBackup, superAdminOnly: true },

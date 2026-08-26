@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { ArrowLeft } from "lucide-react";
-import { defaultCmsPages, stripHtml, type CmsPost } from "@/lib/cms";
+import { stripHtml, type CmsPost } from "@/lib/cms";
 
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
@@ -25,8 +25,6 @@ const getPublicSupabase = () =>
   );
 
 async function getCmsPost(slug: string) {
-  const fallback = defaultCmsPages.find((page) => page.slug === slug);
-
   try {
     const { data, error } = await getPublicSupabase()
       .from("cms_posts")
@@ -45,22 +43,7 @@ async function getCmsPost(slug: string) {
     console.warn("Could not connect to CMS:", error);
   }
 
-  if (!fallback) return null;
-
-  return {
-    id: fallback.slug,
-    slug: fallback.slug,
-    title: fallback.title,
-    excerpt: fallback.excerpt,
-    content_html: fallback.contentHtml,
-    cover_image_url: null,
-    image_urls: [],
-    display_locations: fallback.displayLocations,
-    content_type: fallback.contentType,
-    status: fallback.status,
-    is_published: fallback.status === "published",
-    sort_order: fallback.sortOrder,
-  } satisfies CmsPost;
+  return null;
 }
 
 export async function generateMetadata({ params }: PageProps) {
