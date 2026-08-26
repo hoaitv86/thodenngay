@@ -2,9 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { ArrowLeft, CalendarDays } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays } from "lucide-react";
 import JourneyHeader from "../hanh-trinh/JourneyHeader";
-import { stripHtml, type CmsPost } from "@/lib/cms";
+import { defaultCmsPages, stripHtml, type CmsPost } from "@/lib/cms";
 
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
@@ -83,6 +83,10 @@ export default async function CmsPublicPage({ params }: PageProps) {
 
   if (!post) notFound();
 
+  const currentIndex = defaultCmsPages.findIndex((page) => page.slug === post.slug);
+  const previousPage = currentIndex > 0 ? defaultCmsPages[currentIndex - 1] : null;
+  const nextPage = currentIndex >= 0 && currentIndex < defaultCmsPages.length - 1 ? defaultCmsPages[currentIndex + 1] : null;
+
   return (
     <main className="min-h-screen bg-surface-container-low text-on-surface">
       <JourneyHeader />
@@ -126,6 +130,30 @@ export default async function CmsPublicPage({ params }: PageProps) {
             ))}
           </div>
         ) : null}
+
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          {previousPage ? (
+            <Link href={"/" + previousPage.slug} className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm transition-all hover:border-primary/30 hover:shadow-card">
+              <span className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-on-surface-variant">
+                <ArrowLeft size={14} />
+                Trang trước
+              </span>
+              <div className="mt-2 text-base font-black text-primary-container">{previousPage.title}</div>
+            </Link>
+          ) : (
+            <div className="hidden sm:block" />
+          )}
+
+          {nextPage ? (
+            <Link href={"/" + nextPage.slug} className="rounded-lg border border-outline-variant/30 bg-white p-4 text-right shadow-sm transition-all hover:border-primary/30 hover:shadow-card sm:col-start-2">
+              <span className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-on-surface-variant">
+                Trang tiếp theo
+                <ArrowRight size={14} />
+              </span>
+              <div className="mt-2 text-base font-black text-primary-container">{nextPage.title}</div>
+            </Link>
+          ) : null}
+        </div>
       </article>
     </main>
   );
