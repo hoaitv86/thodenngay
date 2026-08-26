@@ -873,12 +873,15 @@ export default async function HomePage() {
             <h1 className="relative max-w-full text-[2.55rem] font-black italic leading-[0.94] !text-white drop-shadow-[0_8px_26px_rgba(0,0,0,0.32)] min-[390px]:text-[2.85rem] sm:text-6xl xl:text-[4.08rem] 2xl:text-[4.55rem]">
               <span className="block whitespace-nowrap">THỢ GIỎI</span>
               <span className="relative mt-1 block w-fit whitespace-nowrap text-[1.16em] !text-[#FACC15] drop-shadow-[0_8px_22px_rgba(0,0,0,0.28)]">
-                ĐẾN NGAY
-                <span
-                  className="absolute -right-[0.44em] top-[-0.48em] hidden h-[1.20em] w-[0.45em] origin-bottom-left rotate-[21deg] bg-[#FACC15] drop-shadow-[0_8px_18px_rgba(0,0,0,0.25)] xl:block"
-                  style={{ clipPath: "polygon(48% 0, 100% 0, 66% 34%, 100% 34%, 14% 100%, 38% 54%, 0 54%)" }}
-                  aria-hidden="true"
-                />
+                ĐẾN NGA
+                <span className="relative inline-block pr-[0.35em]">
+                  Y
+                  <span
+                    className="absolute right-[0.02em] top-[-0.58em] hidden h-[1.22em] w-[0.46em] origin-bottom-left rotate-[21deg] bg-[#FACC15] drop-shadow-[0_8px_18px_rgba(0,0,0,0.25)] xl:block"
+                    style={{ clipPath: "polygon(48% 0, 100% 0, 66% 34%, 100% 34%, 14% 100%, 38% 54%, 0 54%)" }}
+                    aria-hidden="true"
+                  />
+                </span>
               </span>
             </h1>
 
