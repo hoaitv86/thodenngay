@@ -515,6 +515,8 @@ const applyBillGoCycleChange = async (
 
 type BillGoImportRow = {
   rowNumber?: number;
+  serviceType?: string;
+  mobileBillingType?: string;
   customerName?: string;
   phone?: string;
   account?: string;
@@ -548,6 +550,7 @@ type BillGoImportSubscription = {
   amount_per_cycle?: number | string | null;
   covered_until?: string | null;
   next_period_start?: string | null;
+  service_type?: string | null;
 };
 
 type BillGoPackageSelection = Pick<BillGoPackage, "id" | "name" | "type" | "provider" | "monthly_price" | "setup_price" | "allowed_cycles">;
@@ -565,15 +568,25 @@ type Tv360SignupInput = {
 const normalizeImportText = (value: unknown) => String(value || "").trim();
 const normalizeImportKey = (value: unknown) => normalizeImportText(value).toLocaleLowerCase("vi");
 const normalizeImportPhone = (value: unknown) => normalizeImportText(value).replace(/\D/g, "");
+const normalizeImportServiceType = (value: unknown) => {
+  const normalized = normalizeImportKey(value);
+  return allowedMainServiceTypes.has(normalized) ? normalized : "internet";
+};
+const normalizeImportMobileBillingType = (value: unknown) => normalizeImportKey(value) === "prepaid" ? "prepaid" : "postpaid";
+const getImportMainServiceType = (value: unknown) => {
+  const normalized = normalizeImportKey(value);
+  return normalized.includes("mobile") || normalized.includes("di động") ? "mobile" : normalizeImportServiceType(value);
+};
 
 const isSameImportValue = (left: unknown, right: unknown) =>
   normalizeImportText(left) === normalizeImportText(right);
 
 const buildImportRowKey = (row: BillGoImportRow) => {
-  const account = normalizeImportKey(row.account);
-  if (account) return `account:${account}`;
+  const serviceType = normalizeImportServiceType(row.serviceType);
+  const account = serviceType === "mobile" ? "" : normalizeImportKey(row.account);
+  if (account) return `${serviceType}:account:${account}`;
   const phone = normalizeImportPhone(row.phone);
-  return phone ? `phone:${phone}` : "";
+  return phone ? `${serviceType}:phone:${phone}` : "";
 };
 
 const getDefaultImportStartDate = (monthFilter: string) => {
@@ -589,7 +602,7 @@ const buildBillGoImportPlan = async (
 ) => {
   const { data: subscriptions, error } = await admin
     .from("billgo_subscriptions")
-    .select("id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, provider, package_name, current_cycle, cycle, monthly_fee, amount_per_cycle, covered_until, next_period_start")
+    .select("id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, provider, package_name, service_type, current_cycle, cycle, monthly_fee, amount_per_cycle, covered_until, next_period_start")
     .eq("worker_id", workerId)
     .is("deleted_at", null)
     .not("status", "in", "(cancelled,deleted)")
@@ -609,10 +622,11 @@ const buildBillGoImportPlan = async (
     for (const subArea of area.sub_areas || []) subAreaNameById.set(subArea.id, normalizeImportText(subArea.name));
   }
   for (const subscription of (subscriptions || []) as BillGoImportSubscription[]) {
-    const accountKey = normalizeImportKey(subscription.internet_account);
+    const serviceType = getImportMainServiceType(subscription.service_type);
+    const accountKey = serviceType === "mobile" ? "" : normalizeImportKey(subscription.internet_account);
     const phoneKey = normalizeImportPhone(subscription.phone);
-    if (accountKey) existingByAccount.set(accountKey, subscription);
-    if (phoneKey) existingByPhone.set(phoneKey, subscription);
+    if (accountKey) existingByAccount.set(`${serviceType}:account:${accountKey}`, subscription);
+    if (phoneKey) existingByPhone.set(`${serviceType}:phone:${phoneKey}`, subscription);
   }
 
   const seenKeys = new Set<string>();
@@ -623,6 +637,8 @@ const buildBillGoImportPlan = async (
     const row: BillGoImportRow = {
       ...rawRow,
       rowNumber: Number(rawRow.rowNumber || index + 2),
+      serviceType: normalizeImportServiceType(rawRow.serviceType),
+      mobileBillingType: normalizeImportMobileBillingType(rawRow.mobileBillingType),
       customerName: normalizeImportText(rawRow.customerName),
       phone: normalizeImportText(rawRow.phone),
       account: normalizeImportText(rawRow.account),
@@ -631,39 +647,44 @@ const buildBillGoImportPlan = async (
       subAreaName: normalizeImportText(rawRow.subAreaName),
       addressDetail: normalizeImportText(rawRow.addressDetail),
       provider: normalizeImportText(rawRow.provider),
-      packageName: normalizeImportText(rawRow.packageName) || "Cước Internet",
+      packageName: normalizeImportText(rawRow.packageName),
       cycle: normalizeImportText(rawRow.cycle),
       startDate: normalizeImportText(rawRow.startDate),
       dueDate: normalizeImportText(rawRow.dueDate),
       note: normalizeImportText(rawRow.note),
     };
+    const rowServiceType = normalizeImportServiceType(row.serviceType);
+    const rowStoredServiceType = getStoredBillGoServiceType(rowServiceType, row.mobileBillingType || "postpaid");
+    if (!row.packageName) row.packageName = `Cước ${getBillGoServiceLabel(rowStoredServiceType)}`;
     const rowKey = buildImportRowKey(row);
-    const accountKey = normalizeImportKey(row.account);
+    const accountKey = rowServiceType === "mobile" ? "" : normalizeImportKey(row.account);
     const phoneKey = normalizeImportPhone(row.phone);
     const monthlyFee = toMoneyNumber(rawRow.monthlyFee);
     const reasons: string[] = [];
     const changes: string[] = [];
 
     if (!row.customerName) reasons.push("Thiếu tên khách hàng");
-    if (!row.account && !row.phone) reasons.push("Thiếu Account và SĐT");
-    if (row.cycle && !allowedCycles.has(row.cycle as BillGoCycle)) reasons.push("Chu kỳ không hợp lệ");
+    if (rowServiceType === "mobile" && !row.phone) reasons.push("Thiếu SĐT");
+    if (rowServiceType !== "mobile" && !row.account && !row.phone) reasons.push("Thiếu Account và SĐT");
+    if (row.cycle && rowServiceType === "mobile" && !BILLGO_MOBILE_CYCLE_VALUES.includes(row.cycle as BillGoCycle)) reasons.push("Chu kỳ Di động không hợp lệ");
+    if (row.cycle && rowServiceType !== "mobile" && !allowedCycles.has(row.cycle as BillGoCycle)) reasons.push("Chu kỳ không hợp lệ");
     if (monthlyFee < 0) reasons.push("Số tiền cước không hợp lệ");
-    if (accountKey && seenAccounts.has(accountKey)) reasons.push("Trùng tài khoản Internet trong danh sách");
-    if (phoneKey && seenPhones.has(phoneKey)) reasons.push("Trùng SĐT trong danh sách");
-    if (accountKey) seenAccounts.add(accountKey);
-    if (phoneKey) seenPhones.add(phoneKey);
+    if (accountKey && seenAccounts.has(`${rowServiceType}:account:${accountKey}`)) reasons.push("Trùng tài khoản Internet trong danh sách");
+    if (phoneKey && seenPhones.has(`${rowServiceType}:phone:${phoneKey}`)) reasons.push("Trùng SĐT trong danh sách");
+    if (accountKey) seenAccounts.add(`${rowServiceType}:account:${accountKey}`);
+    if (phoneKey) seenPhones.add(`${rowServiceType}:phone:${phoneKey}`);
     if (rowKey && seenKeys.has(rowKey)) reasons.push("Trùng Account/SĐT trong file");
     if (rowKey) seenKeys.add(rowKey);
     if (rowKey) importedKeys.add(rowKey);
 
-    const existing = (accountKey ? existingByAccount.get(accountKey) : null) || (phoneKey ? existingByPhone.get(phoneKey) : null);
+    const existing = (accountKey ? existingByAccount.get(`${rowServiceType}:account:${accountKey}`) : null) || (phoneKey ? existingByPhone.get(`${rowServiceType}:phone:${phoneKey}`) : null);
     if (reasons.length > 0) return { row, status: "error", reasons, changes, subscriptionId: existing?.id || null };
 
     if (!existing) return { row: { ...row, monthlyFee }, status: "new", reasons, changes: ["Thêm mới khách BillGo"], subscriptionId: null };
 
     if (!isSameImportValue(existing.customer_name, row.customerName)) changes.push("Tên khách hàng");
     if (!isSameImportValue(existing.phone, row.phone)) changes.push("SĐT");
-    if (!isSameImportValue(existing.internet_account, row.account)) changes.push("Account");
+    if (rowServiceType !== "mobile" && !isSameImportValue(existing.internet_account, row.account)) changes.push("Account");
     if (!isSameImportValue(existing.customer_address, row.address)) changes.push("Địa chỉ");
     if (row.areaName && !isSameImportValue(areaNameById.get(existing.area_id || ""), row.areaName)) changes.push("Xã/phường");
     if (row.subAreaName && !isSameImportValue(subAreaNameById.get(existing.sub_area_id || ""), row.subAreaName)) changes.push("Xóm/thôn/khối");
@@ -683,13 +704,18 @@ const buildBillGoImportPlan = async (
     };
   });
 
+  const importedServiceTypes = new Set(items.map(item => normalizeImportServiceType(item.row.serviceType)));
   const fileKeys = new Set(items.map(item => buildImportRowKey(item.row)).filter(Boolean));
   const missingFromFile = ((subscriptions || []) as BillGoImportSubscription[])
     .filter(subscription => {
-      const key = subscription.internet_account
-        ? `account:${normalizeImportKey(subscription.internet_account)}`
-        : subscription.phone
-          ? `phone:${normalizeImportPhone(subscription.phone)}`
+      const serviceType = getImportMainServiceType(subscription.service_type);
+      if (!importedServiceTypes.has(serviceType)) return false;
+      const accountKey = serviceType === "mobile" ? "" : normalizeImportKey(subscription.internet_account);
+      const phoneKey = normalizeImportPhone(subscription.phone);
+      const key = accountKey
+        ? `${serviceType}:account:${accountKey}`
+        : phoneKey
+          ? `${serviceType}:phone:${phoneKey}`
           : "";
       return key && !fileKeys.has(key);
     })
@@ -1353,18 +1379,20 @@ export async function POST(request: Request) {
 
   if (tv360Accounts.length > 0 && (!hasCycle || !startDate)) return jsonError("Vui lòng thiết lập chu kỳ Internet trước khi thêm TV360.");
 
-  if (!customerName || !account || !address || monthlyFee < 0 || (cycle && (!hasCycle || !allowedPackageCycles.includes(cycle as BillGoCycle))) || (hasCycle && !startDate)) {
+  const requiresAccount = serviceType !== "mobile";
+  const requiresPhone = serviceType === "mobile";
+  if (!customerName || (requiresAccount && !account) || (requiresPhone && !phone) || !address || monthlyFee < 0 || (cycle && (!hasCycle || !allowedPackageCycles.includes(cycle as BillGoCycle))) || (hasCycle && !startDate)) {
     return jsonError("Vui lòng nhập đầy đủ thông tin hợp lệ.");
   }
 
-  const checkDuplicateSubscriptionAccount = async (includeTv360Columns: boolean) => {
+  const checkDuplicateSubscriptionIdentity = async (includeTv360Columns: boolean) => {
     let query = admin
       .from("billgo_subscriptions")
       .select("id")
       .eq("worker_id", workerId)
-      .ilike("internet_account", account)
       .is("deleted_at", null)
       .not("status", "in", "(cancelled,deleted)");
+    query = serviceType === "mobile" ? query.ilike("phone", phone) : query.ilike("internet_account", account);
     query = query.in("service_type", getBillGoServiceFilterTypes(serviceType));
     if (includeTv360Columns) {
       query = query.is("parent_subscription_id", null);
@@ -1372,14 +1400,14 @@ export async function POST(request: Request) {
     return query.maybeSingle();
   };
 
-  let { data: duplicate, error: duplicateError } = await checkDuplicateSubscriptionAccount(true);
+  let { data: duplicate, error: duplicateError } = await checkDuplicateSubscriptionIdentity(true);
   if (isMissingBillGoTv360SchemaError(duplicateError)) {
-    const legacyDuplicate = await checkDuplicateSubscriptionAccount(false);
+    const legacyDuplicate = await checkDuplicateSubscriptionIdentity(false);
     duplicate = legacyDuplicate.data;
     duplicateError = legacyDuplicate.error;
   }
-  if (duplicateError) return jsonError("Không thể kiểm tra account BillGo: " + duplicateError.message);
-  if (duplicate) return jsonError("Account này đã có trong BillGo.", 409);
+  if (duplicateError) return jsonError("Không thể kiểm tra khách BillGo: " + duplicateError.message);
+  if (duplicate) return jsonError(serviceType === "mobile" ? "SĐT này đã có trong BillGo." : "Account này đã có trong BillGo.", 409);
 
   const firstBilling = hasCycle ? getBillGoServiceBillingPeriod(startDate, cycle, storedServiceType, mobileBillingModel) : null;
   const location = await resolveBillGoArea(admin, userId, requestedAreaId, areaName, requestedSubAreaId, subAreaName);
@@ -1388,7 +1416,7 @@ export async function POST(request: Request) {
   const { data: subscription, error: subscriptionError } = await admin
     .from("billgo_subscriptions")
     .insert({
-      customer_id: null, worker_id: workerId, customer_name: customerName, phone, internet_account: account, customer_address: address,
+      customer_id: null, worker_id: workerId, customer_name: customerName, phone, internet_account: serviceType === "mobile" ? null : account, customer_address: address,
       area_id: location.areaId, sub_area_id: location.subAreaId, address_detail: addressDetail, legacy_address: address || null,
       provider: selectedPackage?.provider || provider || null, package_id: selectedPackage?.id || null, package_name: packageName,
       service_type: storedServiceType, cycle: hasCycle ? cycle : null, current_cycle: hasCycle ? cycle : null, amount_per_cycle: monthlyFee, monthly_fee: monthlyFee,
@@ -1629,9 +1657,13 @@ export async function PATCH(request: Request) {
 
       const row = item.row;
       const cycle = row.cycle as BillGoCycle;
-      const hasCycle = allowedCycles.has(cycle);
+      const rowServiceType = normalizeImportServiceType(row.serviceType);
+      const rowMobileBillingModel = normalizeImportMobileBillingType(row.mobileBillingType);
+      const storedRowServiceType = getStoredBillGoServiceType(rowServiceType, rowMobileBillingModel);
+      const serviceLabel = getBillGoServiceLabel(storedRowServiceType);
+      const hasCycle = rowServiceType === "mobile" ? BILLGO_MOBILE_CYCLE_VALUES.includes(cycle) : allowedCycles.has(cycle);
       const monthlyFee = toMoneyNumber(row.monthlyFee);
-      const packageName = row.packageName || "Cước Internet";
+      const packageName = row.packageName || `Cước ${serviceLabel}`;
       const location = await resolveBillGoArea(
         admin,
         userId,
@@ -1647,14 +1679,14 @@ export async function PATCH(request: Request) {
 
       if (item.status === "new") {
         const startDate = row.startDate || defaultStartDate;
-        const billing = hasCycle ? getBillGoBillingPeriod(startDate, cycle) : null;
+        const billing = hasCycle ? getBillGoServiceBillingPeriod(startDate, cycle, storedRowServiceType, rowMobileBillingModel) : null;
         const effectiveDueDate = billing ? row.dueDate || billing.dueDate : null;
         const collectionMonth = effectiveDueDate ? getCollectionMonthFromDueDate(effectiveDueDate) : null;
         const billingParts = collectionMonth ? getBillingParts(collectionMonth) : null;
-        const option = hasCycle ? getBillGoCycleOption(cycle) : null;
+        const option = hasCycle ? getBillGoServiceCycleOption(cycle, storedRowServiceType) : null;
         const nextPeriodStart = billing ? getBillGoNextPeriodStartDate(billing.periodEnd) : null;
-        const nextBilling = nextPeriodStart ? getBillGoBillingPeriod(nextPeriodStart, cycle) : null;
-        const totalAmount = hasCycle ? getBillGoCollectableAmount(monthlyFee, cycle) : 0;
+        const nextBilling = nextPeriodStart ? getBillGoServiceBillingPeriod(nextPeriodStart, cycle, storedRowServiceType, rowMobileBillingModel) : null;
+        const totalAmount = hasCycle ? getBillGoServiceCollectableAmount(monthlyFee, cycle, storedRowServiceType) : 0;
 
         const { data: subscription, error: subscriptionError } = await admin
           .from("billgo_subscriptions")
@@ -1663,7 +1695,7 @@ export async function PATCH(request: Request) {
             worker_id: workerId,
             customer_name: row.customerName,
             phone: row.phone || null,
-            internet_account: row.account || null,
+            internet_account: rowServiceType === "mobile" ? null : row.account || null,
             customer_address: row.address || row.addressDetail || null,
             area_id: location.areaId,
             sub_area_id: location.subAreaId,
@@ -1671,7 +1703,7 @@ export async function PATCH(request: Request) {
             legacy_address: row.address || null,
             provider: row.provider || null,
             package_name: packageName,
-            service_type: "internet",
+            service_type: storedRowServiceType,
             cycle: hasCycle ? cycle : null,
             current_cycle: hasCycle ? cycle : null,
             amount_per_cycle: monthlyFee,
@@ -1701,7 +1733,7 @@ export async function PATCH(request: Request) {
           worker_id: workerId,
           subscription_id: subscription.id,
           type: "subscription_fee",
-          title: `Thu cước ${packageName}`,
+          title: `Thu ${serviceLabel} ${packageName}`,
           total_amount: totalAmount,
           due_date: effectiveDueDate,
           period_start: billing.periodStart,
@@ -1741,13 +1773,14 @@ export async function PATCH(request: Request) {
           .update({
             customer_name: row.customerName,
             phone: row.phone || null,
-            internet_account: row.account || null,
+            internet_account: rowServiceType === "mobile" ? null : row.account || null,
             customer_address: row.address || row.addressDetail || null,
             area_id: location.areaId,
             sub_area_id: location.subAreaId,
             address_detail: row.addressDetail || row.address || null,
             provider: row.provider || null,
             package_name: packageName,
+            service_type: storedRowServiceType,
             current_cycle: cycle,
             cycle,
             amount_per_cycle: monthlyFee,
@@ -1763,14 +1796,14 @@ export async function PATCH(request: Request) {
           continue;
         }
 
-        const option = getBillGoCycleOption(cycle);
+        const option = getBillGoServiceCycleOption(cycle, storedRowServiceType);
         const currentMonth = getDefaultImportStartDate(monthFilter);
         const currentParts = getBillingParts(currentMonth);
         await admin
           .from("billgo_receivables")
           .update({
-            title: `Thu cước ${packageName}`,
-            total_amount: getBillGoCollectableAmount(monthlyFee, cycle),
+            title: `Thu ${serviceLabel} ${packageName}`,
+            total_amount: getBillGoServiceCollectableAmount(monthlyFee, cycle, storedRowServiceType),
             monthly_fee_at_collection: monthlyFee,
             cycle_at_collection: cycle,
             billing_months: option.paidMonths,

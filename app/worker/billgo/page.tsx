@@ -197,6 +197,8 @@ type BillGoReceiptEntry = {
 type ActionMode = "edit" | "cycle" | "status" | "detail" | "delete";
 type BillGoImportRow = {
   rowNumber: number;
+  serviceType?: BillGoServiceIconType;
+  mobileBillingType?: BillGoBillingModel;
   customerName: string;
   phone: string;
   account: string;
@@ -223,6 +225,7 @@ type BillGoImportPreviewItem = {
 
 type BulkEntryRow = {
   id: string;
+  mobileBillingType: BillGoBillingModel;
   customerName: string;
   phone: string;
   address: string;
@@ -249,7 +252,7 @@ type Tv360AccountForm = {
   cycle: BillGoCycle | "";
 };
 
-type BulkEntryField = keyof Pick<BulkEntryRow, "customerName" | "phone" | "address" | "provider" | "account" | "packageName" | "cycle" | "startMonth">;
+type BulkEntryField = keyof Pick<BulkEntryRow, "mobileBillingType" | "customerName" | "phone" | "address" | "provider" | "account" | "packageName" | "cycle" | "startMonth">;
 
 type BulkEntryError = {
   rowNumber: number;
@@ -428,6 +431,7 @@ const emptyImportSummary = { created: 0, updated: 0, skipped: 0, errors: 0 };
 
 const createBulkEntryRow = (): BulkEntryRow => ({
   id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+  mobileBillingType: "postpaid",
   customerName: "",
   phone: "",
   address: "",
@@ -473,7 +477,7 @@ const dueFilterOptions = [
 const normalizeImportHeader = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-const billGoImportHeaderMap: Record<string, keyof Omit<BillGoImportRow, "rowNumber">> = {
+const billGoImportHeaderMap: Record<string, keyof Omit<BillGoImportRow, "rowNumber" | "serviceType" | "mobileBillingType">> = {
   tenkhachhang: "customerName",
   khachhang: "customerName",
   customername: "customerName",
@@ -859,6 +863,7 @@ export default function WorkerBillGoPage() {
   const [packages, setPackages] = useState<BillGoPackage[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [showBulkEntry, setShowBulkEntry] = useState(false);
+  const [bulkServiceType, setBulkServiceType] = useState<"internet" | "mobile">("internet");
   const [bulkRows, setBulkRows] = useState<BulkEntryRow[]>(() => [createBulkEntryRow()]);
   const [selectedBulkRowIds, setSelectedBulkRowIds] = useState<string[]>([]);
   const [bulkErrors, setBulkErrors] = useState<BulkEntryError[]>([]);
@@ -1349,6 +1354,8 @@ export default function WorkerBillGoPage() {
   const primaryFormTotal = useMemo(() => hasFormCycle ? getBillGoServiceCollectableAmount(form.monthlyFee, form.cycle, formServiceTypeForBilling) : 0, [form.cycle, form.monthlyFee, formServiceTypeForBilling, hasFormCycle]);
   const selectedFormServiceConfig = BILLGO_SERVICE_ICON_CONFIG[form.serviceType];
   const isInternetForm = form.serviceType === "internet";
+  const isMobileForm = form.serviceType === "mobile";
+  const isMobileBulkEntry = bulkServiceType === "mobile";
   const tv360FormTotal = useMemo(() => form.hasTv360
     ? form.tv360Accounts.reduce((sum, account) => sum + (account.cycle ? getBillGoCollectableAmount(account.monthlyFee, account.cycle) : 0), 0)
     : 0, [form.hasTv360, form.tv360Accounts]);
@@ -1554,7 +1561,7 @@ export default function WorkerBillGoPage() {
     setPackageSearch(value);
     if (!isInternetForm) {
       setShowPackageSuggestions(false);
-      setForm(prev => ({ ...prev, packageId: "", packageName: value }));
+      setForm(prev => ({ ...prev, packageId: "", packageName: value, monthlyFee: prev.serviceType === "mobile" ? getNumericPackageAmount(value) : prev.monthlyFee }));
       return;
     }
     setShowPackageSuggestions(Boolean(value.trim()));
@@ -1707,6 +1714,17 @@ export default function WorkerBillGoPage() {
 
   const selectAllBulkRows = () => setSelectedBulkRowIds(bulkRows.map(row => row.id));
   const clearBulkRowSelection = () => setSelectedBulkRowIds([]);
+
+  const openBulkEntry = () => {
+    const nextServiceType = activeServiceType === "mobile" ? "mobile" : "internet";
+    setBulkServiceType(nextServiceType);
+    setShowBulkEntry(value => !value);
+    if (showForm) {
+      setPackageSearch("");
+      setShowPackageSuggestions(false);
+      setShowForm(false);
+    }
+  };
   const selectEmptyBulkRows = () => setSelectedBulkRowIds(bulkRows
     .filter(row => ![row.customerName, row.phone, row.address, row.account, row.packageName, row.cycle, row.startMonth].some(value => String(value || "").trim()))
     .map(row => row.id));
@@ -1764,15 +1782,17 @@ export default function WorkerBillGoPage() {
     if (lines.length === 0) return false;
     const pastedRows = lines.map(line => {
       const cells = line.includes("\t") ? line.split("\t") : line.split(",");
-      const selectedPackage = packages.find(item => item.name.toLowerCase() === String(cells[5] || "").trim().toLowerCase());
+      const selectedPackage = !isMobileBulkEntry ? packages.find(item => item.name.toLowerCase() === String(cells[5] || "").trim().toLowerCase()) : null;
       const packageText = String(cells[5] || "").trim();
+      const mobileBillingText = String(cells[4] || "").trim().toLowerCase();
       return {
         ...createBulkEntryRow(),
+        mobileBillingType: (mobileBillingText.includes("trả trước") || mobileBillingText.includes("tra truoc") || mobileBillingText.includes("prepaid") ? "prepaid" : "postpaid") as BillGoBillingModel,
         customerName: String(cells[0] || "").trim(),
         phone: String(cells[1] || "").trim(),
         address: String(cells[2] || "").trim(),
         provider: String(cells[3] || selectedPackage?.provider || providerSuggestions[0] || "Viettel").trim(),
-        account: String(cells[4] || "").trim(),
+        account: isMobileBulkEntry ? "" : String(cells[4] || "").trim(),
         packageId: selectedPackage?.id || "",
         packageName: selectedPackage?.name || packageText,
         monthlyFee: selectedPackage ? String(Number(selectedPackage.monthly_price || 0)) : getNumericPackageAmount(packageText),
@@ -1819,6 +1839,10 @@ export default function WorkerBillGoPage() {
     }, 0);
   };
 
+  const getBulkRowTotal = (row: BulkEntryRow) => row.cycle
+    ? getBillGoServiceCollectableAmount(row.monthlyFee || getNumericPackageAmount(row.packageName), row.cycle, isMobileBulkEntry ? `mobile_${row.mobileBillingType}` : "internet")
+    : 0;
+
   const validateBulkRows = (rows: BulkEntryRow[]) => {
     const errors: BulkEntryError[] = [];
     const seenPhones = new Map<string, number>();
@@ -1834,10 +1858,11 @@ export default function WorkerBillGoPage() {
       if (!row.phone.trim()) { messages.push("Thiếu số điện thoại"); fieldErrors.phone = "Vui lòng nhập SĐT"; }
       if (!row.address.trim()) { messages.push("Thiếu địa chỉ"); fieldErrors.address = "Vui lòng nhập địa chỉ"; }
       if (!row.provider.trim()) { messages.push("Thiếu nhà mạng"); fieldErrors.provider = "Vui lòng chọn nhà mạng"; }
-      if (!row.account.trim()) { messages.push("Thiếu tài khoản Internet"); fieldErrors.account = "Vui lòng nhập tài khoản"; }
+      if (!isMobileBulkEntry && !row.account.trim()) { messages.push("Thiếu tài khoản Internet"); fieldErrors.account = "Vui lòng nhập tài khoản"; }
       if (!row.packageName.trim()) { messages.push("Thiếu gói cước"); fieldErrors.packageName = "Vui lòng chọn gói cước"; }
       if (monthlyFee < 0 || (!row.packageId && !getNumericPackageAmount(row.packageName))) { messages.push("Gói cước chưa có số tiền hợp lệ"); fieldErrors.packageName = "Gói cước chưa hợp lệ"; }
       if (!row.cycle) { messages.push("Thiếu chu kỳ"); fieldErrors.cycle = "Vui lòng chọn chu kỳ"; }
+      if (isMobileBulkEntry && row.cycle && !BILLGO_MOBILE_CYCLE_VALUES.includes(row.cycle)) { messages.push("Chu kỳ Di động chỉ nhận 1/3/6/12 tháng"); fieldErrors.cycle = "Chọn 1/3/6/12 tháng"; }
       if (row.cycle && !/^\d{4}-\d{2}$/.test(row.startMonth)) { messages.push("Tháng bắt đầu không hợp lệ"); fieldErrors.startMonth = "Vui lòng chọn tháng"; }
       if (phoneKey) {
         const existing = seenPhones.get(phoneKey);
@@ -1858,7 +1883,9 @@ export default function WorkerBillGoPage() {
     rowNumber: index + 1,
     customerName: row.customerName.trim(),
     phone: row.phone.trim(),
-    account: row.account.trim(),
+    serviceType: bulkServiceType,
+    mobileBillingType: row.mobileBillingType,
+    account: isMobileBulkEntry ? "" : row.account.trim(),
     address: row.address.trim(),
     areaName: "",
     subAreaName: "",
@@ -1873,7 +1900,7 @@ export default function WorkerBillGoPage() {
   }));
 
   const saveBulkRows = async () => {
-    const activeRows = bulkRows.filter(row => [row.customerName, row.phone, row.address, row.account, row.packageName].some(value => value.trim()));
+    const activeRows = bulkRows.filter(row => [row.customerName, row.phone, row.address, isMobileBulkEntry ? "" : row.account, row.packageName].some(value => value.trim()));
     const nextRows = activeRows.length > 0 ? activeRows : bulkRows;
     const validationErrors = validateBulkRows(nextRows);
     const invalidRowNumbers = new Set(validationErrors.map(error => error.rowNumber));
@@ -1900,6 +1927,7 @@ export default function WorkerBillGoPage() {
       }
       const summary = result.summary || emptyImportSummary;
       const invalidText = validationErrors.length > 0 ? ` Các dòng chưa hợp lệ chưa được lưu: ${validationErrors.map(error => error.rowNumber).join(", ")}.` : "";
+      setActiveServiceType(bulkServiceType);
       setMessage(`Đã thêm nhiều khách hàng: thêm mới ${summary.created}, bỏ qua ${summary.skipped}, lỗi ${summary.errors}.${invalidText}`);
       setBulkRows(validationErrors.length > 0 ? nextRows.filter((_row, index) => invalidRowNumbers.has(index + 1)) : [createBulkEntryRow()]);
       setSelectedBulkRowIds([]);
@@ -2517,7 +2545,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               }}
             />
           </label>
-          <button type="button" onClick={() => { setShowBulkEntry(value => !value); if (showForm) { setPackageSearch(""); setShowPackageSuggestions(false); setShowForm(false); } }} className="btn-outline !w-auto flex-1 sm:flex-none">
+          <button type="button" onClick={openBulkEntry} className="btn-outline !w-auto flex-1 sm:flex-none">
             <Plus size={18} /> Thêm nhiều khách hàng
           </button>
           <button type="button" onClick={() => { if (showForm) { setPackageSearch(""); setShowPackageSuggestions(false); } setShowForm(value => !value); if (showBulkEntry) setShowBulkEntry(false); }} className="btn-primary !w-auto flex-1 sm:flex-none">
@@ -2631,8 +2659,8 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 <FileSpreadsheet size={24} />
               </div>
               <div>
-                <h2 className="text-xl font-extrabold text-on-surface">Thêm nhiều khách hàng</h2>
-                <p className="mt-1 text-xs font-semibold text-on-surface-variant">Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Tài khoản, Gói cước, Chu kỳ, Tháng bắt đầu.</p>
+                <h2 className="text-xl font-extrabold text-on-surface">Thêm nhiều khách hàng {isMobileBulkEntry ? "Di động" : "Internet"}</h2>
+                <p className="mt-1 text-xs font-semibold text-on-surface-variant">{isMobileBulkEntry ? "Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Loại thuê bao, Gói cước, Chu kỳ, Tháng bắt đầu." : "Có thể dán dữ liệu theo thứ tự: Tên, SĐT, Địa chỉ, Nhà mạng, Tài khoản, Gói cước, Chu kỳ, Tháng bắt đầu."}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2675,7 +2703,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                   <th className="px-3 py-3">Số điện thoại <span className="text-error">*</span></th>
                   <th className="px-3 py-3">Địa chỉ <span className="text-error">*</span></th>
                   <th className="px-3 py-3">Nhà mạng <span className="text-error">*</span></th>
-                  <th className="px-3 py-3">Tài khoản Internet <span className="text-error">*</span></th>
+                  {isMobileBulkEntry ? <th className="px-3 py-3">Loại thuê bao <span className="text-error">*</span></th> : <th className="px-3 py-3">Tài khoản Internet <span className="text-error">*</span></th>}
                   <th className="px-3 py-3">Gói cước <span className="text-error">*</span></th>
                   <th className="px-3 py-3">Chu kỳ <span className="text-error">*</span></th>
                   <th className="px-3 py-3">Tháng bắt đầu <span className="text-error">*</span></th>
@@ -2702,8 +2730,8 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                       <td className="px-2 py-3 align-top"><input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(phoneError))} inputMode="tel" placeholder="Nhập số điện thoại" value={row.phone} onChange={e => updateBulkRow(row.id, { phone: e.target.value })} />{phoneError && <p className="mt-1 text-xs font-bold text-error">{phoneError}</p>}</td>
                       <td className="px-2 py-3 align-top"><input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(addressError))} placeholder="Nhập địa chỉ" value={row.address} onChange={e => updateBulkRow(row.id, { address: e.target.value })} />{addressError && <p className="mt-1 text-xs font-bold text-error">{addressError}</p>}</td>
                       <td className="px-2 py-3 align-top"><select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(providerError))} value={row.provider} onChange={e => updateBulkRow(row.id, { provider: e.target.value })}>{providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select>{providerError && <p className="mt-1 text-xs font-bold text-error">{providerError}</p>}</td>
-                      <td className="px-2 py-3 align-top"><input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(accountError))} placeholder="Nhập tài khoản" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} />{accountError && <p className="mt-1 text-xs font-bold text-error">{accountError}</p>}</td>
-                      <td className="px-2 py-3 align-top"><select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(packageError))} value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói cước</option>{packages.map(item => <option key={item.id} value={item.id}>{formatBillGoCurrency(item.monthly_price)} - {item.name}</option>)}</select>{packageError && <p className="mt-1 text-xs font-bold text-error">{packageError}</p>}</td>
+                      <td className="px-2 py-3 align-top">{isMobileBulkEntry ? <select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(false)} value={row.mobileBillingType} onChange={e => updateBulkRow(row.id, { mobileBillingType: e.target.value as BillGoBillingModel })}><option value="postpaid">Trả sau</option><option value="prepaid">Trả trước</option></select> : <><input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(accountError))} placeholder="Nhập tài khoản" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} />{accountError && <p className="mt-1 text-xs font-bold text-error">{accountError}</p>}</>}</td>
+                      <td className="px-2 py-3 align-top">{isMobileBulkEntry ? <input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(packageError))} placeholder="VD: ST90K 90.000" value={row.packageName} onChange={e => updateBulkRow(row.id, { packageName: e.target.value, monthlyFee: getNumericPackageAmount(e.target.value) })} /> : <select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(packageError))} value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói cước</option>{packages.map(item => <option key={item.id} value={item.id}>{formatBillGoCurrency(item.monthly_price)} - {item.name}</option>)}</select>}{packageError && <p className="mt-1 text-xs font-bold text-error">{packageError}</p>}<p className="mt-1 text-[11px] font-bold text-primary">{row.cycle ? `Tổng ${formatBillGoCurrency(getBulkRowTotal(row))}` : "Chưa chọn chu kỳ"}</p></td>
                       <td className="px-2 py-3 align-top"><select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(cycleError))} value={row.cycle} onChange={e => updateBulkRow(row.id, { cycle: e.target.value as BillGoCycle })}><option value="">Chọn chu kỳ</option>{signupCycleOptions.map(option => <option key={option.value} value={option.value}>{option.shortLabel}</option>)}</select>{cycleError && <p className="mt-1 text-xs font-bold text-error">{cycleError}</p>}</td>
                       <td className="px-2 py-3 align-top"><input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} type="month" className={bulkInputClass(Boolean(startMonthError))} value={row.startMonth} onChange={e => updateBulkRow(row.id, { startMonth: e.target.value })} />{startMonthError && <p className="mt-1 text-xs font-bold text-error">{startMonthError}</p>}</td>
                       <td className="px-2 py-3 align-top"><div className="flex justify-center gap-2"><button type="button" title="Nhân bản dòng" onClick={() => duplicateBulkRow(row.id)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/20 text-primary hover:bg-primary-fixed"><Copy size={16} /></button><button type="button" title="Xóa dòng" onClick={() => removeBulkRow(row.id)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-error/20 text-error hover:bg-error-container"><Trash2 size={16} /></button></div></td>
@@ -2761,15 +2789,23 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                       <select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(providerError)) + " !h-12 text-base"} value={row.provider} onChange={e => updateBulkRow(row.id, { provider: e.target.value })}>{providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select>
                       {providerError && <span className="text-xs font-bold text-error">{providerError}</span>}
                     </label>
-                    <label className="grid gap-1.5 text-xs font-extrabold text-on-surface-variant">
-                      Tài khoản Internet <span className="text-error">*</span>
-                      <input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(accountError)) + " !h-12 text-base"} placeholder="Nhập tài khoản Internet" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} />
-                      {accountError && <span className="text-xs font-bold text-error">{accountError}</span>}
-                    </label>
+                    {isMobileBulkEntry ? (
+                      <label className="grid gap-1.5 text-xs font-extrabold text-on-surface-variant">
+                        Loại thuê bao <span className="text-error">*</span>
+                        <select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(false) + " !h-12 text-base"} value={row.mobileBillingType} onChange={e => updateBulkRow(row.id, { mobileBillingType: e.target.value as BillGoBillingModel })}><option value="postpaid">Trả sau</option><option value="prepaid">Trả trước</option></select>
+                      </label>
+                    ) : (
+                      <label className="grid gap-1.5 text-xs font-extrabold text-on-surface-variant">
+                        Tài khoản Internet <span className="text-error">*</span>
+                        <input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(accountError)) + " !h-12 text-base"} placeholder="Nhập tài khoản Internet" value={row.account} onChange={e => updateBulkRow(row.id, { account: e.target.value })} />
+                        {accountError && <span className="text-xs font-bold text-error">{accountError}</span>}
+                      </label>
+                    )}
                     <label className="grid gap-1.5 text-xs font-extrabold text-on-surface-variant min-[390px]:col-span-2">
                       Gói cước <span className="text-error">*</span>
-                      <select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(packageError)) + " !h-12 text-base"} value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói cước</option>{packages.map(item => <option key={item.id} value={item.id}>{formatBillGoCurrency(item.monthly_price)} - {item.name}</option>)}</select>
+                      {isMobileBulkEntry ? <input data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(packageError)) + " !h-12 text-base"} placeholder="VD: ST90K 90.000" value={row.packageName} onChange={e => updateBulkRow(row.id, { packageName: e.target.value, monthlyFee: getNumericPackageAmount(e.target.value) })} /> : <select data-bulk-cell="true" onKeyDown={handleBulkCellKeyDown} className={bulkInputClass(Boolean(packageError)) + " !h-12 text-base"} value={row.packageId} onChange={e => selectBulkPackage(row.id, e.target.value)}><option value="">Chọn gói cước</option>{packages.map(item => <option key={item.id} value={item.id}>{formatBillGoCurrency(item.monthly_price)} - {item.name}</option>)}</select>}
                       {packageError && <span className="text-xs font-bold text-error">{packageError}</span>}
+                      <span className="text-xs font-bold text-primary">{row.cycle ? `Tổng ${formatBillGoCurrency(getBulkRowTotal(row))}` : "Chưa chọn chu kỳ"}</span>
                     </label>
                     <label className="grid gap-1.5 text-xs font-extrabold text-on-surface-variant">
                       Chu kỳ <span className="text-error">*</span>
@@ -2850,10 +2886,14 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 </div>
               )}              <input required className="input-field" placeholder="Tên khách hàng" value={form.customerName} onChange={e => updateForm("customerName", e.target.value)} />
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
-              <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
-              <datalist id="billgo-account-suggestions">
-                {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
-              </datalist>
+              {!isMobileForm && (
+                <>
+                  <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
+                  <datalist id="billgo-account-suggestions">
+                    {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
+                  </datalist>
+                </>
+              )}
               {isInternetForm ? (
                 <select className="input-field" value={form.provider} onChange={e => updateForm("provider", e.target.value)}>
                   {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
@@ -2875,12 +2915,12 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               {!isNoAmountForm && (
                 <>
               <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
-             {isInternetForm ? "Ch\u1ecdn g\u00f3i c\u01b0\u1edbc" : `G\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`}
+             {isMobileForm ? "Gói cước đăng ký" : isInternetForm ? "Chọn gói cước" : `Gói/khoản ${selectedFormServiceConfig.label}`}
                 <input
                   required
                   inputMode="numeric"
                   className="input-field"
-                  placeholder={isInternetForm ? "Nh\u1eadp gi\u00e1 ti\u1ec1n \u0111\u1ec3 t\u00ecm g\u00f3i c\u01b0\u1edbc" : `Nh\u1eadp g\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`}
+                  placeholder={isMobileForm ? "VD: ST90K 90.000" : isInternetForm ? "Nhập giá tiền để tìm gói cước" : `Nhập gói/khoản ${selectedFormServiceConfig.label}`}
                   value={packageSearch}
                   onChange={e => updatePackageSearch(e.target.value)}
                 />
@@ -2902,9 +2942,13 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                   </div>
                 )}
               </div>
-              <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder={isInternetForm ? "T\u00ean g\u00f3i t\u1ea1i th\u1eddi \u0111i\u1ec3m \u0111\u0103ng k\u00fd" : `T\u00ean g\u00f3i/kho\u1ea3n ${selectedFormServiceConfig.label}`} value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
-              <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
-              <select className="input-field" value={form.cycle} onChange={e => updateForm("cycle", e.target.value)} disabled={isNoAmountForm}>
+              {!isMobileForm && (
+                <>
+                  <input required readOnly={Boolean(selectedFormPackage)} className="input-field" placeholder={isInternetForm ? "Tên gói tại thời điểm đăng ký" : `Tên gói/khoản ${selectedFormServiceConfig.label}`} value={form.packageName} onChange={e => updateForm("packageName", e.target.value)} />
+                  <input required readOnly={Boolean(selectedFormPackage)} type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={form.monthlyFee} onChange={e => updateForm("monthlyFee", e.target.value)} />
+                </>
+              )}
+              <select className="input-field" aria-label={isMobileForm ? "Chu kỳ đóng" : "Chu kỳ"} value={form.cycle} onChange={e => updateForm("cycle", e.target.value)} disabled={isNoAmountForm}>
                 <option value="">Chưa thiết lập</option>
                 {signupCycleOptions
                   .filter(option => isInternetForm
@@ -2914,7 +2958,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                       : option.value === "monthly")
                   .map(option => <option key={option.value} value={option.value}>{getBillGoServiceCycleOption(option.value, formServiceTypeForBilling).label}</option>)}
               </select>
-              <input readOnly className="input-field bg-surface-container-low font-bold" value={formatBillGoCurrency(formTotal)} aria-label="Số tiền cần thu" />
+              <input readOnly className="input-field bg-surface-container-low font-bold" value={`Tổng tiền = ${formatBillGoCurrency(formTotal)}`} aria-label="Tổng tiền" />
                 </>
               )}
               {isInternetForm && (
