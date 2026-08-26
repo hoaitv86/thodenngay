@@ -39,6 +39,11 @@ const emptyForm: CmsFormState = {
   updated_at: null,
 };
 
+const legacyCmsSlugPairs = [
+  { canonical: "chinh-sach-tho", legacy: "chinh-sach-danh-cho-tho" },
+  { canonical: "chinh-sach-khach-hang", legacy: "chinh-sach-danh-cho-khach-hang" },
+] as const;
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -134,8 +139,69 @@ export default function AdminContentPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const canonicalizeLegacyPages = async () => {
+    for (const pair of legacyCmsSlugPairs) {
+      const { data, error } = await supabase
+        .from("cms_posts")
+        .select("id,slug,title,excerpt,content_html,cover_image_url,image_urls,display_locations,content_type,status,is_published,sort_order,published_at")
+        .in("slug", [pair.canonical, pair.legacy]);
+
+      if (error) throw error;
+
+      const rows = (data || []) as CmsPost[];
+      const canonical = rows.find((row) => row.slug === pair.canonical);
+      const legacy = rows.find((row) => row.slug === pair.legacy);
+      if (!legacy) continue;
+
+      if (!canonical) {
+        const defaultPage = defaultCmsPages.find((page) => page.slug === pair.canonical);
+        const { error: renameError } = await supabase
+          .from("cms_posts")
+          .update({
+            slug: pair.canonical,
+            title: defaultPage?.title || legacy.title,
+            display_locations: Array.from(new Set([...(legacy.display_locations || []), "footer", "app_info"])),
+            content_type: "fixed_page",
+            sort_order: defaultPage?.sortOrder || legacy.sort_order || 0,
+          })
+          .eq("id", legacy.id);
+        if (renameError) throw renameError;
+        continue;
+      }
+
+      const legacyContent = (legacy.content_html || "").trim();
+      const canonicalContent = (canonical.content_html || "").trim();
+      const legacyExcerpt = (legacy.excerpt || "").trim();
+      const canonicalExcerpt = (canonical.excerpt || "").trim();
+
+      const { error: updateError } = await supabase
+        .from("cms_posts")
+        .update({
+          excerpt: legacyExcerpt.length > canonicalExcerpt.length ? legacy.excerpt : canonical.excerpt,
+          content_html: legacyContent.length > canonicalContent.length ? legacy.content_html : canonical.content_html,
+          cover_image_url: canonical.cover_image_url || legacy.cover_image_url || null,
+          image_urls: Array.from(new Set([...(canonical.image_urls || []), ...(legacy.image_urls || [])])),
+          display_locations: Array.from(new Set([...(canonical.display_locations || []), ...(legacy.display_locations || []), "footer", "app_info"])),
+          content_type: "fixed_page",
+        })
+        .eq("id", canonical.id);
+      if (updateError) throw updateError;
+
+      const { error: deleteError } = await supabase.from("cms_posts").delete().eq("id", legacy.id);
+      if (deleteError) throw deleteError;
+    }
+  };
+
   const seedDefaults = async () => {
     setSaving(true);
+    try {
+      await canonicalizeLegacyPages();
+    } catch (error) {
+      setSaving(false);
+      showMessage("error", "Khong gop duoc trang noi dung trung: " + getErrorMessage(error));
+      return;
+    }
+
     const payload = defaultCmsPages.map((page) => ({
       slug: page.slug,
       title: page.title,
