@@ -320,7 +320,7 @@ function RegisterContent() {
 
                 <div>
                   <label htmlFor="register-email" className="block text-sm font-semibold text-on-surface mb-2">
-                    Email (tùy chọn)
+                    Email khôi phục tài khoản (không bắt buộc)
                   </label>
                   <input
                     id="register-email"
@@ -328,7 +328,7 @@ function RegisterContent() {
                     value={formData.email}
                     onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
                     className="input-field py-3.5"
-                    placeholder="name@example.com"
+                    placeholder="email@example.com"
                   />
                 </div>
 

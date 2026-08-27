@@ -419,6 +419,12 @@ export default function LoginPage() {
                 />
               </div>
 
+              <div className="-mt-2 flex justify-end">
+                <Link href="/forgot-password" className="text-sm font-bold text-primary-container hover:underline">
+                  Quên mật khẩu?
+                </Link>
+              </div>
+
               {error && (
                 <div className="flex gap-2 rounded-lg bg-error-container p-3 text-sm text-error" role="alert">
                   <span aria-hidden="true">!</span> {error}

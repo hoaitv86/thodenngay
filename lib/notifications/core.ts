@@ -300,9 +300,11 @@ export async function notifyNextWorkerJob(supabase: SupabaseClient, workerId: st
   });
 }
 
+type AccountEmailTemplate = "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected" | "password_recovery";
+
 export async function enqueueAccountEmail(
   supabase: SupabaseClient,
-  input: { userId?: string | null; toEmail?: string | null; template: "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected"; subject: string; body: string; metadata?: Record<string, unknown> },
+  input: { userId?: string | null; toEmail?: string | null; template: AccountEmailTemplate; subject: string; body: string; metadata?: Record<string, unknown> },
 ) {
   const { error } = await supabase.from("notification_email_outbox").insert({
     user_id: input.userId || null,
@@ -313,6 +315,7 @@ export async function enqueueAccountEmail(
     metadata: input.metadata || {},
   });
   if (error) console.warn("[notifications] email outbox failed", error.message);
+  return { error };
 }
 export function buildAccountEmail(template: "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected", name?: string | null, reason?: string | null) {
   const displayName = name || "ban";

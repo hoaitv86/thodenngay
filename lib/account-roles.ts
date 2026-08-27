@@ -20,6 +20,25 @@ export function buildPhoneLoginEmail(phone: string) {
   return normalizedPhone ? `${normalizedPhone}@phone.thodenngay.local` : "";
 }
 
+export function isSyntheticPhoneEmail(email?: string | null) {
+  if (!email) return true;
+  const normalizedEmail = email.trim().toLowerCase();
+  const [localPart, domain] = normalizedEmail.split("@");
+  if (!localPart || !domain) return true;
+
+  return (
+    domain === "phone.thodenngay.local" ||
+    (domain === "thodenngay.vn" && /^\d{8,15}$/.test(localPart))
+  );
+}
+
+export function maskEmail(email: string) {
+  const [localPart, domain] = email.split("@");
+  if (!localPart || !domain) return email;
+  const visible = localPart.slice(0, Math.min(2, localPart.length));
+  return `${visible}${"*".repeat(Math.max(3, localPart.length - visible.length))}@${domain}`;
+}
+
 export function uniqueRoles(legacyRole?: string | null, userRoles: UserRoleRecord[] = []) {
   const roles = new Set<AccountRole>();
 

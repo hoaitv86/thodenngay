@@ -100,6 +100,8 @@ export async function updateSession(request: NextRequest) {
   const publicPaths = [
     '/login',
     '/register',
+    '/forgot-password',
+    '/reset-password',
     '/',
     '/hanh-trinh',
     '/offline-sw.js',
