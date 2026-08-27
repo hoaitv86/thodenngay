@@ -14,12 +14,10 @@ import {
   MapPin, 
   Clock, 
   Briefcase, 
-  User, 
-  Phone, 
+Phone,
   ShieldCheck,
   Star,
-  AlertCircle,
-  Camera,
+Camera,
   X
 } from "lucide-react";
 import Link from "next/link";
@@ -230,6 +228,11 @@ export default function JobDetailPage() {
         showToast('Lỗi khi gửi đánh giá: ' + error.message, 'error');
         console.error(error);
       } else {
+        void fetch("/api/notifications/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event: "rating_created", jobId: job.id, workerId: job.worker_id, metadata: { score: ratingScore } }),
+        }).catch(() => undefined);
         showToast('Cảm ơn bạn đã đánh giá dịch vụ!', 'success');
         setJob((prev) => prev ? ({
           ...prev,
@@ -559,5 +562,3 @@ export default function JobDetailPage() {
     </div>
   );
 }
-
-

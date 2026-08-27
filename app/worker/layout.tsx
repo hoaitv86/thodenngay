@@ -53,9 +53,12 @@ type WorkerNotification = {
   id: string;
   title: string;
   body: string;
-  level: "info" | "success" | "warning";
-  published_at: string;
+  level: "info" | "success" | "warning" | "critical";
+  created_at: string;
+  published_at?: string;
   read_at?: string | null;
+  target_url?: string | null;
+  audience?: "worker" | "customer" | "admin";
 };
 
 const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
@@ -167,45 +170,20 @@ export default function WorkerLayout({
   const isProfilePage = pathname === "/worker/profile";
   const isWorkerHomePage = pathname === "/worker";
 
-  const fetchWorkerNotifications = useCallback(async (userId: string) => {
-    const { data: notificationRows, error: notificationError } = await supabase
-      .from("admin_worker_notifications")
-      .select("id, title, body, level, published_at")
-      .eq("is_active", true)
-      .lte("published_at", new Date().toISOString())
-      .order("published_at", { ascending: false })
-      .limit(10);
-
-    if (notificationError) {
-      if (!notificationError.message.includes("admin_worker_notifications")) {
-        console.warn("Could not load worker notifications:", notificationError.message);
-      }
+  const fetchWorkerNotifications = useCallback(async () => {
+    const response = await fetch("/api/notifications", { cache: "no-store" }).catch(() => null);
+    if (!response?.ok) {
       setNotifications([]);
       return;
     }
 
-    const ids = (notificationRows || []).map((notification) => notification.id);
-    let readMap = new Map<string, string>();
-
-    if (ids.length > 0) {
-      const { data: readRows, error: readError } = await supabase
-        .from("admin_worker_notification_reads")
-        .select("notification_id, read_at")
-        .eq("worker_user_id", userId)
-        .in("notification_id", ids);
-
-      if (!readError) {
-        readMap = new Map((readRows || []).map((row) => [row.notification_id as string, row.read_at as string]));
-      }
-    }
-
+    const payload = await response.json().catch(() => ({ notifications: [] }));
     setNotifications(
-      ((notificationRows || []) as WorkerNotification[]).map((notification) => ({
-        ...notification,
-        read_at: readMap.get(notification.id) || null,
-      }))
+      ((payload.notifications || []) as WorkerNotification[])
+        .filter((notification) => notification.audience === "worker" || notification.target_url?.startsWith("/worker") || !notification.target_url)
+        .slice(0, 10)
     );
-  }, [supabase]);
+  }, []);
 
   const markNotificationsRead = useCallback(async () => {
     if (!notificationUserId) return;
@@ -216,21 +194,12 @@ export default function WorkerLayout({
     const readAt = new Date().toISOString();
     setNotifications((items) => items.map((item) => ({ ...item, read_at: item.read_at || readAt })));
 
-    const { error } = await supabase
-      .from("admin_worker_notification_reads")
-      .upsert(
-        unreadNotifications.map((notification) => ({
-          notification_id: notification.id,
-          worker_user_id: notificationUserId,
-          read_at: readAt,
-        })),
-        { onConflict: "notification_id,worker_user_id" }
-      );
-
-    if (error) {
-      console.warn("Could not mark worker notifications as read:", error.message);
-    }
-  }, [notificationUserId, notifications, supabase]);
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationIds: unreadNotifications.map((notification) => notification.id) }),
+    }).catch(() => undefined);
+  }, [notificationUserId, notifications]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -370,7 +339,7 @@ export default function WorkerLayout({
       if (profile?.full_name) setUserName(profile.full_name);
       setIsAvailable(worker?.is_available !== false);
       if (!offline && worker?.status === "active") {
-        void fetchWorkerNotifications(user.id);
+        void fetchWorkerNotifications();
       } else {
         setNotifications([]);
       }
@@ -426,9 +395,9 @@ export default function WorkerLayout({
       .channel("worker-admin-notifications")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "admin_worker_notifications" },
+        { event: "*", schema: "public", table: "notifications", filter: `target_user_id=eq.${notificationUserId}` },
         () => {
-          void fetchWorkerNotifications(notificationUserId);
+          void fetchWorkerNotifications();
         }
       )
       .subscribe();
@@ -834,15 +803,20 @@ export default function WorkerLayout({
                 <div className="flex items-center justify-between border-b border-outline-variant/20 px-4 py-3">
                   <div>
                     <h2 className="text-sm font-extrabold text-on-surface">Thông báo</h2>
-                    <p className="text-[11px] font-bold text-on-surface-variant">Tin mới từ admin</p>
+                    <p className="text-[11px] font-bold text-on-surface-variant">Tin mới và việc cần làm</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setNotificationOpen(false)}
-                    className="rounded-lg px-2 py-1 text-xs font-extrabold text-on-surface-variant hover:bg-surface-container-low"
-                  >
-                    Đóng
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Link href="/worker/notifications" onClick={() => setNotificationOpen(false)} className="rounded-lg px-2 py-1 text-xs font-extrabold text-primary hover:bg-primary-fixed">
+                      Cài đặt
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setNotificationOpen(false)}
+                      className="rounded-lg px-2 py-1 text-xs font-extrabold text-on-surface-variant hover:bg-surface-container-low"
+                    >
+                      Đóng
+                    </button>
+                  </div>
                 </div>
 
                 <div className="max-h-[24rem] overflow-y-auto p-2">
@@ -859,8 +833,19 @@ export default function WorkerLayout({
                       {notifications.map((notification) => (
                         <article
                           key={notification.id}
-                          className={`rounded-lg border p-3 ${
-                            notification.level === "warning"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (notification.target_url) router.push(notification.target_url);
+                            setNotificationOpen(false);
+                          }}
+                          onKeyDown={(event) => {
+                            if ((event.key === "Enter" || event.key === " ") && notification.target_url) router.push(notification.target_url);
+                          }}
+                          className={`cursor-pointer rounded-lg border p-3 ${
+                            notification.level === "critical"
+                              ? "border-error/25 bg-error-container/55"
+                              : notification.level === "warning"
                               ? "border-warning/25 bg-warning-container/60"
                               : notification.level === "success"
                                 ? "border-success/25 bg-success-container/40"
@@ -873,7 +858,7 @@ export default function WorkerLayout({
                               <h3 className="text-sm font-extrabold text-on-surface">{notification.title}</h3>
                               <p className="mt-1 whitespace-pre-line text-xs leading-5 text-on-surface-variant">{notification.body}</p>
                               <p className="mt-2 text-[10px] font-bold uppercase text-on-surface-variant">
-                                {new Date(notification.published_at).toLocaleString("vi-VN")}
+                                {new Date(notification.published_at || notification.created_at).toLocaleString("vi-VN")}
                               </p>
                             </div>
                           </div>

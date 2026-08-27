@@ -42,6 +42,7 @@ export default function CustomerLayout({
   const supabase = useMemo(() => createClient(), []);
   const [userName, setUserName] = useState("Khách hàng");
   const [canUseWorkerMode, setCanUseWorkerMode] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   useEffect(() => {
     const getUser = async () => {
@@ -68,6 +69,18 @@ export default function CustomerLayout({
     getUser();
   }, [supabase]);
 
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/notifications", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (alive) setUnreadNotificationCount(Number(payload.unreadCount || 0));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [pathname]);
   const handleLogout = async () => {
     document.cookie = `${ACTIVE_ROLE_COOKIE}=; path=/; max-age=0; samesite=lax`;
     await supabase.auth.signOut();
@@ -173,8 +186,13 @@ export default function CustomerLayout({
 
             <div className="flex items-center gap-2">
               {isCustomerHomePage && (
-                <Link href="/customer/jobs" aria-label="Thông báo" className="customer-bell-button relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white/95 p-0 text-primary shadow-sm sm:h-10 sm:w-10">
+                <Link href="/customer/notifications" aria-label="Thông báo" className="customer-bell-button relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white/95 p-0 text-primary shadow-sm sm:h-10 sm:w-10">
                   <BellIcon size={21} />
+                  {unreadNotificationCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-error px-1 text-[10px] font-extrabold leading-none text-white">
+                      {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                    </span>
+                  )}
                 </Link>
               )}
               <Link

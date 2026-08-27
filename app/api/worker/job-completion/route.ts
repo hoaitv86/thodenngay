@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { canUseJobs } from "@/lib/worker-unit-permissions";
 import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
+import { notifyJobEvent, notifyNextWorkerJob } from "@/lib/notifications/core";
 
 type CompletionMaterialItem = {
   productId?: string;
@@ -246,6 +247,9 @@ export async function POST(request: Request) {
           source: "worker_job_completion_api_fallback",
         },
       });
+
+    await notifyJobEvent(supabaseAdmin, "job_completed", jobId, { source: "worker_job_completion_api_fallback", sales_order_id: order.id });
+    await notifyNextWorkerJob(supabaseAdmin, visibleJob.worker_id, jobId);
 
     return NextResponse.json({ ok: true, salesOrderId: order.id });
   } catch (error) {

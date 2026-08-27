@@ -4,6 +4,7 @@ import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normal
 import type { WorkflowData } from "@/config/serviceWorkflows";
 import { requireAdminPermission } from "@/lib/admin-server";
 import { MAX_TASK_ATTACHMENTS, TASK_ATTACHMENTS_BUCKET } from "@/lib/task-attachments";
+import { buildAccountEmail, enqueueAccountEmail, notifyJobEvent } from "@/lib/notifications/core";
 
 type CreateJobRequest = {
   customerMode?: "existing" | "new";
@@ -297,6 +298,21 @@ export async function POST(request: Request) {
         .single()
       : { data: insertResult.data };
 
+    if (jobId) {
+      await notifyJobEvent(supabaseAdmin, "job_created", jobId, { source: "admin_create_job" });
+    }
+
+    if (createdCustomer) {
+      const email = buildAccountEmail("customer_welcome", createdCustomer.full_name);
+      await enqueueAccountEmail(supabaseAdmin, {
+        userId: createdCustomer.id,
+        toEmail: createdCustomer.email,
+        template: "customer_welcome",
+        subject: email.subject,
+        body: email.body,
+        metadata: { source: "admin_create_job" },
+      });
+    }
     return NextResponse.json({
       job: createdJob || insertResult.data,
       createdCustomer,
@@ -311,4 +327,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

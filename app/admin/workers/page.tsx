@@ -471,6 +471,11 @@ export default function AdminWorkers() {
       showToast('Lỗi khi duyệt thợ: ' + error.message, 'error');
       console.error(error);
     } else {
+      void fetch("/api/notifications/account-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "worker_approved", userId: worker.user_id }),
+      }).catch(() => undefined);
       showToast(`Đã duyệt thợ "${worker.profiles?.full_name}" thành công!`, 'success');
       // Optimistic UI update
       setWorkers(prev => prev.map(w =>
@@ -494,6 +499,11 @@ export default function AdminWorkers() {
       showToast('Lỗi khi từ chối thợ: ' + error.message, 'error');
       console.error(error);
     } else {
+      void fetch("/api/notifications/account-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "worker_rejected", userId: worker.user_id, reason: rejectionReason || null }),
+      }).catch(() => undefined);
       showToast(`Đã từ chối thợ "${worker.profiles?.full_name}".`, 'success');
       setWorkers(prev => prev.map(w =>
         w.id === worker.id ? { ...w, status: 'blocked', rejection_reason: rejectionReason || null } : w

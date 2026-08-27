@@ -7,9 +7,9 @@ import { isLegacyServiceId } from "@/lib/standard-service-catalog";
 import { attachJobServices, getPrimaryServiceId, isMissingWorkflowColumn, normalizeServiceIds } from "@/lib/job-workflow";
 import type { WorkflowData } from "@/config/serviceWorkflows";
 import { DEMO_ACTION_BLOCK_MESSAGE, isDemoAccount } from "@/lib/demo-accounts";
-import { isWorkerRole } from "@/lib/account-roles";
 import { canUseJobs } from "@/lib/worker-unit-permissions";
 import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
+import { buildAccountEmail, enqueueAccountEmail, notifyJobEvent } from "@/lib/notifications/core";
 
 type CreateWorkerJobRequest = {
   customerId?: string | null;
@@ -676,6 +676,18 @@ export async function POST(request: Request) {
       mode: "service_role",
     });
     await attachJobServices(supabaseAdmin as SupabaseClient, insertedJob.id, serviceIds);
+    await notifyJobEvent(supabaseAdmin as SupabaseClient, "worker_assigned", insertedJob.id, { source: "worker_quick_job", category: service.name || null });
+    if (createdCustomer) {
+      const email = buildAccountEmail("customer_welcome", createdCustomer.full_name);
+      await enqueueAccountEmail(supabaseAdmin as SupabaseClient, {
+        userId: createdCustomer.id,
+        toEmail: createdCustomer.email,
+        template: "customer_welcome",
+        subject: email.subject,
+        body: email.body,
+        metadata: { source: "worker_quick_job" },
+      });
+    }
 
     return NextResponse.json({
       job: insertedJob,

@@ -2001,6 +2001,12 @@ export default function WorkerDashboard() {
         : acceptedJob?.time,
     };
 
+    void fetch("/api/notifications/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "worker_assigned", jobId, workerId: worker.id, metadata: { distance: normalizedAcceptedJob.distance || null, eta: normalizedAcceptedJob.eta || null } }),
+    }).catch(() => undefined);
+
     showToast("Đã nhận việc thành công.", "success");
     setNewJobs(prev => prev.filter(j => j.id !== jobId));
     setPendingApprovalJobs(prev => prev.filter(j => j.id !== jobId));
@@ -2776,6 +2782,12 @@ export default function WorkerDashboard() {
         throw new Error("Job không còn ở trạng thái có thể yêu cầu huỷ.");
       }
 
+      void fetch("/api/notifications/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "worker_cancel_requested", jobId: jobToCancel.id, workerId: worker?.id, metadata: { reason } }),
+      }).catch(() => undefined);
+
       setActiveJobs(prev => prev.filter(job => job.id !== jobToCancel.id));
       setJobToCancel(null);
       setCancelReason("Khách hàng từ chối lắp đặt/sửa chữa");
@@ -3321,6 +3333,12 @@ export default function WorkerDashboard() {
           throw new Error("Công việc đã hoàn thành nhưng chưa ghi được thanh toán: " + paymentError.message);
         }
       }
+
+      void fetch("/api/notifications/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "job_completed", jobId: job.id, workerId: worker?.id, metadata: { finalAmount, paidAmount, remainingAmount } }),
+      }).catch(() => undefined);
 
       // 3. Optimistic UI update
       setDashboardData(prev => ({

@@ -409,6 +409,7 @@ export default function AdminJobs() {
 
     setIsAssigning(true);
     const selectedJob = jobs.find(job => job.id === selectedJobId);
+    const previousWorkerId = selectedJob?.worker_id || null;
     const { data: customerProfile } = selectedJob?.customer?.id
       ? await supabase
         .from('profiles')
@@ -467,6 +468,16 @@ export default function AdminJobs() {
         }
         return job;
       }));
+      void fetch("/api/notifications/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: previousWorkerId && previousWorkerId !== selectedWorkerId ? "worker_changed" : "worker_assigned",
+          jobId: selectedJobId,
+          workerId: selectedWorkerId,
+          metadata: { source: "admin_assign_worker", previous_worker_id: previousWorkerId },
+        }),
+      }).catch(() => undefined);
     }
   };
 
@@ -566,6 +577,11 @@ export default function AdminJobs() {
           }
           : item
       ));
+      void fetch("/api/notifications/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "worker_assigned", jobId: job.id, workerId: job.worker_id, metadata: { source: "admin_approve_worker_job" } }),
+      }).catch(() => undefined);
     } finally {
       setApprovingWorkerJobId(null);
     }
@@ -1244,4 +1260,3 @@ export default function AdminJobs() {
     </>
   );
 }
-

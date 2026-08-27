@@ -108,6 +108,41 @@ function writeLocalValue(key: string, value: string) {
   }
 }
 
+function urlBase64ToUint8Array(value: string) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
+async function registerPushSubscription(registration: ServiceWorkerRegistration) {
+  if (!("PushManager" in window) || !("Notification" in window) || !window.navigator.onLine) return;
+
+  try {
+    const permission = Notification.permission === "default"
+      ? await Notification.requestPermission()
+      : Notification.permission;
+    if (permission !== "granted") return;
+
+    const keyResponse = await fetch("/api/notifications/push-subscription", { cache: "no-store" });
+    if (!keyResponse.ok) return;
+    const keyPayload = (await keyResponse.json()) as { publicKey?: string; configured?: boolean };
+    if (!keyPayload.configured || !keyPayload.publicKey) return;
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyPayload.publicKey),
+    });
+
+    await fetch("/api/notifications/push-subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription: subscription.toJSON(), userAgent: window.navigator.userAgent }),
+    });
+  } catch (error) {
+    console.warn("[TDN-PUSH] push subscription registration failed", error);
+  }
+}
 async function clearLocalDevOfflineRuntime() {
   if (!("serviceWorker" in navigator)) return;
 
@@ -243,6 +278,7 @@ export default function OfflineRuntime() {
       publishNetworkState();
       if (window.navigator.onLine) {
         void syncOfflineMutations();
+        void navigator.serviceWorker?.ready.then((registration) => registerPushSubscription(registration));
         checkForWebDeployUpdate("online", true);
       }
     };
@@ -279,6 +315,7 @@ export default function OfflineRuntime() {
             );
             void navigator.serviceWorker.ready.then((readyRegistration) => {
               sendAppShellCacheMessage(readyRegistration);
+              void registerPushSubscription(readyRegistration);
               checkForWebDeployUpdate("startup", true);
             });
           })

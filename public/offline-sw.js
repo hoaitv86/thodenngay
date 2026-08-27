@@ -256,6 +256,50 @@ async function staleWhileRevalidate(request) {
   return cached || refreshed;
 }
 
+
+function parsePushPayload(event) {
+  try {
+    return event.data ? event.data.json() : {};
+  } catch {
+    return { title: "Tho Den Ngay", body: event.data ? event.data.text() : "Ban co thong bao moi" };
+  }
+}
+
+self.addEventListener("push", (event) => {
+  if (IS_LOCAL_DEV_HOST) return;
+  const payload = parsePushPayload(event);
+  const expiresAt = payload.expiresAt || payload.expires_at;
+  if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) return;
+
+  const title = payload.title || "Tho Den Ngay";
+  const options = {
+    body: payload.body || "Ban co thong bao moi",
+    icon: payload.icon || "/android-chrome-192x192.png",
+    badge: payload.badge || "/favicon-32x32.png",
+    tag: payload.tag || payload.notificationId || payload.notification_id || undefined,
+    renotify: false,
+    data: {
+      url: payload.url || payload.targetUrl || payload.target_url || "/",
+      notificationId: payload.notificationId || payload.notification_id || null,
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url === targetUrl && "focus" in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+      return undefined;
+    })
+  );
+});
 self.addEventListener("fetch", (event) => {
   if (IS_LOCAL_DEV_HOST) return;
 
