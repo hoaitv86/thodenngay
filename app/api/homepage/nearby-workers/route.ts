@@ -23,6 +23,8 @@ type WorkerRow = {
   profiles?: WorkerProfile | WorkerProfile[] | null;
 };
 
+export const HOMEPAGE_NEARBY_WORKER_LIMIT = 6;
+
 function getPublicSupabase() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,35 +68,12 @@ function formatPublicDistance(distanceKm: number) {
   })} km`;
 }
 
-export async function POST(request: Request) {
-  let body: unknown;
-
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Thiếu vị trí hiện tại." }, { status: 400 });
-  }
-
-  const viewerLocation = toGpsPoint(body);
-  if (!viewerLocation) {
-    return NextResponse.json({ error: "Vị trí hiện tại không hợp lệ." }, { status: 400 });
-  }
-
-  const supabase = getPublicSupabase();
-  const { data, error } = await supabase
-    .from("workers")
-    .select("id,specialties,avg_rating,total_jobs,profiles(full_name,avatar_url,gps_location)")
-    .eq("status", "active")
-    .eq("is_available", true)
-    .order("avg_rating", { ascending: false })
-    .order("total_jobs", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    return NextResponse.json({ error: "Không thể tải danh sách thợ gần bạn." }, { status: 500 });
-  }
-
-  const workers = ((data || []) as WorkerRow[])
+export function getHomepageNearbyWorkers(
+  rows: WorkerRow[],
+  viewerLocation: GpsPoint,
+  limit = HOMEPAGE_NEARBY_WORKER_LIMIT
+) {
+  return rows
     .map((worker) => {
       const profile = firstRelation(worker.profiles);
       const workerLocation = toGpsPoint(profile?.gps_location);
@@ -117,11 +96,41 @@ export async function POST(request: Request) {
     })
     .filter((worker): worker is NonNullable<typeof worker> => Boolean(worker))
     .sort((a, b) => a.distanceMeters - b.distanceMeters)
-    .slice(0, 6)
+    .slice(0, limit)
     .map((worker, index) => ({
       ...worker,
       isNearest: index === 0,
     }));
+}
+
+export async function POST(request: Request) {
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Thiếu vị trí hiện tại." }, { status: 400 });
+  }
+
+  const viewerLocation = toGpsPoint(body);
+  if (!viewerLocation) {
+    return NextResponse.json({ error: "Vị trí hiện tại không hợp lệ." }, { status: 400 });
+  }
+
+  const supabase = getPublicSupabase();
+  const { data, error } = await supabase
+    .from("workers")
+    .select("id,specialties,avg_rating,total_jobs,profiles(full_name,avatar_url,gps_location)")
+    .eq("status", "active")
+    .eq("is_available", true)
+    .order("avg_rating", { ascending: false })
+    .order("total_jobs", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: "Không thể tải danh sách thợ gần bạn." }, { status: 500 });
+  }
+
+  const workers = getHomepageNearbyWorkers((data || []) as WorkerRow[], viewerLocation);
 
   return NextResponse.json({ workers });
 }

@@ -23,6 +23,11 @@ type HomepageNearbyWorkersProps = {
   workers: HomepageNearbyWorker[];
 };
 
+type LocationPoint = {
+  lat: number;
+  lng: number;
+};
+
 function getInitials(name: string) {
   const words = name.trim().split(/\s+/).filter(Boolean);
   const first = words[0]?.[0] || "T";
@@ -47,12 +52,49 @@ function getWorkerDistanceLabel(worker: HomepageNearbyWorker, state: LocationSta
   return "Chưa có khoảng cách";
 }
 
+function toLocationPoint(position: GeolocationPosition): LocationPoint {
+  return {
+    lat: Number(position.coords.latitude.toFixed(7)),
+    lng: Number(position.coords.longitude.toFixed(7)),
+  };
+}
+
+function isSameLocationPoint(current: LocationPoint | null, next: LocationPoint) {
+  return current?.lat === next.lat && current.lng === next.lng;
+}
+
 export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkersProps) {
   const [locationState, setLocationState] = useState<LocationState>("requesting");
   const [nearbyWorkers, setNearbyWorkers] = useState(workers);
 
   useEffect(() => {
     let cancelled = false;
+    let watchId: number | null = null;
+    let lastLocation: LocationPoint | null = null;
+
+    const loadNearbyWorkers = async (location: LocationPoint) => {
+      try {
+        const response = await fetch("/api/homepage/nearby-workers", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(location),
+        });
+        const payload = (await response.json()) as { workers?: HomepageNearbyWorker[]; error?: string };
+
+        if (!response.ok || !Array.isArray(payload.workers)) {
+          throw new Error(payload.error || "Không thể tải thợ gần bạn.");
+        }
+
+        if (!cancelled) {
+          setNearbyWorkers(payload.workers);
+          setLocationState("granted");
+        }
+      } catch {
+        if (!cancelled) setLocationState("error");
+      }
+    };
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       window.queueMicrotask(() => {
@@ -64,32 +106,13 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
       };
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const response = await fetch("/api/homepage/nearby-workers", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              lat: Number(position.coords.latitude.toFixed(7)),
-              lng: Number(position.coords.longitude.toFixed(7)),
-            }),
-          });
-          const payload = (await response.json()) as { workers?: HomepageNearbyWorker[]; error?: string };
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const location = toLocationPoint(position);
+        if (isSameLocationPoint(lastLocation, location)) return;
 
-          if (!response.ok || !Array.isArray(payload.workers)) {
-            throw new Error(payload.error || "Không thể tải thợ gần bạn.");
-          }
-
-          if (!cancelled) {
-            setNearbyWorkers(payload.workers);
-            setLocationState("granted");
-          }
-        } catch {
-          if (!cancelled) setLocationState("error");
-        }
+        lastLocation = location;
+        void loadNearbyWorkers(location);
       },
       (error) => {
         if (cancelled) return;
@@ -104,6 +127,7 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
 
     return () => {
       cancelled = true;
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     };
   }, []);
 
