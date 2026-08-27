@@ -25,6 +25,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
+    recovery_email TEXT,
     phone TEXT,
     normalized_phone TEXT,
     full_name TEXT NOT NULL,
@@ -683,10 +684,11 @@ CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON public.jobs FOR EACH ROW 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name, role)
+  INSERT INTO public.profiles (id, email, recovery_email, full_name, role)
   VALUES (
     NEW.id, 
     NEW.email, 
+    NULLIF(LOWER(TRIM(COALESCE(NEW.raw_user_meta_data->>'recovery_email', ''))), ''),
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'Người dùng'), 
     COALESCE(NEW.raw_user_meta_data->>'role', 'customer')
   );
@@ -738,10 +740,11 @@ DECLARE
   phone_value TEXT := COALESCE(NEW.raw_user_meta_data->>'phone', NEW.phone);
   worker_specs TEXT[] := '{}';
 BEGIN
-  INSERT INTO public.profiles (id, email, phone, normalized_phone, full_name, role)
+  INSERT INTO public.profiles (id, email, recovery_email, phone, normalized_phone, full_name, role)
   VALUES (
     NEW.id,
     NEW.email,
+    NULLIF(LOWER(TRIM(COALESCE(NEW.raw_user_meta_data->>'recovery_email', ''))), ''),
     phone_value,
     public.normalize_phone(phone_value),
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'Nguoi dung'),

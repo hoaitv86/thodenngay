@@ -6,6 +6,7 @@ import { enqueueAccountEmail } from "@/lib/notifications/core";
 type ProfileRecoveryRow = {
   id: string;
   email: string | null;
+  recovery_email: string | null;
   full_name: string | null;
   phone: string | null;
   normalized_phone: string | null;
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabaseAdmin
       .from("profiles")
-      .select("id, email, full_name, phone, normalized_phone, role")
+      .select("id, email, recovery_email, full_name, phone, normalized_phone, role")
       .or(`normalized_phone.eq.${normalizedPhone},phone.eq.${normalizedPhone}`)
       .in("role", ["customer", "worker"])
       .limit(1);
@@ -73,8 +74,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Không tìm thấy tài khoản theo SĐT này." }, { status: 404 });
     }
 
-    const recoveryEmail = profile.email;
-    if (!recoveryEmail || isSyntheticPhoneEmail(recoveryEmail)) {
+    const candidateRecoveryEmail = profile.recovery_email || (isSyntheticPhoneEmail(profile.email) ? null : profile.email);
+    const recoveryEmail = candidateRecoveryEmail && !isSyntheticPhoneEmail(candidateRecoveryEmail) ? candidateRecoveryEmail : null;
+    if (!recoveryEmail) {
       return NextResponse.json(
         { error: "Tài khoản này chưa có email khôi phục. Vui lòng liên hệ hỗ trợ để đặt lại mật khẩu." },
         { status: 409 },
@@ -132,6 +134,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
-
-

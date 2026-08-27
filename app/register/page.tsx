@@ -36,7 +36,7 @@ function RegisterContent() {
   const [requestWorkerRole, setRequestWorkerRole] = useState(initialWorkerSignup);
   const [formData, setFormData] = useState({
     name: "",
-    email: "",
+    recoveryEmail: "",
     password: "",
     phone: "",
     address: "",
@@ -151,7 +151,8 @@ function RegisterContent() {
     const workerSpecialties = requestWorkerRole
       ? expandWorkerSpecialties(selectedParentIds, selectedChildValues, specialtyGroups)
       : [];
-    const email = formData.email.trim() || buildPhoneLoginEmail(normalizedPhone);
+    const recoveryEmail = formData.recoveryEmail.trim().toLowerCase();
+    const email = buildPhoneLoginEmail(normalizedPhone);
 
     const { data, error: authError } = await supabase.auth.signUp({
       email,
@@ -163,6 +164,7 @@ function RegisterContent() {
           role: "customer",
           requested_role: requestWorkerRole ? "worker" : "customer",
           specialties: workerSpecialties,
+          recovery_email: recoveryEmail || null,
         }
       }
     });
@@ -181,7 +183,8 @@ function RegisterContent() {
         .update({
           phone: normalizedPhone,
           address: formData.address,
-          gps_location: formData.gpsLocation
+          gps_location: formData.gpsLocation,
+          recovery_email: recoveryEmail || null
         })
         .eq('id', data.user.id);
 
@@ -325,8 +328,8 @@ function RegisterContent() {
                   <input
                     id="register-email"
                     type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
+                    value={formData.recoveryEmail}
+                    onChange={(e) => setFormData((p) => ({ ...p, recoveryEmail: e.target.value }))}
                     className="input-field py-3.5"
                     placeholder="email@example.com"
                   />

@@ -485,10 +485,11 @@ DECLARE
   phone_value TEXT := COALESCE(NEW.raw_user_meta_data->>'phone', NEW.phone);
   worker_specs TEXT[] := '{}';
 BEGIN
-  INSERT INTO public.profiles (id, email, phone, normalized_phone, full_name, role)
+  INSERT INTO public.profiles (id, email, recovery_email, phone, normalized_phone, full_name, role)
   VALUES (
     NEW.id,
     NEW.email,
+    NULLIF(LOWER(TRIM(COALESCE(NEW.raw_user_meta_data->>'recovery_email', ''))), ''),
     phone_value,
     public.normalize_phone(phone_value),
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'Nguoi dung'),
