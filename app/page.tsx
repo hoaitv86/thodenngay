@@ -1252,8 +1252,9 @@ export default async function HomePage() {
       <section className="relative overflow-hidden bg-primary-container py-16 text-on-primary sm:py-24 lg:py-28">
         <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(59,130,246,0.30),rgba(59,130,246,0)_42%),linear-gradient(90deg,rgba(37,99,235,0.24),rgba(37,99,235,0)_58%)]" />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="relative mb-4 text-3xl font-bold leading-tight !text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.35)] sm:text-5xl">
-            Bắt đầu sử dụng Thợ đến ngay ngay hôm nay
+          <h2 className="relative mb-4 text-center text-3xl font-bold leading-tight !text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.35)] sm:text-5xl">
+            <span className="block">Bắt đầu sử dụng</span>
+            <span className="block"><span className="!text-yellow-400 drop-shadow-[0_0_18px_rgba(250,204,21,0.85)]">Thợ Đến Ngay</span> hôm nay</span>
           </h2>
           <p className="relative mx-auto mb-10 max-w-2xl text-lg !text-white/85">
             Đăng ký miễn phí và trải nghiệm dịch vụ sửa chữa tại nhà chuyên nghiệp nhất
