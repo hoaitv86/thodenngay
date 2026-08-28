@@ -1281,15 +1281,32 @@ export default async function HomePage() {
       {/* ===== FOOTER ===== */}
       <footer className="bg-on-surface text-surface py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mx-auto grid max-w-4xl grid-cols-2 gap-x-6 gap-y-10 text-center md:max-w-7xl md:grid-cols-4 md:text-left">
-            <div className="col-span-2">
+          <div className="grid gap-10 text-center md:grid-cols-[1.35fr_0.8fr_0.9fr] md:gap-12 md:text-left">
+            <div>
               <div className="mb-4 flex items-center justify-center gap-3 md:justify-start">
                 <LogoIcon size={32} />
-                <span className="text-xl font-bold">{systemSettings.app_name}</span>
+                <span className="text-xl font-bold">Thợ Đến Ngay</span>
               </div>
               <p className="mx-auto max-w-sm text-sm leading-6 text-surface-container-high md:mx-0">
                 Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Dịch vụ uy tín, giá cả minh bạch.
               </p>
+              <div className="mt-5 flex justify-center gap-3 md:justify-start" aria-label="Mạng xã hội">
+                {[
+                  { label: "Facebook", text: "f" },
+                  { label: "Zalo", text: "Z" },
+                  { label: "LinkedIn", text: "in" },
+                ].map((social) => (
+                  <button
+                    key={social.label}
+                    type="button"
+                    aria-label={social.label}
+                    title={social.label}
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-white/8 text-sm font-bold text-surface-container-high transition-colors hover:border-white/24 hover:bg-white/12 hover:text-white"
+                  >
+                    {social.text}
+                  </button>
+                ))}
+              </div>
               <div className="mt-5 grid gap-2 text-sm text-surface-container-high">
                 <div className="flex items-center justify-center gap-2 md:justify-start">
                   <PhoneIcon size={16} />
@@ -1300,7 +1317,7 @@ export default async function HomePage() {
                   <span>{systemSettings.company_address}</span>
                 </div>
                 <a
-                  href={`mailto:${systemSettings.support_email}`}
+                  href={"mailto:" + systemSettings.support_email}
                   className="hover:text-white transition-colors"
                 >
                   {systemSettings.support_email}
@@ -1308,34 +1325,37 @@ export default async function HomePage() {
               </div>
             </div>
 
-            <div className="justify-self-center md:justify-self-auto">
-              <h4 className="font-semibold mb-4">{"D\u1ecbch v\u1ee5"}</h4>
+            <div>
+              <h4 className="font-semibold mb-4">Dịch vụ</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
-                <li><a href="#" className="hover:text-white transition-colors">{"S\u1eeda \u0111i\u1ec7n"}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{"S\u1eeda n\u01b0\u1edbc"}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{"L\u1eafp camera"}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{"C\u01a1 kh\u00ed"}</a></li>
+                {["Máy tính", "Máy in", "Camera", "Điện", "Nước", "Cơ khí", "Dịch vụ khác"].map((service) => (
+                  <li key={service}>
+                    <Link href="/register" className="hover:text-white transition-colors">
+                      {service}
+                    </Link>
+                  </li>
+                ))}
               </ul>
             </div>
 
-            <div className="justify-self-center md:justify-self-auto">
-              <h4 className="font-semibold mb-4">{"Th\u00f4ng tin"}</h4>
+            <div>
+              <h4 className="font-semibold mb-4">Thông tin</h4>
               <ul className="space-y-2 text-sm text-surface-container-high">
                 <li><Link href="/hanh-trinh" className="hover:text-white transition-colors">Hành trình</Link></li>
                 {cmsPages.map((page) => (
                   <li key={page.slug}>
-                    <Link href={`/${page.slug}`} className="hover:text-white transition-colors">
+                    <Link href={"/" + page.slug} className="hover:text-white transition-colors">
                       {page.title}
                     </Link>
                   </li>
                 ))}
-                <li><Link href="/login" className="hover:text-white transition-colors">{"\u0110\u0103ng nh\u1eadp"}</Link></li>
+                <li><Link href="/login" className="hover:text-white transition-colors">Đăng nhập</Link></li>
               </ul>
             </div>
           </div>
 
           <div className="border-t border-white/10 mt-12 pt-8 text-center text-label-sm text-surface-container-high">
-            © 2026 {systemSettings.app_name}. Tất cả quyền được bảo lưu.
+            © 2026 Thợ Đến Ngay · Kết nối đúng thợ – Giải quyết đúng việc.
           </div>
         </div>
       </footer>
