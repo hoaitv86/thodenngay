@@ -459,9 +459,11 @@ export default function AdminWorkers() {
 
   const handleApproveWorker = async (worker: WorkerRecord) => {
     setProcessing(true);
+    const approvedAt = new Date().toISOString();
+    const shouldSendApprovalEmail = worker.status !== 'active' && !worker.approved_at;
     const { error } = await supabase
       .from('workers')
-      .update({ status: 'active', approved_at: new Date().toISOString() })
+      .update({ status: 'active', approved_at: approvedAt })
       .eq('id', worker.id);
 
     setProcessing(false);
@@ -471,19 +473,20 @@ export default function AdminWorkers() {
       showToast('Lỗi khi duyệt thợ: ' + error.message, 'error');
       console.error(error);
     } else {
-      void fetch("/api/notifications/account-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template: "worker_approved", userId: worker.user_id }),
-      }).catch(() => undefined);
+      if (shouldSendApprovalEmail) {
+        void fetch("/api/notifications/account-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ template: "worker_approved", userId: worker.user_id }),
+        }).catch(() => undefined);
+      }
       showToast(`Đã duyệt thợ "${worker.profiles?.full_name}" thành công!`, 'success');
       // Optimistic UI update
       setWorkers(prev => prev.map(w =>
-        w.id === worker.id ? { ...w, status: 'active', approved_at: new Date().toISOString() } : w
+        w.id === worker.id ? { ...w, status: 'active', approved_at: approvedAt } : w
       ));
     }
   };
-
   const handleRejectWorker = async (worker: WorkerRecord) => {
     setProcessing(true);
     const { error } = await supabase
@@ -1302,3 +1305,4 @@ export default function AdminWorkers() {
     </div>
   );
 }
+

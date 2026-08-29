@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerAuthClient } from "@/lib/supabase/server";
-import { buildAccountEmail, enqueueAccountEmail, getServiceRoleSupabase } from "@/lib/notifications/core";
+import { buildAccountEmail, enqueueAccountEmail, getDeliverableAccountEmail, getServiceRoleSupabase } from "@/lib/notifications/core";
 
 type Body = { template?: "customer_welcome" | "worker_pending" };
 
@@ -17,22 +17,27 @@ export async function POST(request: Request) {
   const supabase = getServiceRoleSupabase() || authClient;
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, email, full_name")
+    .select("id, email, recovery_email, full_name")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!profile) return NextResponse.json({ error: "Khong tim thay tai khoan." }, { status: 404 });
+  if (error) {
+    console.warn("[notifications] registration email profile lookup failed", error.message);
+    return NextResponse.json({ ok: true, queued: false, skipped: true, reason: "profile_lookup_failed" });
+  }
+  if (!profile) return NextResponse.json({ ok: true, queued: false, skipped: true, reason: "profile_not_found" });
 
+  const toEmail = getDeliverableAccountEmail(profile);
   const email = buildAccountEmail(body.template, profile.full_name);
-  await enqueueAccountEmail(supabase, {
+  const queuedEmail = await enqueueAccountEmail(supabase, {
     userId: profile.id,
-    toEmail: profile.email,
+    toEmail,
     template: body.template,
     subject: email.subject,
     body: email.body,
     metadata: { source: "registration" },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, queued: !queuedEmail.error && !queuedEmail.skipped, skipped: Boolean(queuedEmail.skipped), reason: queuedEmail.reason || null });
 }
+

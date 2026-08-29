@@ -13,7 +13,8 @@
     "android:open": "npx cap open android",
     "admin:seed-super": "node scripts/seed-super-admin.mjs",
     "admin:restore-legacy": "node scripts/restore-legacy-admin.mjs",
-    "test:homepage-nearby-workers": "node scripts/test-homepage-nearby-workers.mjs"
+    "test:homepage-nearby-workers": "node scripts/test-homepage-nearby-workers.mjs",
+    "test:account-emails": "node scripts/test-account-email-flows.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -44,3 +45,4 @@
     "typescript": "^5"
   }
 }
+

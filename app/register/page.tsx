@@ -202,6 +202,11 @@ function RegisterContent() {
           })
           .eq('user_id', data.user.id);
       }
+      void fetch("/api/notifications/registration-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: requestWorkerRole ? "worker_pending" : "customer_welcome" }),
+      }).catch(() => undefined);
     }
 
     setLoading(false);
@@ -555,3 +560,4 @@ export default function RegisterPage() {
     </Suspense>
   );
 }
+

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerAuthClient } from "@/lib/supabase/server";
-import { buildAccountEmail, enqueueAccountEmail, getServiceRoleSupabase } from "@/lib/notifications/core";
+import {
+  buildAccountEmail,
+  enqueueAccountEmail,
+  getDeliverableAccountEmail,
+  getServiceRoleSupabase,
+  hasQueuedAccountEmail,
+} from "@/lib/notifications/core";
 
 type Body = {
   template?: "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected";
@@ -22,22 +28,31 @@ export async function POST(request: Request) {
   const supabase = getServiceRoleSupabase() || authClient;
   const { data: targetProfile, error } = await supabase
     .from("profiles")
-    .select("id, email, full_name")
+    .select("id, email, recovery_email, full_name")
     .eq("id", body.userId)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!targetProfile) return NextResponse.json({ error: "Khong tim thay tai khoan." }, { status: 404 });
+  if (error) {
+    console.warn("[notifications] account email profile lookup failed", error.message);
+    return NextResponse.json({ ok: true, queued: false, skipped: true, reason: "profile_lookup_failed" });
+  }
+  if (!targetProfile) return NextResponse.json({ ok: true, queued: false, skipped: true, reason: "profile_not_found" });
 
+  if (body.template === "worker_approved" && await hasQueuedAccountEmail(supabase, { userId: targetProfile.id, template: body.template })) {
+    return NextResponse.json({ ok: true, queued: false, skipped: true, reason: "duplicate" });
+  }
+
+  const toEmail = getDeliverableAccountEmail(targetProfile);
   const email = buildAccountEmail(body.template, targetProfile.full_name, body.reason || null);
-  await enqueueAccountEmail(supabase, {
+  const queuedEmail = await enqueueAccountEmail(supabase, {
     userId: targetProfile.id,
-    toEmail: targetProfile.email,
+    toEmail,
     template: body.template,
     subject: email.subject,
     body: email.body,
     metadata: { source: "admin_account_status", actor_id: user.id, reason: body.reason || null },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, queued: !queuedEmail.error && !queuedEmail.skipped, skipped: Boolean(queuedEmail.skipped), reason: queuedEmail.reason || null });
 }
+

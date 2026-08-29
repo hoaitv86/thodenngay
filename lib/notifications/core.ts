@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isSyntheticPhoneEmail } from "@/lib/account-roles";
 
 export type NotificationAudience = "worker" | "customer" | "admin";
 export type NotificationLevel = "info" | "success" | "warning" | "critical";
@@ -300,22 +301,72 @@ export async function notifyNextWorkerJob(supabase: SupabaseClient, workerId: st
   });
 }
 
-type AccountEmailTemplate = "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected" | "password_recovery";
+export type AccountEmailTemplate = "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected" | "password_recovery";
+
+type AccountEmailProfile = {
+  email?: string | null;
+  recovery_email?: string | null;
+};
+
+const deliverableEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isDeliverableAccountEmail(email?: string | null) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  if (!deliverableEmailPattern.test(normalizedEmail)) return false;
+  if (normalizedEmail.endsWith(".local")) return false;
+  return !isSyntheticPhoneEmail(normalizedEmail);
+}
+
+export function getDeliverableAccountEmail(profile: AccountEmailProfile) {
+  const recoveryEmail = profile.recovery_email?.trim().toLowerCase();
+  if (isDeliverableAccountEmail(recoveryEmail)) return recoveryEmail;
+
+  const email = profile.email?.trim().toLowerCase();
+  if (isDeliverableAccountEmail(email)) return email;
+
+  return null;
+}
+
+export async function hasQueuedAccountEmail(
+  supabase: SupabaseClient,
+  input: { userId?: string | null; template: AccountEmailTemplate },
+) {
+  if (!input.userId) return false;
+
+  const { data, error } = await supabase
+    .from("notification_email_outbox")
+    .select("id")
+    .eq("user_id", input.userId)
+    .eq("template", input.template)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[notifications] email outbox dedupe failed", error.message);
+    return false;
+  }
+
+  return Boolean(data?.id);
+}
 
 export async function enqueueAccountEmail(
   supabase: SupabaseClient,
   input: { userId?: string | null; toEmail?: string | null; template: AccountEmailTemplate; subject: string; body: string; metadata?: Record<string, unknown> },
 ) {
+  const toEmail = input.toEmail?.trim().toLowerCase();
+  if (!isDeliverableAccountEmail(toEmail)) return { error: null, skipped: true as const, reason: "invalid_email" as const };
+
   const { error } = await supabase.from("notification_email_outbox").insert({
     user_id: input.userId || null,
-    to_email: input.toEmail || null,
+    to_email: toEmail,
     template: input.template,
     subject: input.subject,
     body: input.body,
     metadata: input.metadata || {},
   });
   if (error) console.warn("[notifications] email outbox failed", error.message);
-  return { error };
+  return { error, skipped: false as const, reason: null };
 }
 export function buildAccountEmail(template: "customer_welcome" | "worker_pending" | "worker_approved" | "worker_rejected", name?: string | null, reason?: string | null) {
   const displayName = name || "ban";
@@ -324,3 +375,4 @@ export function buildAccountEmail(template: "customer_welcome" | "worker_pending
   if (template === "worker_approved") return { subject: "Ho so tho cua ban da duoc duyet", body: `Xin chao ${displayName},\n\nHo so tho cua ban da duoc duyet. Ban co the dang nhap che do Tho de nhan va xu ly cong viec.\n\n${APP_NAME}` };
   return { subject: "Cap nhat ho so tho cua ban", body: `Xin chao ${displayName},\n\nHo so tho cua ban chua duoc duyet.${reason ? `\nLy do: ${reason}` : ""}\n\nBan co the cap nhat thong tin va lien he ho tro neu can.\n\n${APP_NAME}` };
 }
+
