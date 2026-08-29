@@ -24,6 +24,11 @@ export interface User {
   name: string;
   address?: string;
   gps_location?: { lat: number; lng: number };
+  latitude?: number;
+  longitude?: number;
+  last_location_at?: string;
+  location_updated_at?: string;
+  location_updated_by?: string;
   role: UserRole;
   created_at: string;
 }

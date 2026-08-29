@@ -306,7 +306,14 @@ export default function CustomerProfile() {
 
         const { error } = await supabase
           .from("profiles")
-          .update({ gps_location: location })
+          .update({
+            gps_location: location,
+            latitude: location.lat,
+            longitude: location.lng,
+            last_location_at: location.captured_at,
+            location_updated_at: location.captured_at,
+            location_updated_by: "profile_gps",
+          })
           .eq("id", user.id);
 
         if (error) {

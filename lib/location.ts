@@ -11,6 +11,9 @@ export const GPS_SCHEMA_MISSING_MESSAGE =
 
 const EARTH_RADIUS_KM = 6371;
 const DEFAULT_CITY_SPEED_KMH = 18;
+export const LIVE_GPS_MAX_AGE_MS = 10 * 60 * 1000;
+export const GPS_MIN_REFRESH_DISTANCE_METERS = 75;
+export const GPS_FORCE_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
 export const isGpsPoint = (value: unknown): value is GpsPoint => {
   if (!value || typeof value !== "object") return false;
@@ -20,8 +23,28 @@ export const isGpsPoint = (value: unknown): value is GpsPoint => {
     typeof point.lat === "number" &&
     Number.isFinite(point.lat) &&
     typeof point.lng === "number" &&
-    Number.isFinite(point.lng)
+    Number.isFinite(point.lng) &&
+    !(point.lat === 0 && point.lng === 0) &&
+    Math.abs(point.lat) <= 90 &&
+    Math.abs(point.lng) <= 180
   );
+};
+
+export const toGpsPoint = (value: unknown): GpsPoint | null => {
+  if (!value || typeof value !== "object") return null;
+
+  const point = value as Partial<Record<keyof GpsPoint, unknown>>;
+  const lat = Number(point.lat);
+  const lng = Number(point.lng);
+  const accuracy = Number(point.accuracy);
+  const normalized = {
+    lat,
+    lng,
+    ...(Number.isFinite(accuracy) && accuracy >= 0 ? { accuracy } : {}),
+    ...(typeof point.captured_at === "string" ? { captured_at: point.captured_at } : {}),
+  };
+
+  return isGpsPoint(normalized) ? normalized : null;
 };
 
 export const isMissingGpsLocationColumnError = (error: unknown) => {
@@ -54,6 +77,40 @@ export const getDistanceKm = (from: GpsPoint, to: GpsPoint) => {
     Math.cos(fromLat) * Math.cos(toLat) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
 
   return 2 * EARTH_RADIUS_KM * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+};
+
+export const getDistanceMeters = (from: GpsPoint, to: GpsPoint) =>
+  getDistanceKm(from, to) * 1000;
+
+export const isLiveGpsTimestamp = (
+  locationUpdatedAt?: string | null,
+  nowMs = Date.now(),
+  maxAgeMs = LIVE_GPS_MAX_AGE_MS
+) => {
+  if (!locationUpdatedAt) return false;
+
+  const updatedAtMs = new Date(locationUpdatedAt).getTime();
+  if (!Number.isFinite(updatedAtMs)) return false;
+
+  const ageMs = nowMs - updatedAtMs;
+  return ageMs >= 0 && ageMs <= maxAgeMs;
+};
+
+export const shouldPublishGpsLocation = (
+  previous: { point?: GpsPoint | null; updatedAtMs?: number | null },
+  next: GpsPoint,
+  nowMs = Date.now(),
+  minDistanceMeters = GPS_MIN_REFRESH_DISTANCE_METERS,
+  forceIntervalMs = GPS_FORCE_REFRESH_INTERVAL_MS
+) => {
+  if (!isGpsPoint(next)) return false;
+  if (!previous.point || !isGpsPoint(previous.point)) return true;
+
+  const movedMeters = getDistanceMeters(previous.point, next);
+  const updatedAtMs = Number(previous.updatedAtMs);
+  const ageMs = Number.isFinite(updatedAtMs) ? nowMs - updatedAtMs : Number.POSITIVE_INFINITY;
+
+  return movedMeters >= minDistanceMeters || ageMs >= forceIntervalMs;
 };
 
 export const formatDistanceKm = (distanceKm: number) => {

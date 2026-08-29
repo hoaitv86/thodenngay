@@ -116,6 +116,7 @@ export async function saveLoginLocation(
         latitude,
         longitude,
         last_location_at: updatedAt,
+        location_updated_at: updatedAt,
         location_updated_by: "login",
         gps_location: {
           lat: latitude,

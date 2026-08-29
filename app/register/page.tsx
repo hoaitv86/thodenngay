@@ -16,6 +16,7 @@ type GpsLocation = {
   lat: number;
   lng: number;
   accuracy?: number;
+  captured_at?: string;
 };
 
 import { createClient } from "@/lib/supabase/client";
@@ -184,6 +185,11 @@ function RegisterContent() {
           phone: normalizedPhone,
           address: formData.address,
           gps_location: formData.gpsLocation,
+          latitude: formData.gpsLocation?.lat || null,
+          longitude: formData.gpsLocation?.lng || null,
+          last_location_at: formData.gpsLocation?.captured_at || null,
+          location_updated_at: formData.gpsLocation?.captured_at || null,
+          location_updated_by: formData.gpsLocation ? "register" : null,
           recovery_email: recoveryEmail || null
         })
         .eq('id', data.user.id);

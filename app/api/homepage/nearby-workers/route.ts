@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { getDistanceKm, type GpsPoint } from "@/lib/location";
+import { getDistanceKm, isLiveGpsTimestamp, toGpsPoint, type GpsPoint } from "@/lib/location";
 
 export const dynamic = "force-dynamic";
 
 type GpsLocation = {
   lat?: number | string | null;
   lng?: number | string | null;
+  accuracy?: number | string | null;
+  captured_at?: string | null;
 };
 
 type WorkerProfile = {
   full_name?: string | null;
   avatar_url?: string | null;
   gps_location?: GpsLocation | null;
+  location_updated_at?: string | null;
 };
 
 type WorkerRow = {
@@ -42,20 +45,6 @@ function firstRelation<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function toGpsPoint(value: unknown): GpsPoint | null {
-  if (!value || typeof value !== "object") return null;
-
-  const point = value as Partial<GpsLocation>;
-  const lat = Number(point.lat);
-  const lng = Number(point.lng);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (lat === 0 && lng === 0) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-
-  return { lat, lng };
-}
-
 function formatPublicDistance(distanceKm: number) {
   if (!Number.isFinite(distanceKm)) return null;
 
@@ -71,14 +60,15 @@ function formatPublicDistance(distanceKm: number) {
 export function getHomepageNearbyWorkers(
   rows: WorkerRow[],
   viewerLocation: GpsPoint,
-  limit = HOMEPAGE_NEARBY_WORKER_LIMIT
+  limit = HOMEPAGE_NEARBY_WORKER_LIMIT,
+  nowMs = Date.now()
 ) {
   return rows
     .map((worker) => {
       const profile = firstRelation(worker.profiles);
       const workerLocation = toGpsPoint(profile?.gps_location);
 
-      if (!profile || !workerLocation) return null;
+      if (!profile || !workerLocation || !isLiveGpsTimestamp(profile.location_updated_at, nowMs)) return null;
 
       const distanceKm = getDistanceKm(viewerLocation, workerLocation);
       const rating = Number(worker.avg_rating || 0);
@@ -92,6 +82,7 @@ export function getHomepageNearbyWorkers(
         avatarUrl: profile.avatar_url || null,
         distanceMeters: Math.round(distanceKm * 1000),
         distanceLabel: formatPublicDistance(distanceKm),
+        hasLiveGps: true,
       };
     })
     .filter((worker): worker is NonNullable<typeof worker> => Boolean(worker))
@@ -120,11 +111,9 @@ export async function POST(request: Request) {
   const supabase = getPublicSupabase();
   const { data, error } = await supabase
     .from("workers")
-    .select("id,specialties,avg_rating,total_jobs,profiles(full_name,avatar_url,gps_location)")
+    .select("id,specialties,avg_rating,total_jobs,profiles(full_name,avatar_url,gps_location,location_updated_at)")
     .eq("status", "active")
-    .eq("is_available", true)
-    .order("avg_rating", { ascending: false })
-    .order("total_jobs", { ascending: false });
+    .eq("is_available", true);
 
   if (error) {
     return NextResponse.json({ error: "Không thể tải danh sách thợ gần bạn." }, { status: 500 });

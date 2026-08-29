@@ -33,6 +33,7 @@ import { DEFAULT_SETTINGS, type SettingsData } from "@/lib/settings-types";
 import { applyDefaultServiceParents } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
 import { defaultCmsPages, defaultCmsSlugs } from "@/lib/cms";
+import { isLiveGpsTimestamp, toGpsPoint } from "@/lib/location";
 
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
@@ -293,6 +294,7 @@ type DispatchWorkerProfile = {
   address?: string | null;
   avatar_url?: string | null;
   gps_location?: GpsLocation | null;
+  location_updated_at?: string | null;
 };
 
 type DispatchWorker = {
@@ -473,17 +475,6 @@ function getDisplayLocation(address?: string | null) {
   return parts[0] || "Khách hàng Thợ đến ngay";
 }
 
-function toValidGpsLocation(gpsLocation?: GpsLocation | null) {
-  const lat = Number(gpsLocation?.lat);
-  const lng = Number(gpsLocation?.lng);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (lat === 0 && lng === 0) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-
-  return { lat, lng };
-}
-
 function shuffleItems<T>(items: T[]) {
   const shuffled = [...items];
 
@@ -570,7 +561,7 @@ const getHomepageData = unstable_cache(
         .order("name", { ascending: true }),
       supabase
         .from("workers")
-        .select("id,specialties,avg_rating,total_jobs,profiles(full_name,phone,address,avatar_url,gps_location)")
+        .select("id,specialties,avg_rating,total_jobs,profiles(full_name,phone,address,avatar_url,gps_location,location_updated_at)")
         .eq("status", "active")
         .eq("is_available", true)
         .order("avg_rating", { ascending: false })
@@ -640,9 +631,9 @@ const getHomepageData = unstable_cache(
     const dispatchWorkers = ((workersResult.data || []) as DispatchWorker[])
       .map((worker) => {
         const profile = firstRelation(worker.profiles);
-        const gps = toValidGpsLocation(profile?.gps_location);
+        const gps = toGpsPoint(profile?.gps_location);
 
-        if (!profile || !gps) return null;
+        if (!profile || !gps || !isLiveGpsTimestamp(profile.location_updated_at)) return null;
 
         const name = profile.full_name?.trim() || "Thợ đang hoạt động";
         const specialty = worker.specialties?.find(Boolean) || "Sẵn sàng nhận việc";

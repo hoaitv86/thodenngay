@@ -34,6 +34,7 @@ CREATE TABLE public.profiles (
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
     last_location_at TIMESTAMPTZ,
+    location_updated_at TIMESTAMPTZ,
     location_updated_by TEXT,
     role TEXT NOT NULL CHECK (role IN ('customer', 'worker', 'admin')) DEFAULT 'customer',
     avatar_url TEXT,

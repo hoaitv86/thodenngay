@@ -51,7 +51,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
 import { isBrowserOffline, makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
-import { getRouteEstimate, isGpsPoint } from "@/lib/location";
+import { getRouteEstimate, isGpsPoint, shouldPublishGpsLocation, toGpsPoint } from "@/lib/location";
 import { normalizeServiceText, serviceMatchesSpecialties } from "@/lib/service-categories";
 import { applyDefaultServiceParents, getCompactServicePathLabel, groupServicesForDisplay, searchSelectableServices } from "@/lib/service-hierarchy";
 import { filterStandardServiceCatalog } from "@/lib/standard-service-catalog";
@@ -364,6 +364,11 @@ type WorkerWithProfile = Worker & {
     full_name?: string | null;
     phone?: string | null;
     email?: string | null;
+    address?: string | null;
+    gps_location?: GpsLocation | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    location_updated_at?: string | null;
   } | null;
 };
 
@@ -462,6 +467,7 @@ const initialWorkerDashboardData: WorkerDashboardData = {
 };
 
 const WORKER_DASHBOARD_REALTIME_DEBOUNCE_MS = 450;
+const WORKER_LIVE_GPS_PENDING_KEY_PREFIX = "tdn.worker.liveGps.pending.v1";
 const MOBILE_FEW_JOBS_THRESHOLD = 1;
 const INTERNET_INSTALL_FEE_OPTIONS = [300000, 400000];
 const VIETTEL_GIFT_CAMERA_OPTIONS = [
@@ -1227,12 +1233,17 @@ export default function WorkerDashboard() {
   const refreshTimerRef = React.useRef<number | null>(null);
   const refreshInFlightRef = React.useRef(false);
   const refreshQueuedRef = React.useRef(false);
+  const workerRef = React.useRef<Worker | null>(null);
 
   useEffect(() => {
     newJobsRef.current = newJobs;
   }, [newJobs]);
 
   useEffect(() => {
+    workerRef.current = worker;
+  }, [worker]);
+
+useEffect(() => {
     const openQuickJob = () => setQuickFormOpen(true);
     window.addEventListener("worker:open-quick-job", openQuickJob);
     return () => window.removeEventListener("worker:open-quick-job", openQuickJob);
@@ -1341,7 +1352,7 @@ export default function WorkerDashboard() {
     // 2. Get worker profile
     const { data: workerData } = await supabase
       .from('workers')
-      .select('id, user_id, specialties, status, is_available, avg_rating, total_jobs, certificates, approved_at, created_at, user:profiles(id, full_name, phone, email, address, gps_location, latitude, longitude)')
+      .select('id, user_id, specialties, status, is_available, avg_rating, total_jobs, certificates, approved_at, created_at, user:profiles(id, full_name, phone, email, address, gps_location, latitude, longitude, location_updated_at)')
       .eq('user_id', user.id)
       .single();
 
@@ -1811,6 +1822,165 @@ export default function WorkerDashboard() {
     fetchDataRef.current = fetchData;
   });
 
+  useEffect(() => {
+    const liveWorker = workerRef.current;
+    if (!liveWorker || liveWorker.status !== "active" || liveWorker.is_available === false) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    const pendingStorageKey = `${WORKER_LIVE_GPS_PENDING_KEY_PREFIX}:${liveWorker.user_id}`;
+    let cancelled = false;
+    let watchId: number | null = null;
+    let syncInFlight = false;
+    let queuedLocation: { location: GpsLocation; updatedAt: string } | null = null;
+    let schemaToastShown = false;
+    let lastPublishedLocation = toGpsPoint(liveWorker.user?.gps_location);
+    let lastPublishedAtMs = liveWorker.user?.location_updated_at
+      ? new Date(liveWorker.user.location_updated_at).getTime()
+      : null;
+
+    const readPendingLocation = () => {
+      try {
+        const raw = window.localStorage.getItem(pendingStorageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { location?: unknown; updatedAt?: unknown };
+        const location = toGpsPoint(parsed.location);
+        if (!location || typeof parsed.updatedAt !== "string") return null;
+        return { location: { ...location, captured_at: parsed.updatedAt }, updatedAt: parsed.updatedAt };
+      } catch {
+        return null;
+      }
+    };
+
+    const savePendingLocation = (pending: { location: GpsLocation; updatedAt: string } | null) => {
+      try {
+        if (!pending) {
+          window.localStorage.removeItem(pendingStorageKey);
+          return;
+        }
+        window.localStorage.setItem(pendingStorageKey, JSON.stringify(pending));
+      } catch {
+        // Local storage can be unavailable in hardened WebViews.
+      }
+    };
+
+    const syncWorkerLocation = async (location: GpsLocation, updatedAt: string) => {
+      if (cancelled) return;
+      if (!navigator.onLine) {
+        savePendingLocation({ location, updatedAt });
+        return;
+      }
+      if (syncInFlight) {
+        queuedLocation = { location, updatedAt };
+        savePendingLocation(queuedLocation);
+        return;
+      }
+
+      syncInFlight = true;
+      savePendingLocation({ location, updatedAt });
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          gps_location: location,
+          latitude: location.lat,
+          longitude: location.lng,
+          last_location_at: updatedAt,
+          location_updated_at: updatedAt,
+          location_updated_by: "worker_live_gps",
+        })
+        .eq("id", liveWorker.user_id);
+
+      syncInFlight = false;
+
+      if (cancelled) return;
+
+      if (error) {
+        savePendingLocation({ location, updatedAt });
+        if (error.code === "42703" && !schemaToastShown) {
+          schemaToastShown = true;
+          showToast("Database chưa có cột location_updated_at. Vui lòng chạy migration GPS live.", "error");
+        }
+        return;
+      }
+
+      lastPublishedLocation = location;
+      lastPublishedAtMs = new Date(updatedAt).getTime();
+      savePendingLocation(null);
+      setWorker(current => current ? {
+        ...current,
+        user: current.user ? {
+          ...current.user,
+          gps_location: location,
+          latitude: location.lat,
+          longitude: location.lng,
+          location_updated_at: updatedAt,
+        } : current.user,
+      } : current);
+
+      const nextQueuedLocation = queuedLocation;
+      queuedLocation = null;
+      if (nextQueuedLocation) {
+        void syncWorkerLocation(nextQueuedLocation.location, nextQueuedLocation.updatedAt);
+      }
+    };
+
+    const publishPosition = (position: GeolocationPosition, force = false) => {
+      const updatedAt = new Date().toISOString();
+      const location = toGpsPoint({
+        lat: Number(position.coords.latitude.toFixed(7)),
+        lng: Number(position.coords.longitude.toFixed(7)),
+        accuracy: Math.round(position.coords.accuracy),
+        captured_at: updatedAt,
+      });
+      if (!location) return;
+
+      const shouldSync = force || shouldPublishGpsLocation(
+        { point: lastPublishedLocation, updatedAtMs: lastPublishedAtMs },
+        location,
+        Date.now()
+      );
+      if (!shouldSync) return;
+
+      void syncWorkerLocation(location, updatedAt);
+    };
+
+    const pendingLocation = readPendingLocation();
+    if (pendingLocation) {
+      void syncWorkerLocation(pendingLocation.location, pendingLocation.updatedAt);
+    }
+
+    watchId = navigator.geolocation.watchPosition(
+      position => publishPosition(position, false),
+      () => undefined,
+      {
+        enableHighAccuracy: true,
+        maximumAge: 30_000,
+        timeout: 10_000,
+      }
+    );
+
+    navigator.geolocation.getCurrentPosition(
+      position => publishPosition(position, true),
+      () => undefined,
+      {
+        enableHighAccuracy: true,
+        maximumAge: 30_000,
+        timeout: 10_000,
+      }
+    );
+
+    const handleOnline = () => {
+      const nextPendingLocation = readPendingLocation();
+      if (nextPendingLocation) void syncWorkerLocation(nextPendingLocation.location, nextPendingLocation.updatedAt);
+    };
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", handleOnline);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [setWorker, supabase, worker?.id, worker?.is_available, worker?.status, worker?.user_id]);
   useEffect(() => {
     const refreshDashboard = async (isBackground = true) => {
       if (refreshInFlightRef.current) {
