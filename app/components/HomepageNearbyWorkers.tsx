@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRightIcon, MapPinIcon, StarIcon } from "./icons";
-import { GPS_MIN_REFRESH_DISTANCE_METERS, getDistanceMeters, shouldPublishGpsLocation, toGpsPoint, type GpsPoint } from "@/lib/location";
+import {
+  GPS_MIN_REFRESH_DISTANCE_METERS,
+  getCustomerGpsAccuracyStatus,
+  getDistanceMeters,
+  shouldAcceptCustomerGpsFix,
+  toGpsPoint,
+  type CustomerGpsAccuracyStatus,
+  type GpsPoint,
+} from "@/lib/location";
 
 export type HomepageNearbyWorker = {
   id: string;
@@ -15,11 +23,12 @@ export type HomepageNearbyWorker = {
   avatarUrl: string | null;
   distanceLabel?: string | null;
   distanceMeters?: number | null;
+  distanceIsApproximate?: boolean;
   isNearest?: boolean;
   hasLiveGps?: boolean;
 };
 
-type LocationState = "requesting" | "granted" | "denied" | "unsupported" | "error";
+type LocationState = "requesting" | "granted" | "approximate" | "poor" | "denied" | "unsupported" | "error";
 
 type HomepageNearbyWorkersProps = {
   workers: HomepageNearbyWorker[];
@@ -39,14 +48,19 @@ function getInitials(name: string) {
 function getLocationMessage(state: LocationState) {
   if (state === "requesting") return "Đang xin vị trí hiện tại để tính khoảng cách";
   if (state === "granted") return "Đã sắp xếp theo GPS hiện tại của bạn";
+  if (state === "approximate") return "GPS của bạn chưa thật chính xác, khoảng cách chỉ là tạm tính";
+  if (state === "poor") return "GPS của bạn đang quá yếu, đang chờ tín hiệu tốt hơn";
   if (state === "denied") return "Bật định vị để xem thợ gần bạn nhất";
   if (state === "unsupported") return "Trình duyệt chưa hỗ trợ định vị";
   return "Chưa thể tính khoảng cách lúc này";
 }
 
 function getWorkerDistanceLabel(worker: HomepageNearbyWorker, state: LocationState) {
+  if (worker.distanceIsApproximate && worker.distanceLabel) return `Khoảng ${worker.distanceLabel}`;
   if (worker.hasLiveGps && worker.distanceLabel) return `Cách bạn ${worker.distanceLabel}`;
   if (state === "requesting") return "Đang tính khoảng cách";
+  if (state === "approximate") return "Vị trí của bạn chưa chính xác";
+  if (state === "poor") return "GPS của bạn chưa đủ chính xác";
   if (state === "denied") return "Chưa cấp quyền vị trí";
   if (state === "unsupported") return "Chưa có định vị trình duyệt";
   return "Vị trí chưa cập nhật";
@@ -57,7 +71,7 @@ function toLocationPoint(position: GeolocationPosition): GpsPoint | null {
     lat: Number(position.coords.latitude.toFixed(7)),
     lng: Number(position.coords.longitude.toFixed(7)),
     accuracy: Math.round(position.coords.accuracy),
-    captured_at: new Date().toISOString(),
+    captured_at: new Date(position.timestamp || Date.now()).toISOString(),
   });
 }
 
@@ -70,6 +84,8 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
     let watchId: number | null = null;
     let lastRequestedLocation: GpsPoint | null = null;
     let lastRequestAtMs = 0;
+    let lastAcceptedLocation: GpsPoint | null = null;
+    let lastAcceptedAtMs = 0;
     let inFlight = false;
     let queuedLocation: GpsPoint | null = null;
     let queuedTimerId: number | null = null;
@@ -101,9 +117,18 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ lat: location.lat, lng: location.lng }),
+          body: JSON.stringify({
+            lat: location.lat,
+            lng: location.lng,
+            accuracy: location.accuracy,
+            captured_at: location.captured_at,
+          }),
         });
-        const payload = (await response.json()) as { workers?: HomepageNearbyWorker[]; error?: string };
+        const payload = (await response.json()) as {
+          workers?: HomepageNearbyWorker[];
+          error?: string;
+          customerGpsAccuracyStatus?: CustomerGpsAccuracyStatus;
+        };
 
         if (!response.ok || !Array.isArray(payload.workers)) {
           throw new Error(payload.error || "Không thể tải thợ gần bạn.");
@@ -111,7 +136,8 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
 
         if (!cancelled) {
           setNearbyWorkers(payload.workers);
-          setLocationState("granted");
+          const accuracyStatus = payload.customerGpsAccuracyStatus || getCustomerGpsAccuracyStatus(location);
+          setLocationState(accuracyStatus === "good" ? "granted" : accuracyStatus);
         }
       } catch {
         if (!cancelled) setLocationState("error");
@@ -143,8 +169,15 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
       (position) => {
         const location = toLocationPoint(position);
         if (!location) return;
-        if (!shouldPublishGpsLocation({ point: lastRequestedLocation, updatedAtMs: lastRequestAtMs }, location, Date.now(), GPS_MIN_REFRESH_DISTANCE_METERS, CUSTOMER_LOCATION_FORCE_REFRESH_MS)) return;
 
+        const nowMs = Date.now();
+        if (!shouldAcceptCustomerGpsFix({ point: lastAcceptedLocation, updatedAtMs: lastAcceptedAtMs }, location, nowMs)) {
+          if (!lastAcceptedLocation && getCustomerGpsAccuracyStatus(location) === "poor") setLocationState("poor");
+          return;
+        }
+
+        lastAcceptedLocation = location;
+        lastAcceptedAtMs = nowMs;
         void loadNearbyWorkers(location);
       },
       (error) => {
@@ -153,8 +186,8 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 30_000,
-        timeout: 10_000,
+        maximumAge: 15_000,
+        timeout: 15_000,
       }
     );
 
@@ -166,6 +199,7 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
   }, []);
 
   const hasLiveGpsResults = locationState === "granted" && nearbyWorkers.some(worker => worker.hasLiveGps && worker.distanceLabel);
+  const hasApproximateGpsResults = locationState === "approximate" && nearbyWorkers.some(worker => worker.distanceIsApproximate && worker.distanceLabel);
 
   return (
     <aside className="flex flex-col rounded-[1.25rem] border border-white/25 bg-white/10 p-4 text-white shadow-[0_26px_86px_rgba(0,18,48,0.34)] backdrop-blur-xl sm:p-5 xl:h-[638px]">
@@ -176,7 +210,7 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
           <p className="mt-1 text-sm leading-5 !text-white/78">{getLocationMessage(locationState)}</p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-extrabold !text-white ${hasLiveGpsResults ? "bg-success" : "bg-white/20"}`}>
-          {hasLiveGpsResults ? "Live GPS" : "Chờ GPS"}
+          {hasLiveGpsResults ? "Live GPS" : hasApproximateGpsResults ? "GPS tạm" : locationState === "poor" ? "GPS yếu" : "Chờ GPS"}
         </span>
       </div>
 
@@ -214,7 +248,7 @@ export default function HomepageNearbyWorkers({ workers }: HomepageNearbyWorkers
                   <span className="truncate">{getWorkerDistanceLabel(worker, locationState)}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {worker.isNearest || (locationState === "granted" && index === 0) ? (
+                  {worker.isNearest || (locationState !== "poor" && locationState !== "requesting" && index === 0) ? (
                     <span className="rounded-full bg-success px-2.5 py-1 text-xs font-extrabold !text-white">Gần nhất</span>
                   ) : null}
                   <span className="text-xs font-extrabold !text-white">{worker.totalJobs} jobs</span>

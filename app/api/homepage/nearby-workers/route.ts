@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { getDistanceKm, isLiveGpsTimestamp, toGpsPoint, type GpsPoint } from "@/lib/location";
+import { getCustomerGpsAccuracyStatus, getDistanceKm, isLiveGpsTimestamp, toGpsPoint, type CustomerGpsAccuracyStatus, type GpsPoint } from "@/lib/location";
 
 export const dynamic = "force-dynamic";
 
@@ -61,8 +61,11 @@ export function getHomepageNearbyWorkers(
   rows: WorkerRow[],
   viewerLocation: GpsPoint,
   limit = HOMEPAGE_NEARBY_WORKER_LIMIT,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  customerGpsAccuracyStatus: CustomerGpsAccuracyStatus = getCustomerGpsAccuracyStatus(viewerLocation)
 ) {
+  if (customerGpsAccuracyStatus === "poor") return [];
+
   return rows
     .map((worker) => {
       const profile = firstRelation(worker.profiles);
@@ -82,7 +85,8 @@ export function getHomepageNearbyWorkers(
         avatarUrl: profile.avatar_url || null,
         distanceMeters: Math.round(distanceKm * 1000),
         distanceLabel: formatPublicDistance(distanceKm),
-        hasLiveGps: true,
+        hasLiveGps: customerGpsAccuracyStatus === "good",
+        distanceIsApproximate: customerGpsAccuracyStatus === "approximate",
       };
     })
     .filter((worker): worker is NonNullable<typeof worker> => Boolean(worker))
@@ -108,6 +112,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Vị trí hiện tại không hợp lệ." }, { status: 400 });
   }
 
+  const customerGpsAccuracyStatus = getCustomerGpsAccuracyStatus(viewerLocation);
+  if (customerGpsAccuracyStatus === "poor") {
+    return NextResponse.json({ workers: [], customerGpsAccuracyStatus });
+  }
+
   const supabase = getPublicSupabase();
   const { data, error } = await supabase
     .from("workers")
@@ -119,7 +128,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Không thể tải danh sách thợ gần bạn." }, { status: 500 });
   }
 
-  const workers = getHomepageNearbyWorkers((data || []) as WorkerRow[], viewerLocation);
+  const workers = getHomepageNearbyWorkers((data || []) as WorkerRow[], viewerLocation, HOMEPAGE_NEARBY_WORKER_LIMIT, Date.now(), customerGpsAccuracyStatus);
 
-  return NextResponse.json({ workers });
+  return NextResponse.json({ workers, customerGpsAccuracyStatus });
 }

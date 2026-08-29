@@ -14,6 +14,12 @@ const DEFAULT_CITY_SPEED_KMH = 18;
 export const LIVE_GPS_MAX_AGE_MS = 10 * 60 * 1000;
 export const GPS_MIN_REFRESH_DISTANCE_METERS = 75;
 export const GPS_FORCE_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
+export const CUSTOMER_GPS_GOOD_ACCURACY_METERS = 100;
+export const CUSTOMER_GPS_APPROXIMATE_ACCURACY_METERS = 500;
+export const CUSTOMER_GPS_ANOMALY_DISTANCE_METERS = 20_000;
+export const CUSTOMER_GPS_ANOMALY_WINDOW_MS = 60_000;
+
+export type CustomerGpsAccuracyStatus = "good" | "approximate" | "poor";
 
 export const isGpsPoint = (value: unknown): value is GpsPoint => {
   if (!value || typeof value !== "object") return false;
@@ -46,6 +52,22 @@ export const toGpsPoint = (value: unknown): GpsPoint | null => {
 
   return isGpsPoint(normalized) ? normalized : null;
 };
+
+export const getGpsAccuracyMeters = (point?: GpsPoint | null) => {
+  const accuracy = Number(point?.accuracy);
+  return Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null;
+};
+
+export const getCustomerGpsAccuracyStatus = (point?: GpsPoint | null): CustomerGpsAccuracyStatus => {
+  const accuracy = getGpsAccuracyMeters(point);
+  if (accuracy === null) return "poor";
+  if (accuracy <= CUSTOMER_GPS_GOOD_ACCURACY_METERS) return "good";
+  if (accuracy <= CUSTOMER_GPS_APPROXIMATE_ACCURACY_METERS) return "approximate";
+  return "poor";
+};
+
+export const canUseCustomerGpsForDistance = (point?: GpsPoint | null) =>
+  getCustomerGpsAccuracyStatus(point) !== "poor";
 
 export const isMissingGpsLocationColumnError = (error: unknown) => {
   const message = typeof error === "object" && error && "message" in error
@@ -111,6 +133,31 @@ export const shouldPublishGpsLocation = (
   const ageMs = Number.isFinite(updatedAtMs) ? nowMs - updatedAtMs : Number.POSITIVE_INFINITY;
 
   return movedMeters >= minDistanceMeters || ageMs >= forceIntervalMs;
+};
+
+export const shouldAcceptCustomerGpsFix = (
+  previous: { point?: GpsPoint | null; updatedAtMs?: number | null },
+  next: GpsPoint,
+  nowMs = Date.now()
+) => {
+  if (!isGpsPoint(next) || !canUseCustomerGpsForDistance(next)) return false;
+  if (!previous.point || !isGpsPoint(previous.point)) return true;
+
+  const movedMeters = getDistanceMeters(previous.point, next);
+  const updatedAtMs = Number(previous.updatedAtMs);
+  const ageMs = Number.isFinite(updatedAtMs) ? nowMs - updatedAtMs : Number.POSITIVE_INFINITY;
+  const nextStatus = getCustomerGpsAccuracyStatus(next);
+
+  if (
+    movedMeters >= CUSTOMER_GPS_ANOMALY_DISTANCE_METERS &&
+    ageMs >= 0 &&
+    ageMs <= CUSTOMER_GPS_ANOMALY_WINDOW_MS &&
+    nextStatus !== "good"
+  ) {
+    return false;
+  }
+
+  return shouldPublishGpsLocation(previous, next, nowMs);
 };
 
 export const formatDistanceKm = (distanceKm: number) => {

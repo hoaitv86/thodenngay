@@ -8,12 +8,12 @@ register("data:text/javascript,export async function resolve(specifier, context,
 const routeModule = await import(pathToFileURL("app/api/homepage/nearby-workers/route.ts"));
 const locationModule = await import(pathToFileURL("lib/location.ts"));
 const { getHomepageNearbyWorkers, HOMEPAGE_NEARBY_WORKER_LIMIT } = routeModule;
-const { GPS_FORCE_REFRESH_INTERVAL_MS, GPS_MIN_REFRESH_DISTANCE_METERS, LIVE_GPS_MAX_AGE_MS, getDistanceMeters, shouldPublishGpsLocation } = locationModule;
+const { GPS_FORCE_REFRESH_INTERVAL_MS, GPS_MIN_REFRESH_DISTANCE_METERS, LIVE_GPS_MAX_AGE_MS, getCustomerGpsAccuracyStatus, getDistanceMeters, shouldAcceptCustomerGpsFix, shouldPublishGpsLocation } = locationModule;
 
 const nowMs = Date.parse("2026-08-29T01:00:00.000Z");
 const freshAt = new Date(nowMs - 60_000).toISOString();
 const staleAt = new Date(nowMs - LIVE_GPS_MAX_AGE_MS - 1_000).toISOString();
-const viewerLocation = { lat: 10.7769, lng: 106.7009 };
+const viewerLocation = { lat: 10.7769, lng: 106.7009, accuracy: 20, captured_at: new Date(nowMs).toISOString() };
 
 function worker(id, lat, lng, options = {}) {
   return {
@@ -24,7 +24,7 @@ function worker(id, lat, lng, options = {}) {
     profiles: {
       full_name: options.name || id,
       avatar_url: null,
-      gps_location: lat === null ? null : { lat, lng },
+      gps_location: lat === null ? null : { lat, lng, accuracy: options.accuracy ?? 20 },
       location_updated_at: options.updatedAt ?? freshAt,
     },
   };
@@ -88,22 +88,70 @@ function worker(id, lat, lng, options = {}) {
 {
   const westWorker = worker("west", 10.7769, 106.69);
   const eastWorker = worker("east", 10.7769, 106.72);
-  const fromWest = getHomepageNearbyWorkers([eastWorker, westWorker], { lat: 10.7769, lng: 106.691 }, 6, nowMs);
-  const fromEast = getHomepageNearbyWorkers([eastWorker, westWorker], { lat: 10.7769, lng: 106.719 }, 6, nowMs);
+  const fromWest = getHomepageNearbyWorkers([eastWorker, westWorker], { lat: 10.7769, lng: 106.691, accuracy: 20 }, 6, nowMs);
+  const fromEast = getHomepageNearbyWorkers([eastWorker, westWorker], { lat: 10.7769, lng: 106.719, accuracy: 20 }, 6, nowMs);
 
   assert.equal(fromWest[0].id, "west");
   assert.equal(fromEast[0].id, "east");
   assert.ok(fromWest.find(item => item.id === "west").distanceMeters < fromEast.find(item => item.id === "west").distanceMeters, "customer movement recalculates distances");
 }
 
+
 {
-  const previous = { lat: 10.7769, lng: 106.7009 };
-  const tinyJitter = { lat: 10.77691, lng: 106.70091 };
-  const realMove = { lat: 10.7777, lng: 106.7009 };
+  const goodCustomerGps = { lat: 10.7769, lng: 106.7009, accuracy: 20 };
+  const result = getHomepageNearbyWorkers([worker("near", 10.777, 106.701)], goodCustomerGps, 6, nowMs);
+
+  assert.equal(getCustomerGpsAccuracyStatus(goodCustomerGps), "good");
+  assert.equal(result.length, 1);
+  assert.equal(result[0].hasLiveGps, true);
+  assert.equal(result[0].distanceIsApproximate, false);
+  assert.ok(Number.isFinite(result[0].distanceMeters));
+}
+
+{
+  const approximateCustomerGps = { lat: 10.7769, lng: 106.7009, accuracy: 200 };
+  const result = getHomepageNearbyWorkers([worker("near", 10.777, 106.701)], approximateCustomerGps, 6, nowMs);
+
+  assert.equal(getCustomerGpsAccuracyStatus(approximateCustomerGps), "approximate");
+  assert.equal(result.length, 1);
+  assert.equal(result[0].hasLiveGps, false);
+  assert.equal(result[0].distanceIsApproximate, true);
+  assert.ok(Number.isFinite(result[0].distanceMeters));
+}
+
+{
+  const poorCustomerGps = { lat: 10.7769, lng: 106.7009, accuracy: 5000 };
+  const result = getHomepageNearbyWorkers([worker("near", 10.777, 106.701)], poorCustomerGps, 6, nowMs);
+
+  assert.equal(getCustomerGpsAccuracyStatus(poorCustomerGps), "poor");
+  assert.deepEqual(result, []);
+}
+
+{
+  const wrongFirstFix = { lat: 11.1369, lng: 106.7009, accuracy: 5000 };
+  const correctLaterFix = { lat: 10.7769, lng: 106.7009, accuracy: 20 };
+  let accepted = null;
+  let acceptedAt = null;
+
+  assert.equal(shouldAcceptCustomerGpsFix({ point: accepted, updatedAtMs: acceptedAt }, wrongFirstFix, nowMs), false, "first 40km bad-accuracy fix is ignored");
+  assert.equal(shouldAcceptCustomerGpsFix({ point: accepted, updatedAtMs: acceptedAt }, correctLaterFix, nowMs + 5_000), true, "later accurate fix is accepted");
+  accepted = correctLaterFix;
+  acceptedAt = nowMs + 5_000;
+
+  const result = getHomepageNearbyWorkers([worker("near", 10.777, 106.701)], accepted, 6, nowMs + 5_000);
+  assert.equal(result[0].id, "near");
+  assert.ok(result[0].distanceMeters < 30, "UI refresh gets the corrected near distance after the good fix");
+}
+{
+  const previous = { lat: 10.7769, lng: 106.7009, accuracy: 20 };
+  const tinyJitter = { lat: 10.77691, lng: 106.70091, accuracy: 20 };
+  const realMove = { lat: 10.7777, lng: 106.7009, accuracy: 20 };
+  const hugeApproximateJump = { lat: 11.1369, lng: 106.7009, accuracy: 300 };
 
   assert.equal(shouldPublishGpsLocation({ point: previous, updatedAtMs: nowMs }, tinyJitter, nowMs + 5_000), false, "tiny GPS jitter is ignored");
   assert.equal(shouldPublishGpsLocation({ point: previous, updatedAtMs: nowMs }, realMove, nowMs + 5_000), true, "significant movement is published");
   assert.equal(shouldPublishGpsLocation({ point: previous, updatedAtMs: nowMs }, tinyJitter, nowMs + GPS_FORCE_REFRESH_INTERVAL_MS + 1), true, "GPS is refreshed after max interval");
+  assert.equal(shouldAcceptCustomerGpsFix({ point: previous, updatedAtMs: nowMs }, hugeApproximateJump, nowMs + 5_000), false, "large jump with weak accuracy is rejected");
   assert.ok(getDistanceMeters(previous, realMove) >= GPS_MIN_REFRESH_DISTANCE_METERS);
 }
 
@@ -113,6 +161,8 @@ function worker(id, lat, lng, options = {}) {
 
   assert.match(customerComponent, /watchPosition/);
   assert.match(customerComponent, /clearWatch\(watchId\)/);
+  assert.match(customerComponent, /accuracy: location\.accuracy/);
+  assert.match(customerComponent, /shouldAcceptCustomerGpsFix/);
   assert.match(workerDashboard, /watchPosition/);
   assert.match(workerDashboard, /clearWatch\(watchId\)/);
   assert.match(workerDashboard, /window\.addEventListener\("online", handleOnline\)/);
@@ -120,3 +170,5 @@ function worker(id, lat, lng, options = {}) {
 }
 
 console.log("homepage nearby workers GPS live regression passed");
+
+
