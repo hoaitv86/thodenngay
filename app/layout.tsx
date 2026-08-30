@@ -14,6 +14,15 @@ export const metadata: Metadata = {
   description:
     "Nền tảng kết nối khách hàng với thợ sửa chữa chuyên nghiệp. Đặt dịch vụ điện, nước, camera, cơ khí nhanh chóng, an toàn.",
   keywords: ["sửa chữa", "thợ điện", "thợ nước", "dịch vụ tại nhà", "Thợ đến ngay"],
+  openGraph: {
+    images: [
+      {
+        url: "https://thodenngay.vn/og-thodenngay-share-20260830.png",
+        width: 1802,
+        height: 1079,
+      },
+    ],
+  },
   icons: {
     icon: [
       { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
