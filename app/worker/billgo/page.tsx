@@ -749,6 +749,23 @@ const getNumericPackageAmount = (value: string) => {
   return normalized ? String(Number(normalized)) : "";
 };
 
+const getPackageSearchParts = (value: string) => ({
+  digits: value.replace(/\D/g, ""),
+  text: value.trim().toLocaleLowerCase("vi"),
+});
+
+const getInternetPackageOptions = (packages: BillGoPackage[], search: string) => {
+  const { digits, text } = getPackageSearchParts(search);
+  if (digits) return packages.filter(item => String(Number(item.monthly_price || 0)).startsWith(digits));
+  if (!text) return packages;
+  return packages.filter(item => {
+    const label = [getBillGoPackageTypeLabel(item.type), item.name, item.provider, formatBillGoCurrency(item.monthly_price)]
+      .join(" ")
+      .toLocaleLowerCase("vi");
+    return label.includes(text);
+  });
+};
+
 const normalizeLocationText = (value: string | null | undefined) =>
   String(value || "").trim().toLocaleLowerCase("vi");
 
@@ -877,6 +894,8 @@ export default function WorkerBillGoPage() {
   const [form, setForm] = useState(initialForm);
   const [packageSearch, setPackageSearch] = useState("");
   const [showPackageSuggestions, setShowPackageSuggestions] = useState(false);
+  const [editPackageSearch, setEditPackageSearch] = useState("");
+  const [showEditPackageSuggestions, setShowEditPackageSuggestions] = useState(false);
   const [collecting, setCollecting] = useState<Receivable | null>(null);
   const [actionTarget, setActionTarget] = useState<Receivable | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
@@ -1402,23 +1421,17 @@ export default function WorkerBillGoPage() {
   );
   const internetPackages = useMemo(() => packages.filter(item => item.type === "internet"), [packages]);
   const tv360Packages = useMemo(() => packages.filter(item => item.type === "tv360" || item.type === "receiver"), [packages]);
-  const packageSearchDigits = packageSearch.replace(/\D/g, "");
-  const packageSearchText = packageSearch.trim().toLocaleLowerCase("vi");
+  const packageSearchParts = getPackageSearchParts(packageSearch);
+  const packageSearchDigits = packageSearchParts.digits;
   const formPackageOptions = useMemo(
-    () => {
-      if (!isInternetForm) return [];
-      if (packageSearchDigits) {
-        return internetPackages.filter(item => String(Number(item.monthly_price || 0)).startsWith(packageSearchDigits));
-      }
-      if (!packageSearchText) return internetPackages;
-      return internetPackages.filter(item => {
-        const label = [getBillGoPackageTypeLabel(item.type), item.name, item.provider, formatBillGoCurrency(item.monthly_price)]
-          .join(" ")
-          .toLocaleLowerCase("vi");
-        return label.includes(packageSearchText);
-      });
-    },
-    [internetPackages, isInternetForm, packageSearchDigits, packageSearchText],
+    () => isInternetForm ? getInternetPackageOptions(internetPackages, packageSearch) : [],
+    [internetPackages, isInternetForm, packageSearch],
+  );
+  const editPackageSearchParts = getPackageSearchParts(editPackageSearch);
+  const editPackageSearchDigits = editPackageSearchParts.digits;
+  const editPackageOptions = useMemo(
+    () => getInternetPackageOptions(internetPackages, editPackageSearch),
+    [internetPackages, editPackageSearch],
   );
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
@@ -1568,6 +1581,26 @@ export default function WorkerBillGoPage() {
     }
     setShowPackageSuggestions(Boolean(value.trim()));
     if (form.packageId) updateForm("packageId", "");
+  };
+
+  const updateEditPackageSearch = (value: string) => {
+    setEditPackageSearch(value);
+    setShowEditPackageSuggestions(Boolean(value.trim()));
+    setEditForm(prev => {
+      const packageAmount = getNumericPackageAmount(value);
+      return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
+    });
+  };
+
+  const selectEditPackage = (packageOption: BillGoPackage) => {
+    setEditPackageSearch(formatBillGoCurrency(packageOption.monthly_price) + " - " + packageOption.name);
+    setShowEditPackageSuggestions(false);
+    setEditForm(prev => ({
+      ...prev,
+      packageName: packageOption.name,
+      monthlyFee: String(Number(packageOption.monthly_price || 0)),
+      provider: packageOption.provider || prev.provider,
+    }));
   };
 
   const updateEditAreaName = (value: string) => {
@@ -2095,6 +2128,8 @@ export default function WorkerBillGoPage() {
     const subscription = targetItem.subscription;
     setActionTarget(targetItem);
     setActionMode(mode);
+    setEditPackageSearch(subscription?.package_name || "");
+    setShowEditPackageSuggestions(false);
     setEditForm({
       customerName: subscription?.customer_name || "",
       phone: subscription?.phone || "",
@@ -3515,10 +3550,34 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 <datalist id="billgo-edit-customer-address-suggestions">
                   {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
                 </datalist>
-                <input required className="input-field" placeholder="Gói cước hàng tháng" value={editForm.packageName} onChange={e => setEditForm(prev => {
-                  const packageAmount = getNumericPackageAmount(e.target.value);
-                  return { ...prev, packageName: e.target.value, monthlyFee: packageAmount || prev.monthlyFee };
-                })} />
+                <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
+                  Chọn gói cước
+                  <input
+                    required
+                    inputMode="numeric"
+                    className="input-field"
+                    placeholder="Nhập giá tiền để tìm gói cước"
+                    value={editPackageSearch}
+                    onChange={e => updateEditPackageSearch(e.target.value)}
+                  />
+                  {showEditPackageSuggestions && editPackageSearch.trim() && (
+                    <div className="max-h-36 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white p-1 shadow-sm">
+                      {editPackageOptions.map(packageOption => (
+                        <button
+                          key={packageOption.id}
+                          type="button"
+                          onClick={() => selectEditPackage(packageOption)}
+                          className={`w-full rounded-md px-3 py-2 text-left text-sm font-bold ${editForm.packageName === packageOption.name ? "bg-primary text-white" : "hover:bg-surface-container-low"}`}
+                        >
+                          {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
+                        </button>
+                      ))}
+                      {editPackageOptions.length === 0 && editPackageSearchDigits && (
+                        <p className="px-3 py-2 text-sm text-on-surface-variant">Không có gói cước bắt đầu bằng giá {editPackageSearchDigits}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
                 <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
               </div>
