@@ -1338,9 +1338,18 @@ useEffect(() => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    let restoredDashboardSnapshot = false;
+    if (!isBackground) {
+      restoredDashboardSnapshot = await restoreDashboardOfflineSnapshot(user.id);
+      if (restoredDashboardSnapshot) setLoading(false);
+      if (restoredDashboardSnapshot) logOfflineDebug("hydrated from cache", { dataset: "dashboard-summary", userId: user.id, mode: "stale-dashboard" });
+    }
+
     if (isBrowserOffline()) {
-      const restored = await restoreDashboardOfflineSnapshot(user.id);
-      if (!restored) {
+      if (!restoredDashboardSnapshot) {
+        restoredDashboardSnapshot = await restoreDashboardOfflineSnapshot(user.id);
+      }
+      if (!restoredDashboardSnapshot) {
         logOfflineDebug("server fetch skipped", { dataset: "dashboard-summary", userId: user.id, reason: "offline-no-cache" });
       } else {
         logOfflineDebug("server fetch skipped", { dataset: "dashboard-summary", userId: user.id, reason: "offline" });
@@ -1597,10 +1606,37 @@ useEffect(() => {
       const nextDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const { data: workerJobs, error: workerJobsError } = await supabase
+      const workerJobsPromise = supabase
         .from('jobs')
         .select('id, status, customer_id, quoted_price, final_amount, updated_at, payments(id, amount, status, paid_at)')
         .eq('worker_id', workerData.id);
+
+      const todayRatingsPromise = supabase
+        .from("ratings")
+        .select("score, created_at")
+        .eq("worker_id", workerData.id)
+        .gte("created_at", todayStart.toISOString())
+        .lt("created_at", nextDayStart.toISOString());
+
+      const monthlyRatingsPromise = supabase
+        .from("ratings")
+        .select("score, created_at")
+        .eq("worker_id", workerData.id)
+        .gte("created_at", monthStart.toISOString())
+        .lt("created_at", nextMonthStart.toISOString());
+
+      const billGoMonthEnd = toBillGoDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+      const billGoReceivablesPromise = supabase
+        .from("billgo_receivables")
+        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date)")
+        .eq("worker_id", workerData.id)
+        .is("deleted_at", null)
+        .in("status", ["unpaid", "partial", "overdue", "due"])
+        .lte("due_date", billGoMonthEnd)
+        .order("due_date", { ascending: true })
+        .range(0, WORKER_DASHBOARD_BILLGO_LIMIT - 1);
+
+      const { data: workerJobs, error: workerJobsError } = await workerJobsPromise;
 
       let income = 0;
       let jobsDone = 0;
@@ -1671,19 +1707,8 @@ useEffect(() => {
         .filter(firstCompletedAt => firstCompletedAt >= monthStart && firstCompletedAt < nextMonthStart)
         .length;
 
-      const { data: todayRatings, error: todayRatingsError } = await supabase
-        .from("ratings")
-        .select("score, created_at")
-        .eq("worker_id", workerData.id)
-        .gte("created_at", todayStart.toISOString())
-        .lt("created_at", nextDayStart.toISOString());
-
-      const { data: monthlyRatings, error: monthlyRatingsError } = await supabase
-        .from("ratings")
-        .select("score, created_at")
-        .eq("worker_id", workerData.id)
-        .gte("created_at", monthStart.toISOString())
-        .lt("created_at", nextMonthStart.toISOString());
+      const { data: todayRatings, error: todayRatingsError } = await todayRatingsPromise;
+      const { data: monthlyRatings, error: monthlyRatingsError } = await monthlyRatingsPromise;
 
       const todayRating = todayRatings && todayRatings.length > 0
         ? Number((todayRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / todayRatings.length).toFixed(1))
@@ -1693,16 +1718,7 @@ useEffect(() => {
         ? Number((monthlyRatings.reduce((sum, item) => sum + Number(item.score || 0), 0) / monthlyRatings.length).toFixed(1))
         : 0;
 
-      const billGoMonthEnd = toBillGoDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-      const { data: billGoReceivablesData, error: billGoReceivablesError } = await supabase
-        .from("billgo_receivables")
-        .select("id, customer_id, worker_id, job_id, subscription_id, type, title, package_id, package_name_at_collection, total_amount, due_date, period_start, period_end, billing_months, bonus_months, service_months, paid_amount, monthly_fee_at_collection, cycle_at_collection, next_period_start, next_due_date, status, note, customer:profiles!customer_id(full_name, phone, address), subscription:billgo_subscriptions(customer_name, phone, internet_account, customer_address, package_name, cycle, current_cycle, next_due_date)")
-        .eq("worker_id", workerData.id)
-        .is("deleted_at", null)
-        .in("status", ["unpaid", "partial", "overdue", "due"])
-        .lte("due_date", billGoMonthEnd)
-        .order("due_date", { ascending: true })
-        .range(0, WORKER_DASHBOARD_BILLGO_LIMIT - 1);
+      const { data: billGoReceivablesData, error: billGoReceivablesError } = await billGoReceivablesPromise;
 
       if (billGoReceivablesError) {
         if (!isBackground) {
@@ -2436,7 +2452,6 @@ useEffect(() => {
       setEditingQuickJob(null);
       setEditQuickServicePickerOpen(false);
       showToast("Đã cập nhật thông tin công việc.", "success");
-      fetchData(true);
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Không thể cập nhật công việc.", "error");
     } finally {
@@ -2728,8 +2743,9 @@ useEffect(() => {
       setQuickFormOpen(false);
       const createdJob = data.job;
       const createdAsActive = createdJob?.status === "assigned" || createdJob?.status === "in_progress";
-      if (createdAsActive && createdJob) {
-        const normalizedCreatedJob: WorkerJob = {
+      const createdAsPending = createdJob?.status === "pending";
+      const normalizedCreatedJob: WorkerJob | null = createdJob
+        ? {
           ...createdJob,
           customerName: createdJob.customerName || quickJob.customerName,
           serviceName: createdJob.serviceName || services.find(service => service.id === quickJob.serviceId)?.name || "Dịch vụ",
@@ -2739,7 +2755,10 @@ useEffect(() => {
             ? new Date(createdJob.scheduled_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
             : new Date(quickJob.scheduledAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
           images: createdJob.images || [],
-        };
+        }
+        : null;
+
+      if (createdAsActive && normalizedCreatedJob) {
 
         if (data.mock) {
           mockActiveJobsRef.current = sortJobsNewestFirst([
@@ -2752,6 +2771,12 @@ useEffect(() => {
           if (prev.some(job => job.id === normalizedCreatedJob.id)) return prev;
 
           return sortJobsNewestFirst([normalizedCreatedJob, ...prev]);
+        });
+      } else if (createdAsPending && normalizedCreatedJob) {
+        setPendingApprovalJobs(prev => {
+          if (prev.some(job => job.id === normalizedCreatedJob.id)) return prev;
+
+          return sortJobsNewestFirst([normalizedCreatedJob, ...prev]).slice(0, WORKER_DASHBOARD_JOB_LIMIT);
         });
       }
       setTab(createdAsActive ? "active" : "pending");
@@ -2778,7 +2803,7 @@ useEffect(() => {
               }
           : undefined
       );
-      if (!data.mock) {
+      if (!data.mock && !normalizedCreatedJob) {
         fetchData(true);
       }
     } catch (err: unknown) {

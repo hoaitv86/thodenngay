@@ -1,6 +1,6 @@
 const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const IS_LOCAL_DEV_HOST = LOCAL_DEV_HOSTS.has(self.location.hostname);
-const CACHE_VERSION = "tdn-app-shell-v7";
+const CACHE_VERSION = "tdn-app-shell-v8";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
   "/",
@@ -206,31 +206,42 @@ async function cacheUrl(cache, url, options = {}) {
   }
 }
 
-async function networkFirstNavigation(request) {
+async function getNavigationFallback(cache, requestUrl) {
+  const directMatch = await cache.match(requestUrl.pathname, { ignoreSearch: true });
+  if (directMatch) return directMatch;
+
+  const workerShellMatch = await matchAny(cache, getWorkerNavigationFallbacks(requestUrl.pathname));
+  if (workerShellMatch) return workerShellMatch;
+
+  if (requestUrl.pathname === "/worker" || requestUrl.pathname.startsWith("/worker/")) {
+    return (await cache.match("/worker", { ignoreSearch: true }))
+      || (await cache.match("/", { ignoreSearch: true }))
+      || null;
+  }
+
+  return (await cache.match(APP_SHELL_FALLBACK_URL, { ignoreSearch: true }))
+    || (await cache.match("/", { ignoreSearch: true }))
+    || null;
+}
+
+async function refreshNavigationCache(request, cache) {
+  const response = await fetch(request);
+  if (response && response.ok) await putAppShell(cache, request, response.clone(), { warmAssets: false });
+  return response;
+}
+
+async function staleWhileRevalidateNavigation(event) {
+  const request = event.request;
   const cache = await caches.open(CACHE_VERSION);
   const requestUrl = new URL(request.url);
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) await putAppShell(cache, request, response.clone(), { warmAssets: false });
-    return response;
-  } catch {
-    const directMatch = (await cache.match(request))
-      || (await cache.match(requestUrl.pathname, { ignoreSearch: true }));
-    if (directMatch) return directMatch;
-
-    const workerShellMatch = await matchAny(cache, getWorkerNavigationFallbacks(requestUrl.pathname));
-    if (workerShellMatch) return workerShellMatch;
-
-    if (requestUrl.pathname === "/worker" || requestUrl.pathname.startsWith("/worker/")) {
-      return (await cache.match("/worker", { ignoreSearch: true }))
-        || (await cache.match("/", { ignoreSearch: true }))
-        || Response.error();
-    }
-
-    return (await cache.match(APP_SHELL_FALLBACK_URL, { ignoreSearch: true }))
-      || (await cache.match("/", { ignoreSearch: true }))
-      || Response.error();
+  const cached = (await cache.match(request))
+    || (await cache.match(requestUrl.pathname, { ignoreSearch: true }));
+  const refreshed = refreshNavigationCache(request, cache).catch(() => getNavigationFallback(cache, requestUrl));
+  if (cached) {
+    event.waitUntil(refreshed.then(() => undefined));
+    return cached;
   }
+  return refreshed.then((response) => response || Response.error());
 }
 
 async function cacheFirstAsset(request) {
@@ -310,7 +321,7 @@ self.addEventListener("fetch", (event) => {
   if (!shouldHandleRequest(requestUrl)) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstNavigation(request));
+    event.respondWith(staleWhileRevalidateNavigation(event));
     return;
   }
 

@@ -46,20 +46,6 @@ function collectAppShellUrls() {
     new URL("/android-chrome-512x512.png", window.location.origin).href,
   ]);
 
-  document
-    .querySelectorAll<HTMLScriptElement | HTMLLinkElement>(
-      'script[src], link[rel="stylesheet"], link[rel="preload"], link[rel="modulepreload"], link[rel="icon"], link[rel="apple-touch-icon"], link[rel="manifest"]'
-    )
-    .forEach((element) => {
-      const url = element instanceof HTMLScriptElement ? element.src : element.href;
-      if (!url) return;
-      try {
-        const parsed = new URL(url, window.location.href);
-        if (parsed.origin === window.location.origin) urls.add(parsed.href);
-      } catch {
-        // Ignore malformed browser-provided URLs.
-      }
-    });
 
   return Array.from(urls);
 }

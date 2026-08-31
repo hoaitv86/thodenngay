@@ -1025,13 +1025,13 @@ export default function WorkerBillGoPage() {
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("areas", cacheScope) : null;
     const offline = isBrowserOffline();
-    const cached = offline && cacheKey ? await getCachedDataset<AreaOption[]>(cacheKey) : null;
+    const cached = cacheKey ? await getCachedDataset<AreaOption[]>(cacheKey) : null;
+    if (cached) {
+      setAreas(cached.data);
+      logOfflineDebug("hydrated from cache", { dataset: "areas", cacheKey, recordCount: cached.data.length, mode: offline ? "offline" : "stale" });
+    }
 
     if (offline) {
-      if (cached) {
-        setAreas(cached.data);
-        logOfflineDebug("hydrated from cache", { dataset: "areas", cacheKey, recordCount: cached.data.length });
-      }
       logOfflineDebug("server fetch skipped", { dataset: "areas", cacheKey, reason: "offline" });
       return;
     }
@@ -1053,13 +1053,13 @@ export default function WorkerBillGoPage() {
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("packages", cacheScope) : null;
     const offline = isBrowserOffline();
-    const cached = offline && cacheKey ? await getCachedDataset<BillGoPackage[]>(cacheKey) : null;
+    const cached = cacheKey ? await getCachedDataset<BillGoPackage[]>(cacheKey) : null;
+    if (cached) {
+      setPackages(cached.data);
+      logOfflineDebug("hydrated from cache", { dataset: "packages", cacheKey, recordCount: cached.data.length, mode: offline ? "offline" : "stale" });
+    }
 
     if (offline) {
-      if (cached) {
-        setPackages(cached.data);
-        logOfflineDebug("hydrated from cache", { dataset: "packages", cacheKey, recordCount: cached.data.length });
-      }
       logOfflineDebug("server fetch skipped", { dataset: "packages", cacheKey, reason: "offline" });
       return;
     }
@@ -1104,14 +1104,16 @@ export default function WorkerBillGoPage() {
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("billgo", cacheScope, requestKey) : null;
     const offline = isBrowserOffline();
-    const cached = offline && cacheKey ? await getCachedDataset<BillGoListCacheResult>(cacheKey) : null;
+    const cached = cacheKey ? await getCachedDataset<BillGoListCacheResult>(cacheKey) : null;
+    if (cached) {
+      applyBillGoListResult(cached.data);
+      setMessage("");
+      setLoading(false);
+      logOfflineDebug("hydrated from cache", { dataset: "billgo", cacheKey, recordCount: cached.data.rows?.length || 0, mode: offline ? "offline" : "stale" });
+    }
 
     if (offline) {
-      if (cached) {
-        applyBillGoListResult(cached.data);
-        setMessage("");
-        logOfflineDebug("hydrated from cache", { dataset: "billgo", cacheKey, recordCount: cached.data.rows?.length || 0 });
-      } else {
+      if (!cached) {
         setMessage("Chưa có dữ liệu BillGo offline. Hãy mở màn này khi có mạng ít nhất một lần.");
       }
       setLoading(false);
@@ -2016,7 +2018,6 @@ export default function WorkerBillGoPage() {
       setRows(previous => previous.map(row => row.id === item.id ? { ...row, status, paid_amount: 0, paid_at: status === "paid" ? todayInput() : null, payment_method: status === "paid" ? "other" : null } : row));
       setSelectedReceivableIds(previous => previous.filter(id => id !== item.id));
       setMessage(status === "paid" ? "Đã xác nhận kỳ này." : "Đã đánh dấu chưa đóng.");
-      await refreshBillGoKeepingScroll();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể cập nhật trạng thái BillGo.");
     } finally {
@@ -2038,7 +2039,7 @@ export default function WorkerBillGoPage() {
       note: "",
     });
   };
-  const applyPendingCollection = useCallback((item: Receivable, amount: number, paidAt: string, method: string, note?: string) => {
+  const applyPendingCollection = useCallback((item: Receivable, amount: number, paidAt: string, method: string, note?: string, paymentStatus: "pending" | "paid" = "pending") => {
     const total = toMoneyNumber(item.total_amount);
     const nextPaid = toMoneyNumber(item.paid_amount) + amount;
     const nextStatus = nextPaid >= total ? "paid" : "partial";
@@ -2052,7 +2053,7 @@ export default function WorkerBillGoPage() {
             status: nextStatus,
             payments: [
               ...(row.payments || []),
-              { id: createOfflineMutationId("offline-payment"), amount, method, status: "pending", paid_at: paidAt, note },
+              { id: createOfflineMutationId(paymentStatus === "paid" ? "payment" : "offline-payment"), amount, method, status: paymentStatus, paid_at: paidAt, note },
             ],
           }
         : row)
@@ -2127,9 +2128,9 @@ export default function WorkerBillGoPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Không thể xác nhận thu tiền.");
+      applyPendingCollection(collecting, toMoneyNumber(collectForm.amount), collectForm.paidAt || todayInput(), collectForm.method || "cash", collectForm.note, "paid");
       setCollecting(null);
       setMessage("Đã xác nhận thu tiền.");
-      await refreshBillGoKeepingScroll();
     } catch (error) {
       if (collecting && isLikelyOfflineError(error)) {
         const payload = { action: "collect", receivableId: collecting.id, ...collectForm, idempotencyKey: createOfflineMutationId("billgo-collect") };
