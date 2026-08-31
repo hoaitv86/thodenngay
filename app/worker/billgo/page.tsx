@@ -1433,6 +1433,16 @@ export default function WorkerBillGoPage() {
     () => getInternetPackageOptions(internetPackages, editPackageSearch),
     [internetPackages, editPackageSearch],
   );
+  const editServiceTypeForBilling = actionTarget?.subscription?.service_type || "internet";
+  const editBillingPreview = useMemo(() => {
+    if (!editForm.cycle || !editForm.effectivePeriodStart) return null;
+    return getBillGoServiceBillingPeriod(editForm.effectivePeriodStart, editForm.cycle, editServiceTypeForBilling);
+  }, [editForm.cycle, editForm.effectivePeriodStart, editServiceTypeForBilling]);
+  const editNextPeriodStartPreview = editBillingPreview ? getBillGoNextPeriodStartDate(editBillingPreview.periodEnd) : "";
+  const editNextBillingPreview = useMemo(() => {
+    if (!editForm.cycle || !editNextPeriodStartPreview) return null;
+    return getBillGoServiceBillingPeriod(editNextPeriodStartPreview, editForm.cycle, editServiceTypeForBilling);
+  }, [editForm.cycle, editNextPeriodStartPreview, editServiceTypeForBilling]);
   const updateForm = (key: keyof ReturnType<typeof initialForm>, value: string) => {
     setForm(prev => {
       if (key === "areaId") {
@@ -2211,6 +2221,8 @@ export default function WorkerBillGoPage() {
             provider: editForm.provider,
             packageName: editForm.packageName,
             monthlyFee: editForm.monthlyFee,
+            cycle: editForm.cycle,
+            effectivePeriodStart: editForm.effectivePeriodStart,
             note: editForm.note,
           }
         : actionMode === "cycle"
@@ -3579,6 +3591,21 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                   )}
                 </div>
                 <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                  Chu kỳ thu
+                  <select className="input-field" value={editForm.cycle} onChange={e => setEditForm(prev => ({ ...prev, cycle: e.target.value as BillGoCycle }))}>
+                    {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                  Kỳ cước bắt đầu
+                  <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
+                </label>
+                {editBillingPreview && (
+                  <p className="rounded-lg bg-primary-fixed p-3 text-xs font-bold text-primary-container sm:col-span-2">
+                    Kỳ cước mới: {dateLabel(editBillingPreview.periodStart)} - {dateLabel(editBillingPreview.periodEnd)}. Hạn nộp tiền: {dateLabel(editBillingPreview.dueDate)}. Kỳ tiếp theo: {editNextPeriodStartPreview ? dateLabel(editNextPeriodStartPreview) : "Chưa có"}{editNextBillingPreview ? `, hạn ${dateLabel(editNextBillingPreview.dueDate)}` : ""}. Các kỳ đã thu được giữ nguyên.
+                  </p>
+                )}
                 <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
               </div>
             ) : actionMode === "cycle" ? (

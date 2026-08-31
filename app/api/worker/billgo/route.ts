@@ -410,11 +410,15 @@ const applyBillGoCycleChange = async (
     .single();
   if (subscriptionError || !subscription) return { error: "Khong tim thay khach hang BillGo." };
 
-  const effectivePeriodStart = firstOfMonth(
+  const requestedEffectivePeriodStart = firstOfMonth(
     effectivePeriodStartInput
     || (subscription.covered_until ? getBillGoNextPeriodStartDate(subscription.covered_until) : subscription.next_period_start)
     || todayInputForServer()
   );
+  const firstUnpaidPeriodStart = subscription.covered_until ? firstOfMonth(getBillGoNextPeriodStartDate(subscription.covered_until)) : "";
+  const effectivePeriodStart = firstUnpaidPeriodStart && compareBillGoMonth(requestedEffectivePeriodStart, firstUnpaidPeriodStart) < 0
+    ? firstUnpaidPeriodStart
+    : requestedEffectivePeriodStart;
   const oldCycle = String(subscription.current_cycle || subscription.cycle || "pending_cycle");
   const serviceType = String(subscription.service_type || "internet");
   const cycleOption = getBillGoServiceCycleOption(newCycle, serviceType);
@@ -1855,9 +1859,13 @@ export async function PATCH(request: Request) {
     const nextAreaId = location.areaId;
     const nextSubAreaId = location.subAreaId;
 
+    const requestedCycle = asText(body.cycle);
+    const requestedEffectivePeriodStart = asText(body.effectivePeriodStart) ? firstOfMonth(asText(body.effectivePeriodStart)) : "";
+    if (requestedCycle && !allowedCycles.has(requestedCycle as BillGoCycle)) return jsonError("Chu kỳ thu không hợp lệ.");
+
     const { data: currentSubscription } = await admin
       .from("billgo_subscriptions")
-      .select("id, area_id, sub_area_id, address_detail, current_cycle, cycle")
+      .select("id, area_id, sub_area_id, address_detail, current_cycle, cycle, covered_until, next_period_start, start_date")
       .eq("id", subscriptionId)
       .eq("worker_id", workerId)
       .is("deleted_at", null)
@@ -1917,7 +1925,34 @@ export async function PATCH(request: Request) {
         note: "Cập nhật địa bàn khách BillGo",
       });
     }
-    return NextResponse.json({ ok: true });
+
+    let cycleChangeResult: BillGoCycleChangeResult | undefined;
+    if (currentSubscription && requestedCycle) {
+      const currentCycle = String(currentSubscription.current_cycle || currentSubscription.cycle || "");
+      const currentEffectivePeriodStart = firstOfMonth(
+        currentSubscription.covered_until
+          ? getBillGoNextPeriodStartDate(currentSubscription.covered_until)
+          : currentSubscription.next_period_start || currentSubscription.start_date || requestedEffectivePeriodStart || todayInputForServer(),
+      );
+      const shouldRecalculateCycle = currentCycle !== requestedCycle
+        || (requestedEffectivePeriodStart && requestedEffectivePeriodStart !== currentEffectivePeriodStart);
+
+      if (shouldRecalculateCycle) {
+        const applied = await applyBillGoCycleChange(
+          admin,
+          workerId,
+          userId,
+          subscriptionId,
+          requestedCycle as BillGoCycle,
+          requestedEffectivePeriodStart,
+          asText(body.note),
+        );
+        if (applied.error) return jsonError(applied.error);
+        cycleChangeResult = applied.data;
+      }
+    }
+
+    return NextResponse.json({ ok: true, effectivePeriodStart: cycleChangeResult?.effectivePeriodStart, nextDueDate: cycleChangeResult?.nextDueDate });
   }
 
   if (action === "change_cycle") {
