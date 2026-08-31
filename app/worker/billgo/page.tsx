@@ -918,6 +918,7 @@ export default function WorkerBillGoPage() {
     subAreaId: "",
     subAreaName: "",
     addressDetail: "",
+    packageId: "",
     packageName: "",
     monthlyFee: "",
     note: "",
@@ -1433,7 +1434,13 @@ export default function WorkerBillGoPage() {
     () => getInternetPackageOptions(internetPackages, editPackageSearch),
     [internetPackages, editPackageSearch],
   );
+  const selectedEditPackage = useMemo(
+    () => internetPackages.find(item => item.id === editForm.packageId) || null,
+    [editForm.packageId, internetPackages],
+  );
   const editServiceTypeForBilling = actionTarget?.subscription?.service_type || "internet";
+  const editFormTotal = useMemo(() => editForm.cycle ? getBillGoServiceCollectableAmount(editForm.monthlyFee, editForm.cycle, editServiceTypeForBilling) : 0, [editForm.cycle, editForm.monthlyFee, editServiceTypeForBilling]);
+  const editCycleOption = editForm.cycle ? getBillGoServiceCycleOption(editForm.cycle, editServiceTypeForBilling) : null;
   const editBillingPreview = useMemo(() => {
     if (!editForm.cycle || !editForm.effectivePeriodStart) return null;
     return getBillGoServiceBillingPeriod(editForm.effectivePeriodStart, editForm.cycle, editServiceTypeForBilling);
@@ -1596,10 +1603,7 @@ export default function WorkerBillGoPage() {
   const updateEditPackageSearch = (value: string) => {
     setEditPackageSearch(value);
     setShowEditPackageSuggestions(Boolean(value.trim()));
-    setEditForm(prev => {
-      const packageAmount = getNumericPackageAmount(value);
-      return { ...prev, packageName: value, monthlyFee: packageAmount || prev.monthlyFee };
-    });
+    setEditForm(prev => ({ ...prev, packageId: "", packageName: value }));
   };
 
   const selectEditPackage = (packageOption: BillGoPackage) => {
@@ -1607,6 +1611,7 @@ export default function WorkerBillGoPage() {
     setShowEditPackageSuggestions(false);
     setEditForm(prev => ({
       ...prev,
+      packageId: packageOption.id,
       packageName: packageOption.name,
       monthlyFee: String(Number(packageOption.monthly_price || 0)),
       provider: packageOption.provider || prev.provider,
@@ -2151,6 +2156,7 @@ export default function WorkerBillGoPage() {
       subAreaName: areas.flatMap(area => area.sub_areas || []).find(subArea => subArea.id === subscription?.sub_area_id)?.name || "",
       addressDetail: buildCustomerAddressInput(subscription, areas.flatMap(area => area.sub_areas || []).find(subArea => subArea.id === subscription?.sub_area_id)?.name),
       provider: subscription?.provider || "Viettel",
+      packageId: internetPackages.find(packageOption => packageOption.name === subscription?.package_name && Number(packageOption.monthly_price || 0) === toMoneyNumber(subscription?.monthly_fee ?? subscription?.amount_per_cycle))?.id || "",
       packageName: subscription?.package_name || "",
       monthlyFee: String(subscription?.monthly_fee ?? subscription?.amount_per_cycle ?? ""),
       note: subscription?.note || "",
@@ -3562,24 +3568,25 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 <datalist id="billgo-edit-customer-address-suggestions">
                   {customerAddressSuggestions.map(address => <option key={address} value={address} />)}
                 </datalist>
-                <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant">
-                  Chọn gói cước
+                <div className="relative grid gap-1 text-xs font-bold text-on-surface-variant sm:col-span-2">
+                  Gói cước
                   <input
                     required
                     inputMode="numeric"
                     className="input-field"
-                    placeholder="Nhập giá tiền để tìm gói cước"
+                    placeholder="Nhập giá tiền hoặc tên gói để tìm"
                     value={editPackageSearch}
                     onChange={e => updateEditPackageSearch(e.target.value)}
+                    onFocus={() => setShowEditPackageSuggestions(Boolean(editPackageSearch.trim()))}
                   />
                   {showEditPackageSuggestions && editPackageSearch.trim() && (
-                    <div className="max-h-36 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white p-1 shadow-sm">
+                    <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-44 overflow-y-auto rounded-lg border border-outline-variant/40 bg-white p-1 shadow-lg">
                       {editPackageOptions.map(packageOption => (
                         <button
                           key={packageOption.id}
                           type="button"
                           onClick={() => selectEditPackage(packageOption)}
-                          className={`w-full rounded-md px-3 py-2 text-left text-sm font-bold ${editForm.packageName === packageOption.name ? "bg-primary text-white" : "hover:bg-surface-container-low"}`}
+                          className={`w-full rounded-md px-3 py-2 text-left text-sm font-bold ${editForm.packageId === packageOption.id ? "bg-primary text-white" : "hover:bg-surface-container-low"}`}
                         >
                           {getBillGoPackageTypeLabel(packageOption.type)} - {packageOption.name} - {formatBillGoCurrency(packageOption.monthly_price)}/tháng
                         </button>
@@ -3589,21 +3596,34 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                       )}
                     </div>
                   )}
+                  <p className="text-[11px] font-semibold text-on-surface-variant">
+                    {selectedEditPackage ? `Đang chọn giá 1 tháng: ${formatBillGoCurrency(selectedEditPackage.monthly_price)}.` : "Có thể chọn gói gợi ý hoặc nhập tên gói thủ công."}
+                  </p>
                 </div>
-                <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, monthlyFee: e.target.value }))} />
+                <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
+                  Giá cước 1 tháng
+                  <input required type="number" min="0" inputMode="numeric" className="input-field" placeholder="Số tiền cước một tháng" value={editForm.monthlyFee} onChange={e => setEditForm(prev => ({ ...prev, packageId: "", monthlyFee: e.target.value }))} />
+                </label>
                 <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
                   Chu kỳ thu
                   <select className="input-field" value={editForm.cycle} onChange={e => setEditForm(prev => ({ ...prev, cycle: e.target.value as BillGoCycle }))}>
                     {BILLGO_CYCLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </label>
+                <div className="rounded-lg border border-outline-variant/40 bg-surface-container-low p-3 text-sm sm:col-span-2">
+                  <p className="text-[11px] font-bold uppercase text-on-surface-variant">Tổng tiền theo chu kỳ</p>
+                  <p className="mt-1 text-lg font-extrabold text-primary">{formatBillGoCurrency(editFormTotal)}</p>
+                  <p className="text-xs font-semibold text-on-surface-variant">
+                    {editCycleOption ? `${formatBillGoCurrency(editForm.monthlyFee)} x ${editCycleOption.paidMonths} tháng tính tiền${editCycleOption.bonusMonths > 0 ? ", tặng " + editCycleOption.bonusMonths + " tháng" : ""}.` : "Chọn chu kỳ để tính tổng tiền."}
+                  </p>
+                </div>
                 <label className="grid gap-1 text-xs font-bold text-on-surface-variant">
                   Kỳ cước bắt đầu
                   <input type="date" className="input-field" value={editForm.effectivePeriodStart} onChange={e => setEditForm(prev => ({ ...prev, effectivePeriodStart: e.target.value }))} />
                 </label>
                 {editBillingPreview && (
                   <p className="rounded-lg bg-primary-fixed p-3 text-xs font-bold text-primary-container sm:col-span-2">
-                    Kỳ cước mới: {dateLabel(editBillingPreview.periodStart)} - {dateLabel(editBillingPreview.periodEnd)}. Hạn nộp tiền: {dateLabel(editBillingPreview.dueDate)}. Kỳ tiếp theo: {editNextPeriodStartPreview ? dateLabel(editNextPeriodStartPreview) : "Chưa có"}{editNextBillingPreview ? `, hạn ${dateLabel(editNextBillingPreview.dueDate)}` : ""}. Các kỳ đã thu được giữ nguyên.
+                    Kỳ cước mới: {dateLabel(editBillingPreview.periodStart)} - {dateLabel(editBillingPreview.periodEnd)}. Hạn nộp tiền: {dateLabel(editBillingPreview.dueDate)}. Kỳ tiếp theo: {editNextPeriodStartPreview ? dateLabel(editNextPeriodStartPreview) : "Chưa có"}{editNextBillingPreview ? `, hạn ${dateLabel(editNextBillingPreview.dueDate)}` : ""}. Tổng tiền đến kỳ: {formatBillGoCurrency(editFormTotal)}. Các kỳ đã thu được giữ nguyên.
                   </p>
                 )}
                 <textarea className="input-field min-h-20 sm:col-span-2" placeholder="Ghi chú" value={editForm.note} onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))} />
