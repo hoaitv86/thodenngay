@@ -11,6 +11,7 @@
     "android:add": "npx cap add android",
     "android:sync": "npx cap sync android",
     "android:open": "npx cap open android",
+    "android:publish-apk": "node scripts/publish-apk.mjs",
     "admin:seed-super": "node scripts/seed-super-admin.mjs",
     "admin:restore-legacy": "node scripts/restore-legacy-admin.mjs",
     "test:homepage-nearby-workers": "node scripts/test-homepage-nearby-workers.mjs",
@@ -45,4 +46,5 @@
     "typescript": "^5"
   }
 }
+
 
