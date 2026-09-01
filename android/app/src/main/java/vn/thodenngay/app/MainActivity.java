@@ -13,6 +13,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
@@ -35,7 +37,12 @@ import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.Bridge;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import org.json.JSONTokener;
+import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
     private static final String HOME_URL = "https://thodenngay.vn";
@@ -45,14 +52,23 @@ public class MainActivity extends BridgeActivity {
     private static final String OFFLINE_PREFS = "tdn_android_offline_shell";
     private static final String KEY_LAST_URL = "last_success_url";
     private static final String KEY_LAST_HTML = "last_success_html";
+    private static final String KEY_ANDROID_BUILD = "android_build_fingerprint";
+    private static final String KEY_WEB_DEPLOY_VERSION = "web_deploy_version";
+    private static final String DEPLOY_VERSION_URL = HOME_URL + "/api/app-version";
     private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
+    private static final int STARTUP_TIMEOUT_MS = 15_000;
+    private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
+    private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
 
     private FrameLayout rootView;
     private LinearLayout errorView;
     private FrameLayout startupSplashView;
     private WebView webView;
     private SharedPreferences offlinePrefs;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean loadingOfflineFallback = false;
+    private boolean startupRecoveryAttempted = false;
+    private int freshReloadSequence = 0;
     private String lastMainFrameErrorUrl;
 
     @Override
@@ -68,6 +84,9 @@ public class MainActivity extends BridgeActivity {
         configureWebView();
         createNetworkErrorView();
         createStartupSplashView();
+        invalidateCacheAfterAndroidUpdate();
+        checkRemoteDeployVersion();
+        scheduleStartupWatchdog();
         if (!hasNetworkConnection()) {
             webView.postDelayed(() -> loadOfflineStartup(null), 250);
         }
@@ -255,6 +274,10 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private boolean isStartupSplashVisible() {
+        return startupSplashView != null && startupSplashView.getVisibility() == View.VISIBLE;
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
@@ -289,6 +312,160 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+
+    private String getAndroidBuildFingerprint() {
+        try {
+            String versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode()
+                : getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+            return versionName + ":" + versionCode;
+        } catch (Exception error) {
+            return "unknown";
+        }
+    }
+
+    private void invalidateCacheAfterAndroidUpdate() {
+        String nextFingerprint = getAndroidBuildFingerprint();
+        String currentFingerprint = offlinePrefs.getString(KEY_ANDROID_BUILD, null);
+        if (nextFingerprint.equals(currentFingerprint)) return;
+
+        offlinePrefs.edit().putString(KEY_ANDROID_BUILD, nextFingerprint).apply();
+        if (currentFingerprint == null) return;
+
+        if (hasNetworkConnection()) {
+            reloadFreshAfterCacheInvalidation("android-version-change");
+        } else if (webView != null) {
+            webView.clearCache(false);
+        }
+    }
+
+    private void checkRemoteDeployVersion() {
+        if (!hasNetworkConnection()) return;
+
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(DEPLOY_VERSION_URL + "?android=1&t=" + System.currentTimeMillis());
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setConnectTimeout(VERSION_CHECK_TIMEOUT_MS);
+                connection.setReadTimeout(VERSION_CHECK_TIMEOUT_MS);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Cache-Control", "no-cache");
+                connection.setRequestProperty("Pragma", "no-cache");
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return;
+
+                StringBuilder body = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        body.append(line);
+                    }
+                }
+
+                JSONObject payload = new JSONObject(body.toString());
+                String nextVersion = payload.optString("version", "").trim();
+                if (nextVersion.length() == 0) return;
+
+                String currentVersion = offlinePrefs.getString(KEY_WEB_DEPLOY_VERSION, null);
+                offlinePrefs.edit().putString(KEY_WEB_DEPLOY_VERSION, nextVersion).apply();
+                if (currentVersion != null && !nextVersion.equals(currentVersion)) {
+                    mainHandler.post(() -> reloadFreshAfterCacheInvalidation("deploy-version-change"));
+                }
+            } catch (Exception ignored) {
+                // Startup must never depend on the version endpoint.
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }).start();
+    }
+
+    private void scheduleStartupWatchdog() {
+        mainHandler.postDelayed(() -> {
+            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted) return;
+            startupRecoveryAttempted = true;
+            if (hasNetworkConnection()) {
+                reloadFreshAfterCacheInvalidation("startup-timeout");
+                mainHandler.postDelayed(() -> {
+                    if (isStartupSplashVisible() && !loadCachedHtmlSnapshot(lastMainFrameErrorUrl)) {
+                        showNetworkError();
+                    }
+                }, STARTUP_RECOVERY_TIMEOUT_MS);
+                return;
+            }
+            loadOfflineStartup(lastMainFrameErrorUrl);
+        }, STARTUP_TIMEOUT_MS);
+    }
+
+    private String escapeJavascriptString(String value) {
+        return value.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    private void loadFreshStartUrl(String reason) {
+        if (webView == null) return;
+        loadingOfflineFallback = false;
+        hideNetworkError();
+        configureCacheModeForNetwork();
+        webView.stopLoading();
+        webView.clearCache(true);
+        String refreshUrl = Uri.parse(ANDROID_START_URL)
+            .buildUpon()
+            .appendQueryParameter("nativeRefresh", reason)
+            .appendQueryParameter("t", String.valueOf(System.currentTimeMillis()))
+            .build()
+            .toString();
+        webView.loadUrl(refreshUrl);
+    }
+
+    private void reloadFreshAfterCacheInvalidation(String reason) {
+        if (webView == null) return;
+
+        int reloadSequence = ++freshReloadSequence;
+        String escapedReason = escapeJavascriptString(reason);
+        String cleanupScript = "(async function(){try{"
+            + "if('serviceWorker' in navigator){var regs=await navigator.serviceWorker.getRegistrations();"
+            + "await Promise.all(regs.filter(function(r){return r.scope.indexOf(location.origin)===0}).map(function(r){return r.unregister()}));}"
+            + "if('caches' in window){var keys=await caches.keys();"
+            + "await Promise.all(keys.filter(function(k){return k.indexOf('tdn-')===0}).map(function(k){return caches.delete(k)}));}"
+            + "try{sessionStorage.setItem('tdn.nativeRefresh.cleaned.v1','" + escapedReason + "')}catch(e){}"
+            + "return 'ok'}catch(error){return 'error:'+String(error&&error.message||error)}})();";
+
+        try {
+            webView.evaluateJavascript(cleanupScript, value -> {
+                if (reloadSequence != freshReloadSequence) return;
+                freshReloadSequence++;
+                loadFreshStartUrl(reason);
+            });
+        } catch (Exception error) {
+            loadFreshStartUrl(reason);
+            return;
+        }
+
+        mainHandler.postDelayed(() -> {
+            if (reloadSequence != freshReloadSequence) return;
+            freshReloadSequence++;
+            loadFreshStartUrl(reason);
+        }, 1_200);
+    }
+
+    private void inspectWebRuntimeState(WebView view) {
+        if (view == null) return;
+        view.evaluateJavascript(
+            "(async function(){try{var cacheKeys=(self.caches&&await caches.keys())||[];var regs=(navigator.serviceWorker&&await navigator.serviceWorker.getRegistrations())||[];return JSON.stringify({cacheKeys:cacheKeys,serviceWorkerScopes:regs.map(function(r){return r.scope}),controller:!!navigator.serviceWorker.controller});}catch(error){return JSON.stringify({error:String(error&&error.message||error)})}})();",
+            value -> {
+                try {
+                    Object parsed = new JSONTokener(value).nextValue();
+                    if (parsed instanceof String) {
+                        System.out.println("[TDN-STARTUP] Web runtime state " + parsed);
+                    }
+                } catch (Exception ignored) {
+                    // Runtime inspection is diagnostic only.
+                }
+            }
+        );
+    }
     private boolean isRemoteAppUrl(String url) {
         try {
             Uri uri = Uri.parse(url);
@@ -443,6 +620,7 @@ public class MainActivity extends BridgeActivity {
             super.onPageFinished(view, url);
             hideNetworkError();
             hideStartupSplash();
+            inspectWebRuntimeState(view);
             if (loadingOfflineFallback) {
                 loadingOfflineFallback = false;
                 return;
@@ -474,3 +652,5 @@ public class MainActivity extends BridgeActivity {
         }
     }
 }
+
+

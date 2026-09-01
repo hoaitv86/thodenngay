@@ -1,6 +1,6 @@
 const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const IS_LOCAL_DEV_HOST = LOCAL_DEV_HOSTS.has(self.location.hostname);
-const CACHE_VERSION = "tdn-app-shell-v8";
+const CACHE_VERSION = "tdn-app-shell-v10";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
   "/",
@@ -15,6 +15,7 @@ const PRECACHE_URLS = [
 ];
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
 const REFRESH_DEPLOY_CACHE_MESSAGE = "TDN_REFRESH_DEPLOY_CACHE";
+const PURGE_DEPLOY_CACHE_MESSAGE = "TDN_PURGE_DEPLOY_CACHE";
 const WORKER_DYNAMIC_NAVIGATION_FALLBACKS = [
   { pattern: /^\/worker\/history\/[^/]+$/, shell: "/worker/history/__offline-shell__", fallback: "/worker/history" },
   { pattern: /^\/worker\/inventory\/[^/]+\/edit$/, shell: "/worker/inventory/__offline-shell__/edit", fallback: "/worker/inventory" },
@@ -50,20 +51,28 @@ self.addEventListener("activate", (event) => {
 
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("tdn-") && key !== CACHE_VERSION).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("message", (event) => {
   if (IS_LOCAL_DEV_HOST) return;
-  if (![CACHE_APP_SHELL_MESSAGE, REFRESH_DEPLOY_CACHE_MESSAGE].includes(event.data?.type) || !Array.isArray(event.data.urls)) return;
+  if (![CACHE_APP_SHELL_MESSAGE, REFRESH_DEPLOY_CACHE_MESSAGE, PURGE_DEPLOY_CACHE_MESSAGE].includes(event.data?.type)) return;
 
-  event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cacheUrlBatch(cache, event.data.urls, {
-      force: event.data.type === REFRESH_DEPLOY_CACHE_MESSAGE,
-    }))
-  );
+  event.waitUntil((async () => {
+    if (event.data.type === PURGE_DEPLOY_CACHE_MESSAGE) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key.startsWith("tdn-")).map((key) => caches.delete(key)));
+    }
+
+    if (!Array.isArray(event.data.urls)) return;
+
+    const cache = await caches.open(CACHE_VERSION);
+    await cacheUrlBatch(cache, event.data.urls, {
+      force: event.data.type !== CACHE_APP_SHELL_MESSAGE,
+    });
+  })());
 });
 
 function isSameOriginUrl(url) {
@@ -334,3 +343,4 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(staleWhileRevalidate(request));
   }
 });
+

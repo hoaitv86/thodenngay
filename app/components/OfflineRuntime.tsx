@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
 const REFRESH_DEPLOY_CACHE_MESSAGE = "TDN_REFRESH_DEPLOY_CACHE";
+const PURGE_DEPLOY_CACHE_MESSAGE = "TDN_PURGE_DEPLOY_CACHE";
 const APP_SHELL_WARM_SIGNATURE_KEY = "tdn.offline.appShellWarmSignature.v1";
 const DEPLOY_VERSION_ENDPOINT = "/api/app-version";
 const DEPLOY_VERSION_STORAGE_KEY = "tdn.webDeploy.version.v1";
@@ -15,6 +16,8 @@ const DEPLOY_RELOAD_SESSION_KEY = "tdn.webDeploy.reloadOnce.v1";
 const DEPLOY_VERSION_CHECK_INTERVAL_MS = 60_000;
 const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const LOCAL_DEV_SW_RELOAD_KEY = "tdn.localDev.swCleanupReloaded.v1";
+const NATIVE_REFRESH_QUERY_PARAM = "nativeRefresh";
+const NATIVE_REFRESH_SESSION_KEY = "tdn.nativeRefresh.cleaned.v1";
 const TDN_CACHE_KEY_PREFIX = "tdn-";
 
 let lastDeployVersionCheckAt = 0;
@@ -194,6 +197,61 @@ async function fetchDeployVersion() {
   return typeof payload.version === "string" && payload.version.trim() ? payload.version.trim() : null;
 }
 
+async function clearDeployRuntimeCaches() {
+  if (!("caches" in window)) return;
+
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith(TDN_CACHE_KEY_PREFIX)).map((key) => caches.delete(key)));
+  } catch (error) {
+    console.warn("[TDN-OFFLINE] deploy cache cleanup failed", error);
+  }
+}
+
+async function unregisterSameOriginServiceWorkers() {
+  if (!("serviceWorker" in navigator)) return;
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(
+      registrations
+        .filter((registration) => registration.scope.startsWith(window.location.origin))
+        .map((registration) => registration.unregister())
+    );
+  } catch (error) {
+    console.warn("[TDN-OFFLINE] native refresh service worker cleanup failed", error);
+  }
+}
+
+function getCleanNativeRefreshUrl() {
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete(NATIVE_REFRESH_QUERY_PARAM);
+  cleanUrl.searchParams.delete("t");
+  return cleanUrl.href;
+}
+
+async function handleNativeRefreshRecovery(registration: ServiceWorkerRegistration) {
+  const reason = new URL(window.location.href).searchParams.get(NATIVE_REFRESH_QUERY_PARAM);
+  if (!reason || !window.navigator.onLine) return false;
+
+  const token = `${reason}:${window.location.pathname}`;
+  if (readSessionValue(NATIVE_REFRESH_SESSION_KEY) === token) return false;
+
+  writeSessionValue(NATIVE_REFRESH_SESSION_KEY, token);
+  removeSessionValue(APP_SHELL_WARM_SIGNATURE_KEY);
+
+  try {
+    await registration.update();
+  } catch (error) {
+    console.warn("[TDN-OFFLINE] native refresh service worker update check failed", error);
+  }
+
+  await clearDeployRuntimeCaches();
+  await unregisterSameOriginServiceWorkers();
+  window.location.replace(getCleanNativeRefreshUrl());
+  return true;
+}
+
 async function refreshDeployCache(registration: ServiceWorkerRegistration) {
   try {
     await registration.update();
@@ -201,11 +259,16 @@ async function refreshDeployCache(registration: ServiceWorkerRegistration) {
     console.warn("[TDN-OFFLINE] service worker update check failed", error);
   }
 
+  await clearDeployRuntimeCaches();
+
   const readyRegistration = await navigator.serviceWorker.ready;
   const worker = readyRegistration.active || registration.active || navigator.serviceWorker.controller;
   if (!worker) return;
 
-  worker.postMessage({ type: REFRESH_DEPLOY_CACHE_MESSAGE, urls: collectAppShellUrls() });
+  worker.postMessage({ type: PURGE_DEPLOY_CACHE_MESSAGE, urls: collectAppShellUrls() });
+  window.setTimeout(() => {
+    worker.postMessage({ type: REFRESH_DEPLOY_CACHE_MESSAGE, urls: collectAppShellUrls() });
+  }, 250);
   removeSessionValue(APP_SHELL_WARM_SIGNATURE_KEY);
 }
 
@@ -292,14 +355,15 @@ export default function OfflineRuntime() {
     } else if ("serviceWorker" in navigator) {
       const registerServiceWorker = () => {
         navigator.serviceWorker
-          .register("/offline-sw.js", { scope: "/" })
+          .register("/offline-sw.js", { scope: "/", updateViaCache: "none" })
           .then((registration) => {
             window.dispatchEvent(
               new CustomEvent(OFFLINE_READY_EVENT, {
                 detail: { scope: registration.scope },
               })
             );
-            void navigator.serviceWorker.ready.then((readyRegistration) => {
+            void navigator.serviceWorker.ready.then(async (readyRegistration) => {
+              if (await handleNativeRefreshRecovery(readyRegistration)) return;
               sendAppShellCacheMessage(readyRegistration);
               void registerPushSubscription(readyRegistration);
               checkForWebDeployUpdate("startup", true);
@@ -329,3 +393,5 @@ export default function OfflineRuntime() {
 
   return null;
 }
+
+
