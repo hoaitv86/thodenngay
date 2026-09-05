@@ -15,6 +15,9 @@ const getFallbackDemoEmail = (role: DemoRole) =>
     ? process.env.DEMO_CUSTOMER_EMAIL || DEMO_LOCAL_CUSTOMER_EMAIL
     : process.env.DEMO_WORKER_EMAIL || DEMO_LOCAL_WORKER_EMAIL;
 
+const isUnregisteredApiKeyError = (error: { message?: string } | null | undefined) =>
+  String(error?.message || "").toLowerCase().includes("unregistered api key");
+
 const signInWithFallbackDemoAccount = async (role: DemoRole) => {
   const demoAccount = DEMO_ACCOUNTS[role];
   const demoEmail = getFallbackDemoEmail(role);
@@ -97,6 +100,9 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (profileError) {
+      if (isUnregisteredApiKeyError(profileError)) {
+        return signInWithFallbackDemoAccount(role);
+      }
       return NextResponse.json({ error: "Lỗi tìm tài khoản demo: " + profileError.message }, { status: 500 });
     }
 
@@ -110,6 +116,9 @@ export async function POST(request: Request) {
     });
 
     if (error || !data.properties?.hashed_token) {
+      if (isUnregisteredApiKeyError(error)) {
+        return signInWithFallbackDemoAccount(role);
+      }
       return NextResponse.json(
         { error: "Không thể tạo phiên đăng nhập demo: " + (error?.message || "Không xác định") },
         { status: 500 }
@@ -128,3 +137,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
