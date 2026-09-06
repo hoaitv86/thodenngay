@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isSyntheticPhoneEmail, maskEmail, normalizePhone } from "@/lib/account-roles";
+import { getPhoneLoginCandidates, isSyntheticPhoneEmail, isUnregisteredApiKeyError, maskEmail, normalizePhone } from "@/lib/account-roles";
 import { enqueueAccountEmail } from "@/lib/notifications/core";
 
 type ProfileRecoveryRow = {
@@ -22,6 +22,13 @@ function getOrigin(request: Request) {
   ).replace(/\/$/, "");
 }
 
+function recoveryUnavailableResponse() {
+  return NextResponse.json(
+    { error: "Không thể xác định email khôi phục lúc này. Vui lòng liên hệ hỗ trợ để đặt lại mật khẩu." },
+    { status: 409 },
+  );
+}
+
 function buildRecoveryEmail(name: string | null, recoveryLink: string) {
   const displayName = name || "ban";
   return {
@@ -41,6 +48,7 @@ export async function POST(request: Request) {
   try {
     const { phone } = await request.json();
     const normalizedPhone = normalizePhone(String(phone || ""));
+    const phoneCandidates = getPhoneLoginCandidates(String(phone || ""));
 
     if (normalizedPhone.length < 8) {
       return NextResponse.json({ error: "Số điện thoại không hợp lệ." }, { status: 400 });
@@ -48,10 +56,7 @@ export async function POST(request: Request) {
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Vui lòng cấu hình SUPABASE_SERVICE_ROLE_KEY trong file .env.local." },
-        { status: 500 },
-      );
+      return recoveryUnavailableResponse();
     }
 
     const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
@@ -61,11 +66,19 @@ export async function POST(request: Request) {
     const { data, error } = await supabaseAdmin
       .from("profiles")
       .select("id, email, recovery_email, full_name, phone, normalized_phone, role")
-      .or(`normalized_phone.eq.${normalizedPhone},phone.eq.${normalizedPhone}`)
+      .or(
+        [
+          `normalized_phone.in.(${phoneCandidates.join(",")})`,
+          `phone.in.(${phoneCandidates.join(",")})`,
+        ].join(",")
+      )
       .in("role", ["customer", "worker"])
       .limit(1);
 
     if (error) {
+      if (isUnregisteredApiKeyError(error)) {
+        return recoveryUnavailableResponse();
+      }
       return NextResponse.json({ error: "Lỗi tìm tài khoản: " + error.message }, { status: 500 });
     }
 

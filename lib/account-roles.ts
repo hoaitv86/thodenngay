@@ -15,9 +15,32 @@ export function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
+export function getPhoneLoginCandidates(phone: string) {
+  const normalizedPhone = normalizePhone(phone);
+  const candidates = new Set<string>();
+
+  if (normalizedPhone) {
+    candidates.add(normalizedPhone);
+  }
+
+  if (normalizedPhone.startsWith("84") && normalizedPhone.length > 2) {
+    candidates.add(`0${normalizedPhone.slice(2)}`);
+  }
+
+  if (normalizedPhone.startsWith("0") && normalizedPhone.length > 1) {
+    candidates.add(`84${normalizedPhone.slice(1)}`);
+  }
+
+  return [...candidates];
+}
+
 export function buildPhoneLoginEmail(phone: string) {
   const normalizedPhone = normalizePhone(phone);
   return normalizedPhone ? `${normalizedPhone}@phone.thodenngay.local` : "";
+}
+
+export function isUnregisteredApiKeyError(error: { message?: string } | null | undefined) {
+  return String(error?.message || "").toLowerCase().includes("unregistered api key");
 }
 
 export function isSyntheticPhoneEmail(email?: string | null) {

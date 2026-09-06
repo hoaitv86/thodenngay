@@ -9,7 +9,7 @@ import { useSettings } from "@/lib/settings";
 import { LogoIcon, ArrowRightIcon, ShieldCheckIcon, UserIcon } from "../components/icons";
 import { MapPinCheck } from "lucide-react";
 import { saveLoginLocation } from "@/services/locationService";
-import { ACTIVE_ROLE_COOKIE, resolvePostLoginDestination } from "@/lib/account-roles";
+import { ACTIVE_ROLE_COOKIE, buildPhoneLoginEmail, normalizePhone, resolvePostLoginDestination } from "@/lib/account-roles";
 import { getOfflineAuthSnapshot, rememberOfflineAuthSnapshot } from "@/lib/offline/session";
 import {
   DEMO_ACTION_BLOCK_MESSAGE,
@@ -245,6 +245,7 @@ export default function LoginPage() {
 
     let email = loginId.trim();
     if (!email.includes("@")) {
+      const fallbackEmail = buildPhoneLoginEmail(normalizePhone(email));
       const res = await fetch("/api/auth/resolve-phone", {
         method: "POST",
         headers: {
@@ -255,12 +256,10 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Không tìm thấy tài khoản theo SĐT này.");
-        setLoading(false);
-        return;
+        email = fallbackEmail;
+      } else {
+        email = data.email || fallbackEmail;
       }
-
-      email = data.email;
     }
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({

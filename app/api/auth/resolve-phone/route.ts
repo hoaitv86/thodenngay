@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buildPhoneLoginEmail } from "@/lib/account-roles";
+import { buildPhoneLoginEmail, getPhoneLoginCandidates, isUnregisteredApiKeyError, normalizePhone } from "@/lib/account-roles";
 
-const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
-
+function fallbackPhoneEmail(normalizedPhone: string) {
+  return NextResponse.json({ email: buildPhoneLoginEmail(normalizedPhone), fallback: true });
+}
 export async function POST(request: Request) {
   try {
     const { phone } = await request.json();
     const normalizedPhone = normalizePhone(phone || "");
+    const phoneCandidates = getPhoneLoginCandidates(phone || "");
 
     if (normalizedPhone.length < 8) {
       return NextResponse.json({ error: "Số điện thoại không hợp lệ." }, { status: 400 });
@@ -15,10 +17,7 @@ export async function POST(request: Request) {
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Vui lòng cấu hình SUPABASE_SERVICE_ROLE_KEY trong file .env.local." },
-        { status: 500 }
-      );
+      return fallbackPhoneEmail(normalizedPhone);
     }
 
     const supabaseAdmin = createClient(
@@ -35,10 +34,19 @@ export async function POST(request: Request) {
     const { data, error } = await supabaseAdmin
       .from("profiles")
       .select("email")
-      .or(`normalized_phone.eq.${normalizedPhone},phone.eq.${normalizedPhone}`)
+      .or(
+        [
+          `normalized_phone.in.(${phoneCandidates.join(",")})`,
+          `phone.in.(${phoneCandidates.join(",")})`,
+          `email.in.(${phoneCandidates.map(buildPhoneLoginEmail).join(",")})`,
+        ].join(",")
+      )
       .limit(1);
 
     if (error) {
+      if (isUnregisteredApiKeyError(error)) {
+        return fallbackPhoneEmail(normalizedPhone);
+      }
       return NextResponse.json({ error: "Lỗi tìm tài khoản: " + error.message }, { status: 500 });
     }
 
