@@ -47,6 +47,7 @@ import org.json.JSONObject;
 public class MainActivity extends BridgeActivity {
     private static final String HOME_URL = "https://thodenngay.vn";
     private static final String ANDROID_START_URL = "https://thodenngay.vn/login?app=android";
+    private static final String WORKER_START_URL = "https://thodenngay.vn/worker";
     private static final String APP_HOST = "thodenngay.vn";
     private static final String PDF_MIME_TYPE = "application/pdf";
     private static final String OFFLINE_PREFS = "tdn_android_offline_shell";
@@ -56,7 +57,7 @@ public class MainActivity extends BridgeActivity {
     private static final String KEY_WEB_DEPLOY_VERSION = "web_deploy_version";
     private static final String DEPLOY_VERSION_URL = HOME_URL + "/api/app-version";
     private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
-    private static final int STARTUP_TIMEOUT_MS = 15_000;
+    private static final int STARTUP_TIMEOUT_MS = 3_000;
     private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
 
@@ -80,6 +81,9 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void load() {
+        if (offlinePrefs == null) {
+            offlinePrefs = getSharedPreferences(OFFLINE_PREFS, Context.MODE_PRIVATE);
+        }
         super.load();
         configureWebView();
         createNetworkErrorView();
@@ -228,7 +232,7 @@ public class MainActivity extends BridgeActivity {
         appName.setTypeface(appName.getTypeface(), android.graphics.Typeface.BOLD);
 
         TextView version = new TextView(this);
-        version.setText(getString(R.string.startup_version));
+        version.setText(getStartupVersionLabel());
         version.setTextColor(0xFF476173);
         version.setTextSize(14);
         version.setGravity(Gravity.CENTER);
@@ -276,6 +280,18 @@ public class MainActivity extends BridgeActivity {
 
     private boolean isStartupSplashVisible() {
         return startupSplashView != null && startupSplashView.getVisibility() == View.VISIBLE;
+    }
+
+    private String getStartupVersionLabel() {
+        try {
+            String versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            if (versionName != null && versionName.trim().length() > 0) {
+                return "v" + versionName.trim();
+            }
+        } catch (Exception ignored) {
+            // Fall through to the resource fallback.
+        }
+        return getString(R.string.startup_version_fallback);
     }
 
     private int dp(int value) {
@@ -476,16 +492,28 @@ public class MainActivity extends BridgeActivity {
     }
 
     private String getFallbackUrl(String failedUrl) {
-        if (isRemoteAppUrl(failedUrl)) return failedUrl;
         String storedUrl = offlinePrefs.getString(KEY_LAST_URL, null);
-        if (isRemoteAppUrl(storedUrl)) return storedUrl;
+        if (isRemoteAppUrl(storedUrl) && !isAndroidLoginUrl(storedUrl)) return storedUrl;
+        if (isRemoteAppUrl(failedUrl) && !isAndroidLoginUrl(failedUrl)) return failedUrl;
+        if (isAndroidLoginUrl(failedUrl)) return WORKER_START_URL;
         return ANDROID_START_URL;
+    }
+
+    private boolean isAndroidLoginUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            return APP_HOST.equalsIgnoreCase(uri.getHost())
+                && "/login".equals(uri.getPath())
+                && "android".equals(uri.getQueryParameter("app"));
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     private void rememberSuccessfulShell(WebView view, String url) {
         if (!hasNetworkConnection() || !isRemoteAppUrl(url)) return;
-
-        offlinePrefs.edit().putString(KEY_LAST_URL, url).apply();
+        String cacheUrl = isAndroidLoginUrl(url) ? WORKER_START_URL : url;
+        offlinePrefs.edit().putString(KEY_LAST_URL, cacheUrl).apply();
         view.evaluateJavascript(
             "(function(){try{return document.documentElement.outerHTML}catch(error){return ''}})();",
             value -> {
@@ -496,7 +524,7 @@ public class MainActivity extends BridgeActivity {
                     if (html.length() < 500 || !html.contains("__next")) return;
                     if (html.length() > MAX_SNAPSHOT_CHARS) return;
                     offlinePrefs.edit()
-                        .putString(KEY_LAST_URL, url)
+                        .putString(KEY_LAST_URL, cacheUrl)
                         .putString(KEY_LAST_HTML, html)
                         .apply();
                 } catch (Exception ignored) {
@@ -521,9 +549,16 @@ public class MainActivity extends BridgeActivity {
 
     private void loadOfflineStartup(String failedUrl) {
         String fallbackUrl = getFallbackUrl(failedUrl);
+        if (!hasNetworkConnection() && isAndroidLoginUrl(fallbackUrl)) {
+            fallbackUrl = WORKER_START_URL;
+        }
         loadingOfflineFallback = true;
         hideNetworkError();
         configureCacheModeForNetwork();
+
+        if (!hasNetworkConnection() && loadCachedHtmlSnapshot(fallbackUrl)) {
+            return;
+        }
 
         try {
             webView.stopLoading();
@@ -622,6 +657,9 @@ public class MainActivity extends BridgeActivity {
             hideStartupSplash();
             inspectWebRuntimeState(view);
             if (loadingOfflineFallback) {
+                if (hasNetworkConnection()) {
+                    rememberSuccessfulShell(view, url);
+                }
                 loadingOfflineFallback = false;
                 return;
             }
@@ -652,5 +690,4 @@ public class MainActivity extends BridgeActivity {
         }
     }
 }
-
 

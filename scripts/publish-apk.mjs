@@ -1,13 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
 const rootDir = process.cwd();
 const sourceApkPath = path.join(rootDir, "android", "app", "build", "outputs", "apk", "release", "app-release.apk");
-const metadataPath = path.join(rootDir, "android", "app", "build", "outputs", "apk", "release", "output-metadata.json");
+const releaseMetadataPath = path.join(rootDir, "android", "app", "build", "outputs", "apk", "release", "output-metadata.json");
 const targetApkPath = path.join(rootDir, "public", "downloads", "thodenngay.apk");
+const targetMetadataPath = path.join(rootDir, "public", "downloads", "thodenngay.json");
 
 async function assertFileExists(filePath, label) {
   try {
@@ -23,11 +24,11 @@ async function assertFileExists(filePath, label) {
 }
 
 async function readApkMetadata() {
-  await assertFileExists(metadataPath, "Release metadata");
-  const raw = await readFile(metadataPath, "utf8");
+  await assertFileExists(releaseMetadataPath, "Release metadata");
+  const raw = await readFile(releaseMetadataPath, "utf8");
   const metadata = JSON.parse(raw);
   const element = metadata.elements?.find((item) => item?.outputFile === "app-release.apk") || metadata.elements?.[0];
-  if (!element) throw new Error(`No APK element found in ${metadataPath}`);
+  if (!element) throw new Error(`No APK element found in ${releaseMetadataPath}`);
   if (!Number.isInteger(element.versionCode)) throw new Error("APK metadata is missing versionCode.");
   if (typeof element.versionName !== "string" || element.versionName.length === 0) {
     throw new Error("APK metadata is missing versionName.");
@@ -119,6 +120,19 @@ function formatBytes(bytes) {
   return `${bytes} bytes (${(bytes / 1024 / 1024).toFixed(2)} MB)`;
 }
 
+async function writePublishedMetadata({ badging, size, hash }) {
+  const metadata = {
+    versionCode: Number(badging.versionCode),
+    versionName: badging.versionName,
+    size,
+    sha256: hash,
+    publishedAt: new Date().toISOString(),
+  };
+
+  await writeFile(targetMetadataPath, JSON.stringify(metadata, null, 2) + "\n", "utf8");
+  return metadata;
+}
+
 function assertSameVersion(metadata, badging) {
   if (metadata.applicationId !== badging.applicationId) {
     throw new Error(`Application ID mismatch: metadata=${metadata.applicationId}, apk=${badging.applicationId}`);
@@ -155,15 +169,23 @@ async function main() {
     throw new Error("Published APK does not match release APK after copy.");
   }
 
+  const publishedMetadata = await writePublishedMetadata({
+    badging: targetBadging,
+    size: targetStat.size,
+    hash: targetHash,
+  });
+
   console.log("Published APK");
   console.log(`  Source: ${sourceApkPath}`);
   console.log(`  Target: ${targetApkPath}`);
+  console.log(`  Metadata: ${targetMetadataPath}`);
   console.log(`  Application ID: ${targetBadging.applicationId}`);
   console.log(`  Variant: ${metadata.variantName}`);
   console.log(`  Version code: ${targetBadging.versionCode}`);
   console.log(`  Version name: ${targetBadging.versionName}`);
   console.log(`  Size: ${formatBytes(targetStat.size)}`);
   console.log(`  SHA256: ${targetHash}`);
+  console.log(`  Published at: ${publishedMetadata.publishedAt}`);
 }
 
 main().catch((error) => {

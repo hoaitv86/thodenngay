@@ -39,12 +39,73 @@ export const revalidate = 300;
 export const dynamic = "force-dynamic";
 
 const apkDownloadUrl = "https://thodenngay.vn/downloads/thodenngay.apk";
-const apkVersion = "0.1.1-beta";
-const apkUpdatedAt = "26/07/2026";
+const apkMetadataPath = path.join(process.cwd(), "public", "downloads", "thodenngay.json");
+
+type ApkReleaseMetadata = {
+  versionCode: number | null;
+  versionName: string;
+  size: number;
+  sha256: string | null;
+  publishedAt: string | null;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+async function readApkReleaseMetadata(apkPath: string): Promise<ApkReleaseMetadata> {
+  const apkStat = await fs.stat(apkPath);
+
+  try {
+    const raw = await fs.readFile(apkMetadataPath, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) throw new Error("APK metadata must be an object.");
+
+    const versionCode = typeof parsed.versionCode === "number" ? parsed.versionCode : Number(parsed.versionCode);
+    const versionName = typeof parsed.versionName === "string" ? parsed.versionName.trim() : "";
+    const size = typeof parsed.size === "number" ? parsed.size : Number(parsed.size);
+    const sha256 = typeof parsed.sha256 === "string" && parsed.sha256.trim() ? parsed.sha256.trim() : null;
+    const publishedAt = typeof parsed.publishedAt === "string" && parsed.publishedAt.trim() ? parsed.publishedAt.trim() : null;
+
+    if (!Number.isInteger(versionCode) || !versionName || !Number.isFinite(size) || size <= 0 || !publishedAt) {
+      throw new Error("APK metadata is incomplete.");
+    }
+
+    return { versionCode, versionName, size, sha256, publishedAt };
+  } catch {
+    return {
+      versionCode: null,
+      versionName: "Đang cập nhật",
+      size: apkStat.size,
+      sha256: null,
+      publishedAt: null,
+    };
+  }
+}
+
+function formatApkFileSize(bytes: number) {
+  return (bytes / 1024 / 1024).toFixed(2) + " MB";
+}
+
+function formatApkPublishedAt(value: string | null) {
+  if (!value) return "Đang cập nhật";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Đang cập nhật";
+
+  return date.toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
 async function getApkDownloadData() {
   const apkPath = path.join(process.cwd(), "public", "downloads", "thodenngay.apk");
-  const stat = await fs.stat(apkPath);
+  const metadata = await readApkReleaseMetadata(apkPath);
   const qrCodeDataUrl = await QRCode.toDataURL(apkDownloadUrl, {
     errorCorrectionLevel: "M",
     margin: 2,
@@ -59,11 +120,12 @@ async function getApkDownloadData() {
   return {
     downloadUrl: apkDownloadUrl,
     qrCodeDataUrl,
-    version: apkVersion,
-    updatedAt: apkUpdatedAt,
-    fileSize: `${(stat.size / 1024 / 1024).toFixed(2)} MB`,
+    version: metadata.versionName,
+    updatedAt: formatApkPublishedAt(metadata.publishedAt),
+    fileSize: formatApkFileSize(metadata.size),
   };
 }
+
 
 type IconComponent = (props: { size?: number; className?: string; strokeWidth?: number }) => ReactElement;
 

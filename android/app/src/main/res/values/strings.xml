@@ -10,5 +10,7 @@
     <string name="network_error_message">Vui lòng kiểm tra mạng rồi thử lại.</string>
     <string name="network_error_retry">Thử lại</string>
     <string name="startup_version">v0.1.1 Beta</string>
+    <string name="startup_version_fallback">v0.1.2-beta</string>
     <string name="startup_status">Đang khởi động...</string>
 </resources>
+
