@@ -21,5 +21,5 @@ export const DEFAULT_SETTINGS: SettingsData = {
   maintenance_mode: false,
   terms_url: "https://thodenngay.vn/terms",
   privacy_url: "https://thodenngay.vn/privacy",
-  apk_backup_download_url: "https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk"
+  apk_backup_download_url: "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk"
 };

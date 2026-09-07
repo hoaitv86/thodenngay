@@ -12,7 +12,7 @@ BEGIN
     EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS zalo_url TEXT DEFAULT ''https://zalo.me/thodenngay''';
     EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS terms_url TEXT DEFAULT ''https://thodenngay.vn/terms''';
     EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS privacy_url TEXT DEFAULT ''https://thodenngay.vn/privacy''';
-    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS apk_backup_download_url TEXT DEFAULT ''https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk''';
+    EXECUTE 'ALTER TABLE public.system_settings ADD COLUMN IF NOT EXISTS apk_backup_download_url TEXT DEFAULT ''https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk''';
 
     UPDATE public.system_settings
     SET
@@ -23,7 +23,7 @@ BEGIN
       terms_url = CASE WHEN terms_url = 'https://alotho.vn/terms' THEN 'https://thodenngay.vn/terms' ELSE terms_url END,
       privacy_url = CASE WHEN privacy_url = 'https://alotho.vn/privacy' THEN 'https://thodenngay.vn/privacy' ELSE privacy_url END,
       apk_backup_download_url = CASE
-        WHEN COALESCE(apk_backup_download_url, '') = '' THEN 'https://raw.githubusercontent.com/tuananh9201/alo-tho/master/public/downloads/thodenngay.apk'
+        WHEN COALESCE(apk_backup_download_url, '') = '' THEN 'https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk'
         ELSE apk_backup_download_url
       END
     WHERE id = 'default';

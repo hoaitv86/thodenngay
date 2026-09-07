@@ -3,16 +3,22 @@ name: Android APK
 on:
   push:
     branches:
-      - feature/android-apk
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-apk:
-    name: Build Android APK
+    name: Build and publish Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout master
         uses: actions/checkout@v4
+        with:
+          ref: master
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -40,14 +46,51 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleRelease
 
+      - name: Read APK version
+        id: apk-version
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('fs');
+          const metadata = JSON.parse(fs.readFileSync('android/app/build/outputs/apk/release/output-metadata.json', 'utf8'));
+          const element = metadata.elements?.find((item) => item?.outputFile === 'app-release.apk') || metadata.elements?.[0];
+          if (!element?.versionName || !Number.isInteger(element.versionCode)) {
+            throw new Error('Release APK metadata is missing versionName/versionCode.');
+          }
+          console.log(`version_name=${element.versionName}`);
+          console.log(`version_code=${element.versionCode}`);
+          console.log(`tag=v${element.versionName}`);
+          NODE
+
       - name: Prepare APK artifact
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk artifacts/tho-den-ngay-v0.1.1-beta.apk
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/thodenngay.apk
 
-      - name: Upload APK artifact
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tho-den-ngay-v0.1.1-beta
-          path: artifacts/tho-den-ngay-v0.1.1-beta.apk
+          name: thodenngay-apk-v${{ steps.apk-version.outputs.version_name }}-${{ steps.apk-version.outputs.version_code }}
+          path: artifacts/thodenngay.apk
           if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.apk-version.outputs.tag }}
+          VERSION_NAME: ${{ steps.apk-version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.apk-version.outputs.version_code }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Thợ Đến Ngay ${VERSION_NAME}" \
+              --notes "Android APK v${VERSION_NAME} (${VERSION_CODE})." \
+              --latest
+          else
+            gh release create "$TAG" \
+              --title "Thợ Đến Ngay ${VERSION_NAME}" \
+              --notes "Android APK v${VERSION_NAME} (${VERSION_CODE})." \
+              --latest
+          fi
+
+          gh release upload "$TAG" artifacts/thodenngay.apk --clobber

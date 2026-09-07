@@ -351,7 +351,7 @@ export default function AdminSettings() {
                 <input
                   type="url"
                   className="input-field"
-                  placeholder="https://drive.google.com/..."
+                  placeholder="https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk"
                   value={settings.apk_backup_download_url}
                   onChange={e => setSettings({...settings, apk_backup_download_url: e.target.value})}
                 />
