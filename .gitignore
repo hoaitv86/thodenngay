@@ -50,3 +50,7 @@ next-env.d.ts
 
 # Local Netlify folder
 .netlify
+
+# Local generated files
+supabase/.temp/
+deno.lock
