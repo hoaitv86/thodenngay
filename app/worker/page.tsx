@@ -79,7 +79,7 @@ import {
   type BillGoPackage,
 } from "@/lib/billgo-packages";
 import { Worker } from "@/lib/types";
-import { handoverWorkflowSectionKeys, pruneWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
+import { handoverWorkflowSectionKeys, pruneWorkflowData, sanitizeCameraDevicesWorkflowData, type WorkflowData } from "@/config/serviceWorkflows";
 import PendingApproval from "./pending-approval";
 import { isMissingWorkerInventorySchemaError, type InventoryProduct } from "@/lib/worker-inventory";
 import {
@@ -3283,11 +3283,11 @@ useEffect(() => {
     const existingPaidAmount = (job.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const amountToRecord = Math.max(paidAmount - existingPaidAmount, 0);
     const maxWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
-    const handoverWorkflowData = pruneWorkflowData(
+    const handoverWorkflowData = sanitizeCameraDevicesWorkflowData(pruneWorkflowData(
       completionHandoverData,
       getWorkflowServicesForJob(job),
       { includeSectionKeys: handoverWorkflowSectionKeys }
-    );
+    ));
     const materialDraftItems: SalesDraftItem[] = cleanedItems
       .filter(item => item.source === "inventory")
       .map(item => ({

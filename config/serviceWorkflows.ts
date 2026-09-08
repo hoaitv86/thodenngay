@@ -43,6 +43,37 @@ export type ServiceLikeForWorkflow = {
 
 export type WorkflowData = Record<string, Record<string, unknown>>;
 
+export const CAMERA_DEVICE_FIELDS = ["name", "location", "serial", "uid", "qrText", "note"] as const;
+
+export function cleanCameraWorkflowDevice(device: unknown): Record<string, string> {
+  if (!device || typeof device !== "object" || Array.isArray(device)) return {};
+
+  const record = device as Record<string, unknown>;
+  const cleaned: Record<string, string> = {};
+  CAMERA_DEVICE_FIELDS.forEach((field) => {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) cleaned[field] = value.trim();
+  });
+
+  return cleaned;
+}
+
+export function sanitizeCameraDevicesWorkflowData(data: WorkflowData): WorkflowData {
+  const section = data.camera_devices;
+  const devices = Array.isArray(section?.devices) ? section.devices : null;
+  if (!devices) return data;
+
+  return {
+    ...data,
+    camera_devices: {
+      ...section,
+      devices: devices
+        .map(cleanCameraWorkflowDevice)
+        .filter((device) => Object.keys(device).length > 0),
+    },
+  };
+}
+
 export const handoverWorkflowSectionKeys: WorkflowSectionKey[] = [
   "internet_account",
   "wifi",

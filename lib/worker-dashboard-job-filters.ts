@@ -32,6 +32,11 @@ function getMonthStart(now: Date) {
   return new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
 }
 
+function getNextMonthStart(now: Date) {
+  const todayStart = getDayStart(now);
+  return new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 1);
+}
+
 export function filterWorkerDashboardJobs<T extends WorkerDashboardJobDateFields>(
   jobs: T[],
   filter: WorkerDashboardJobFilter,
@@ -40,8 +45,9 @@ export function filterWorkerDashboardJobs<T extends WorkerDashboardJobDateFields
   if (filter === "todo") return jobs;
 
   const start = filter === "today" ? getDayStart(now) : getMonthStart(now);
+  const end = filter === "month" ? getNextMonthStart(now) : null;
   return jobs.filter((job) => {
     const jobDate = getWorkerDashboardJobDate(job);
-    return jobDate ? jobDate >= start : false;
+    return jobDate ? jobDate >= start && (!end || jobDate < end) : false;
   });
 }

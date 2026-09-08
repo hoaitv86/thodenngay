@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import jsQR from "jsqr";
 import { ChevronDown, ImageUp, Plus, Trash2 } from "lucide-react";
 import {
+  cleanCameraWorkflowDevice,
   getWorkflowSectionsForServices,
   type ServiceLikeForWorkflow,
   type WorkflowData,
@@ -31,6 +32,12 @@ type Props = {
 };
 
 const getSectionValue = (value: WorkflowData, key: string) => value[key] || {};
+const cleanCameraDevice = (device: CameraDevice) => cleanCameraWorkflowDevice(device) as CameraDevice;
+
+const normalizeCameraDevices = (devices: CameraDevice[]) => {
+  const cleaned = devices.map(cleanCameraDevice);
+  return cleaned.length > 0 ? cleaned : [{}];
+};
 
 const readImageFile = (file: File) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
@@ -163,13 +170,13 @@ function CameraDevicesEditor({
   disabled?: boolean;
 }) {
   const devices = Array.isArray(section.devices) ? (section.devices as CameraDevice[]) : [];
-  const normalizedDevices = devices.length > 0 ? devices : [{}];
+  const normalizedDevices = devices.length > 0 ? devices.map(cleanCameraDevice) : [{}];
 
   const updateDevice = (index: number, patch: CameraDevice) => {
     const nextDevices = normalizedDevices.map((device, deviceIndex) =>
-      deviceIndex === index ? { ...device, ...patch } : device
+      deviceIndex === index ? cleanCameraDevice({ ...device, ...patch }) : device
     );
-    onSectionChange({ ...section, devices: nextDevices });
+    onSectionChange({ ...section, devices: normalizeCameraDevices(nextDevices) });
   };
 
   const removeDevice = (index: number) => {
@@ -177,10 +184,13 @@ function CameraDevicesEditor({
     onSectionChange({ ...section, devices: nextDevices.length > 0 ? nextDevices : [{}] });
   };
 
+  const getDeviceKey = (device: CameraDevice, index: number) =>
+    device.qrText || device.serial || device.uid || `camera-${index}`;
+
   return (
     <div className="space-y-3">
       {normalizedDevices.map((device, index) => (
-        <div key={index} className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
+        <div key={getDeviceKey(device, index)} className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs font-extrabold uppercase text-on-surface-variant">Camera {index + 1}</p>
             <button
