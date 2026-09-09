@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { Component, useMemo, useState } from "react";
 import jsQR from "jsqr";
 import { ChevronDown, ImageUp, Plus, Trash2 } from "lucide-react";
 import {
@@ -91,6 +91,29 @@ const decodeQrImage = async (file: File) => {
   }
 };
 
+
+class CameraDevicesErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { errorMessage: string }
+> {
+  state = { errorMessage: "" };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { errorMessage: error instanceof Error ? error.message : "Không thể hiển thị danh sách Camera." };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("[camera-qr] render failed", error);
+  }
+
+  render() {
+    if (this.state.errorMessage) {
+      return <p className="text-xs font-medium text-error">{this.state.errorMessage}</p>;
+    }
+
+    return this.props.children;
+  }
+}
 function QRImageUpload({
   onDecoded,
   disabled = false,
@@ -108,7 +131,12 @@ function QRImageUpload({
     setStatus("Đang đọc mã QR...");
     try {
       const qrText = await decodeQrImage(file);
-      onDecoded(qrText);
+      try {
+        onDecoded(qrText);
+      } catch (error) {
+        console.error("[camera-qr] state update failed", error);
+        throw new Error("Không thể cập nhật QR cho camera này.");
+      }
       setStatus("Đã lấy QR Text từ ảnh. Hệ thống chỉ lưu chuỗi text.");
     } catch (error) {
       console.error("[camera-qr] decode failed", error);
@@ -275,7 +303,9 @@ function WorkflowSection({
       {open && (
         <div className="space-y-3 border-t border-outline-variant/20 p-4">
           {section.key === "camera_devices" ? (
-            <CameraDevicesEditor section={sectionValue} onSectionChange={onSectionChange} disabled={disabled} />
+            <CameraDevicesErrorBoundary>
+              <CameraDevicesEditor section={sectionValue} onSectionChange={onSectionChange} disabled={disabled} />
+            </CameraDevicesErrorBoundary>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {(section.fields || []).map((field) => (
