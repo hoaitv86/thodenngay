@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { Component, useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -350,6 +350,33 @@ interface WorkerUpdateJobResponse {
 
 type ToastType = "success" | "error" | "info";
 
+class CompletionModalErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { errorMessage: string }
+> {
+  state = { errorMessage: "" };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { errorMessage: error instanceof Error ? error.message : "Không thể mở màn hình hoàn thành công việc." };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("[completion-modal] render failed", error);
+  }
+
+  render() {
+    if (this.state.errorMessage) {
+      return (
+        <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 p-5 text-center">
+          <p className="text-sm font-bold text-error">{this.state.errorMessage}</p>
+          <p className="text-xs font-semibold text-on-surface-variant">Vui lòng đóng và thử lại. App vẫn hoạt động, không mất dữ liệu công việc.</p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 type ToastState = {
   message: string;
   type: ToastType | null;
@@ -2838,11 +2865,17 @@ useEffect(() => {
     setCompletionAddOnPackageId("");
     setCompletionAddOnCycle("monthly");
     setCompletionAddOnNote("");
-    setCompletionHandoverData(pruneWorkflowData(
-      job.workflow_data || {},
-      getWorkflowServicesForJob(job),
-      { includeSectionKeys: handoverWorkflowSectionKeys }
-    ));
+    try {
+      setCompletionHandoverData(pruneWorkflowData(
+        job.workflow_data || {},
+        getWorkflowServicesForJob(job),
+        { includeSectionKeys: handoverWorkflowSectionKeys }
+      ));
+    } catch (error) {
+      console.error("[completion-modal] handover init failed", error);
+      setCompletionHandoverData({});
+      showToast("Không thể tải dữ liệu bàn giao cũ. Bạn vẫn có thể hoàn thành công việc.", "error");
+    }
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
@@ -5866,7 +5899,6 @@ useEffect(() => {
       {activeJobToComplete && (
         <div className="fixed inset-0 z-[70] flex items-stretch justify-center overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
           <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl animate-fade-in-up sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl">
-
             {/* Modal Header */}
             <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-outline-variant/50">
               <h2 className="text-lg font-bold text-on-surface">Hoàn thành công việc</h2>
@@ -5896,6 +5928,7 @@ useEffect(() => {
             </div>
 
             {/* Modal Body */}
+            <CompletionModalErrorBoundary>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5">
               <div className="bg-surface-container-low p-4 rounded-xl space-y-2">
                 <p className="text-body-sm font-bold text-on-surface">Khách hàng: {activeJobToComplete.customerName}</p>
@@ -6415,6 +6448,7 @@ useEffect(() => {
                 )}
               </div>
             </div>
+            </CompletionModalErrorBoundary>
 
             {/* Modal Footer */}
             <div className="shrink-0 border-t border-outline-variant/50 bg-surface-container-lowest p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:rounded-b-2xl sm:p-5">
@@ -6522,3 +6556,4 @@ useEffect(() => {
     </div>
   );
 }
+
