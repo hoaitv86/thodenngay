@@ -5502,7 +5502,7 @@ useEffect(() => {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5" data-camera-qr-scroll-root="true">
               <div className="rounded-xl border border-primary-container/15 bg-primary-fixed/45 p-3 text-xs font-semibold text-primary-container">
                 Chỉ sửa dịch vụ, khách hàng, địa chỉ và ghi chú. Ảnh, vật tư, thu tiền và lịch sử công việc được giữ nguyên.
               </div>
@@ -5929,7 +5929,7 @@ useEffect(() => {
 
             {/* Modal Body */}
             <CompletionModalErrorBoundary>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-6 sm:p-5" data-camera-qr-scroll-root="true">
               <div className="bg-surface-container-low p-4 rounded-xl space-y-2">
                 <p className="text-body-sm font-bold text-on-surface">Khách hàng: {activeJobToComplete.customerName}</p>
                 <p className="text-body-sm text-on-surface-variant">Dịch vụ: {activeJobToComplete.serviceName}</p>
