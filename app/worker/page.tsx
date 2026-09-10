@@ -5476,10 +5476,11 @@ useEffect(() => {
       </div>
 
       {editingQuickJob && (
-        <div className="fixed inset-0 z-[68] flex items-stretch justify-center overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
+        <div className="fixed inset-0 z-[68] flex items-stretch justify-center overflow-clip bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
           <form
             onSubmit={handleSaveQuickJobEdit}
-            className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl"
+            className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-clip bg-white shadow-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl"
+            data-camera-qr-modal-shell="quick-edit"
           >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-outline-variant/50 p-4 sm:p-5">
               <div className="min-w-0">
@@ -5897,8 +5898,11 @@ useEffect(() => {
 
       {/* Complete Job Modal */}
       {activeJobToComplete && (
-        <div className="fixed inset-0 z-[70] flex items-stretch justify-center overflow-hidden bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
-          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl animate-fade-in-up sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl">
+        <div className="fixed inset-0 z-[70] flex items-stretch justify-center overflow-clip bg-black/60 backdrop-blur-sm sm:items-center sm:px-4">
+          <div
+            className="flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-clip bg-white shadow-2xl animate-fade-in-up sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl"
+            data-camera-qr-modal-shell="completion"
+          >
             {/* Modal Header */}
             <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-outline-variant/50">
               <h2 className="text-lg font-bold text-on-surface">Hoàn thành công việc</h2>
@@ -6556,4 +6560,3 @@ useEffect(() => {
     </div>
   );
 }
-
