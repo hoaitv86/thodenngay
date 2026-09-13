@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Component, useMemo, useRef, useState } from "react";
+import React, { Component, useRef, useState } from "react";
 import jsQR from "jsqr";
 import { ChevronDown, ImageUp, Plus, Trash2 } from "lucide-react";
 import {
@@ -39,6 +39,7 @@ const normalizeCameraDevices = (devices: CameraDevice[]) => {
   const cleaned = devices.map(cleanCameraDevice);
   return cleaned.length > 0 ? cleaned : [{}];
 };
+
 
 type DecodableImage = {
   source: CanvasImageSource;
@@ -146,19 +147,23 @@ function QRImageUpload({
   onDecoded: (qrText: string) => void;
   disabled?: boolean;
 }) {
-  const [status, setStatus] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState("");
+  const [isReading, setIsReading] = useState(false);
+  const [inputKey, setInputKey] = useState(0);
 
   const openFilePicker = () => {
+    if (disabled || isReading) return;
+    if (inputRef.current) inputRef.current.value = "";
     inputRef.current?.click();
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
-    input.value = "";
     if (!file) return;
 
+    setIsReading(true);
     setStatus("Đang đọc mã QR...");
     try {
       const qrText = await decodeQrImage(file);
@@ -167,6 +172,10 @@ function QRImageUpload({
     } catch (error) {
       console.error("[camera-qr] decode failed", error);
       setStatus(error instanceof Error ? error.message : "Không thể đọc mã QR.");
+    } finally {
+      input.value = "";
+      setIsReading(false);
+      setInputKey((current) => current + 1);
     }
   };
 
@@ -174,28 +183,28 @@ function QRImageUpload({
     <div className="space-y-1.5 sm:col-span-2">
       <button
         type="button"
-        className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container hover:bg-primary-container/10 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={openFilePicker}
-        disabled={disabled}
+        disabled={disabled || isReading}
+        className="inline-flex items-center gap-2 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container hover:bg-primary-container/10 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <ImageUp size={14} />
-        Upload ảnh QR
+        {isReading ? "Đang đọc QR..." : "Upload ảnh QR"}
       </button>
       <input
+        key={inputKey}
         ref={inputRef}
         type="file"
         accept="image/*"
-        className="hidden"
-        onChange={handleFileChange}
-        disabled={disabled}
+        className="sr-only"
         tabIndex={-1}
-        aria-hidden="true"
+        onChange={handleFileChange}
+        disabled={disabled || isReading}
+        aria-label="Upload ảnh QR"
       />
       {status && <p className="text-xs font-medium text-on-surface-variant">{status}</p>}
     </div>
   );
 }
-
 function WorkflowInput({
   field,
   value,
@@ -387,3 +396,11 @@ export function DynamicServiceWorkflowForm({ services, value, onChange, includeS
     </div>
   );
 }
+
+
+
+
+
+
+
+

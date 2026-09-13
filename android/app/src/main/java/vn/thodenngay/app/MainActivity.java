@@ -15,9 +15,12 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewParent;
 import android.webkit.CookieManager;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ServiceWorkerController;
 import android.webkit.ServiceWorkerWebSettings;
 import android.webkit.URLUtil;
@@ -45,6 +48,7 @@ import org.json.JSONTokener;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
+    private static final String TAG = "TDN-WebView";
     private static final String HOME_URL = "https://thodenngay.vn";
     private static final String ANDROID_START_URL = "https://thodenngay.vn/login?app=android";
     private static final String WORKER_START_URL = "https://thodenngay.vn/worker";
@@ -97,6 +101,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void configureWebView() {
+        WebView.setWebContentsDebuggingEnabled(true);
         webView = bridge.getWebView();
         WebSettings settings = webView.getSettings();
 
@@ -326,6 +331,7 @@ public class MainActivity extends BridgeActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setCacheMode(cacheMode);
         }
+        Log.i(TAG, "[TDN-STARTUP] cache mode configured mode=" + cacheMode + " online=" + hasNetworkConnection());
     }
 
 
@@ -402,10 +408,13 @@ public class MainActivity extends BridgeActivity {
         mainHandler.postDelayed(() -> {
             if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted) return;
             startupRecoveryAttempted = true;
+            Log.w(TAG, "[TDN-STARTUP] watchdog fired online=" + hasNetworkConnection() + " url=" + webView.getUrl() + " lastErrorUrl=" + lastMainFrameErrorUrl);
+            inspectWebRuntimeState(webView);
             if (hasNetworkConnection()) {
-                reloadFreshAfterCacheInvalidation("startup-timeout");
+                webView.reload();
                 mainHandler.postDelayed(() -> {
                     if (isStartupSplashVisible() && !loadCachedHtmlSnapshot(lastMainFrameErrorUrl)) {
+                        Log.e(TAG, "[TDN-STARTUP] watchdog recovery failed; showing network error");
                         showNetworkError();
                     }
                 }, STARTUP_RECOVERY_TIMEOUT_MS);
@@ -421,6 +430,7 @@ public class MainActivity extends BridgeActivity {
 
     private void loadFreshStartUrl(String reason) {
         if (webView == null) return;
+        Log.w(TAG, "[TDN-STARTUP] loading fresh start url reason=" + reason);
         loadingOfflineFallback = false;
         hideNetworkError();
         configureCacheModeForNetwork();
@@ -474,7 +484,7 @@ public class MainActivity extends BridgeActivity {
                 try {
                     Object parsed = new JSONTokener(value).nextValue();
                     if (parsed instanceof String) {
-                        System.out.println("[TDN-STARTUP] Web runtime state " + parsed);
+                        Log.i(TAG, "[TDN-STARTUP] Web runtime state " + parsed);
                     }
                 } catch (Exception ignored) {
                     // Runtime inspection is diagnostic only.
@@ -539,6 +549,7 @@ public class MainActivity extends BridgeActivity {
         if (html == null || html.length() < 500) return false;
 
         String baseUrl = getFallbackUrl(failedUrl);
+        Log.w(TAG, "[TDN-STARTUP] loading cached html snapshot baseUrl=" + baseUrl + " failedUrl=" + failedUrl);
         loadingOfflineFallback = true;
         hideNetworkError();
         configureCacheModeForNetwork();
@@ -555,6 +566,7 @@ public class MainActivity extends BridgeActivity {
         loadingOfflineFallback = true;
         hideNetworkError();
         configureCacheModeForNetwork();
+        Log.w(TAG, "[TDN-STARTUP] loading offline startup fallbackUrl=" + fallbackUrl + " failedUrl=" + failedUrl + " online=" + hasNetworkConnection());
 
         if (!hasNetworkConnection() && loadCachedHtmlSnapshot(fallbackUrl)) {
             return;
@@ -579,6 +591,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void handleMainFrameLoadError(String failedUrl, int errorCode) {
+        Log.e(TAG, "[TDN-STARTUP] main frame load error code=" + errorCode + " failedUrl=" + failedUrl + " offlineFallback=" + loadingOfflineFallback + " online=" + hasNetworkConnection());
         if (isLikelyNetworkError(errorCode)) {
             if (!loadingOfflineFallback) {
                 loadOfflineStartup(failedUrl);
@@ -651,8 +664,15 @@ public class MainActivity extends BridgeActivity {
         }
 
         @Override
+        public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            super.onPageStarted(view, url, favicon);
+            Log.i(TAG, "[TDN-STARTUP] page started url=" + url + " online=" + hasNetworkConnection());
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
+            Log.i(TAG, "[TDN-STARTUP] page finished url=" + url + " progress=" + view.getProgress() + " offlineFallback=" + loadingOfflineFallback);
             hideNetworkError();
             hideStartupSplash();
             inspectWebRuntimeState(view);
@@ -681,6 +701,7 @@ public class MainActivity extends BridgeActivity {
             super.onReceivedHttpError(view, request, errorResponse);
             if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
                 lastMainFrameErrorUrl = request.getUrl().toString();
+                Log.e(TAG, "[TDN-STARTUP] main frame http error status=" + errorResponse.getStatusCode() + " reason=" + errorResponse.getReasonPhrase() + " url=" + lastMainFrameErrorUrl);
                 if (!loadingOfflineFallback && !hasNetworkConnection()) {
                     loadOfflineStartup(lastMainFrameErrorUrl);
                     return;
@@ -688,6 +709,28 @@ public class MainActivity extends BridgeActivity {
                 showNetworkError();
             }
         }
+
+        @Override
+        public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+            String url = view != null ? view.getUrl() : null;
+            Log.e(TAG, "[TDN-RENDERER] render process gone didCrash=" + detail.didCrash() + " priorityAtExit=" + detail.rendererPriorityAtExit() + " url=" + url);
+            if (view != null) {
+                try {
+                    ViewParent parent = view.getParent();
+                    if (parent instanceof FrameLayout) {
+                        ((FrameLayout) parent).removeView(view);
+                    }
+                    view.destroy();
+                } catch (Exception error) {
+                    Log.e(TAG, "[TDN-RENDERER] failed to dispose dead WebView", error);
+                }
+            }
+            mainHandler.post(() -> recreate());
+            return true;
+        }
     }
 }
+
+
+
 
