@@ -4,6 +4,7 @@ import React, { Component, useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import jsQR from "jsqr";
 import {
   AirVent,
   Blocks,
@@ -27,6 +28,7 @@ import {
   Truck,
   Users,
   Wifi,
+  ImageUp,
   Wrench,
 } from "lucide-react";
 import {
@@ -344,6 +346,7 @@ type StoredCompletionItem = {
   category?: string | null;
   unit?: string | null;
   source?: "manual" | "inventory" | "labor";
+  deviceQrDrafts?: CompletionQrDraft[];
 };
 
 type JobFinancials = {
@@ -352,6 +355,13 @@ type JobFinancials = {
   revenue: number;
   cost: number;
   grossProfit: number;
+};
+
+type CompletionQrDraft = {
+  qrCode: string;
+  serial: string;
+  uid: string;
+  installLocation: string;
 };
 
 interface WorkerCreateJobResponse {
@@ -533,6 +543,8 @@ const VIETTEL_GIFT_CAMERA_OPTIONS = [
 ];
 const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
 const completionHandoverSectionKeys = handoverWorkflowSectionKeys.filter(key => key !== "camera_devices");
+const MAX_COMPLETION_QR_DECODE_EDGE = 900;
+const emptyCompletionQrDraft: CompletionQrDraft = { qrCode: "", serial: "", uid: "", installLocation: "" };
 
 const getMonthKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
@@ -769,10 +781,83 @@ const normalizeBusinessKeyword = (value: string | null | undefined) =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/đ/g, "d");
 
-const isCameraCompletionItem = (item: Pick<StoredCompletionItem, "name" | "category" | "source">) => {
+const isCameraCompletionItem = (item: { name?: string | null; category?: string | null; source?: "manual" | "inventory" | "labor" }) => {
   if (item.source !== "inventory") return false;
-  const haystack = normalizeBusinessKeyword(String(item.name || "") + " " + String(item.category || ""));
-  return /camera|cctv|dau ghi|ghi hinh/.test(haystack);
+  const category = normalizeBusinessKeyword(item.category);
+  const name = normalizeBusinessKeyword(item.name);
+  const blocked = /dau ghi|o cung|nguon|day|cap|jack|phu kien|adapter|switch|router/.test(category + " " + name);
+  if (blocked) return false;
+  return ["camera", "camera ip", "camera analog", "camera wifi", "cctv"].includes(category) || /(^|\s)(camera|cctv)(\s|$)/.test(name);
+};
+
+type CompletionDecodableImage = {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  cleanup: () => void;
+};
+
+const readCompletionHtmlImageFile = (file: File) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = document.createElement("img");
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Không thể đọc ảnh QR."));
+    };
+    image.src = objectUrl;
+  });
+
+const readCompletionDecodableImage = async (file: File): Promise<CompletionDecodableImage> => {
+  if ("createImageBitmap" in window) {
+    const bitmap = await createImageBitmap(file);
+    return {
+      source: bitmap,
+      width: bitmap.width,
+      height: bitmap.height,
+      cleanup: () => bitmap.close(),
+    };
+  }
+
+  const image = await readCompletionHtmlImageFile(file);
+  return {
+    source: image,
+    width: image.naturalWidth || image.width,
+    height: image.naturalHeight || image.height,
+    cleanup: () => image.removeAttribute("src"),
+  };
+};
+
+const decodeCompletionQrImage = async (file: File) => {
+  if (!file.type.startsWith("image/")) throw new Error("File QR phải là ảnh.");
+
+  const image = await readCompletionDecodableImage(file);
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, MAX_COMPLETION_QR_DECODE_EDGE / Math.max(image.width, image.height));
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    image.cleanup();
+    throw new Error("Trình duyệt không hỗ trợ đọc ảnh QR.");
+  }
+
+  try {
+    context.drawImage(image.source, 0, 0, canvas.width, canvas.height);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const decoded = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+    if (!decoded?.data) throw new Error("Không tìm thấy mã QR trong ảnh.");
+    return decoded.data.trim();
+  } finally {
+    image.cleanup();
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 };
 
 const getJobLaborUnitPrice = (job: WorkerJob) => {
@@ -1132,6 +1217,10 @@ export default function WorkerDashboard() {
   const [completionAddOnPackageId, setCompletionAddOnPackageId] = useState("");
   const [completionAddOnCycle, setCompletionAddOnCycle] = useState<BillGoCycle>("monthly");
   const [completionAddOnNote, setCompletionAddOnNote] = useState("");
+  const [completionQrDrafts, setCompletionQrDrafts] = useState<Record<string, CompletionQrDraft[]>>({});
+  const [activeCompletionQrEditor, setActiveCompletionQrEditor] = useState<{ itemId: string; cameraIndex: number } | null>(null);
+  const [completionQrReading, setCompletionQrReading] = useState(false);
+  const [completionQrStatus, setCompletionQrStatus] = useState("");
   const billGoRows = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -2976,6 +3065,10 @@ useEffect(() => {
     setCompletionAddOnPackageId("");
     setCompletionAddOnCycle("monthly");
     setCompletionAddOnNote("");
+    setCompletionQrDrafts({});
+    setActiveCompletionQrEditor(null);
+    setCompletionQrStatus("");
+    setCompletionQrReading(false);
     try {
       setCompletionHandoverData(pruneWorkflowData(
         job.workflow_data || {},
@@ -3000,6 +3093,73 @@ useEffect(() => {
     setCompletionItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
   };
 
+  const hasQrDraftData = (draft: CompletionQrDraft | undefined) =>
+    Boolean(draft && (draft.qrCode.trim() || draft.serial.trim() || draft.uid.trim() || draft.installLocation.trim()));
+
+  const getCompletionQrDraft = (itemId: string, cameraIndex: number) =>
+    completionQrDrafts[itemId]?.[cameraIndex] || emptyCompletionQrDraft;
+
+  const updateCompletionQrDraft = (itemId: string, cameraIndex: number, patch: Partial<CompletionQrDraft>) => {
+    setCompletionQrDrafts(current => {
+      const nextDrafts = [...(current[itemId] || [])];
+      while (nextDrafts.length <= cameraIndex) nextDrafts.push({ ...emptyCompletionQrDraft });
+      nextDrafts[cameraIndex] = { ...nextDrafts[cameraIndex], ...patch };
+      return { ...current, [itemId]: nextDrafts };
+    });
+  };
+
+  const clearCompletionQrDraftsForItem = (itemId: string) => {
+    setCompletionQrDrafts(current => {
+      const { [itemId]: _removed, ...rest } = current;
+      return rest;
+    });
+    setActiveCompletionQrEditor(current => current?.itemId === itemId ? null : current);
+  };
+
+  const updateCompletionItemQuantity = (item: CompletionItem, nextValue: number) => {
+    const nextQuantity = Math.max(1, Math.floor(Number(nextValue) || 1));
+    if (isCameraCompletionItem(item)) {
+      const drafts = completionQrDrafts[item.id] || [];
+      const highestDraftIndex = drafts.reduce((highest, draft, index) => hasQrDraftData(draft) ? index : highest, -1);
+      if (highestDraftIndex >= nextQuantity) {
+        showToast("Đã có QR cho camera ngoài số lượng mới. Vui lòng xoá QR đó trước khi giảm số lượng.", "error");
+        return;
+      }
+    }
+    updateCompletionItem(item.id, { quantity: nextQuantity });
+  };
+
+  const removeCompletionQrDraft = (itemId: string, cameraIndex: number) => {
+    updateCompletionQrDraft(itemId, cameraIndex, { ...emptyCompletionQrDraft });
+    setCompletionQrStatus("Đã xoá QR nháp cho camera này.");
+  };
+
+  const openCompletionQrEditor = (itemId: string, cameraIndex: number) => {
+    setActiveCompletionQrEditor({ itemId, cameraIndex });
+    setCompletionQrStatus("");
+  };
+
+  const closeCompletionQrEditor = () => {
+    setActiveCompletionQrEditor(null);
+    setCompletionQrStatus("");
+  };
+
+  const handleCompletionQrImage = async (itemId: string, cameraIndex: number, file: File | undefined) => {
+    if (!file) return;
+    setCompletionQrReading(true);
+    setCompletionQrStatus("Đang đọc mã QR...");
+    try {
+      const qrCode = await decodeCompletionQrImage(file);
+      updateCompletionQrDraft(itemId, cameraIndex, { qrCode });
+      setCompletionQrStatus("Đã lấy mã QR từ ảnh.");
+    } catch (error) {
+      console.error("[completion-camera-qr] decode failed", error);
+      setCompletionQrStatus(error instanceof Error ? error.message : "Không thể đọc mã QR.");
+    } finally {
+      setCompletionQrReading(false);
+    }
+  };
+
   const addCompletionItem = () => {
     setCompletionItems(prev => [...prev, makeCompletionItem()]);
   };
@@ -3013,6 +3173,7 @@ useEffect(() => {
 
   const updateInventoryCompletionProduct = (id: string, productId: string) => {
     const product = inventoryProducts.find(item => item.id === productId);
+    clearCompletionQrDraftsForItem(id);
     setCompletionItems(prev => prev.map(item => {
       if (item.id !== id) return item;
       if (!product) {
@@ -3046,6 +3207,7 @@ useEffect(() => {
   };
 
   const removeCompletionItem = (id: string) => {
+    clearCompletionQrDraftsForItem(id);
     setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id && item.source !== "labor") : prev);
   };
 
@@ -3059,7 +3221,9 @@ useEffect(() => {
 
     const { data: { user } } = await supabase.auth.getUser();
     const installedAt = new Date().toISOString().slice(0, 10);
-    const rows = cameraRows.map(({ item }, index) => ({
+    const rows = cameraRows.map(({ item, index: itemCameraIndex }, index) => {
+      const qrDraft = item.deviceQrDrafts?.[itemCameraIndex];
+      return {
       worker_id: worker.id,
       customer_id: job.customer_id,
       job_id: job.id,
@@ -3073,8 +3237,13 @@ useEffect(() => {
       warranty_months: Math.max(0, Math.round((Number(item.warrantyDays) || 0) / 30)),
       sale_price: Number(item.unitPrice) || 0,
       cost_price: Number(item.costPrice) || 0,
+      qr_code: qrDraft?.qrCode?.trim() || null,
+      serial: qrDraft?.serial?.trim() || null,
+      uid: qrDraft?.uid?.trim() || null,
+      install_location: qrDraft?.installLocation?.trim() || null,
       created_by: user?.id || null,
-    }));
+    };
+    });
 
     const { error } = await supabase.from("worker_customer_devices").insert(rows);
     if (error) {
@@ -3428,8 +3597,9 @@ useEffect(() => {
   const handleConfirmCompleteJob = async () => {
     if (!activeJobToComplete) return;
 
-    const cleanedItems = completionItems
+    const completionItemsWithDraftIds = completionItems
       .map(item => ({
+        draftItemId: item.id,
         name: item.name.trim(),
         quantity: Number(item.quantity) || 0,
         unitPrice: Number(item.unitPrice) || 0,
@@ -3442,6 +3612,18 @@ useEffect(() => {
         source: item.source || "manual",
       }))
       .filter(item => item.name && item.quantity > 0);
+    const cleanedItems = completionItemsWithDraftIds.map(({ draftItemId: _draftItemId, ...item }) => item);
+    const itemsForCustomerDevices = completionItemsWithDraftIds.map(({ draftItemId, ...item }) => ({
+      ...item,
+      deviceQrDrafts: item.source === "inventory" && isCameraCompletionItem(item)
+        ? (completionQrDrafts[draftItemId] || []).slice(0, Number(item.quantity) || 0).map(draft => ({
+            qrCode: draft?.qrCode?.trim() || "",
+            serial: draft?.serial?.trim() || "",
+            uid: draft?.uid?.trim() || "",
+            installLocation: draft?.installLocation?.trim() || "",
+          }))
+        : undefined,
+    }));
 
     if (cleanedItems.length === 0) {
       showToast("Vui lòng nhập ít nhất một dòng sản phẩm hoặc công dịch vụ.", "error");
@@ -3472,7 +3654,7 @@ useEffect(() => {
     const handoverWorkflowData = sanitizeCameraDevicesWorkflowData(pruneWorkflowData(
       completionHandoverData,
       getWorkflowServicesForJob(job),
-      { includeSectionKeys: handoverWorkflowSectionKeys }
+      { includeSectionKeys: completionHandoverSectionKeys }
     ));
     const materialDraftItems: SalesDraftItem[] = cleanedItems
       .filter(item => item.source === "inventory")
@@ -3717,7 +3899,7 @@ useEffect(() => {
         }
       }
 
-      await createCustomerDevicesFromCompletion(job, cleanedItems);
+      await createCustomerDevicesFromCompletion(job, itemsForCustomerDevices);
 
       void fetch("/api/notifications/event", {
         method: "POST",
@@ -3753,6 +3935,9 @@ useEffect(() => {
       setPreviewUrls([]);
       setCompletionItems([]);
       setCompletionHandoverData({});
+      setCompletionQrDrafts({});
+      setActiveCompletionQrEditor(null);
+      setCompletionQrStatus("");
       setCompletionPaymentAmount("");
       setCompletionPaymentNote("");
       setCompletionInternetInstallFeeInput("300000");
@@ -6077,6 +6262,9 @@ useEffect(() => {
                     setPreviewUrls([]);
                     setCompletionItems([]);
                     setCompletionHandoverData({});
+                    setCompletionQrDrafts({});
+                    setActiveCompletionQrEditor(null);
+                    setCompletionQrStatus("");
                     setCompletionInternetInstallFeeInput("300000");
                     setCompletionGiftCamera("");
                     setCompletionGiftCameraPassword("");
@@ -6391,7 +6579,7 @@ useEffect(() => {
                             max={item.source === "inventory" && item.inventoryProductId ? inventoryProducts.find(product => product.id === item.inventoryProductId)?.stock_quantity : undefined}
                             step="1"
                             value={item.quantity}
-                            onChange={(e) => updateCompletionItem(item.id, { quantity: Number(e.target.value) })}
+                            onChange={(e) => updateCompletionItemQuantity(item, Number(e.target.value))}
                             className="input-field mt-1 !px-3"
                             disabled={uploadingImages}
                           />
@@ -6421,6 +6609,67 @@ useEffect(() => {
                           />
                         </div>
                       </div>
+                      {item.source === "inventory" && item.inventoryProductId && isCameraCompletionItem(item) && (
+                        <div className="space-y-2 rounded-lg bg-surface-container-low px-3 py-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-extrabold uppercase text-on-surface-variant">Mã QR thiết bị</p>
+                            <span className="text-[10px] font-bold text-on-surface-variant">{Math.max(1, Number(item.quantity) || 1)} camera</span>
+                          </div>
+                          <div className="space-y-2">
+                            {Array.from({ length: Math.max(1, Number(item.quantity) || 1) }, (_, cameraIndex) => {
+                              const draft = getCompletionQrDraft(item.id, cameraIndex);
+                              const isEditingQr = activeCompletionQrEditor?.itemId === item.id && activeCompletionQrEditor.cameraIndex === cameraIndex;
+                              return (
+                                <div key={item.id + "-camera-qr-" + cameraIndex} className="rounded-lg bg-white p-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold text-on-surface">Camera {cameraIndex + 1}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className={"text-[11px] font-bold " + (draft.qrCode ? "text-success" : "text-on-surface-variant")}>{draft.qrCode ? "Đã có QR" : "Chưa có QR"}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => openCompletionQrEditor(item.id, cameraIndex)}
+                                        className="rounded-lg border border-primary-container/30 bg-primary-fixed px-2.5 py-1.5 text-[11px] font-extrabold text-primary-container"
+                                        disabled={uploadingImages}
+                                      >
+                                        {draft.qrCode ? "Sửa QR" : "Thêm QR"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {isEditingQr && (
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                      <input className="input-field !py-2 text-sm sm:col-span-2" value={draft.qrCode} onChange={event => updateCompletionQrDraft(item.id, cameraIndex, { qrCode: event.target.value })} placeholder="Mã QR" disabled={uploadingImages || completionQrReading} />
+                                      <input className="input-field !py-2 text-sm" value={draft.serial} onChange={event => updateCompletionQrDraft(item.id, cameraIndex, { serial: event.target.value })} placeholder="Serial" disabled={uploadingImages || completionQrReading} />
+                                      <input className="input-field !py-2 text-sm" value={draft.uid} onChange={event => updateCompletionQrDraft(item.id, cameraIndex, { uid: event.target.value })} placeholder="UID" disabled={uploadingImages || completionQrReading} />
+                                      <input className="input-field !py-2 text-sm sm:col-span-2" value={draft.installLocation} onChange={event => updateCompletionQrDraft(item.id, cameraIndex, { installLocation: event.target.value })} placeholder="Vị trí lắp" disabled={uploadingImages || completionQrReading} />
+                                      <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container disabled:opacity-50">
+                                        <ImageUp size={14} />
+                                        {completionQrReading ? "Đang đọc QR..." : "Upload ảnh QR"}
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          className="hidden"
+                                          disabled={uploadingImages || completionQrReading}
+                                          onChange={event => {
+                                            const input = event.currentTarget;
+                                            void handleCompletionQrImage(item.id, cameraIndex, input.files?.[0]).finally(() => { input.value = ""; });
+                                          }}
+                                        />
+                                      </label>
+                                      <button type="button" onClick={() => removeCompletionQrDraft(item.id, cameraIndex)} className="rounded-lg border border-outline/40 px-3 py-2 text-xs font-extrabold text-on-surface-variant" disabled={uploadingImages || completionQrReading}>
+                                        Xóa QR
+                                      </button>
+                                      <button type="button" onClick={closeCompletionQrEditor} className="rounded-lg bg-success px-3 py-2 text-xs font-extrabold text-white" disabled={uploadingImages || completionQrReading}>
+                                        Lưu QR
+                                      </button>
+                                      {completionQrStatus && <p className="text-xs font-semibold text-on-surface-variant sm:col-span-2">{completionQrStatus}</p>}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2 text-xs">
                         <span className="font-semibold text-on-surface-variant">Thành tiền</span>
                         <span className="font-bold text-primary-container">{formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</span>
@@ -6642,6 +6891,9 @@ useEffect(() => {
                   setPreviewUrls([]);
                   setCompletionItems([]);
                   setCompletionHandoverData({});
+                  setCompletionQrDrafts({});
+                  setActiveCompletionQrEditor(null);
+                  setCompletionQrStatus("");
                 }}
                 className="btn-outline !w-auto flex-1 !py-2 !px-4 text-sm sm:flex-none"
                 disabled={uploadingImages}
