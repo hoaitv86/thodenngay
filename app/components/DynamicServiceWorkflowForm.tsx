@@ -1,6 +1,7 @@
 "use client";
 
-import React, { Component, useRef, useState } from "react";
+import React, { Component, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import jsQR from "jsqr";
 import { ChevronDown, ImageUp, Plus, Trash2 } from "lucide-react";
 import {
@@ -39,7 +40,6 @@ const normalizeCameraDevices = (devices: CameraDevice[]) => {
   const cleaned = devices.map(cleanCameraDevice);
   return cleaned.length > 0 ? cleaned : [{}];
 };
-
 
 type DecodableImage = {
   source: CanvasImageSource;
@@ -147,21 +147,40 @@ function QRImageUpload({
   onDecoded: (qrText: string) => void;
   disabled?: boolean;
 }) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const [status, setStatus] = useState("");
   const [isReading, setIsReading] = useState(false);
-  const [inputKey, setInputKey] = useState(0);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const restoreUploadFocus = (input: HTMLInputElement) => {
+    input.blur();
+    try {
+      buttonRef.current?.focus({ preventScroll: true });
+    } catch {
+      buttonRef.current?.focus();
+    }
+  };
 
   const openFilePicker = () => {
     if (disabled || isReading) return;
-    if (inputRef.current) inputRef.current.value = "";
-    inputRef.current?.click();
+    const input = inputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.click();
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
-    if (!file) return;
+    if (!file) {
+      restoreUploadFocus(input);
+      return;
+    }
 
     setIsReading(true);
     setStatus("Đang đọc mã QR...");
@@ -174,14 +193,15 @@ function QRImageUpload({
       setStatus(error instanceof Error ? error.message : "Không thể đọc mã QR.");
     } finally {
       input.value = "";
+      restoreUploadFocus(input);
       setIsReading(false);
-      setInputKey((current) => current + 1);
     }
   };
 
   return (
     <div className="space-y-1.5 sm:col-span-2">
       <button
+        ref={buttonRef}
         type="button"
         onClick={openFilePicker}
         disabled={disabled || isReading}
@@ -190,17 +210,20 @@ function QRImageUpload({
         <ImageUp size={14} />
         {isReading ? "Đang đọc QR..." : "Upload ảnh QR"}
       </button>
-      <input
-        key={inputKey}
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="sr-only"
-        tabIndex={-1}
-        onChange={handleFileChange}
-        disabled={disabled || isReading}
-        aria-label="Upload ảnh QR"
-      />
+      {isMounted &&
+        createPortal(
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="fixed left-0 top-0 h-px w-px opacity-0"
+            tabIndex={-1}
+            onChange={handleFileChange}
+            disabled={disabled || isReading}
+            aria-label="Upload ảnh QR"
+          />,
+          document.body
+        )}
       {status && <p className="text-xs font-medium text-on-surface-variant">{status}</p>}
     </div>
   );
@@ -396,11 +419,4 @@ export function DynamicServiceWorkflowForm({ services, value, onChange, includeS
     </div>
   );
 }
-
-
-
-
-
-
-
 
