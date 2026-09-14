@@ -15,6 +15,21 @@ import {
   UserIcon,
 } from "../../components/icons";
 
+type CustomerDevice = {
+  id: string;
+  customer_id: string;
+  device_label: string;
+  product_name: string;
+  product_sku?: string | null;
+  category?: string | null;
+  qr_code?: string | null;
+  serial?: string | null;
+  uid?: string | null;
+  install_location?: string | null;
+  installed_at?: string | null;
+  warranty_months?: number | null;
+};
+
 type CustomerProfile = {
   id: string;
   full_name?: string | null;
@@ -48,6 +63,7 @@ type CustomerSummary = {
   lastJobAt?: string | null;
   lastJobId?: string;
   services: string[];
+  devices: CustomerDevice[];
 };
 
 type WorkerProfileCache = {
@@ -93,6 +109,7 @@ function buildCustomerSummaries(jobs: RawWorkerCustomerJob[]) {
         lastJobAt: jobDate,
         lastJobId: job.id,
         services: [serviceName],
+        devices: [],
       });
       return;
     }
@@ -125,6 +142,9 @@ export default function WorkerCustomersPage() {
   const [customers, setCustomers] = useState<CustomerSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [deviceDraft, setDeviceDraft] = useState({ qrCode: "", serial: "", uid: "", installLocation: "" });
+  const [savingDeviceId, setSavingDeviceId] = useState<string | null>(null);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -219,7 +239,25 @@ export default function WorkerCustomersPage() {
     }
 
     const sourceJobs = (jobsData || []) as RawWorkerCustomerJob[];
-    const nextCustomers = buildCustomerSummaries(sourceJobs);
+    let nextCustomers = buildCustomerSummaries(sourceJobs);
+    const { data: devicesData, error: devicesError } = await supabase
+      .from("worker_customer_devices")
+      .select("id, customer_id, device_label, product_name, product_sku, category, qr_code, serial, uid, install_location, installed_at, warranty_months")
+      .eq("worker_id", workerData.id)
+      .order("installed_at", { ascending: false });
+
+    if (!devicesError && devicesData) {
+      const devicesByCustomer = new Map<string, CustomerDevice[]>();
+      (devicesData as CustomerDevice[]).forEach((device) => {
+        const list = devicesByCustomer.get(device.customer_id) || [];
+        list.push(device);
+        devicesByCustomer.set(device.customer_id, list);
+      });
+      nextCustomers = nextCustomers.map(customer => ({ ...customer, devices: devicesByCustomer.get(customer.id) || [] }));
+    } else if (devicesError && !/worker_customer_devices|schema cache|Could not find|does not exist/i.test(devicesError.message || "")) {
+      setError("Không thể tải thiết bị khách hàng: " + devicesError.message);
+    }
+
     setCustomers(nextCustomers);
     await Promise.allSettled([
       setCachedDataset(makeWorkerDatasetKey("customers", cacheScope), nextCustomers, { dataset: "customers", userId: user.id, workerId: workerData.id, storeId: cacheScope.storeId || null }),
@@ -249,6 +287,43 @@ export default function WorkerCustomersPage() {
       return haystack.includes(query);
     });
   }, [customers, searchQuery]);
+
+  const startEditDevice = (device: CustomerDevice) => {
+    setEditingDeviceId(device.id);
+    setDeviceDraft({
+      qrCode: device.qr_code || "",
+      serial: device.serial || "",
+      uid: device.uid || "",
+      installLocation: device.install_location || "",
+    });
+  };
+
+  const saveDeviceQr = async (device: CustomerDevice) => {
+    setSavingDeviceId(device.id);
+    const payload = {
+      qr_code: deviceDraft.qrCode.trim() || null,
+      serial: deviceDraft.serial.trim() || null,
+      uid: deviceDraft.uid.trim() || null,
+      install_location: deviceDraft.installLocation.trim() || null,
+    };
+    const { error: updateError } = await supabase
+      .from("worker_customer_devices")
+      .update(payload)
+      .eq("id", device.id);
+
+    if (updateError) {
+      setError("Không thể lưu QR thiết bị: " + updateError.message);
+      setSavingDeviceId(null);
+      return;
+    }
+
+    setCustomers(current => current.map(customer => ({
+      ...customer,
+      devices: customer.devices.map(item => item.id === device.id ? { ...item, ...payload } : item),
+    })));
+    setEditingDeviceId(null);
+    setSavingDeviceId(null);
+  };
 
   const stats = useMemo(() => {
     return customers.reduce(
@@ -397,6 +472,50 @@ export default function WorkerCustomersPage() {
                         <p className="mt-1 text-sm font-extrabold text-success">{currencyFormatter.format(customer.totalRevenue)}</p>
                       </div>
                     </div>
+
+                    {customer.devices.length > 0 && (
+                      <div className="mt-3 space-y-2 rounded-lg bg-surface-container-low/75 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold uppercase text-on-surface-variant">Thiết bị của khách</p>
+                          <span className="text-[10px] font-extrabold text-primary-container">{customer.devices.length} thiết bị</span>
+                        </div>
+                        {customer.devices.map(device => (
+                          <div key={device.id} className="rounded-lg bg-white p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-extrabold text-on-surface">{device.device_label}</p>
+                                <p className="mt-1 truncate text-xs font-semibold text-on-surface-variant">{device.product_name}{device.product_sku ? " · " + device.product_sku : ""}</p>
+                                {device.qr_code && <p className="mt-1 text-xs font-bold text-success">Đã có QR</p>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => startEditDevice(device)}
+                                className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-2.5 py-1.5 text-[11px] font-extrabold text-primary-container"
+                                disabled={savingDeviceId === device.id}
+                              >
+                                {device.qr_code ? "Sửa mã QR" : "Thêm mã QR"}
+                              </button>
+                            </div>
+                            {editingDeviceId === device.id && (
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                <input className="input-field !py-2 text-sm sm:col-span-2" value={deviceDraft.qrCode} onChange={event => setDeviceDraft(current => ({ ...current, qrCode: event.target.value }))} placeholder="Mã QR" />
+                                <input className="input-field !py-2 text-sm" value={deviceDraft.serial} onChange={event => setDeviceDraft(current => ({ ...current, serial: event.target.value }))} placeholder="Serial" />
+                                <input className="input-field !py-2 text-sm" value={deviceDraft.uid} onChange={event => setDeviceDraft(current => ({ ...current, uid: event.target.value }))} placeholder="UID" />
+                                <input className="input-field !py-2 text-sm sm:col-span-2" value={deviceDraft.installLocation} onChange={event => setDeviceDraft(current => ({ ...current, installLocation: event.target.value }))} placeholder="Vị trí lắp" />
+                                <div className="flex gap-2 sm:col-span-2">
+                                  <button type="button" onClick={() => void saveDeviceQr(device)} className="flex-1 rounded-lg bg-success px-3 py-2 text-xs font-extrabold text-white" disabled={savingDeviceId === device.id}>
+                                    {savingDeviceId === device.id ? "Đang lưu..." : "Lưu"}
+                                  </button>
+                                  <button type="button" onClick={() => setEditingDeviceId(null)} className="flex-1 rounded-lg border border-outline-variant bg-white px-3 py-2 text-xs font-extrabold text-on-surface-variant" disabled={savingDeviceId === device.id}>
+                                    Đóng
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {customer.services.slice(0, 4).map((service) => (

@@ -12,6 +12,14 @@ type CompletionMaterialItem = {
   unitPrice?: number;
 };
 
+type JobFinancials = {
+  laborRevenue?: number;
+  materialRevenue?: number;
+  revenue?: number;
+  cost?: number;
+  grossProfit?: number;
+};
+
 type CompleteJobRequest = {
   jobId?: string;
   images?: string[];
@@ -20,6 +28,7 @@ type CompleteJobRequest = {
   warrantyDays?: number;
   warrantyNote?: string;
   materialItems?: CompletionMaterialItem[];
+  financials?: JobFinancials;
 };
 
 const jsonError = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -100,6 +109,7 @@ export async function POST(request: Request) {
     const finalAmount = Number(body.finalAmount || 0);
     const warrantyDays = Number(body.warrantyDays || 0);
     const warrantyNote = (body.warrantyNote || "").trim();
+    const requestedFinancials = body.financials || {};
 
     if (!jobId) return jsonError("Thiếu mã công việc.");
     if (completionItems.length === 0) return jsonError("Vui lòng nhập hạng mục hoàn thành.");
@@ -107,7 +117,7 @@ export async function POST(request: Request) {
 
     const { data: visibleJob, error: visibleJobError } = await context.supabase
       .from("jobs")
-      .select("id, worker_id, customer_id, status")
+      .select("id, worker_id, customer_id, status, workflow_data")
       .eq("id", jobId)
       .in("status", ["assigned", "in_progress"])
       .maybeSingle();
@@ -137,6 +147,7 @@ export async function POST(request: Request) {
     if (orderError || !order) return jsonError("Không thể tạo đơn vật tư: " + (orderError?.message || "Không xác định"), 500);
 
     let materialTotal = 0;
+    let materialCost = 0;
 
     for (const item of materialItems) {
       const productId = (item.productId || "").trim();
@@ -149,7 +160,7 @@ export async function POST(request: Request) {
 
       const { data: product, error: productError } = await supabaseAdmin
         .from("worker_inventory_products")
-        .select("id, worker_id, name, sku, category, unit, stock_quantity, warranty_months")
+        .select("id, worker_id, name, sku, category, unit, stock_quantity, warranty_months, purchase_price")
         .eq("id", productId)
         .eq("worker_id", visibleJob.worker_id)
         .maybeSingle();
@@ -169,6 +180,7 @@ export async function POST(request: Request) {
 
       const lineTotal = quantity * unitPrice;
       materialTotal += lineTotal;
+      materialCost += quantity * Number(product.purchase_price || 0);
       const { data: orderItem, error: itemError } = await supabaseAdmin
         .from("worker_sales_order_items")
         .insert({
@@ -219,15 +231,29 @@ export async function POST(request: Request) {
 
     if (orderTotalError) return jsonError("Không thể cập nhật tổng tiền vật tư: " + orderTotalError.message, 500);
 
+    const safeFinalAmount = Number.isFinite(finalAmount) ? finalAmount : 0;
+    const safeCost = Number.isFinite(Number(requestedFinancials.cost)) ? Number(requestedFinancials.cost) : materialCost;
+    const financials = {
+      laborRevenue: Number(requestedFinancials.laborRevenue || Math.max(safeFinalAmount - materialTotal, 0)),
+      materialRevenue: Number(requestedFinancials.materialRevenue || materialTotal),
+      revenue: Number(requestedFinancials.revenue || safeFinalAmount),
+      cost: safeCost,
+      grossProfit: Number.isFinite(Number(requestedFinancials.grossProfit)) ? Number(requestedFinancials.grossProfit) : safeFinalAmount - safeCost,
+    };
+
     const { error: jobError } = await supabaseAdmin
       .from("jobs")
       .update({
         status: "completed",
         images,
         completion_items: completionItems,
-        final_amount: Number.isFinite(finalAmount) ? finalAmount : 0,
+        final_amount: safeFinalAmount,
         warranty_days: Number.isFinite(warrantyDays) ? warrantyDays : 0,
         warranty_note: warrantyNote || null,
+        workflow_data: {
+          ...((visibleJob.workflow_data || {}) as Record<string, unknown>),
+          financials,
+        },
       })
       .eq("id", jobId)
       .eq("worker_id", visibleJob.worker_id);
@@ -244,6 +270,8 @@ export async function POST(request: Request) {
           sales_order_id: order.id,
           material_total: materialTotal,
           material_count: materialItems.length,
+          material_cost: materialCost,
+          gross_profit: financials.grossProfit,
           source: "worker_job_completion_api_fallback",
         },
       });

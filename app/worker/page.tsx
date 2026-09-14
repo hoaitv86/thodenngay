@@ -324,13 +324,35 @@ interface CompletionItem {
   name: string;
   quantity: number;
   unitPrice: number;
+  costPrice?: number;
   warrantyDays: number;
   inventoryProductId?: string;
   sku?: string;
   category?: string;
   unit?: string;
-  source?: "manual" | "inventory";
+  source?: "manual" | "inventory" | "labor";
 }
+
+type StoredCompletionItem = {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  costPrice?: number;
+  warrantyDays: number;
+  inventoryProductId?: string | null;
+  sku?: string | null;
+  category?: string | null;
+  unit?: string | null;
+  source?: "manual" | "inventory" | "labor";
+};
+
+type JobFinancials = {
+  laborRevenue: number;
+  materialRevenue: number;
+  revenue: number;
+  cost: number;
+  grossProfit: number;
+};
 
 interface WorkerCreateJobResponse {
   error?: string;
@@ -405,10 +427,14 @@ type WorkerDashboardStats = {
   rating: number;
   todayCustomers: number;
   todayIncome: number;
+  todayCost: number;
+  todayGrossProfit: number;
   todayRating: number;
   monthlyCustomers: number;
   monthlyNewCustomers: number;
   monthlyIncome: number;
+  monthlyCost: number;
+  monthlyGrossProfit: number;
   monthlyRating: number;
 };
 
@@ -430,10 +456,14 @@ const initialWorkerDashboardStats: WorkerDashboardStats = {
   rating: 0,
   todayCustomers: 0,
   todayIncome: 0,
+  todayCost: 0,
+  todayGrossProfit: 0,
   todayRating: 0,
   monthlyCustomers: 0,
   monthlyNewCustomers: 0,
   monthlyIncome: 0,
+  monthlyCost: 0,
+  monthlyGrossProfit: 0,
   monthlyRating: 0,
 };
 
@@ -502,6 +532,7 @@ const VIETTEL_GIFT_CAMERA_OPTIONS = [
   "Camera Viettel ngoài trời",
 ];
 const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "three_months", "six_months", "yearly"];
+const completionHandoverSectionKeys = handoverWorkflowSectionKeys.filter(key => key !== "camera_devices");
 
 const getMonthKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
@@ -687,8 +718,19 @@ const makeCompletionItem = (name = "", unitPrice = 0): CompletionItem => ({
   name,
   quantity: 1,
   unitPrice,
+  costPrice: 0,
   warrantyDays: 30,
   source: "manual",
+});
+
+const makeLaborCompletionItem = (name = "Nhân công", unitPrice = 0): CompletionItem => ({
+  id: crypto.randomUUID(),
+  name,
+  quantity: 1,
+  unitPrice,
+  costPrice: 0,
+  warrantyDays: 30,
+  source: "labor",
 });
 
 const makeInventoryCompletionItem = (): CompletionItem => ({
@@ -696,9 +738,69 @@ const makeInventoryCompletionItem = (): CompletionItem => ({
   name: "",
   quantity: 1,
   unitPrice: 0,
+  costPrice: 0,
   warrantyDays: 0,
   source: "inventory",
 });
+
+const calculateCompletionFinancials = (items: Array<Pick<CompletionItem, "quantity" | "unitPrice" | "costPrice" | "source">>, extraRevenue = 0): JobFinancials => {
+  return items.reduce<JobFinancials>((totals, item) => {
+    const quantity = Number(item.quantity) || 0;
+    const lineRevenue = quantity * (Number(item.unitPrice) || 0);
+    const lineCost = item.source === "inventory" ? quantity * (Number(item.costPrice) || 0) : 0;
+
+    if (item.source === "inventory") {
+      totals.materialRevenue += lineRevenue;
+    } else {
+      totals.laborRevenue += lineRevenue;
+    }
+    totals.revenue += lineRevenue;
+    totals.cost += lineCost;
+    totals.grossProfit = totals.revenue - totals.cost;
+    return totals;
+  }, { laborRevenue: extraRevenue, materialRevenue: 0, revenue: extraRevenue, cost: 0, grossProfit: extraRevenue });
+};
+
+const normalizeBusinessKeyword = (value: string | null | undefined) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d");
+
+const isCameraCompletionItem = (item: Pick<StoredCompletionItem, "name" | "category" | "source">) => {
+  if (item.source !== "inventory") return false;
+  const haystack = normalizeBusinessKeyword(String(item.name || "") + " " + String(item.category || ""));
+  return /camera|cctv|dau ghi|ghi hinh/.test(haystack);
+};
+
+const getJobLaborUnitPrice = (job: WorkerJob) => {
+  const servicePrice = Number(job.service?.base_price || 0);
+  if (Number.isFinite(servicePrice) && servicePrice > 0) return servicePrice;
+  return Number(job.quoted_price || 0);
+};
+
+const getStoredJobFinancials = (job: { final_amount?: number | string | null; quoted_price?: number | string | null; completion_items?: StoredCompletionItem[] | null; workflow_data?: WorkflowData | null }): JobFinancials => {
+  const saved = job.workflow_data?.financials as Partial<JobFinancials> | undefined;
+  if (saved && Number.isFinite(Number(saved.revenue))) {
+    const revenue = Number(saved.revenue || 0);
+    const cost = Number(saved.cost || 0);
+    return {
+      laborRevenue: Number(saved.laborRevenue || 0),
+      materialRevenue: Number(saved.materialRevenue || 0),
+      revenue,
+      cost,
+      grossProfit: Number.isFinite(Number(saved.grossProfit)) ? Number(saved.grossProfit) : revenue - cost,
+    };
+  }
+
+  const items = Array.isArray(job.completion_items) ? job.completion_items : [];
+  if (items.length > 0) return calculateCompletionFinancials(items);
+
+  const revenue = Number(job.final_amount || job.quoted_price || 0);
+  return { laborRevenue: revenue, materialRevenue: 0, revenue, cost: 0, grossProfit: revenue };
+};
 
 const getCurrentBrowserLocation = () => {
   return new Promise<GpsLocation | null>((resolve) => {
@@ -1635,7 +1737,7 @@ useEffect(() => {
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
       const workerJobsPromise = supabase
         .from('jobs')
-        .select('id, status, customer_id, quoted_price, final_amount, updated_at, payments(id, amount, status, paid_at)')
+        .select('id, status, customer_id, quoted_price, final_amount, completion_items, workflow_data, updated_at, payments(id, amount, status, paid_at)')
         .eq('worker_id', workerData.id);
 
       const todayRatingsPromise = supabase
@@ -1668,6 +1770,8 @@ useEffect(() => {
       let income = 0;
       let jobsDone = 0;
       let monthlyIncome = 0;
+      let todayCost = 0;
+      let monthlyCost = 0;
       const servedCustomerIds = new Set<string>();
       const todayCustomerIds = new Set<string>();
       const monthlyCustomerIds = new Set<string>();
@@ -1703,12 +1807,15 @@ useEffect(() => {
             if (completedToday) todayCustomerIds.add(customerKey);
             if (completedThisMonth) monthlyCustomerIds.add(customerKey);
 
-            income += Number(j.final_amount || j.quoted_price || 0);
+            const jobFinancials = getStoredJobFinancials(j);
+            income += jobFinancials.revenue;
             if (completedToday) {
-              legacyTodayIncome += Number(j.final_amount || j.quoted_price || 0);
+              legacyTodayIncome += jobFinancials.revenue;
+              todayCost += jobFinancials.cost;
             }
             if (completedThisMonth) {
-              legacyMonthlyIncome += Number(j.final_amount || j.quoted_price || 0);
+              legacyMonthlyIncome += jobFinancials.revenue;
+              monthlyCost += jobFinancials.cost;
             }
 
             (j.payments || []).forEach(payment => {
@@ -1770,10 +1877,14 @@ useEffect(() => {
           rating: workerData.avg_rating || 0,
           todayCustomers: todayCustomerIds.size,
           todayIncome,
+          todayCost,
+          todayGrossProfit: todayIncome - todayCost,
           todayRating,
           monthlyCustomers: monthlyCustomerIds.size,
           monthlyNewCustomers: monthlyNewCustomerCount,
           monthlyIncome,
+          monthlyCost,
+          monthlyGrossProfit: monthlyIncome - monthlyCost,
           monthlyRating,
         },
       };
@@ -2869,7 +2980,7 @@ useEffect(() => {
       setCompletionHandoverData(pruneWorkflowData(
         job.workflow_data || {},
         getWorkflowServicesForJob(job),
-        { includeSectionKeys: handoverWorkflowSectionKeys }
+        { includeSectionKeys: completionHandoverSectionKeys }
       ));
     } catch (error) {
       console.error("[completion-modal] handover init failed", error);
@@ -2879,7 +2990,7 @@ useEffect(() => {
     setSelectedFiles([]);
     setPreviewUrls([]);
     setCompletionItems([
-      makeCompletionItem(job.serviceName || "Công dịch vụ", isInternetInstallJob ? 0 : Number(job.quoted_price || 0)),
+      makeLaborCompletionItem("Nhân công - " + (job.serviceName || "Công dịch vụ"), isInternetInstallJob ? 0 : getJobLaborUnitPrice(job)),
       ...(startWithMaterial ? [makeInventoryCompletionItem()] : []),
     ]);
     setWarrantyNote("Bảo hành theo hạng mục đã ghi trên phiếu, không áp dụng cho lỗi phát sinh do sử dụng sai cách.");
@@ -2910,6 +3021,7 @@ useEffect(() => {
           inventoryProductId: "",
           name: "",
           unitPrice: 0,
+          costPrice: 0,
           warrantyDays: 0,
           sku: "",
           category: "",
@@ -2923,6 +3035,7 @@ useEffect(() => {
         inventoryProductId: product.id,
         name: product.name,
         unitPrice: Number(product.default_sale_price || 0),
+        costPrice: Number(product.purchase_price || 0),
         warrantyDays: Number(product.warranty_months || 0) * 30,
         sku: product.sku,
         category: product.category,
@@ -2933,7 +3046,44 @@ useEffect(() => {
   };
 
   const removeCompletionItem = (id: string) => {
-    setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
+    setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id && item.source !== "labor") : prev);
+  };
+
+  const createCustomerDevicesFromCompletion = async (job: WorkerJob, items: StoredCompletionItem[]) => {
+    if (!worker?.id || !job.customer_id) return;
+    const cameraRows = items
+      .filter(isCameraCompletionItem)
+      .flatMap((item) => Array.from({ length: Math.max(0, Number(item.quantity) || 0) }, (_, index) => ({ item, index })));
+
+    if (cameraRows.length === 0) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const installedAt = new Date().toISOString().slice(0, 10);
+    const rows = cameraRows.map(({ item }, index) => ({
+      worker_id: worker.id,
+      customer_id: job.customer_id,
+      job_id: job.id,
+      product_id: item.inventoryProductId || null,
+      product_name: item.name,
+      product_sku: item.sku || null,
+      category: item.category || null,
+      device_label: "Camera " + (index + 1),
+      device_index: index + 1,
+      installed_at: installedAt,
+      warranty_months: Math.max(0, Math.round((Number(item.warrantyDays) || 0) / 30)),
+      sale_price: Number(item.unitPrice) || 0,
+      cost_price: Number(item.costPrice) || 0,
+      created_by: user?.id || null,
+    }));
+
+    const { error } = await supabase.from("worker_customer_devices").insert(rows);
+    if (error) {
+      if (/worker_customer_devices|schema cache|Could not find|does not exist/i.test(error.message || "")) {
+        console.warn("[customer-devices] missing schema", error);
+        return;
+      }
+      throw new Error("Đã hoàn thành job nhưng chưa tạo được thiết bị khách hàng: " + error.message);
+    }
   };
 
   const completionItemsTotal = completionItems.reduce((sum, item, index) => {
@@ -2954,6 +3104,9 @@ useEffect(() => {
   const canGiftViettelCamera = isInternetCompletionJob && completionInternetInstallFee === 400000 && completionInternetCycle !== "monthly";
   const completionCustomerPhone = activeJobToComplete?.customer?.phone || "";
   const completionGiftCameraAccountValue = canGiftViettelCamera ? completionCustomerPhone.trim() : "";
+  const completionFinancials = calculateCompletionFinancials(completionItems, completionInternetInstallFee + completionInternetReceiptTotal);
+  const completionCostTotal = completionFinancials.cost;
+  const completionGrossProfit = completionFinancials.grossProfit;
   const completionTotal = completionItemsTotal + completionInternetInstallFee + completionInternetReceiptTotal;
   const completionAllInTotal = completionTotal + completionAddOnGrandTotal;
   const completionPaidAmount =
@@ -3280,6 +3433,7 @@ useEffect(() => {
         name: item.name.trim(),
         quantity: Number(item.quantity) || 0,
         unitPrice: Number(item.unitPrice) || 0,
+        costPrice: item.source === "inventory" ? Number(item.costPrice) || 0 : 0,
         warrantyDays: Number(item.warrantyDays) || 0,
         inventoryProductId: item.inventoryProductId || null,
         sku: item.sku || null,
@@ -3302,10 +3456,9 @@ useEffect(() => {
     setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
-    const finalAmount = cleanedItems.reduce((sum, item, index) => {
-      if (isInternetCompletionJob && index === 0 && item.source !== "inventory") return sum;
-      return sum + item.quantity * item.unitPrice;
-    }, 0) + completionInternetInstallFee + completionInternetReceiptTotal;
+    const financialItems = cleanedItems.filter((item, index) => !(isInternetCompletionJob && index === 0 && item.source !== "inventory"));
+    const financials = calculateCompletionFinancials(financialItems, completionInternetInstallFee + completionInternetReceiptTotal);
+    const finalAmount = financials.revenue;
     const paidAmount =
       completionPaymentStatus === "paid"
         ? finalAmount
@@ -3453,6 +3606,7 @@ useEffect(() => {
               warrantyDays: maxWarrantyDays,
               warrantyNote: completionWarrantyNote,
               materialItems: buildSalesRpcItems(materialDraftItems),
+              financials,
             }),
           });
           const fallbackData = await fallbackResponse.json().catch(() => ({}));
@@ -3476,6 +3630,7 @@ useEffect(() => {
           workflow_data: {
             ...(job.workflow_data || {}),
             ...handoverWorkflowData,
+            financials,
             payment: {
               status: completionPaymentStatus,
               totalAmount: finalAmount,
@@ -3562,10 +3717,12 @@ useEffect(() => {
         }
       }
 
+      await createCustomerDevicesFromCompletion(job, cleanedItems);
+
       void fetch("/api/notifications/event", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: "job_completed", jobId: job.id, workerId: worker?.id, metadata: { finalAmount, paidAmount, remainingAmount } }),
+        body: JSON.stringify({ event: "job_completed", jobId: job.id, workerId: worker?.id, metadata: { finalAmount, paidAmount, remainingAmount, financials } }),
       }).catch(() => undefined);
 
       // 3. Optimistic UI update
@@ -3578,9 +3735,14 @@ useEffect(() => {
       setWorkerStats(prev => ({
         ...prev,
         jobsDone: prev.jobsDone + 1,
-        income: prev.income + amountToRecord,
+        income: prev.income + finalAmount,
+        todayIncome: prev.todayIncome + finalAmount,
+        todayCost: prev.todayCost + financials.cost,
+        todayGrossProfit: prev.todayGrossProfit + financials.grossProfit,
         monthlyCustomers: prev.monthlyCustomers + 1,
-        monthlyIncome: prev.monthlyIncome + amountToRecord,
+        monthlyIncome: prev.monthlyIncome + finalAmount,
+        monthlyCost: prev.monthlyCost + financials.cost,
+        monthlyGrossProfit: prev.monthlyGrossProfit + financials.grossProfit,
       }));
       if (billGoChanged) {
         void fetchDataRef.current(true);
@@ -4068,12 +4230,12 @@ useEffect(() => {
                 <p className="mt-1 truncate text-sm font-extrabold text-primary-container sm:text-2xl">{formatBillGoCurrency(workerStats.monthlyIncome)}</p>
               </div>
               <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 sm:p-4">
-                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Chỉ tiêu</p>
-                <p className="mt-1 truncate text-sm font-extrabold text-on-surface sm:text-2xl">{formatBillGoCurrency(monthlyRevenueTarget)}</p>
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Giá vốn</p>
+                <p className="mt-1 truncate text-sm font-extrabold text-on-surface sm:text-2xl">{formatBillGoCurrency(workerStats.monthlyCost)}</p>
               </div>
               <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 sm:p-4">
-                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Trạng thái</p>
-                <p className="mt-1 truncate text-sm font-extrabold text-success sm:text-2xl">{monthlyGoal?.skipped ? "Đã bỏ qua" : monthlyGoal ? "Đã đặt" : "Gợi ý"}</p>
+                <p className="text-[10px] font-bold uppercase text-on-surface-variant">Lãi gộp</p>
+                <p className="mt-1 truncate text-sm font-extrabold text-success sm:text-2xl">{formatBillGoCurrency(workerStats.monthlyGrossProfit)}</p>
                 <button
                   type="button"
                   onClick={() => setMonthlyGoalFormOpen(true)}
@@ -4193,6 +4355,7 @@ useEffect(() => {
               <div className="mt-1 text-[10px] font-bold uppercase text-on-surface-variant">Tổng tiền</div>
               <div className="mt-2 space-y-0.5 text-[11px] font-extrabold leading-4 text-primary-container">
                 <p>{statPeriodLabels.month}: {formatCompactCurrency(workerStats.monthlyIncome)}</p>
+                <p>Lãi gộp: {formatCompactCurrency(workerStats.monthlyGrossProfit)}</p>
                 <p className="text-on-surface-variant">{statPeriodLabels.today}: {formatCompactCurrency(workerStats.todayIncome)}</p>
               </div>
             </div>
@@ -5952,7 +6115,7 @@ useEffect(() => {
                 services={completionWorkflowServices}
                 value={completionHandoverData}
                 onChange={setCompletionHandoverData}
-                includeSectionKeys={handoverWorkflowSectionKeys}
+                includeSectionKeys={completionHandoverSectionKeys}
                 disabled={uploadingImages}
               />
 
@@ -6155,8 +6318,8 @@ useEffect(() => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <label className="text-sm font-bold text-on-surface block">Sản phẩm, linh kiện và công dịch vụ</label>
-                    <p className="text-xs text-on-surface-variant">Nhập từng dòng để chốt tổng tiền và in hóa đơn cho khách.</p>
+                    <label className="text-sm font-bold text-on-surface block">Nhân công và vật tư thực tế</label>
+                    <p className="text-xs text-on-surface-variant">Dòng nhân công tính theo đơn giá dịch vụ × số lượng thiết bị thực tế; vật tư chọn từ kho.</p>
                   </div>
                   <button
                     type="button"
@@ -6180,12 +6343,12 @@ useEffect(() => {
                   {completionItems.map((item, index) => (
                     <div key={item.id} className="rounded-xl border border-outline-variant/40 bg-white p-3 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold uppercase text-on-surface-variant">Dòng {index + 1}</span>
+                        <span className="text-xs font-bold uppercase text-on-surface-variant">{item.source === "labor" ? "Nhân công" : item.source === "inventory" ? "Vật tư" : "Dòng " + (index + 1)}</span>
                         <button
                           type="button"
                           onClick={() => removeCompletionItem(item.id)}
                           className="rounded-lg px-2 py-1 text-xs font-bold text-error hover:bg-error-container disabled:opacity-40"
-                          disabled={uploadingImages || completionItems.length === 1}
+                          disabled={uploadingImages || completionItems.length === 1 || item.source === "labor"}
                         >
                           Xóa
                         </button>
@@ -6207,7 +6370,7 @@ useEffect(() => {
                           </select>
                           {item.inventoryProductId && (
                             <p className="text-xs font-semibold text-on-surface-variant">
-                              {item.sku} · {item.category} · Đơn vị: {item.unit}
+                              {item.sku} · {item.category} · Đơn vị: {item.unit} · Giá vốn: {formatCurrency(Number(item.costPrice || 0))}
                             </p>
                           )}
                         </div>
@@ -6216,12 +6379,12 @@ useEffect(() => {
                         value={item.name}
                         onChange={(e) => updateCompletionItem(item.id, { name: e.target.value })}
                         className="input-field"
-                        placeholder="Tên sản phẩm/linh kiện/công dịch vụ"
-                        disabled={uploadingImages || item.source === "inventory"}
+                        placeholder="Tên hạng mục"
+                        disabled={uploadingImages || item.source === "inventory" || item.source === "labor"}
                       />
                       <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="text-[10px] font-bold uppercase text-on-surface-variant">SL</label>
+                          <label className="text-[10px] font-bold uppercase text-on-surface-variant">{item.source === "labor" ? "SL thiết bị" : "SL"}</label>
                           <input
                             type="number"
                             min="1"
@@ -6274,6 +6437,20 @@ useEffect(() => {
                   <p className="mt-1 text-xs font-semibold text-on-success-container">
                     Bằng chữ: {readVietnameseMoney(completionTotal)}
                   </p>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-lg bg-white/70 px-3 py-2">
+                      <p className="font-semibold text-on-surface-variant">Doanh thu</p>
+                      <p className="font-extrabold text-on-surface">{formatCurrency(completionTotal)}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/70 px-3 py-2">
+                      <p className="font-semibold text-on-surface-variant">Giá vốn</p>
+                      <p className="font-extrabold text-on-surface">{formatCurrency(completionCostTotal)}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/70 px-3 py-2">
+                      <p className="font-semibold text-on-surface-variant">Lãi gộp</p>
+                      <p className="font-extrabold text-on-surface">{formatCurrency(completionGrossProfit)}</p>
+                    </div>
+                  </div>
                   {isInternetCompletionJob && (
                     <p className="mt-1 text-xs font-semibold text-on-success-container">
                       Dòng dịch vụ lắp mới Internet không tính vào phiếu thu; chỉ thu phí lắp đặt và cước trả trước nếu có.
