@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,6 +18,21 @@ import {
   isDemoAccount,
 } from "@/lib/demo-accounts";
 
+function getAuthFailureText(error: unknown) {
+  if (!error) return "";
+  if (error instanceof Error) return `${error.name} ${error.message}`;
+  if (typeof error === "object") {
+    const record = error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown };
+    return [record.name, record.message, record.code, record.status].filter(Boolean).join(" ");
+  }
+  return String(error);
+}
+
+function isLikelyAuthNetworkError(error: unknown) {
+  return /AuthRetryableFetchError|Failed to fetch|fetch failed|NetworkError|Load failed|timeout|timed out|ECONNRESET|ENOTFOUND|ETIMEDOUT/i.test(
+    getAuthFailureText(error)
+  );
+}
 const getPreferredRole = () =>
   document.cookie
     .split("; ")
@@ -36,7 +51,7 @@ export default function LoginPage() {
   const [locationUpdated, setLocationUpdated] = useState(false);
   const [demoLoadingRole, setDemoLoadingRole] = useState<DemoRole | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { settings } = useSettings();
   const showDemoAccounts = process.env.NODE_ENV !== "production";
 
@@ -52,10 +67,20 @@ export default function LoginPage() {
     };
 
     const redirectExistingSession = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      let user: User | null = null;
+      let authError: unknown = null;
+
+      try {
+        const result = await supabase.auth.getUser();
+        user = result.data.user;
+        authError = result.error;
+      } catch (error) {
+        authError = error;
+      }
+
       if (!isMounted) return;
       if (!user) {
-        if (!window.navigator.onLine && redirectToOfflineSnapshot()) return;
+        if ((!window.navigator.onLine || isLikelyAuthNetworkError(authError)) && redirectToOfflineSnapshot()) return;
         setCheckingExistingSession(false);
         return;
       }
@@ -102,9 +127,9 @@ export default function LoginPage() {
         });
 
         router.replace(destination);
-      } catch {
+      } catch (error) {
         if (!isMounted) return;
-        if (redirectToOfflineSnapshot(user.id)) return;
+        if ((!window.navigator.onLine || isLikelyAuthNetworkError(error)) && redirectToOfflineSnapshot(user.id)) return;
         setCheckingExistingSession(false);
       }
     };

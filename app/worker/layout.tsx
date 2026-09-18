@@ -104,6 +104,22 @@ const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
 const WORKER_STATIC_SHELL_WARM_SESSION_KEY = "tdn.offline.workerStaticShellWarmed.v1";
 const WORKER_DETAIL_SHELL_WARM_SESSION_KEY = "tdn.offline.workerDetailShellWarmed.v1";
 
+function getAuthFailureText(error: unknown) {
+  if (!error) return "";
+  if (error instanceof Error) return `${error.name} ${error.message}`;
+  if (typeof error === "object") {
+    const record = error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown };
+    return [record.name, record.message, record.code, record.status].filter(Boolean).join(" ");
+  }
+  return String(error);
+}
+
+function isLikelyAuthNetworkError(error: unknown) {
+  return /AuthRetryableFetchError|Failed to fetch|fetch failed|NetworkError|Load failed|timeout|timed out|ECONNRESET|ENOTFOUND|ETIMEDOUT/i.test(
+    getAuthFailureText(error)
+  );
+}
+
 function setActiveRoleCookie(role: "customer" | "worker") {
   document.cookie = `${ACTIVE_ROLE_COOKIE}=${role}; path=/; max-age=${activeRoleCookieMaxAge}; samesite=lax`;
 }
@@ -234,7 +250,7 @@ export default function WorkerLayout({
     const getUser = async () => {
       const route = pathname || "/worker";
       const offline = isBrowserOffline();
-      const offlineSnapshot = offline ? getOfflineWorkerAuthSnapshot() : null;
+      const offlineSnapshot = getOfflineWorkerAuthSnapshot();
       let user: User | null = null;
       let authError: unknown = null;
 
@@ -246,15 +262,17 @@ export default function WorkerLayout({
         authError = error;
       }
 
-      if (!user && offlineSnapshot) user = offlineSnapshot.user;
+      const authNetworkError = isLikelyAuthNetworkError(authError);
+      const shouldUseOfflineIdentity = offline || authNetworkError;
+      if (!user && offlineSnapshot && shouldUseOfflineIdentity) user = offlineSnapshot.user;
 
-      if (offline) {
+      if (shouldUseOfflineIdentity) {
         const identityFound = Boolean(user && offlineSnapshot);
         logOfflineDebug("route guard", {
           route,
           identityFound,
           redirectReason: identityFound ? null : "missing-offline-worker-identity",
-          authError: authError instanceof Error ? authError.message : authError ? String(authError) : null,
+          authError: getAuthFailureText(authError) || (offline ? "offline" : "auth-network-error"),
         });
         if (!identityFound) {
           router.replace("/login");
@@ -272,7 +290,7 @@ export default function WorkerLayout({
       let memberships: WorkerMembershipRow[] = [];
       let storeId: string | null = null;
 
-      if (offline) {
+      if (shouldUseOfflineIdentity) {
         const [cachedContext, cachedWorkerProfile] = await Promise.all([
           getCachedDataset<{ profile: typeof profile; worker: typeof worker; memberships: WorkerMembershipRow[] }>(legacyCacheKey),
           getCachedDataset<WorkerProfileCache>(profileCacheKey),
@@ -306,7 +324,7 @@ export default function WorkerLayout({
         }
 
         storeId = memberships.find((item) => item.unit_id)?.unit_id || cachedWorkerProfile?.data.storeId || null;
-        logOfflineDebug("route guard allow", { route, identityFound: true, redirectReason: null, storeId, workerId: worker?.id || null });
+        logOfflineDebug("route guard allow", { route, identityFound: true, redirectReason: null, storeId, workerId: worker?.id || null, reason: offline ? "offline" : "auth-network-error" });
       } else {
         const [{ data: profileData }, { data: workerData }, membershipRows] = await Promise.all([
           supabase

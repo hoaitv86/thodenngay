@@ -20,7 +20,7 @@ CHECK (
 DROP INDEX IF EXISTS billgo_subscriptions_worker_account_active_idx;
 DROP INDEX IF EXISTS billgo_subscriptions_worker_account_active_lower_idx;
 
-DO $
+DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -45,7 +45,7 @@ BEGIN
   ELSE
     RAISE NOTICE 'Skip unique Internet account index because duplicate active Internet accounts exist.';
   END IF;
-END $;
+END $$;
 
 CREATE INDEX IF NOT EXISTS billgo_subscriptions_worker_account_lookup_idx
 ON public.billgo_subscriptions(worker_id, lower(internet_account))

@@ -357,8 +357,6 @@ public class MainActivity extends BridgeActivity {
 
         if (hasNetworkConnection()) {
             reloadFreshAfterCacheInvalidation("android-version-change");
-        } else if (webView != null) {
-            webView.clearCache(false);
         }
     }
 
@@ -435,7 +433,6 @@ public class MainActivity extends BridgeActivity {
         hideNetworkError();
         configureCacheModeForNetwork();
         webView.stopLoading();
-        webView.clearCache(true);
         String refreshUrl = Uri.parse(ANDROID_START_URL)
             .buildUpon()
             .appendQueryParameter("nativeRefresh", reason)
@@ -450,16 +447,14 @@ public class MainActivity extends BridgeActivity {
 
         int reloadSequence = ++freshReloadSequence;
         String escapedReason = escapeJavascriptString(reason);
-        String cleanupScript = "(async function(){try{"
+        String refreshScript = "(async function(){try{"
             + "if('serviceWorker' in navigator){var regs=await navigator.serviceWorker.getRegistrations();"
-            + "await Promise.all(regs.filter(function(r){return r.scope.indexOf(location.origin)===0}).map(function(r){return r.unregister()}));}"
-            + "if('caches' in window){var keys=await caches.keys();"
-            + "await Promise.all(keys.filter(function(k){return k.indexOf('tdn-')===0}).map(function(k){return caches.delete(k)}));}"
+            + "await Promise.all(regs.filter(function(r){return r.scope.indexOf(location.origin)===0}).map(function(r){return r.update()}));}"
             + "try{sessionStorage.setItem('tdn.nativeRefresh.cleaned.v1','" + escapedReason + "')}catch(e){}"
             + "return 'ok'}catch(error){return 'error:'+String(error&&error.message||error)}})();";
 
         try {
-            webView.evaluateJavascript(cleanupScript, value -> {
+            webView.evaluateJavascript(refreshScript, value -> {
                 if (reloadSequence != freshReloadSequence) return;
                 freshReloadSequence++;
                 loadFreshStartUrl(reason);

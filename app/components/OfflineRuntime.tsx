@@ -8,7 +8,6 @@ import { createClient } from "@/lib/supabase/client";
 const OFFLINE_READY_EVENT = "tdn:offline-ready";
 const CACHE_APP_SHELL_MESSAGE = "TDN_CACHE_APP_SHELL";
 const REFRESH_DEPLOY_CACHE_MESSAGE = "TDN_REFRESH_DEPLOY_CACHE";
-const PURGE_DEPLOY_CACHE_MESSAGE = "TDN_PURGE_DEPLOY_CACHE";
 const APP_SHELL_WARM_SIGNATURE_KEY = "tdn.offline.appShellWarmSignature.v1";
 const DEPLOY_VERSION_ENDPOINT = "/api/app-version";
 const DEPLOY_VERSION_STORAGE_KEY = "tdn.webDeploy.version.v1";
@@ -197,31 +196,6 @@ async function fetchDeployVersion() {
   return typeof payload.version === "string" && payload.version.trim() ? payload.version.trim() : null;
 }
 
-async function clearDeployRuntimeCaches() {
-  if (!("caches" in window)) return;
-
-  try {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key.startsWith(TDN_CACHE_KEY_PREFIX)).map((key) => caches.delete(key)));
-  } catch (error) {
-    console.warn("[TDN-OFFLINE] deploy cache cleanup failed", error);
-  }
-}
-
-async function unregisterSameOriginServiceWorkers() {
-  if (!("serviceWorker" in navigator)) return;
-
-  try {
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(
-      registrations
-        .filter((registration) => registration.scope.startsWith(window.location.origin))
-        .map((registration) => registration.unregister())
-    );
-  } catch (error) {
-    console.warn("[TDN-OFFLINE] native refresh service worker cleanup failed", error);
-  }
-}
 
 function getCleanNativeRefreshUrl() {
   const cleanUrl = new URL(window.location.href);
@@ -246,8 +220,6 @@ async function handleNativeRefreshRecovery(registration: ServiceWorkerRegistrati
     console.warn("[TDN-OFFLINE] native refresh service worker update check failed", error);
   }
 
-  await clearDeployRuntimeCaches();
-  await unregisterSameOriginServiceWorkers();
   window.location.replace(getCleanNativeRefreshUrl());
   return true;
 }
@@ -259,16 +231,11 @@ async function refreshDeployCache(registration: ServiceWorkerRegistration) {
     console.warn("[TDN-OFFLINE] service worker update check failed", error);
   }
 
-  await clearDeployRuntimeCaches();
-
   const readyRegistration = await navigator.serviceWorker.ready;
   const worker = readyRegistration.active || registration.active || navigator.serviceWorker.controller;
   if (!worker) return;
 
-  worker.postMessage({ type: PURGE_DEPLOY_CACHE_MESSAGE, urls: collectAppShellUrls() });
-  window.setTimeout(() => {
-    worker.postMessage({ type: REFRESH_DEPLOY_CACHE_MESSAGE, urls: collectAppShellUrls() });
-  }, 250);
+  worker.postMessage({ type: REFRESH_DEPLOY_CACHE_MESSAGE, urls: collectAppShellUrls() });
   removeSessionValue(APP_SHELL_WARM_SIGNATURE_KEY);
 }
 

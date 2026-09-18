@@ -4233,6 +4233,13 @@ useEffect(() => {
                         </button>
                         <button
                           type="button"
+                          onClick={() => openCancelRequestModal(job)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-error/25 bg-error-container px-2.5 py-2 text-xs font-extrabold text-error shadow-sm transition-all active:scale-[0.98]"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             if (!isCompletableJob) {
                               showToast("Chỉ hoàn thành công việc đã nhận hoặc đang làm.", "info");
@@ -4245,13 +4252,6 @@ useEffect(() => {
                         >
                           <span aria-hidden="true">✓</span>
                           Hoàn thành
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openCancelRequestModal(job)}
-                          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-error/25 bg-error-container px-2.5 py-2 text-xs font-extrabold text-error shadow-sm transition-all active:scale-[0.98]"
-                        >
-                          Hủy
                         </button>
                       </div>
                     </div>
