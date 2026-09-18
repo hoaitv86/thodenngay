@@ -9,8 +9,10 @@
     <string name="network_error_title">Không có kết nối</string>
     <string name="network_error_message">Vui lòng kiểm tra mạng rồi thử lại.</string>
     <string name="network_error_retry">Thử lại</string>
-    <string name="startup_version">v0.1.1 Beta</string>
-    <string name="startup_version_fallback">v0.1.2-beta</string>
-    <string name="startup_status">Đang khởi động...</string>
+    <string name="startup_status">Đang chuẩn bị ứng dụng...</string>
+    <string name="startup_slogan">Thợ giỏi đến ngay khi bạn cần</string>
+    <string name="startup_value_fast">Nhanh chóng</string>
+    <string name="startup_value_trusted">Uy tín</string>
+    <string name="startup_value_caring">Tận tâm</string>
+    <string name="startup_footer">CÔNG NGHỆ KẾT NỐI • DỊCH VỤ VÌ CỘNG ĐỒNG</string>
 </resources>
-

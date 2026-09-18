@@ -3,8 +3,16 @@ package vn.thodenngay.app;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Canvas;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+import android.graphics.Shader;
+import android.graphics.Typeface;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -15,6 +23,10 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -34,6 +46,8 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.Space;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
@@ -64,6 +78,14 @@ public class MainActivity extends BridgeActivity {
     private static final int STARTUP_TIMEOUT_MS = 3_000;
     private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
+    private static final int BRAND_NAVY = 0xFF0F3D63;
+    private static final int BRAND_BLUE = 0xFF1478C8;
+    private static final int BRAND_ORANGE = 0xFFFF8A00;
+    private static final int BRAND_GREEN = 0xFF10983B;
+    private static final int BRAND_MUTED = 0xFF59738A;
+    private static final int ICON_FAST = 0;
+    private static final int ICON_TRUSTED = 1;
+    private static final int ICON_CARING = 2;
 
     private FrameLayout rootView;
     private LinearLayout errorView;
@@ -215,44 +237,85 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
+        int screenHeightDp = getResources().getConfiguration().screenHeightDp;
+        boolean compact = screenHeightDp > 0 && screenHeightDp < 660;
+
         startupSplashView = new FrameLayout(this);
         startupSplashView.setBackgroundColor(0xFFFFFFFF);
+        startupSplashView.setFitsSystemWindows(true);
+
+        startupSplashView.addView(
+            new BottomBrandWaveView(this),
+            new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        );
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setGravity(Gravity.CENTER);
-        content.setPadding(dp(32), dp(32), dp(32), dp(32));
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
+        content.setPadding(dp(24), dp(compact ? 18 : 28), dp(24), dp(compact ? 16 : 24));
 
         ImageView logo = new ImageView(this);
-        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setImageResource(R.mipmap.ic_launcher_foreground);
         logo.setAdjustViewBounds(true);
-        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(112), dp(112));
-        logoParams.setMargins(0, 0, 0, dp(18));
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(compact ? 118 : 154), dp(compact ? 118 : 154));
+        logoParams.setMargins(0, 0, 0, dp(compact ? 6 : 8));
 
-        TextView appName = new TextView(this);
-        appName.setText(getString(R.string.app_name));
-        appName.setTextColor(0xFF123047);
-        appName.setTextSize(24);
-        appName.setGravity(Gravity.CENTER);
-        appName.setTypeface(appName.getTypeface(), android.graphics.Typeface.BOLD);
+        TextView appName = createBrandNameText(compact);
+        TextView slogan = createCenteredText(getString(R.string.startup_slogan), BRAND_NAVY, compact ? 15 : 17, Typeface.NORMAL);
+        slogan.setPadding(0, dp(4), 0, dp(compact ? 12 : 16));
 
-        TextView version = new TextView(this);
-        version.setText(getStartupVersionLabel());
-        version.setTextColor(0xFF476173);
-        version.setTextSize(14);
-        version.setGravity(Gravity.CENTER);
-        version.setPadding(0, dp(6), 0, dp(22));
+        ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            progress.setIndeterminateTintList(ColorStateList.valueOf(BRAND_BLUE));
+            progress.setProgressBackgroundTintList(ColorStateList.valueOf(0xFFE1E8EE));
+        }
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(compact ? 168 : 220), dp(5));
+        progressParams.setMargins(0, 0, 0, dp(compact ? 10 : 12));
 
-        TextView status = new TextView(this);
-        status.setText(getString(R.string.startup_status));
-        status.setTextColor(0xFF1F648D);
-        status.setTextSize(13);
-        status.setGravity(Gravity.CENTER);
+        TextView status = createCenteredText(getString(R.string.startup_status), BRAND_NAVY, compact ? 13 : 14, Typeface.NORMAL);
+        status.setPadding(0, 0, 0, dp(compact ? 14 : 22));
 
+        LinearLayout values = new LinearLayout(this);
+        values.setOrientation(LinearLayout.HORIZONTAL);
+        values.setGravity(Gravity.CENTER);
+        values.setBaselineAligned(false);
+        LinearLayout.LayoutParams valuesParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        valuesParams.setMargins(0, 0, 0, dp(compact ? 10 : 18));
+        values.addView(createBrandValueItem(ICON_FAST, BRAND_BLUE, 0xFFE7F3FF, getString(R.string.startup_value_fast), compact), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        values.addView(createValueSeparator(compact));
+        values.addView(createBrandValueItem(ICON_TRUSTED, BRAND_ORANGE, 0xFFFFF0DD, getString(R.string.startup_value_trusted), compact), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        values.addView(createValueSeparator(compact));
+        values.addView(createBrandValueItem(ICON_CARING, BRAND_GREEN, 0xFFE5F7EA, getString(R.string.startup_value_caring), compact), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView version = createCenteredText(getStartupVersionLabel(), BRAND_MUTED, compact ? 12 : 13, Typeface.NORMAL);
+        version.setPadding(0, 0, 0, dp(compact ? 4 : 6));
+
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER);
+        dots.addView(createDot(BRAND_BLUE));
+        dots.addView(createDot(BRAND_ORANGE));
+        dots.addView(createDot(0xFFDDE5EC));
+        LinearLayout.LayoutParams dotsParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        dotsParams.setMargins(0, 0, 0, dp(compact ? 8 : 12));
+
+        TextView footer = createCenteredText(getString(R.string.startup_footer), BRAND_NAVY, compact ? 9 : 10, Typeface.NORMAL);
+        footer.setLetterSpacing(0.12f);
+
+        content.addView(new Space(this), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, compact ? 0.25f : 0.5f));
         content.addView(logo, logoParams);
         content.addView(appName);
-        content.addView(version);
+        content.addView(slogan);
+        content.addView(progress, progressParams);
         content.addView(status);
+        content.addView(values, valuesParams);
+        content.addView(new Space(this), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, compact ? 0.18f : 0.45f));
+        content.addView(version);
+        content.addView(dots, dotsParams);
+        content.addView(footer);
+        content.addView(new Space(this), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, compact ? 0.12f : 0.22f));
 
         startupSplashView.addView(
             content,
@@ -262,6 +325,67 @@ public class MainActivity extends BridgeActivity {
             startupSplashView,
             new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         );
+    }
+
+    private TextView createBrandNameText(boolean compact) {
+        SpannableString name = new SpannableString("THỢ ĐẾN NGAY");
+        name.setSpan(new ForegroundColorSpan(BRAND_NAVY), 0, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        name.setSpan(new ForegroundColorSpan(BRAND_ORANGE), 4, name.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        name.setSpan(new StyleSpan(Typeface.BOLD), 0, name.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        TextView appName = createCenteredText("", BRAND_NAVY, compact ? 29 : 34, Typeface.BOLD);
+        appName.setText(name);
+        appName.setIncludeFontPadding(false);
+        return appName;
+    }
+
+    private TextView createCenteredText(String text, int color, int sp, int typefaceStyle) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(color);
+        view.setTextSize(sp);
+        view.setGravity(Gravity.CENTER);
+        view.setTypeface(Typeface.DEFAULT, typefaceStyle);
+        view.setIncludeFontPadding(true);
+        return view;
+    }
+
+    private View createBrandValueItem(int iconType, int accentColor, int backgroundColor, String label, boolean compact) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+
+        BrandIconView icon = new BrandIconView(this, iconType, accentColor, backgroundColor);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(compact ? 48 : 58), dp(compact ? 48 : 58));
+        iconParams.setMargins(0, 0, 0, dp(6));
+
+        TextView text = createCenteredText(label, BRAND_NAVY, compact ? 12 : 13, Typeface.NORMAL);
+        text.setSingleLine(false);
+
+        item.addView(icon, iconParams);
+        item.addView(text, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return item;
+    }
+
+    private View createValueSeparator(boolean compact) {
+        View separator = new View(this);
+        separator.setBackgroundColor(0xFFD4DEE7);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(1), dp(compact ? 28 : 34));
+        params.setMargins(dp(4), dp(compact ? 9 : 12), dp(4), 0);
+        separator.setLayoutParams(params);
+        return separator;
+    }
+
+    private View createDot(int color) {
+        View dot = new View(this);
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        shape.setColor(color);
+        dot.setBackground(shape);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(8), dp(8));
+        params.setMargins(dp(3), 0, dp(3), 0);
+        dot.setLayoutParams(params);
+        return dot;
     }
 
     private void showNetworkError() {
@@ -287,6 +411,137 @@ public class MainActivity extends BridgeActivity {
         return startupSplashView != null && startupSplashView.getVisibility() == View.VISIBLE;
     }
 
+    private static class BrandIconView extends View {
+        private final int iconType;
+        private final int accentColor;
+        private final int backgroundColor;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+
+        BrandIconView(Context context, int iconType, int accentColor, int backgroundColor) {
+            super(context);
+            this.iconType = iconType;
+            this.accentColor = accentColor;
+            this.backgroundColor = backgroundColor;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float width = getWidth();
+            float height = getHeight();
+            float size = Math.min(width, height);
+            float cx = width / 2f;
+            float cy = height / 2f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(backgroundColor);
+            canvas.drawCircle(cx, cy, size * 0.48f, paint);
+            paint.setColor(accentColor);
+            if (iconType == ICON_FAST) {
+                drawLightning(canvas, cx, cy, size);
+            } else if (iconType == ICON_TRUSTED) {
+                drawGroup(canvas, cx, cy, size);
+            } else {
+                drawHeart(canvas, cx, cy, size);
+            }
+        }
+
+        private void drawLightning(Canvas canvas, float cx, float cy, float size) {
+            path.reset();
+            path.moveTo(cx + size * 0.03f, cy - size * 0.34f);
+            path.lineTo(cx - size * 0.22f, cy + size * 0.04f);
+            path.lineTo(cx - size * 0.02f, cy + size * 0.04f);
+            path.lineTo(cx - size * 0.12f, cy + size * 0.35f);
+            path.lineTo(cx + size * 0.24f, cy - size * 0.08f);
+            path.lineTo(cx + size * 0.04f, cy - size * 0.08f);
+            path.close();
+            canvas.drawPath(path, paint);
+        }
+
+        private void drawGroup(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.09f;
+            canvas.drawCircle(cx, cy - size * 0.18f, r * 1.12f, paint);
+            canvas.drawCircle(cx - size * 0.18f, cy - size * 0.11f, r, paint);
+            canvas.drawCircle(cx + size * 0.18f, cy - size * 0.11f, r, paint);
+            RectF center = new RectF(cx - size * 0.18f, cy - size * 0.04f, cx + size * 0.18f, cy + size * 0.24f);
+            RectF left = new RectF(cx - size * 0.34f, cy + size * 0.01f, cx - size * 0.07f, cy + size * 0.22f);
+            RectF right = new RectF(cx + size * 0.07f, cy + size * 0.01f, cx + size * 0.34f, cy + size * 0.22f);
+            canvas.drawRoundRect(left, size * 0.08f, size * 0.08f, paint);
+            canvas.drawRoundRect(right, size * 0.08f, size * 0.08f, paint);
+            canvas.drawRoundRect(center, size * 0.1f, size * 0.1f, paint);
+        }
+
+        private void drawHeart(Canvas canvas, float cx, float cy, float size) {
+            path.reset();
+            path.moveTo(cx, cy + size * 0.27f);
+            path.cubicTo(cx - size * 0.34f, cy + size * 0.05f, cx - size * 0.32f, cy - size * 0.24f, cx - size * 0.1f, cy - size * 0.24f);
+            path.cubicTo(cx - size * 0.01f, cy - size * 0.24f, cx + size * 0.05f, cy - size * 0.18f, cx, cy - size * 0.1f);
+            path.cubicTo(cx + size * 0.11f, cy - size * 0.31f, cx + size * 0.42f, cy - size * 0.19f, cx + size * 0.34f, cy + size * 0.06f);
+            path.cubicTo(cx + size * 0.3f, cy + size * 0.17f, cx + size * 0.16f, cy + size * 0.24f, cx, cy + size * 0.27f);
+            path.close();
+            canvas.drawPath(path, paint);
+        }
+    }
+
+    private static class BottomBrandWaveView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+
+        BottomBrandWaveView(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float width = getWidth();
+            float height = getHeight();
+            if (width <= 0 || height <= 0) return;
+
+            drawCity(canvas, width, height);
+            drawWave(canvas, width, height, BRAND_BLUE, height * 0.82f, -0.1f, 0.92f);
+            drawWave(canvas, width, height, BRAND_ORANGE, height * 0.84f, 0.46f, 0.82f);
+            drawWave(canvas, width, height, 0x20FF8A00, height * 0.88f, -0.04f, 1f);
+        }
+
+        private void drawCity(Canvas canvas, float width, float height) {
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0x1F1478C8);
+            float base = height * 0.82f;
+            float unit = width / 12f;
+            for (int i = 0; i < 9; i++) {
+                float left = i * unit + unit * 0.12f;
+                float buildingWidth = unit * (i % 3 == 0 ? 0.36f : 0.48f);
+                float buildingHeight = height * (0.035f + (i % 4) * 0.014f);
+                canvas.drawRect(left, base - buildingHeight, left + buildingWidth, base, paint);
+            }
+            drawHouse(canvas, width * 0.38f, base, width * 0.07f);
+            drawHouse(canvas, width * 0.66f, base, width * 0.06f);
+        }
+
+        private void drawHouse(Canvas canvas, float cx, float base, float size) {
+            path.reset();
+            path.moveTo(cx - size * 0.5f, base - size * 0.28f);
+            path.lineTo(cx, base - size * 0.72f);
+            path.lineTo(cx + size * 0.5f, base - size * 0.28f);
+            path.close();
+            canvas.drawPath(path, paint);
+            canvas.drawRect(cx - size * 0.36f, base - size * 0.28f, cx + size * 0.36f, base, paint);
+        }
+
+        private void drawWave(Canvas canvas, float width, float height, int color, float startY, float phase, float bottomFactor) {
+            path.reset();
+            path.moveTo(0, startY);
+            path.cubicTo(width * 0.24f, startY + height * (0.08f + phase * 0.02f), width * 0.42f, startY + height * 0.12f, width * 0.64f, startY + height * 0.05f);
+            path.cubicTo(width * 0.78f, startY, width * 0.9f, startY - height * 0.03f, width, startY - height * 0.01f);
+            path.lineTo(width, height * bottomFactor);
+            path.lineTo(0, height * bottomFactor);
+            path.close();
+            paint.setShader(new LinearGradient(0, startY, width, height, color, color & 0x66FFFFFF, Shader.TileMode.CLAMP));
+            canvas.drawPath(path, paint);
+            paint.setShader(null);
+        }
+    }
     private String getStartupVersionLabel() {
         try {
             String versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -296,7 +551,7 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception ignored) {
             // Fall through to the resource fallback.
         }
-        return getString(R.string.startup_version_fallback);
+        return "";
     }
 
     private int dp(int value) {
