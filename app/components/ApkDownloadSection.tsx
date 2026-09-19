@@ -74,8 +74,7 @@ export default function ApkDownloadSection({
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <a
-                href="/downloads/thodenngay.apk"
-                download
+                href={downloadUrl}
                 className="btn-primary !min-h-12 !px-6 !py-3.5 sm:!w-auto"
                 id="apk-download-button"
               >

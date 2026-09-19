@@ -1,7 +1,5 @@
 import Link from "next/link";
 import Image from "next/image";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { unstable_cache } from "next/cache";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
@@ -38,14 +36,19 @@ import { isLiveGpsTimestamp, toGpsPoint } from "@/lib/location";
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
 
-const apkDownloadUrl = "https://thodenngay.vn/downloads/thodenngay.apk";
-const apkMetadataPath = path.join(process.cwd(), "public", "downloads", "thodenngay.json");
+const apkDownloadUrl = "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk";
+const githubLatestReleaseUrl = "https://api.github.com/repos/hoaitv86/thodenngay/releases/latest";
+const fallbackApkReleaseMetadata: ApkReleaseMetadata = {
+  versionCode: 4,
+  versionName: "0.1.3-beta",
+  size: 8855852,
+  publishedAt: "2026-09-19T16:22:12Z",
+};
 
 type ApkReleaseMetadata = {
   versionCode: number | null;
   versionName: string;
   size: number;
-  sha256: string | null;
   publishedAt: string | null;
 };
 
@@ -53,33 +56,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-async function readApkReleaseMetadata(apkPath: string): Promise<ApkReleaseMetadata> {
-  const apkStat = await fs.stat(apkPath);
+function getString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
+async function readApkReleaseMetadata(): Promise<ApkReleaseMetadata> {
   try {
-    const raw = await fs.readFile(apkMetadataPath, "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed)) throw new Error("APK metadata must be an object.");
+    const response = await fetch(githubLatestReleaseUrl, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      next: { revalidate: 300 },
+    });
 
-    const versionCode = typeof parsed.versionCode === "number" ? parsed.versionCode : Number(parsed.versionCode);
-    const versionName = typeof parsed.versionName === "string" ? parsed.versionName.trim() : "";
-    const size = typeof parsed.size === "number" ? parsed.size : Number(parsed.size);
-    const sha256 = typeof parsed.sha256 === "string" && parsed.sha256.trim() ? parsed.sha256.trim() : null;
-    const publishedAt = typeof parsed.publishedAt === "string" && parsed.publishedAt.trim() ? parsed.publishedAt.trim() : null;
+    if (!response.ok) throw new Error(`GitHub release metadata failed: ${response.status}`);
 
-    if (!Number.isInteger(versionCode) || !versionName || !Number.isFinite(size) || size <= 0 || !publishedAt) {
-      throw new Error("APK metadata is incomplete.");
+    const parsed: unknown = await response.json();
+    if (!isRecord(parsed)) throw new Error("GitHub release metadata must be an object.");
+
+    const tagName = getString(parsed.tag_name);
+    const versionName = tagName.startsWith("v") ? tagName.slice(1) : tagName;
+    const publishedAt = getString(parsed.published_at);
+    const assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+    const apkAsset = assets.find((asset): asset is Record<string, unknown> => {
+      return isRecord(asset) && getString(asset.name) === "thodenngay.apk";
+    });
+    const size = typeof apkAsset?.size === "number" ? apkAsset.size : Number(apkAsset?.size);
+
+    if (!versionName || !Number.isFinite(size) || size <= 0 || !publishedAt) {
+      throw new Error("GitHub release metadata is incomplete.");
     }
 
-    return { versionCode, versionName, size, sha256, publishedAt };
+    return { versionCode: null, versionName, size, publishedAt };
   } catch {
-    return {
-      versionCode: null,
-      versionName: "Đang cập nhật",
-      size: apkStat.size,
-      sha256: null,
-      publishedAt: null,
-    };
+    return fallbackApkReleaseMetadata;
   }
 }
 
@@ -93,10 +104,8 @@ function formatApkPublishedAt(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Đang cập nhật";
 
-  return date.toLocaleString("vi-VN", {
+  return date.toLocaleDateString("vi-VN", {
     timeZone: "Asia/Ho_Chi_Minh",
-    hour: "2-digit",
-    minute: "2-digit",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -104,8 +113,7 @@ function formatApkPublishedAt(value: string | null) {
 }
 
 async function getApkDownloadData() {
-  const apkPath = path.join(process.cwd(), "public", "downloads", "thodenngay.apk");
-  const metadata = await readApkReleaseMetadata(apkPath);
+  const metadata = await readApkReleaseMetadata();
   const qrCodeDataUrl = await QRCode.toDataURL(apkDownloadUrl, {
     errorCorrectionLevel: "M",
     margin: 2,
