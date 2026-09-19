@@ -1,11 +1,15 @@
 package vn.thodenngay.app;
 
+import android.app.AlertDialog;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
@@ -23,6 +27,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
@@ -40,6 +45,8 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebBackForwardList;
+import android.webkit.WebHistoryItem;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
@@ -51,10 +58,12 @@ import android.widget.Space;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.Bridge;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -74,6 +83,9 @@ public class MainActivity extends BridgeActivity {
     private static final String KEY_ANDROID_BUILD = "android_build_fingerprint";
     private static final String KEY_WEB_DEPLOY_VERSION = "web_deploy_version";
     private static final String DEPLOY_VERSION_URL = HOME_URL + "/api/app-version";
+    private static final String UPDATE_METADATA_URL = "https://github.com/hoaitv86/thodenngay/releases/latest/download/latest.json";
+    private static final String UPDATE_APK_URL = "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk";
+    private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
     private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
     private static final int STARTUP_TIMEOUT_MS = 3_000;
     private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
@@ -95,8 +107,24 @@ public class MainActivity extends BridgeActivity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean loadingOfflineFallback = false;
     private boolean startupRecoveryAttempted = false;
+    private boolean waitingForWebStartupReadiness = false;
     private int freshReloadSequence = 0;
     private String lastMainFrameErrorUrl;
+    private boolean updatePromptDismissedThisSession = false;
+    private boolean updateDownloadReceiverRegistered = false;
+    private long updateDownloadId = -1L;
+    private String pendingInstallApkPath;
+    private final BroadcastReceiver updateDownloadReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction())) {
+                long downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
+                if (downloadId == updateDownloadId) {
+                    handleUpdateDownloadComplete(downloadId);
+                }
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -116,10 +144,27 @@ public class MainActivity extends BridgeActivity {
         createStartupSplashView();
         invalidateCacheAfterAndroidUpdate();
         checkRemoteDeployVersion();
+        checkForApkUpdate();
         scheduleStartupWatchdog();
         if (!hasNetworkConnection()) {
             webView.postDelayed(() -> loadOfflineStartup(null), 250);
         }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (pendingInstallApkPath != null && canRequestPackageInstalls()) {
+            String apkPath = pendingInstallApkPath;
+            pendingInstallApkPath = null;
+            openDownloadedUpdateApk(apkPath);
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        unregisterUpdateDownloadReceiver();
+        super.onDestroy();
     }
 
     private void configureWebView() {
@@ -177,14 +222,49 @@ public class MainActivity extends BridgeActivity {
                 new OnBackPressedCallback(true) {
                     @Override
                     public void handleOnBackPressed() {
-                        if (webView != null && webView.canGoBack()) {
-                            webView.goBack();
-                        } else {
-                            finish();
-                        }
+                        handleAndroidBackPressed();
                     }
                 }
             );
+    }
+
+    private void handleAndroidBackPressed() {
+        if (webView == null) {
+            moveTaskToBack(true);
+            return;
+        }
+
+        int backOffset = findPreviousValidHistoryOffset();
+        if (backOffset < 0) {
+            hideNetworkError();
+            webView.goBackOrForward(backOffset);
+            return;
+        }
+
+        moveTaskToBack(true);
+    }
+
+    private int findPreviousValidHistoryOffset() {
+        if (webView == null || !webView.canGoBack()) return 0;
+
+        WebBackForwardList history = webView.copyBackForwardList();
+        int currentIndex = history.getCurrentIndex();
+        for (int index = currentIndex - 1; index >= 0; index--) {
+            WebHistoryItem item = history.getItemAtIndex(index);
+            String url = item != null ? item.getUrl() : null;
+            if (isValidBackHistoryUrl(url)) {
+                return index - currentIndex;
+            }
+            Log.i(TAG, "[TDN-BACK] skipping history url=" + url);
+        }
+        return 0;
+    }
+
+    private boolean isValidBackHistoryUrl(String url) {
+        if (url == null || url.length() == 0) return false;
+        if (isAndroidLoginUrl(url)) return false;
+        if ("about:blank".equals(url)) return false;
+        return isRemoteAppUrl(url) || url.startsWith("data:text/html");
     }
 
     private void createNetworkErrorView() {
@@ -255,7 +335,7 @@ public class MainActivity extends BridgeActivity {
         content.setPadding(dp(24), dp(compact ? 18 : 28), dp(24), dp(compact ? 16 : 24));
 
         ImageView logo = new ImageView(this);
-        logo.setImageResource(R.mipmap.ic_launcher_foreground);
+        logo.setImageResource(R.drawable.tdn_splash_logo);
         logo.setAdjustViewBounds(true);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(compact ? 118 : 154), dp(compact ? 118 : 154));
@@ -402,6 +482,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void hideStartupSplash() {
+        waitingForWebStartupReadiness = false;
         if (startupSplashView != null) {
             startupSplashView.setVisibility(View.GONE);
         }
@@ -411,6 +492,31 @@ public class MainActivity extends BridgeActivity {
         return startupSplashView != null && startupSplashView.getVisibility() == View.VISIBLE;
     }
 
+    private void hideStartupSplashWhenWebAppReady(WebView view, String url) {
+        if (!isStartupSplashVisible()) return;
+        if (isAndroidLoginUrl(url)) {
+            waitForAndroidLoginStartup(view);
+            return;
+        }
+        hideStartupSplash();
+    }
+
+    private void waitForAndroidLoginStartup(WebView view) {
+        if (!isStartupSplashVisible() || view == null) return;
+        waitingForWebStartupReadiness = true;
+        view.evaluateJavascript(
+            "(function(){var marker=!!document.querySelector('[data-tdn-android-startup=checking]');var text=(document.body&&document.body.innerText)||'';return marker||text.indexOf('Đang khởi động...')!==-1||text.indexOf('v0.1.1 Beta')!==-1;})()",
+            value -> {
+                boolean stillChecking = "true".equals(value);
+                if (!stillChecking) {
+                    waitingForWebStartupReadiness = false;
+                    hideStartupSplash();
+                    return;
+                }
+                mainHandler.postDelayed(() -> waitForAndroidLoginStartup(view), 120);
+            }
+        );
+    }
     private static class BrandIconView extends View {
         private final int iconType;
         private final int accentColor;
@@ -657,9 +763,210 @@ public class MainActivity extends BridgeActivity {
         }).start();
     }
 
+    private void checkForApkUpdate() {
+        if (!hasNetworkConnection() || updatePromptDismissedThisSession) return;
+
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(UPDATE_METADATA_URL + "?t=" + System.currentTimeMillis());
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setConnectTimeout(VERSION_CHECK_TIMEOUT_MS);
+                connection.setReadTimeout(VERSION_CHECK_TIMEOUT_MS);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Cache-Control", "no-cache");
+                connection.setRequestProperty("Pragma", "no-cache");
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return;
+
+                StringBuilder body = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        body.append(line);
+                    }
+                }
+
+                JSONObject payload = new JSONObject(body.toString());
+                UpdateInfo updateInfo = new UpdateInfo(
+                    payload.optLong("versionCode", -1L),
+                    payload.optString("versionName", "").trim(),
+                    payload.optString("releaseNotes", "").trim(),
+                    normalizeApkUrl(payload.optString("apkUrl", UPDATE_APK_URL))
+                );
+
+                if (updateInfo.versionCode <= getInstalledVersionCode()) return;
+                mainHandler.post(() -> showApkUpdateDialog(updateInfo));
+            } catch (Exception error) {
+                Log.w(TAG, "[TDN-UPDATE] update check failed", error);
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }).start();
+    }
+
+    private String normalizeApkUrl(String value) {
+        String url = value == null ? "" : value.trim();
+        int markdownStart = url.indexOf("](");
+        if (markdownStart >= 0 && url.endsWith(")")) {
+            url = url.substring(markdownStart + 2, url.length() - 1);
+        }
+        return url.length() == 0 ? UPDATE_APK_URL : url;
+    }
+
+    private long getInstalledVersionCode() throws Exception {
+        android.content.pm.PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? packageInfo.getLongVersionCode() : packageInfo.versionCode;
+    }
+
+    private void showApkUpdateDialog(UpdateInfo updateInfo) {
+        if (updatePromptDismissedThisSession || isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) return;
+
+        String versionName = updateInfo.versionName.length() == 0 ? String.valueOf(updateInfo.versionCode) : updateInfo.versionName;
+        String releaseNotes = updateInfo.releaseNotes.length() == 0 ? "Có bản cập nhật mới sẵn sàng." : updateInfo.releaseNotes;
+        String message = "Phiên bản mới: " + versionName + "\n\n" + releaseNotes;
+
+        new AlertDialog.Builder(this)
+            .setTitle("Có phiên bản Thợ Đến Ngay mới")
+            .setMessage(message)
+            .setNegativeButton("Để sau", (dialog, which) -> {
+                updatePromptDismissedThisSession = true;
+                dialog.dismiss();
+            })
+            .setPositiveButton("Cập nhật ngay", (dialog, which) -> downloadUpdateApk(updateInfo))
+            .show();
+    }
+
+    private void downloadUpdateApk(UpdateInfo updateInfo) {
+        try {
+            DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            if (manager == null) {
+                Toast.makeText(this, "Không thể mở trình tải cập nhật.", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            String fileName = "thodenngay-update-" + updateInfo.versionCode + ".apk";
+            File downloadsDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+            if (downloadsDir == null) {
+                Toast.makeText(this, "Không thể chuẩn bị thư mục tải cập nhật.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            pendingInstallApkPath = new File(downloadsDir, fileName).getAbsolutePath();
+
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(updateInfo.apkUrl));
+            request.setTitle("Thợ Đến Ngay " + (updateInfo.versionName.length() == 0 ? "mới" : updateInfo.versionName));
+            request.setDescription("Đang tải bản cập nhật...");
+            request.setMimeType(APK_MIME_TYPE);
+            request.setAllowedOverMetered(true);
+            request.setAllowedOverRoaming(true);
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, fileName);
+
+            registerUpdateDownloadReceiver();
+            updateDownloadId = manager.enqueue(request);
+            Toast.makeText(this, "Đang tải bản cập nhật...", Toast.LENGTH_SHORT).show();
+        } catch (Exception error) {
+            Log.e(TAG, "[TDN-UPDATE] download failed", error);
+            Toast.makeText(this, "Không thể tải bản cập nhật.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void handleUpdateDownloadComplete(long downloadId) {
+        DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+        if (manager == null) return;
+
+        DownloadManager.Query query = new DownloadManager.Query().setFilterById(downloadId);
+        try (Cursor cursor = manager.query(query)) {
+            if (cursor == null || !cursor.moveToFirst()) return;
+            int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+            int status = statusIndex >= 0 ? cursor.getInt(statusIndex) : DownloadManager.STATUS_FAILED;
+            if (status == DownloadManager.STATUS_SUCCESSFUL && pendingInstallApkPath != null) {
+                Toast.makeText(this, "Đã tải xong bản cập nhật.", Toast.LENGTH_SHORT).show();
+                openDownloadedUpdateApk(pendingInstallApkPath);
+            } else if (status == DownloadManager.STATUS_FAILED) {
+                Toast.makeText(this, "Tải bản cập nhật thất bại.", Toast.LENGTH_LONG).show();
+            }
+        } finally {
+            updateDownloadId = -1L;
+            unregisterUpdateDownloadReceiver();
+        }
+    }
+
+    private void registerUpdateDownloadReceiver() {
+        if (updateDownloadReceiverRegistered) return;
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(updateDownloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(updateDownloadReceiver, filter);
+        }
+        updateDownloadReceiverRegistered = true;
+    }
+
+    private void unregisterUpdateDownloadReceiver() {
+        if (!updateDownloadReceiverRegistered) return;
+        try {
+            unregisterReceiver(updateDownloadReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // Receiver may already be gone if Android cleaned up after the activity.
+        }
+        updateDownloadReceiverRegistered = false;
+    }
+
+    private boolean canRequestPackageInstalls() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || getPackageManager().canRequestPackageInstalls();
+    }
+
+    private void openDownloadedUpdateApk(String apkPath) {
+        File apkFile = new File(apkPath);
+        if (!apkFile.exists()) {
+            Toast.makeText(this, "Không tìm thấy file cập nhật đã tải.", Toast.LENGTH_LONG).show();
+            pendingInstallApkPath = null;
+            return;
+        }
+
+        if (!canRequestPackageInstalls()) {
+            pendingInstallApkPath = apkPath;
+            Toast.makeText(this, "Hãy cho phép Thợ Đến Ngay cài đặt ứng dụng từ nguồn này rồi quay lại để tiếp tục.", Toast.LENGTH_LONG).show();
+            Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()));
+            try {
+                startActivity(settingsIntent);
+            } catch (ActivityNotFoundException error) {
+                startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS));
+            }
+            return;
+        }
+
+        try {
+            Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apkFile);
+            Intent installIntent = new Intent(Intent.ACTION_VIEW);
+            installIntent.setDataAndType(apkUri, APK_MIME_TYPE);
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(installIntent);
+        } catch (Exception error) {
+            Log.e(TAG, "[TDN-UPDATE] open installer failed", error);
+            Toast.makeText(this, "Không thể mở trình cài đặt bản cập nhật.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private static class UpdateInfo {
+        final long versionCode;
+        final String versionName;
+        final String releaseNotes;
+        final String apkUrl;
+
+        UpdateInfo(long versionCode, String versionName, String releaseNotes, String apkUrl) {
+            this.versionCode = versionCode;
+            this.versionName = versionName;
+            this.releaseNotes = releaseNotes;
+            this.apkUrl = apkUrl;
+        }
+    }
+
     private void scheduleStartupWatchdog() {
         mainHandler.postDelayed(() -> {
-            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted) return;
+            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted || waitingForWebStartupReadiness) return;
             startupRecoveryAttempted = true;
             Log.w(TAG, "[TDN-STARTUP] watchdog fired online=" + hasNetworkConnection() + " url=" + webView.getUrl() + " lastErrorUrl=" + lastMainFrameErrorUrl);
             inspectWebRuntimeState(webView);
@@ -836,8 +1143,18 @@ public class MainActivity extends BridgeActivity {
         return errorCode == WebViewClient.ERROR_HOST_LOOKUP
             || errorCode == WebViewClient.ERROR_CONNECT
             || errorCode == WebViewClient.ERROR_TIMEOUT
-            || errorCode == WebViewClient.ERROR_IO
-            || errorCode == WebViewClient.ERROR_UNKNOWN;
+            || errorCode == WebViewClient.ERROR_IO;
+    }
+
+    private boolean isLikelyNavigationCancellation(WebView view, String failedUrl, int errorCode) {
+        if (errorCode != WebViewClient.ERROR_UNKNOWN) return false;
+        if (!hasNetworkConnection() || failedUrl == null) return false;
+
+        String currentUrl = view != null ? view.getUrl() : null;
+        if (currentUrl == null || currentUrl.length() == 0) return false;
+        if (failedUrl.equals(currentUrl)) return false;
+
+        return isRemoteAppUrl(currentUrl) || currentUrl.startsWith("data:text/html");
     }
 
     private void handleMainFrameLoadError(String failedUrl, int errorCode) {
@@ -915,6 +1232,7 @@ public class MainActivity extends BridgeActivity {
 
         @Override
         public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            waitingForWebStartupReadiness = false;
             super.onPageStarted(view, url, favicon);
             Log.i(TAG, "[TDN-STARTUP] page started url=" + url + " online=" + hasNetworkConnection());
         }
@@ -924,7 +1242,7 @@ public class MainActivity extends BridgeActivity {
             super.onPageFinished(view, url);
             Log.i(TAG, "[TDN-STARTUP] page finished url=" + url + " progress=" + view.getProgress() + " offlineFallback=" + loadingOfflineFallback);
             hideNetworkError();
-            hideStartupSplash();
+            hideStartupSplashWhenWebAppReady(view, url);
             inspectWebRuntimeState(view);
             if (loadingOfflineFallback) {
                 if (hasNetworkConnection()) {
@@ -938,12 +1256,20 @@ public class MainActivity extends BridgeActivity {
 
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-            super.onReceivedError(view, request, error);
-            if (request.isForMainFrame()) {
-                lastMainFrameErrorUrl = request.getUrl().toString();
-                int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
-                handleMainFrameLoadError(lastMainFrameErrorUrl, errorCode);
+            if (!request.isForMainFrame()) {
+                super.onReceivedError(view, request, error);
+                return;
             }
+
+            String failedUrl = request.getUrl() != null ? request.getUrl().toString() : null;
+            int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
+            if (isLikelyNavigationCancellation(view, failedUrl, errorCode)) {
+                Log.i(TAG, "[TDN-STARTUP] ignored cancelled navigation error code=" + errorCode + " failedUrl=" + failedUrl + " currentUrl=" + (view != null ? view.getUrl() : null));
+                return;
+            }
+
+            lastMainFrameErrorUrl = failedUrl;
+            handleMainFrameLoadError(lastMainFrameErrorUrl, errorCode);
         }
 
         @Override

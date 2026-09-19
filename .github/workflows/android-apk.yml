@@ -67,16 +67,29 @@ jobs:
           console.log(`tag=v${element.versionName}`);
           NODE
 
-      - name: Prepare APK artifact
+      - name: Prepare release artifacts
+        env:
+          VERSION_NAME: ${{ steps.apk-version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.apk-version.outputs.version_code }}
         run: |
           mkdir -p artifacts
           cp android/app/build/outputs/apk/release/app-release.apk artifacts/thodenngay.apk
+          cat > artifacts/latest.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "releaseNotes": "Cải thiện giao diện và độ ổn định",
+            "apkUrl": "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk"
+          }
+          EOF
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: thodenngay-apk-v${{ steps.apk-version.outputs.version_name }}-${{ steps.apk-version.outputs.version_code }}
-          path: artifacts/thodenngay.apk
+          path: |
+            artifacts/thodenngay.apk
+            artifacts/latest.json
           if-no-files-found: error
 
       - name: Create or update GitHub Release
@@ -98,4 +111,4 @@ jobs:
               --latest
           fi
 
-          gh release upload "$TAG" artifacts/thodenngay.apk --clobber
+          gh release upload "$TAG" artifacts/thodenngay.apk artifacts/latest.json --clobber
