@@ -4,6 +4,20 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  async redirects() {
+    return [
+      {
+        source: "/downloads/thodenngay.json",
+        destination: "https://github.com/hoaitv86/thodenngay/releases/latest/download/latest.json",
+        permanent: false,
+      },
+      {
+        source: "/downloads/thodenngay.apk",
+        destination: "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {
@@ -28,4 +42,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-

@@ -114,6 +114,7 @@ public class MainActivity extends BridgeActivity {
     private boolean updateDownloadReceiverRegistered = false;
     private long updateDownloadId = -1L;
     private String pendingInstallApkPath;
+    private long pendingInstallVersionCode = -1L;
     private final BroadcastReceiver updateDownloadReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -774,9 +775,16 @@ public class MainActivity extends BridgeActivity {
                 connection.setConnectTimeout(VERSION_CHECK_TIMEOUT_MS);
                 connection.setReadTimeout(VERSION_CHECK_TIMEOUT_MS);
                 connection.setUseCaches(false);
+                connection.setInstanceFollowRedirects(true);
+                connection.setRequestProperty("Accept", "application/json");
                 connection.setRequestProperty("Cache-Control", "no-cache");
                 connection.setRequestProperty("Pragma", "no-cache");
-                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return;
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    Log.w(TAG, "[TDN-UPDATE] metadata request failed status=" + responseCode);
+                    return;
+                }
 
                 StringBuilder body = new StringBuilder();
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
@@ -786,15 +794,13 @@ public class MainActivity extends BridgeActivity {
                     }
                 }
 
-                JSONObject payload = new JSONObject(body.toString());
-                UpdateInfo updateInfo = new UpdateInfo(
-                    payload.optLong("versionCode", -1L),
-                    payload.optString("versionName", "").trim(),
-                    payload.optString("releaseNotes", "").trim(),
-                    normalizeApkUrl(payload.optString("apkUrl", UPDATE_APK_URL))
-                );
+                UpdateInfo updateInfo = parseUpdateInfo(new JSONObject(body.toString()));
+                long installedVersionCode = getInstalledVersionCode();
+                if (updateInfo.versionCode <= installedVersionCode) {
+                    Log.i(TAG, "[TDN-UPDATE] no update installed=" + installedVersionCode + " remote=" + updateInfo.versionCode);
+                    return;
+                }
 
-                if (updateInfo.versionCode <= getInstalledVersionCode()) return;
                 mainHandler.post(() -> showApkUpdateDialog(updateInfo));
             } catch (Exception error) {
                 Log.w(TAG, "[TDN-UPDATE] update check failed", error);
@@ -806,13 +812,44 @@ public class MainActivity extends BridgeActivity {
         }).start();
     }
 
+    private UpdateInfo parseUpdateInfo(JSONObject payload) {
+        long versionCode = payload.optLong("versionCode", -1L);
+        if (versionCode <= 0) {
+            throw new IllegalArgumentException("Update metadata is missing a valid versionCode.");
+        }
+
+        String apkUrl = normalizeApkUrl(payload.optString("apkUrl", UPDATE_APK_URL));
+        if (!isHttpsUrl(apkUrl)) {
+            throw new IllegalArgumentException("Update metadata contains an invalid apkUrl.");
+        }
+
+        return new UpdateInfo(
+            versionCode,
+            payload.optString("versionName", "").trim(),
+            payload.optString("releaseNotes", "").trim(),
+            apkUrl
+        );
+    }
+
     private String normalizeApkUrl(String value) {
         String url = value == null ? "" : value.trim();
         int markdownStart = url.indexOf("](");
         if (markdownStart >= 0 && url.endsWith(")")) {
-            url = url.substring(markdownStart + 2, url.length() - 1);
+            url = url.substring(markdownStart + 2, url.length() - 1).trim();
+        }
+        if (url.startsWith("<") && url.endsWith(">")) {
+            url = url.substring(1, url.length() - 1).trim();
         }
         return url.length() == 0 ? UPDATE_APK_URL : url;
+    }
+
+    private boolean isHttpsUrl(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getHost().length() > 0;
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     private long getInstalledVersionCode() throws Exception {
@@ -840,6 +877,15 @@ public class MainActivity extends BridgeActivity {
 
     private void downloadUpdateApk(UpdateInfo updateInfo) {
         try {
+            if (!hasNetworkConnection()) {
+                Toast.makeText(this, "Không có kết nối mạng để tải bản cập nhật.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (updateInfo.versionCode <= getInstalledVersionCode()) {
+                Toast.makeText(this, "Bạn đang dùng phiên bản mới nhất.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             if (manager == null) {
                 Toast.makeText(this, "Không thể mở trình tải cập nhật.", Toast.LENGTH_LONG).show();
@@ -852,12 +898,20 @@ public class MainActivity extends BridgeActivity {
                 Toast.makeText(this, "Không thể chuẩn bị thư mục tải cập nhật.", Toast.LENGTH_LONG).show();
                 return;
             }
-            pendingInstallApkPath = new File(downloadsDir, fileName).getAbsolutePath();
+
+            File apkFile = new File(downloadsDir, fileName);
+            if (apkFile.exists() && !apkFile.delete()) {
+                Log.w(TAG, "[TDN-UPDATE] could not delete stale update apk " + apkFile.getAbsolutePath());
+            }
+            pendingInstallApkPath = apkFile.getAbsolutePath();
+            pendingInstallVersionCode = updateInfo.versionCode;
+            updatePromptDismissedThisSession = true;
 
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(updateInfo.apkUrl));
             request.setTitle("Thợ Đến Ngay " + (updateInfo.versionName.length() == 0 ? "mới" : updateInfo.versionName));
             request.setDescription("Đang tải bản cập nhật...");
             request.setMimeType(APK_MIME_TYPE);
+            request.addRequestHeader("Accept", APK_MIME_TYPE);
             request.setAllowedOverMetered(true);
             request.setAllowedOverRoaming(true);
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
@@ -867,8 +921,11 @@ public class MainActivity extends BridgeActivity {
             updateDownloadId = manager.enqueue(request);
             Toast.makeText(this, "Đang tải bản cập nhật...", Toast.LENGTH_SHORT).show();
         } catch (Exception error) {
+            updateDownloadId = -1L;
+            clearPendingUpdateInstall();
+            unregisterUpdateDownloadReceiver();
             Log.e(TAG, "[TDN-UPDATE] download failed", error);
-            Toast.makeText(this, "Không thể tải bản cập nhật.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Không thể tải bản cập nhật. Vui lòng kiểm tra mạng rồi thử lại.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -881,16 +938,44 @@ public class MainActivity extends BridgeActivity {
             if (cursor == null || !cursor.moveToFirst()) return;
             int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
             int status = statusIndex >= 0 ? cursor.getInt(statusIndex) : DownloadManager.STATUS_FAILED;
-            if (status == DownloadManager.STATUS_SUCCESSFUL && pendingInstallApkPath != null) {
-                Toast.makeText(this, "Đã tải xong bản cập nhật.", Toast.LENGTH_SHORT).show();
-                openDownloadedUpdateApk(pendingInstallApkPath);
+            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                String apkPath = getDownloadedApkPath(cursor);
+                if (apkPath == null || apkPath.length() == 0) apkPath = pendingInstallApkPath;
+                if (apkPath != null && validateDownloadedUpdateApk(apkPath)) {
+                    pendingInstallApkPath = apkPath;
+                    Toast.makeText(this, "Đã tải xong bản cập nhật.", Toast.LENGTH_SHORT).show();
+                    openDownloadedUpdateApk(apkPath);
+                }
             } else if (status == DownloadManager.STATUS_FAILED) {
-                Toast.makeText(this, "Tải bản cập nhật thất bại.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, getDownloadFailureMessage(cursor), Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
             }
         } finally {
             updateDownloadId = -1L;
             unregisterUpdateDownloadReceiver();
         }
+    }
+
+    private String getDownloadedApkPath(Cursor cursor) {
+        int localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+        if (localUriIndex < 0) return null;
+        String localUri = cursor.getString(localUriIndex);
+        if (localUri == null || localUri.length() == 0) return null;
+        Uri uri = Uri.parse(localUri);
+        return "file".equalsIgnoreCase(uri.getScheme()) ? uri.getPath() : null;
+    }
+
+    private String getDownloadFailureMessage(Cursor cursor) {
+        int reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON);
+        int reason = reasonIndex >= 0 ? cursor.getInt(reasonIndex) : -1;
+        Log.w(TAG, "[TDN-UPDATE] download failed reason=" + reason);
+        if (reason == DownloadManager.ERROR_CANNOT_RESUME || reason == DownloadManager.ERROR_DEVICE_NOT_FOUND) {
+            return "Không thể lưu bản cập nhật trên thiết bị.";
+        }
+        if (reason == DownloadManager.ERROR_INSUFFICIENT_SPACE) {
+            return "Thiết bị không đủ dung lượng để tải bản cập nhật.";
+        }
+        return "Tải bản cập nhật thất bại. Vui lòng kiểm tra mạng rồi thử lại.";
     }
 
     private void registerUpdateDownloadReceiver() {
@@ -918,11 +1003,58 @@ public class MainActivity extends BridgeActivity {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || getPackageManager().canRequestPackageInstalls();
     }
 
+    private boolean validateDownloadedUpdateApk(String apkPath) {
+        try {
+            File apkFile = new File(apkPath);
+            if (!apkFile.exists()) {
+                Toast.makeText(this, "Không tìm thấy file cập nhật đã tải.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+
+            android.content.pm.PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(apkPath, 0);
+            if (packageInfo == null) {
+                Toast.makeText(this, "File cập nhật không hợp lệ.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+            if (!getPackageName().equals(packageInfo.packageName)) {
+                Toast.makeText(this, "File cập nhật không đúng ứng dụng Thợ Đến Ngay.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+
+            long downloadedVersionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? packageInfo.getLongVersionCode() : packageInfo.versionCode;
+            long installedVersionCode = getInstalledVersionCode();
+            if (downloadedVersionCode <= installedVersionCode) {
+                Toast.makeText(this, "Bản cập nhật tải về không mới hơn phiên bản đang cài.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+            if (pendingInstallVersionCode > 0 && downloadedVersionCode < pendingInstallVersionCode) {
+                Toast.makeText(this, "Bản cập nhật tải về không khớp metadata phát hành.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+            return true;
+        } catch (Exception error) {
+            Log.e(TAG, "[TDN-UPDATE] validate downloaded apk failed", error);
+            Toast.makeText(this, "Không thể kiểm tra file cập nhật đã tải.", Toast.LENGTH_LONG).show();
+            clearPendingUpdateInstall();
+            return false;
+        }
+    }
+
+    private void clearPendingUpdateInstall() {
+        pendingInstallApkPath = null;
+        pendingInstallVersionCode = -1L;
+    }
+
     private void openDownloadedUpdateApk(String apkPath) {
         File apkFile = new File(apkPath);
         if (!apkFile.exists()) {
             Toast.makeText(this, "Không tìm thấy file cập nhật đã tải.", Toast.LENGTH_LONG).show();
-            pendingInstallApkPath = null;
+            clearPendingUpdateInstall();
             return;
         }
 
@@ -940,10 +1072,23 @@ public class MainActivity extends BridgeActivity {
 
         try {
             Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apkFile);
-            Intent installIntent = new Intent(Intent.ACTION_VIEW);
-            installIntent.setDataAndType(apkUri, APK_MIME_TYPE);
-            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent installIntent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            installIntent.setData(apkUri);
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
+            installIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
             startActivity(installIntent);
+        } catch (ActivityNotFoundException error) {
+            try {
+                Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apkFile);
+                Intent fallbackIntent = new Intent(Intent.ACTION_VIEW);
+                fallbackIntent.setDataAndType(apkUri, APK_MIME_TYPE);
+                fallbackIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(fallbackIntent);
+            } catch (Exception fallbackError) {
+                Log.e(TAG, "[TDN-UPDATE] open installer fallback failed", fallbackError);
+                Toast.makeText(this, "Không thể mở trình cài đặt bản cập nhật.", Toast.LENGTH_LONG).show();
+            }
         } catch (Exception error) {
             Log.e(TAG, "[TDN-UPDATE] open installer failed", error);
             Toast.makeText(this, "Không thể mở trình cài đặt bản cập nhật.", Toast.LENGTH_LONG).show();
