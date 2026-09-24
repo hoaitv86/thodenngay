@@ -86,9 +86,10 @@ public class MainActivity extends BridgeActivity {
     private static final String UPDATE_METADATA_URL = "https://github.com/hoaitv86/thodenngay/releases/latest/download/latest.json";
     private static final String UPDATE_APK_URL = "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk";
     private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
+    private static final long APK_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1_000L;
     private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
-    private static final int STARTUP_TIMEOUT_MS = 3_000;
-    private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
+    private static final int STARTUP_MIN_SPLASH_MS = 5_000;
+    private static final int STARTUP_ERROR_TIMEOUT_MS = 25_000;
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
     private static final int BRAND_NAVY = 0xFF0F3D63;
     private static final int BRAND_BLUE = 0xFF1478C8;
@@ -102,18 +103,26 @@ public class MainActivity extends BridgeActivity {
     private FrameLayout rootView;
     private LinearLayout errorView;
     private FrameLayout startupSplashView;
+    private TextView startupStatusText;
     private WebView webView;
     private SharedPreferences offlinePrefs;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean loadingOfflineFallback = false;
     private boolean startupRecoveryAttempted = false;
     private boolean waitingForWebStartupReadiness = false;
+    private boolean webStartupReady = false;
+    private boolean mainFrameLoadFailed = false;
+    private long startupSplashShownAt = 0L;
     private int freshReloadSequence = 0;
     private String lastMainFrameErrorUrl;
     private boolean updatePromptDismissedThisSession = false;
     private boolean updateDownloadReceiverRegistered = false;
+    private boolean updateCheckInFlight = false;
+    private boolean updateDialogShowing = false;
+    private long lastApkUpdateCheckAt = 0L;
     private long updateDownloadId = -1L;
     private String pendingInstallApkPath;
+    private long pendingInstallVersionCode = -1L;
     private final BroadcastReceiver updateDownloadReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -142,12 +151,17 @@ public class MainActivity extends BridgeActivity {
         configureWebView();
         createNetworkErrorView();
         createStartupSplashView();
+        scheduleStartupLoadingStatus();
         invalidateCacheAfterAndroidUpdate();
         checkRemoteDeployVersion();
         checkForApkUpdate();
         scheduleStartupWatchdog();
         if (!hasNetworkConnection()) {
-            webView.postDelayed(() -> loadOfflineStartup(null), 250);
+            mainHandler.postDelayed(() -> {
+                if (isStartupSplashVisible() && !hasNetworkConnection()) {
+                    showNetworkError();
+                }
+            }, STARTUP_MIN_SPLASH_MS);
         }
     }
 
@@ -159,6 +173,7 @@ public class MainActivity extends BridgeActivity {
             pendingInstallApkPath = null;
             openDownloadedUpdateApk(apkPath);
         }
+        checkForApkUpdate();
     }
 
     @Override
@@ -186,6 +201,10 @@ public class MainActivity extends BridgeActivity {
         settings.setAllowFileAccess(true);
         settings.setCacheMode(hasNetworkConnection() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        String currentUserAgent = settings.getUserAgentString();
+        if (currentUserAgent != null && !currentUserAgent.contains("ThoDenNgayAndroid/")) {
+            settings.setUserAgentString(currentUserAgent + " " + getNativeUpdaterUserAgentToken());
+        }
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -297,10 +316,14 @@ public class MainActivity extends BridgeActivity {
         Button retry = new Button(this);
         retry.setText(getString(R.string.network_error_retry));
         retry.setOnClickListener(v -> {
-            hideNetworkError();
+            resetStartupSplashForRetry();
             loadingOfflineFallback = false;
+            startupRecoveryAttempted = false;
+            mainFrameLoadFailed = false;
+            lastMainFrameErrorUrl = null;
             configureCacheModeForNetwork();
             webView.loadUrl(ANDROID_START_URL);
+            scheduleStartupWatchdog();
         });
 
         errorView.addView(title);
@@ -320,6 +343,9 @@ public class MainActivity extends BridgeActivity {
         int screenHeightDp = getResources().getConfiguration().screenHeightDp;
         boolean compact = screenHeightDp > 0 && screenHeightDp < 660;
 
+        startupSplashShownAt = System.currentTimeMillis();
+        webStartupReady = false;
+        startupRecoveryAttempted = false;
         startupSplashView = new FrameLayout(this);
         startupSplashView.setBackgroundColor(0xFFFFFFFF);
         startupSplashView.setFitsSystemWindows(true);
@@ -354,8 +380,8 @@ public class MainActivity extends BridgeActivity {
         LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(compact ? 168 : 220), dp(5));
         progressParams.setMargins(0, 0, 0, dp(compact ? 10 : 12));
 
-        TextView status = createCenteredText(getString(R.string.startup_status), BRAND_NAVY, compact ? 13 : 14, Typeface.NORMAL);
-        status.setPadding(0, 0, 0, dp(compact ? 14 : 22));
+        startupStatusText = createCenteredText(getString(R.string.startup_status), BRAND_NAVY, compact ? 13 : 14, Typeface.NORMAL);
+        startupStatusText.setPadding(0, 0, 0, dp(compact ? 14 : 22));
 
         LinearLayout values = new LinearLayout(this);
         values.setOrientation(LinearLayout.HORIZONTAL);
@@ -389,7 +415,7 @@ public class MainActivity extends BridgeActivity {
         content.addView(appName);
         content.addView(slogan);
         content.addView(progress, progressParams);
-        content.addView(status);
+        content.addView(startupStatusText);
         content.addView(values, valuesParams);
         content.addView(new Space(this), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, compact ? 0.18f : 0.45f));
         content.addView(version);
@@ -469,9 +495,18 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void showNetworkError() {
+        if (webView != null) {
+            try {
+                webView.stopLoading();
+            } catch (Exception ignored) {
+                // Keep the native error screen responsive even if WebView is already stopping.
+            }
+        }
         hideStartupSplash();
         if (errorView != null) {
             errorView.setVisibility(View.VISIBLE);
+            errorView.bringToFront();
+            errorView.requestFocus();
         }
     }
 
@@ -488,8 +523,42 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private void resetStartupSplashForRetry() {
+        hideNetworkError();
+        webStartupReady = false;
+        waitingForWebStartupReadiness = false;
+        startupSplashShownAt = System.currentTimeMillis();
+        if (startupStatusText != null) {
+            startupStatusText.setText(getString(R.string.startup_status));
+        }
+        if (startupSplashView != null) {
+            startupSplashView.setVisibility(View.VISIBLE);
+        }
+        scheduleStartupLoadingStatus();
+    }
+
     private boolean isStartupSplashVisible() {
         return startupSplashView != null && startupSplashView.getVisibility() == View.VISIBLE;
+    }
+
+    private void scheduleStartupLoadingStatus() {
+        mainHandler.postDelayed(() -> {
+            if (!isStartupSplashVisible() || webStartupReady || startupStatusText == null) return;
+            startupStatusText.setText("Đang tải dữ liệu...");
+        }, STARTUP_MIN_SPLASH_MS);
+    }
+
+    private void markWebStartupReady() {
+        if (!isStartupSplashVisible()) return;
+        webStartupReady = true;
+        waitingForWebStartupReadiness = false;
+        long elapsed = System.currentTimeMillis() - startupSplashShownAt;
+        long remaining = Math.max(0L, STARTUP_MIN_SPLASH_MS - elapsed);
+        mainHandler.postDelayed(() -> {
+            if (isStartupSplashVisible() && webStartupReady) {
+                hideStartupSplash();
+            }
+        }, remaining);
     }
 
     private void hideStartupSplashWhenWebAppReady(WebView view, String url) {
@@ -498,22 +567,22 @@ public class MainActivity extends BridgeActivity {
             waitForAndroidLoginStartup(view);
             return;
         }
-        hideStartupSplash();
+        markWebStartupReady();
     }
 
     private void waitForAndroidLoginStartup(WebView view) {
         if (!isStartupSplashVisible() || view == null) return;
         waitingForWebStartupReadiness = true;
         view.evaluateJavascript(
-            "(function(){var marker=!!document.querySelector('[data-tdn-android-startup=checking]');var text=(document.body&&document.body.innerText)||'';return marker||text.indexOf('Đang khởi động...')!==-1||text.indexOf('v0.1.1 Beta')!==-1;})()",
+            "(function(){var marker=!!document.querySelector('[data-tdn-android-startup=checking]');var text=(document.body&&document.body.innerText)||'';var hasBody=!!(document.body&&document.body.children&&document.body.children.length);return {checking:marker||text.indexOf('Đang khởi động...')!==-1||text.indexOf('v0.1.1 Beta')!==-1,ready:hasBody&&document.readyState!=='loading'};})()",
             value -> {
-                boolean stillChecking = "true".equals(value);
-                if (!stillChecking) {
-                    waitingForWebStartupReadiness = false;
-                    hideStartupSplash();
+                boolean stillChecking = value != null && value.contains("\"checking\":true");
+                boolean ready = value != null && value.contains("\"ready\":true");
+                if (!stillChecking && ready) {
+                    markWebStartupReady();
                     return;
                 }
-                mainHandler.postDelayed(() -> waitForAndroidLoginStartup(view), 120);
+                mainHandler.postDelayed(() -> waitForAndroidLoginStartup(view), 150);
             }
         );
     }
@@ -764,7 +833,11 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void checkForApkUpdate() {
-        if (!hasNetworkConnection() || updatePromptDismissedThisSession) return;
+        if (!hasNetworkConnection() || updatePromptDismissedThisSession || updateCheckInFlight || updateDialogShowing) return;
+        long now = System.currentTimeMillis();
+        if (lastApkUpdateCheckAt > 0 && now - lastApkUpdateCheckAt < APK_UPDATE_CHECK_INTERVAL_MS) return;
+        lastApkUpdateCheckAt = now;
+        updateCheckInFlight = true;
 
         new Thread(() -> {
             HttpURLConnection connection = null;
@@ -774,9 +847,16 @@ public class MainActivity extends BridgeActivity {
                 connection.setConnectTimeout(VERSION_CHECK_TIMEOUT_MS);
                 connection.setReadTimeout(VERSION_CHECK_TIMEOUT_MS);
                 connection.setUseCaches(false);
+                connection.setInstanceFollowRedirects(true);
+                connection.setRequestProperty("Accept", "application/json");
                 connection.setRequestProperty("Cache-Control", "no-cache");
                 connection.setRequestProperty("Pragma", "no-cache");
-                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return;
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    Log.w(TAG, "[TDN-UPDATE] metadata request failed status=" + responseCode);
+                    return;
+                }
 
                 StringBuilder body = new StringBuilder();
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
@@ -786,19 +866,18 @@ public class MainActivity extends BridgeActivity {
                     }
                 }
 
-                JSONObject payload = new JSONObject(body.toString());
-                UpdateInfo updateInfo = new UpdateInfo(
-                    payload.optLong("versionCode", -1L),
-                    payload.optString("versionName", "").trim(),
-                    payload.optString("releaseNotes", "").trim(),
-                    normalizeApkUrl(payload.optString("apkUrl", UPDATE_APK_URL))
-                );
+                UpdateInfo updateInfo = parseUpdateInfo(new JSONObject(body.toString()));
+                long installedVersionCode = getInstalledVersionCode();
+                if (updateInfo.versionCode <= installedVersionCode) {
+                    Log.i(TAG, "[TDN-UPDATE] no update installed=" + installedVersionCode + " remote=" + updateInfo.versionCode);
+                    return;
+                }
 
-                if (updateInfo.versionCode <= getInstalledVersionCode()) return;
                 mainHandler.post(() -> showApkUpdateDialog(updateInfo));
             } catch (Exception error) {
                 Log.w(TAG, "[TDN-UPDATE] update check failed", error);
             } finally {
+                updateCheckInFlight = false;
                 if (connection != null) {
                     connection.disconnect();
                 }
@@ -806,13 +885,44 @@ public class MainActivity extends BridgeActivity {
         }).start();
     }
 
+    private UpdateInfo parseUpdateInfo(JSONObject payload) {
+        long versionCode = payload.optLong("versionCode", -1L);
+        if (versionCode <= 0) {
+            throw new IllegalArgumentException("Update metadata is missing a valid versionCode.");
+        }
+
+        String apkUrl = normalizeApkUrl(payload.optString("apkUrl", UPDATE_APK_URL));
+        if (!isHttpsUrl(apkUrl)) {
+            throw new IllegalArgumentException("Update metadata contains an invalid apkUrl.");
+        }
+
+        return new UpdateInfo(
+            versionCode,
+            payload.optString("versionName", "").trim(),
+            payload.optString("releaseNotes", "").trim(),
+            apkUrl
+        );
+    }
+
     private String normalizeApkUrl(String value) {
         String url = value == null ? "" : value.trim();
         int markdownStart = url.indexOf("](");
         if (markdownStart >= 0 && url.endsWith(")")) {
-            url = url.substring(markdownStart + 2, url.length() - 1);
+            url = url.substring(markdownStart + 2, url.length() - 1).trim();
+        }
+        if (url.startsWith("<") && url.endsWith(">")) {
+            url = url.substring(1, url.length() - 1).trim();
         }
         return url.length() == 0 ? UPDATE_APK_URL : url;
+    }
+
+    private boolean isHttpsUrl(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null && uri.getHost().length() > 0;
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     private long getInstalledVersionCode() throws Exception {
@@ -821,13 +931,13 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void showApkUpdateDialog(UpdateInfo updateInfo) {
-        if (updatePromptDismissedThisSession || isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) return;
+        if (updatePromptDismissedThisSession || updateDialogShowing || isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) return;
 
         String versionName = updateInfo.versionName.length() == 0 ? String.valueOf(updateInfo.versionCode) : updateInfo.versionName;
         String releaseNotes = updateInfo.releaseNotes.length() == 0 ? "Có bản cập nhật mới sẵn sàng." : updateInfo.releaseNotes;
         String message = "Phiên bản mới: " + versionName + "\n\n" + releaseNotes;
 
-        new AlertDialog.Builder(this)
+        AlertDialog updateDialog = new AlertDialog.Builder(this)
             .setTitle("Có phiên bản Thợ Đến Ngay mới")
             .setMessage(message)
             .setNegativeButton("Để sau", (dialog, which) -> {
@@ -836,10 +946,29 @@ public class MainActivity extends BridgeActivity {
             })
             .setPositiveButton("Cập nhật ngay", (dialog, which) -> downloadUpdateApk(updateInfo))
             .show();
+        updateDialogShowing = true;
+        updateDialog.setOnDismissListener(ignored -> updateDialogShowing = false);
+    }
+
+    private String getNativeUpdaterUserAgentToken() {
+        try {
+            return "ThoDenNgayAndroid/" + getInstalledVersionCode() + " NativeUpdater/1";
+        } catch (Exception error) {
+            return "ThoDenNgayAndroid/0 NativeUpdater/1";
+        }
     }
 
     private void downloadUpdateApk(UpdateInfo updateInfo) {
         try {
+            if (!hasNetworkConnection()) {
+                Toast.makeText(this, "Không có kết nối mạng để tải bản cập nhật.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (updateInfo.versionCode <= getInstalledVersionCode()) {
+                Toast.makeText(this, "Bạn đang dùng phiên bản mới nhất.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             if (manager == null) {
                 Toast.makeText(this, "Không thể mở trình tải cập nhật.", Toast.LENGTH_LONG).show();
@@ -852,12 +981,20 @@ public class MainActivity extends BridgeActivity {
                 Toast.makeText(this, "Không thể chuẩn bị thư mục tải cập nhật.", Toast.LENGTH_LONG).show();
                 return;
             }
-            pendingInstallApkPath = new File(downloadsDir, fileName).getAbsolutePath();
+
+            File apkFile = new File(downloadsDir, fileName);
+            if (apkFile.exists() && !apkFile.delete()) {
+                Log.w(TAG, "[TDN-UPDATE] could not delete stale update apk " + apkFile.getAbsolutePath());
+            }
+            pendingInstallApkPath = apkFile.getAbsolutePath();
+            pendingInstallVersionCode = updateInfo.versionCode;
+            updatePromptDismissedThisSession = true;
 
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(updateInfo.apkUrl));
             request.setTitle("Thợ Đến Ngay " + (updateInfo.versionName.length() == 0 ? "mới" : updateInfo.versionName));
             request.setDescription("Đang tải bản cập nhật...");
             request.setMimeType(APK_MIME_TYPE);
+            request.addRequestHeader("Accept", APK_MIME_TYPE);
             request.setAllowedOverMetered(true);
             request.setAllowedOverRoaming(true);
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
@@ -867,8 +1004,11 @@ public class MainActivity extends BridgeActivity {
             updateDownloadId = manager.enqueue(request);
             Toast.makeText(this, "Đang tải bản cập nhật...", Toast.LENGTH_SHORT).show();
         } catch (Exception error) {
+            updateDownloadId = -1L;
+            clearPendingUpdateInstall();
+            unregisterUpdateDownloadReceiver();
             Log.e(TAG, "[TDN-UPDATE] download failed", error);
-            Toast.makeText(this, "Không thể tải bản cập nhật.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Không thể tải bản cập nhật. Vui lòng kiểm tra mạng rồi thử lại.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -881,16 +1021,44 @@ public class MainActivity extends BridgeActivity {
             if (cursor == null || !cursor.moveToFirst()) return;
             int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
             int status = statusIndex >= 0 ? cursor.getInt(statusIndex) : DownloadManager.STATUS_FAILED;
-            if (status == DownloadManager.STATUS_SUCCESSFUL && pendingInstallApkPath != null) {
-                Toast.makeText(this, "Đã tải xong bản cập nhật.", Toast.LENGTH_SHORT).show();
-                openDownloadedUpdateApk(pendingInstallApkPath);
+            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                String apkPath = getDownloadedApkPath(cursor);
+                if (apkPath == null || apkPath.length() == 0) apkPath = pendingInstallApkPath;
+                if (apkPath != null && validateDownloadedUpdateApk(apkPath)) {
+                    pendingInstallApkPath = apkPath;
+                    Toast.makeText(this, "Đã tải xong bản cập nhật.", Toast.LENGTH_SHORT).show();
+                    openDownloadedUpdateApk(apkPath);
+                }
             } else if (status == DownloadManager.STATUS_FAILED) {
-                Toast.makeText(this, "Tải bản cập nhật thất bại.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, getDownloadFailureMessage(cursor), Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
             }
         } finally {
             updateDownloadId = -1L;
             unregisterUpdateDownloadReceiver();
         }
+    }
+
+    private String getDownloadedApkPath(Cursor cursor) {
+        int localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+        if (localUriIndex < 0) return null;
+        String localUri = cursor.getString(localUriIndex);
+        if (localUri == null || localUri.length() == 0) return null;
+        Uri uri = Uri.parse(localUri);
+        return "file".equalsIgnoreCase(uri.getScheme()) ? uri.getPath() : null;
+    }
+
+    private String getDownloadFailureMessage(Cursor cursor) {
+        int reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON);
+        int reason = reasonIndex >= 0 ? cursor.getInt(reasonIndex) : -1;
+        Log.w(TAG, "[TDN-UPDATE] download failed reason=" + reason);
+        if (reason == DownloadManager.ERROR_CANNOT_RESUME || reason == DownloadManager.ERROR_DEVICE_NOT_FOUND) {
+            return "Không thể lưu bản cập nhật trên thiết bị.";
+        }
+        if (reason == DownloadManager.ERROR_INSUFFICIENT_SPACE) {
+            return "Thiết bị không đủ dung lượng để tải bản cập nhật.";
+        }
+        return "Tải bản cập nhật thất bại. Vui lòng kiểm tra mạng rồi thử lại.";
     }
 
     private void registerUpdateDownloadReceiver() {
@@ -918,11 +1086,58 @@ public class MainActivity extends BridgeActivity {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || getPackageManager().canRequestPackageInstalls();
     }
 
+    private boolean validateDownloadedUpdateApk(String apkPath) {
+        try {
+            File apkFile = new File(apkPath);
+            if (!apkFile.exists()) {
+                Toast.makeText(this, "Không tìm thấy file cập nhật đã tải.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+
+            android.content.pm.PackageInfo packageInfo = getPackageManager().getPackageArchiveInfo(apkPath, 0);
+            if (packageInfo == null) {
+                Toast.makeText(this, "File cập nhật không hợp lệ.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+            if (!getPackageName().equals(packageInfo.packageName)) {
+                Toast.makeText(this, "File cập nhật không đúng ứng dụng Thợ Đến Ngay.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+
+            long downloadedVersionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? packageInfo.getLongVersionCode() : packageInfo.versionCode;
+            long installedVersionCode = getInstalledVersionCode();
+            if (downloadedVersionCode <= installedVersionCode) {
+                Toast.makeText(this, "Bản cập nhật tải về không mới hơn phiên bản đang cài.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+            if (pendingInstallVersionCode > 0 && downloadedVersionCode < pendingInstallVersionCode) {
+                Toast.makeText(this, "Bản cập nhật tải về không khớp metadata phát hành.", Toast.LENGTH_LONG).show();
+                clearPendingUpdateInstall();
+                return false;
+            }
+            return true;
+        } catch (Exception error) {
+            Log.e(TAG, "[TDN-UPDATE] validate downloaded apk failed", error);
+            Toast.makeText(this, "Không thể kiểm tra file cập nhật đã tải.", Toast.LENGTH_LONG).show();
+            clearPendingUpdateInstall();
+            return false;
+        }
+    }
+
+    private void clearPendingUpdateInstall() {
+        pendingInstallApkPath = null;
+        pendingInstallVersionCode = -1L;
+    }
+
     private void openDownloadedUpdateApk(String apkPath) {
         File apkFile = new File(apkPath);
         if (!apkFile.exists()) {
             Toast.makeText(this, "Không tìm thấy file cập nhật đã tải.", Toast.LENGTH_LONG).show();
-            pendingInstallApkPath = null;
+            clearPendingUpdateInstall();
             return;
         }
 
@@ -940,10 +1155,23 @@ public class MainActivity extends BridgeActivity {
 
         try {
             Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apkFile);
-            Intent installIntent = new Intent(Intent.ACTION_VIEW);
-            installIntent.setDataAndType(apkUri, APK_MIME_TYPE);
-            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent installIntent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            installIntent.setData(apkUri);
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
+            installIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
             startActivity(installIntent);
+        } catch (ActivityNotFoundException error) {
+            try {
+                Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apkFile);
+                Intent fallbackIntent = new Intent(Intent.ACTION_VIEW);
+                fallbackIntent.setDataAndType(apkUri, APK_MIME_TYPE);
+                fallbackIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(fallbackIntent);
+            } catch (Exception fallbackError) {
+                Log.e(TAG, "[TDN-UPDATE] open installer fallback failed", fallbackError);
+                Toast.makeText(this, "Không thể mở trình cài đặt bản cập nhật.", Toast.LENGTH_LONG).show();
+            }
         } catch (Exception error) {
             Log.e(TAG, "[TDN-UPDATE] open installer failed", error);
             Toast.makeText(this, "Không thể mở trình cài đặt bản cập nhật.", Toast.LENGTH_LONG).show();
@@ -966,22 +1194,12 @@ public class MainActivity extends BridgeActivity {
 
     private void scheduleStartupWatchdog() {
         mainHandler.postDelayed(() -> {
-            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted || waitingForWebStartupReadiness) return;
+            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted || webStartupReady) return;
             startupRecoveryAttempted = true;
-            Log.w(TAG, "[TDN-STARTUP] watchdog fired online=" + hasNetworkConnection() + " url=" + webView.getUrl() + " lastErrorUrl=" + lastMainFrameErrorUrl);
+            Log.w(TAG, "[TDN-STARTUP] startup timeout online=" + hasNetworkConnection() + " url=" + webView.getUrl() + " lastErrorUrl=" + lastMainFrameErrorUrl + " waiting=" + waitingForWebStartupReadiness);
             inspectWebRuntimeState(webView);
-            if (hasNetworkConnection()) {
-                webView.reload();
-                mainHandler.postDelayed(() -> {
-                    if (isStartupSplashVisible() && !loadCachedHtmlSnapshot(lastMainFrameErrorUrl)) {
-                        Log.e(TAG, "[TDN-STARTUP] watchdog recovery failed; showing network error");
-                        showNetworkError();
-                    }
-                }, STARTUP_RECOVERY_TIMEOUT_MS);
-                return;
-            }
-            loadOfflineStartup(lastMainFrameErrorUrl);
-        }, STARTUP_TIMEOUT_MS);
+            showNetworkError();
+        }, STARTUP_ERROR_TIMEOUT_MS);
     }
 
     private String escapeJavascriptString(String value) {
@@ -992,6 +1210,7 @@ public class MainActivity extends BridgeActivity {
         if (webView == null) return;
         Log.w(TAG, "[TDN-STARTUP] loading fresh start url reason=" + reason);
         loadingOfflineFallback = false;
+        mainFrameLoadFailed = false;
         hideNetworkError();
         configureCacheModeForNetwork();
         webView.stopLoading();
@@ -1062,7 +1281,6 @@ public class MainActivity extends BridgeActivity {
         String storedUrl = offlinePrefs.getString(KEY_LAST_URL, null);
         if (isRemoteAppUrl(storedUrl) && !isAndroidLoginUrl(storedUrl)) return storedUrl;
         if (isRemoteAppUrl(failedUrl) && !isAndroidLoginUrl(failedUrl)) return failedUrl;
-        if (isAndroidLoginUrl(failedUrl)) return WORKER_START_URL;
         return ANDROID_START_URL;
     }
 
@@ -1108,6 +1326,7 @@ public class MainActivity extends BridgeActivity {
         String baseUrl = getFallbackUrl(failedUrl);
         Log.w(TAG, "[TDN-STARTUP] loading cached html snapshot baseUrl=" + baseUrl + " failedUrl=" + failedUrl);
         loadingOfflineFallback = true;
+        mainFrameLoadFailed = false;
         hideNetworkError();
         configureCacheModeForNetwork();
         webView.stopLoading();
@@ -1117,10 +1336,8 @@ public class MainActivity extends BridgeActivity {
 
     private void loadOfflineStartup(String failedUrl) {
         String fallbackUrl = getFallbackUrl(failedUrl);
-        if (!hasNetworkConnection() && isAndroidLoginUrl(fallbackUrl)) {
-            fallbackUrl = WORKER_START_URL;
-        }
         loadingOfflineFallback = true;
+        mainFrameLoadFailed = false;
         hideNetworkError();
         configureCacheModeForNetwork();
         Log.w(TAG, "[TDN-STARTUP] loading offline startup fallbackUrl=" + fallbackUrl + " failedUrl=" + failedUrl + " online=" + hasNetworkConnection());
@@ -1159,6 +1376,10 @@ public class MainActivity extends BridgeActivity {
 
     private void handleMainFrameLoadError(String failedUrl, int errorCode) {
         Log.e(TAG, "[TDN-STARTUP] main frame load error code=" + errorCode + " failedUrl=" + failedUrl + " offlineFallback=" + loadingOfflineFallback + " online=" + hasNetworkConnection());
+        if (isStartupSplashVisible()) {
+            showNetworkError();
+            return;
+        }
         if (isLikelyNetworkError(errorCode)) {
             if (!loadingOfflineFallback) {
                 loadOfflineStartup(failedUrl);
@@ -1232,7 +1453,12 @@ public class MainActivity extends BridgeActivity {
 
         @Override
         public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-            waitingForWebStartupReadiness = false;
+            mainFrameLoadFailed = false;
+            if (isStartupSplashVisible()) {
+                webStartupReady = false;
+                waitingForWebStartupReadiness = false;
+            }
+            lastMainFrameErrorUrl = null;
             super.onPageStarted(view, url, favicon);
             Log.i(TAG, "[TDN-STARTUP] page started url=" + url + " online=" + hasNetworkConnection());
         }
@@ -1240,7 +1466,21 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
-            Log.i(TAG, "[TDN-STARTUP] page finished url=" + url + " progress=" + view.getProgress() + " offlineFallback=" + loadingOfflineFallback);
+            Log.i(TAG, "[TDN-STARTUP] page finished url=" + url + " progress=" + view.getProgress() + " offlineFallback=" + loadingOfflineFallback + " mainFrameLoadFailed=" + mainFrameLoadFailed);
+            if (mainFrameLoadFailed) {
+                inspectWebRuntimeState(view);
+                return;
+            }
+            if (!hasNetworkConnection()) {
+                long elapsed = System.currentTimeMillis() - startupSplashShownAt;
+                long remaining = Math.max(0L, STARTUP_MIN_SPLASH_MS - elapsed);
+                mainHandler.postDelayed(() -> {
+                    if (!hasNetworkConnection() && !webStartupReady) {
+                        showNetworkError();
+                    }
+                }, remaining);
+                return;
+            }
             hideNetworkError();
             hideStartupSplashWhenWebAppReady(view, url);
             inspectWebRuntimeState(view);
@@ -1263,12 +1503,18 @@ public class MainActivity extends BridgeActivity {
 
             String failedUrl = request.getUrl() != null ? request.getUrl().toString() : null;
             int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
+            CharSequence description = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getDescription() : null;
+            if (isStartupSplashVisible() && isAndroidLoginUrl(failedUrl) && hasNetworkConnection() && errorCode == WebViewClient.ERROR_UNKNOWN) {
+                Log.i(TAG, "[TDN-STARTUP] waiting through transient login load error description=" + description + " failedUrl=" + failedUrl);
+                return;
+            }
             if (isLikelyNavigationCancellation(view, failedUrl, errorCode)) {
                 Log.i(TAG, "[TDN-STARTUP] ignored cancelled navigation error code=" + errorCode + " failedUrl=" + failedUrl + " currentUrl=" + (view != null ? view.getUrl() : null));
                 return;
             }
 
             lastMainFrameErrorUrl = failedUrl;
+            mainFrameLoadFailed = true;
             handleMainFrameLoadError(lastMainFrameErrorUrl, errorCode);
         }
 
@@ -1277,6 +1523,7 @@ public class MainActivity extends BridgeActivity {
             super.onReceivedHttpError(view, request, errorResponse);
             if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
                 lastMainFrameErrorUrl = request.getUrl().toString();
+                mainFrameLoadFailed = true;
                 Log.e(TAG, "[TDN-STARTUP] main frame http error status=" + errorResponse.getStatusCode() + " reason=" + errorResponse.getReasonPhrase() + " url=" + lastMainFrameErrorUrl);
                 if (!loadingOfflineFallback && !hasNetworkConnection()) {
                     loadOfflineStartup(lastMainFrameErrorUrl);

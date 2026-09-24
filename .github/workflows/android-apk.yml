@@ -15,10 +15,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout master
+      - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          ref: master
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -71,6 +69,7 @@ jobs:
         env:
           VERSION_NAME: ${{ steps.apk-version.outputs.version_name }}
           VERSION_CODE: ${{ steps.apk-version.outputs.version_code }}
+          TAG: ${{ steps.apk-version.outputs.tag }}
         run: |
           mkdir -p artifacts
           cp android/app/build/outputs/apk/release/app-release.apk artifacts/thodenngay.apk
@@ -79,7 +78,7 @@ jobs:
             "versionCode": ${VERSION_CODE},
             "versionName": "${VERSION_NAME}",
             "releaseNotes": "Cải thiện giao diện và độ ổn định",
-            "apkUrl": "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk"
+            "apkUrl": "https://github.com/hoaitv86/thodenngay/releases/download/${TAG}/thodenngay.apk"
           }
           EOF
 
