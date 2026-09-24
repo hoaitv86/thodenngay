@@ -88,8 +88,8 @@ public class MainActivity extends BridgeActivity {
     private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
     private static final long APK_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1_000L;
     private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
-    private static final int STARTUP_TIMEOUT_MS = 3_000;
-    private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
+    private static final int STARTUP_MIN_SPLASH_MS = 5_000;
+    private static final int STARTUP_ERROR_TIMEOUT_MS = 25_000;
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
     private static final int BRAND_NAVY = 0xFF0F3D63;
     private static final int BRAND_BLUE = 0xFF1478C8;
@@ -103,12 +103,16 @@ public class MainActivity extends BridgeActivity {
     private FrameLayout rootView;
     private LinearLayout errorView;
     private FrameLayout startupSplashView;
+    private TextView startupStatusText;
     private WebView webView;
     private SharedPreferences offlinePrefs;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean loadingOfflineFallback = false;
     private boolean startupRecoveryAttempted = false;
     private boolean waitingForWebStartupReadiness = false;
+    private boolean webStartupReady = false;
+    private boolean mainFrameLoadFailed = false;
+    private long startupSplashShownAt = 0L;
     private int freshReloadSequence = 0;
     private String lastMainFrameErrorUrl;
     private boolean updatePromptDismissedThisSession = false;
@@ -147,12 +151,17 @@ public class MainActivity extends BridgeActivity {
         configureWebView();
         createNetworkErrorView();
         createStartupSplashView();
+        scheduleStartupLoadingStatus();
         invalidateCacheAfterAndroidUpdate();
         checkRemoteDeployVersion();
         checkForApkUpdate();
         scheduleStartupWatchdog();
         if (!hasNetworkConnection()) {
-            webView.postDelayed(() -> loadOfflineStartup(null), 250);
+            mainHandler.postDelayed(() -> {
+                if (isStartupSplashVisible() && !hasNetworkConnection()) {
+                    showNetworkError();
+                }
+            }, STARTUP_MIN_SPLASH_MS);
         }
     }
 
@@ -307,10 +316,14 @@ public class MainActivity extends BridgeActivity {
         Button retry = new Button(this);
         retry.setText(getString(R.string.network_error_retry));
         retry.setOnClickListener(v -> {
-            hideNetworkError();
+            resetStartupSplashForRetry();
             loadingOfflineFallback = false;
+            startupRecoveryAttempted = false;
+            mainFrameLoadFailed = false;
+            lastMainFrameErrorUrl = null;
             configureCacheModeForNetwork();
             webView.loadUrl(ANDROID_START_URL);
+            scheduleStartupWatchdog();
         });
 
         errorView.addView(title);
@@ -330,6 +343,9 @@ public class MainActivity extends BridgeActivity {
         int screenHeightDp = getResources().getConfiguration().screenHeightDp;
         boolean compact = screenHeightDp > 0 && screenHeightDp < 660;
 
+        startupSplashShownAt = System.currentTimeMillis();
+        webStartupReady = false;
+        startupRecoveryAttempted = false;
         startupSplashView = new FrameLayout(this);
         startupSplashView.setBackgroundColor(0xFFFFFFFF);
         startupSplashView.setFitsSystemWindows(true);
@@ -364,8 +380,8 @@ public class MainActivity extends BridgeActivity {
         LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(compact ? 168 : 220), dp(5));
         progressParams.setMargins(0, 0, 0, dp(compact ? 10 : 12));
 
-        TextView status = createCenteredText(getString(R.string.startup_status), BRAND_NAVY, compact ? 13 : 14, Typeface.NORMAL);
-        status.setPadding(0, 0, 0, dp(compact ? 14 : 22));
+        startupStatusText = createCenteredText(getString(R.string.startup_status), BRAND_NAVY, compact ? 13 : 14, Typeface.NORMAL);
+        startupStatusText.setPadding(0, 0, 0, dp(compact ? 14 : 22));
 
         LinearLayout values = new LinearLayout(this);
         values.setOrientation(LinearLayout.HORIZONTAL);
@@ -399,7 +415,7 @@ public class MainActivity extends BridgeActivity {
         content.addView(appName);
         content.addView(slogan);
         content.addView(progress, progressParams);
-        content.addView(status);
+        content.addView(startupStatusText);
         content.addView(values, valuesParams);
         content.addView(new Space(this), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, compact ? 0.18f : 0.45f));
         content.addView(version);
@@ -479,9 +495,18 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void showNetworkError() {
+        if (webView != null) {
+            try {
+                webView.stopLoading();
+            } catch (Exception ignored) {
+                // Keep the native error screen responsive even if WebView is already stopping.
+            }
+        }
         hideStartupSplash();
         if (errorView != null) {
             errorView.setVisibility(View.VISIBLE);
+            errorView.bringToFront();
+            errorView.requestFocus();
         }
     }
 
@@ -498,8 +523,42 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private void resetStartupSplashForRetry() {
+        hideNetworkError();
+        webStartupReady = false;
+        waitingForWebStartupReadiness = false;
+        startupSplashShownAt = System.currentTimeMillis();
+        if (startupStatusText != null) {
+            startupStatusText.setText(getString(R.string.startup_status));
+        }
+        if (startupSplashView != null) {
+            startupSplashView.setVisibility(View.VISIBLE);
+        }
+        scheduleStartupLoadingStatus();
+    }
+
     private boolean isStartupSplashVisible() {
         return startupSplashView != null && startupSplashView.getVisibility() == View.VISIBLE;
+    }
+
+    private void scheduleStartupLoadingStatus() {
+        mainHandler.postDelayed(() -> {
+            if (!isStartupSplashVisible() || webStartupReady || startupStatusText == null) return;
+            startupStatusText.setText("Đang tải dữ liệu...");
+        }, STARTUP_MIN_SPLASH_MS);
+    }
+
+    private void markWebStartupReady() {
+        if (!isStartupSplashVisible()) return;
+        webStartupReady = true;
+        waitingForWebStartupReadiness = false;
+        long elapsed = System.currentTimeMillis() - startupSplashShownAt;
+        long remaining = Math.max(0L, STARTUP_MIN_SPLASH_MS - elapsed);
+        mainHandler.postDelayed(() -> {
+            if (isStartupSplashVisible() && webStartupReady) {
+                hideStartupSplash();
+            }
+        }, remaining);
     }
 
     private void hideStartupSplashWhenWebAppReady(WebView view, String url) {
@@ -508,22 +567,22 @@ public class MainActivity extends BridgeActivity {
             waitForAndroidLoginStartup(view);
             return;
         }
-        hideStartupSplash();
+        markWebStartupReady();
     }
 
     private void waitForAndroidLoginStartup(WebView view) {
         if (!isStartupSplashVisible() || view == null) return;
         waitingForWebStartupReadiness = true;
         view.evaluateJavascript(
-            "(function(){var marker=!!document.querySelector('[data-tdn-android-startup=checking]');var text=(document.body&&document.body.innerText)||'';return marker||text.indexOf('Đang khởi động...')!==-1||text.indexOf('v0.1.1 Beta')!==-1;})()",
+            "(function(){var marker=!!document.querySelector('[data-tdn-android-startup=checking]');var text=(document.body&&document.body.innerText)||'';var hasBody=!!(document.body&&document.body.children&&document.body.children.length);return {checking:marker||text.indexOf('Đang khởi động...')!==-1||text.indexOf('v0.1.1 Beta')!==-1,ready:hasBody&&document.readyState!=='loading'};})()",
             value -> {
-                boolean stillChecking = "true".equals(value);
-                if (!stillChecking) {
-                    waitingForWebStartupReadiness = false;
-                    hideStartupSplash();
+                boolean stillChecking = value != null && value.contains("\"checking\":true");
+                boolean ready = value != null && value.contains("\"ready\":true");
+                if (!stillChecking && ready) {
+                    markWebStartupReady();
                     return;
                 }
-                mainHandler.postDelayed(() -> waitForAndroidLoginStartup(view), 120);
+                mainHandler.postDelayed(() -> waitForAndroidLoginStartup(view), 150);
             }
         );
     }
@@ -1135,22 +1194,12 @@ public class MainActivity extends BridgeActivity {
 
     private void scheduleStartupWatchdog() {
         mainHandler.postDelayed(() -> {
-            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted || waitingForWebStartupReadiness) return;
+            if (!isStartupSplashVisible() || webView == null || startupRecoveryAttempted || webStartupReady) return;
             startupRecoveryAttempted = true;
-            Log.w(TAG, "[TDN-STARTUP] watchdog fired online=" + hasNetworkConnection() + " url=" + webView.getUrl() + " lastErrorUrl=" + lastMainFrameErrorUrl);
+            Log.w(TAG, "[TDN-STARTUP] startup timeout online=" + hasNetworkConnection() + " url=" + webView.getUrl() + " lastErrorUrl=" + lastMainFrameErrorUrl + " waiting=" + waitingForWebStartupReadiness);
             inspectWebRuntimeState(webView);
-            if (hasNetworkConnection()) {
-                webView.reload();
-                mainHandler.postDelayed(() -> {
-                    if (isStartupSplashVisible() && !loadCachedHtmlSnapshot(lastMainFrameErrorUrl)) {
-                        Log.e(TAG, "[TDN-STARTUP] watchdog recovery failed; showing network error");
-                        showNetworkError();
-                    }
-                }, STARTUP_RECOVERY_TIMEOUT_MS);
-                return;
-            }
-            loadOfflineStartup(lastMainFrameErrorUrl);
-        }, STARTUP_TIMEOUT_MS);
+            showNetworkError();
+        }, STARTUP_ERROR_TIMEOUT_MS);
     }
 
     private String escapeJavascriptString(String value) {
@@ -1161,6 +1210,7 @@ public class MainActivity extends BridgeActivity {
         if (webView == null) return;
         Log.w(TAG, "[TDN-STARTUP] loading fresh start url reason=" + reason);
         loadingOfflineFallback = false;
+        mainFrameLoadFailed = false;
         hideNetworkError();
         configureCacheModeForNetwork();
         webView.stopLoading();
@@ -1231,7 +1281,6 @@ public class MainActivity extends BridgeActivity {
         String storedUrl = offlinePrefs.getString(KEY_LAST_URL, null);
         if (isRemoteAppUrl(storedUrl) && !isAndroidLoginUrl(storedUrl)) return storedUrl;
         if (isRemoteAppUrl(failedUrl) && !isAndroidLoginUrl(failedUrl)) return failedUrl;
-        if (isAndroidLoginUrl(failedUrl)) return WORKER_START_URL;
         return ANDROID_START_URL;
     }
 
@@ -1277,6 +1326,7 @@ public class MainActivity extends BridgeActivity {
         String baseUrl = getFallbackUrl(failedUrl);
         Log.w(TAG, "[TDN-STARTUP] loading cached html snapshot baseUrl=" + baseUrl + " failedUrl=" + failedUrl);
         loadingOfflineFallback = true;
+        mainFrameLoadFailed = false;
         hideNetworkError();
         configureCacheModeForNetwork();
         webView.stopLoading();
@@ -1286,10 +1336,8 @@ public class MainActivity extends BridgeActivity {
 
     private void loadOfflineStartup(String failedUrl) {
         String fallbackUrl = getFallbackUrl(failedUrl);
-        if (!hasNetworkConnection() && isAndroidLoginUrl(fallbackUrl)) {
-            fallbackUrl = WORKER_START_URL;
-        }
         loadingOfflineFallback = true;
+        mainFrameLoadFailed = false;
         hideNetworkError();
         configureCacheModeForNetwork();
         Log.w(TAG, "[TDN-STARTUP] loading offline startup fallbackUrl=" + fallbackUrl + " failedUrl=" + failedUrl + " online=" + hasNetworkConnection());
@@ -1328,6 +1376,10 @@ public class MainActivity extends BridgeActivity {
 
     private void handleMainFrameLoadError(String failedUrl, int errorCode) {
         Log.e(TAG, "[TDN-STARTUP] main frame load error code=" + errorCode + " failedUrl=" + failedUrl + " offlineFallback=" + loadingOfflineFallback + " online=" + hasNetworkConnection());
+        if (isStartupSplashVisible()) {
+            showNetworkError();
+            return;
+        }
         if (isLikelyNetworkError(errorCode)) {
             if (!loadingOfflineFallback) {
                 loadOfflineStartup(failedUrl);
@@ -1401,7 +1453,12 @@ public class MainActivity extends BridgeActivity {
 
         @Override
         public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-            waitingForWebStartupReadiness = false;
+            mainFrameLoadFailed = false;
+            if (isStartupSplashVisible()) {
+                webStartupReady = false;
+                waitingForWebStartupReadiness = false;
+            }
+            lastMainFrameErrorUrl = null;
             super.onPageStarted(view, url, favicon);
             Log.i(TAG, "[TDN-STARTUP] page started url=" + url + " online=" + hasNetworkConnection());
         }
@@ -1409,7 +1466,21 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
-            Log.i(TAG, "[TDN-STARTUP] page finished url=" + url + " progress=" + view.getProgress() + " offlineFallback=" + loadingOfflineFallback);
+            Log.i(TAG, "[TDN-STARTUP] page finished url=" + url + " progress=" + view.getProgress() + " offlineFallback=" + loadingOfflineFallback + " mainFrameLoadFailed=" + mainFrameLoadFailed);
+            if (mainFrameLoadFailed) {
+                inspectWebRuntimeState(view);
+                return;
+            }
+            if (!hasNetworkConnection()) {
+                long elapsed = System.currentTimeMillis() - startupSplashShownAt;
+                long remaining = Math.max(0L, STARTUP_MIN_SPLASH_MS - elapsed);
+                mainHandler.postDelayed(() -> {
+                    if (!hasNetworkConnection() && !webStartupReady) {
+                        showNetworkError();
+                    }
+                }, remaining);
+                return;
+            }
             hideNetworkError();
             hideStartupSplashWhenWebAppReady(view, url);
             inspectWebRuntimeState(view);
@@ -1432,12 +1503,18 @@ public class MainActivity extends BridgeActivity {
 
             String failedUrl = request.getUrl() != null ? request.getUrl().toString() : null;
             int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
+            CharSequence description = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getDescription() : null;
+            if (isStartupSplashVisible() && isAndroidLoginUrl(failedUrl) && hasNetworkConnection() && errorCode == WebViewClient.ERROR_UNKNOWN) {
+                Log.i(TAG, "[TDN-STARTUP] waiting through transient login load error description=" + description + " failedUrl=" + failedUrl);
+                return;
+            }
             if (isLikelyNavigationCancellation(view, failedUrl, errorCode)) {
                 Log.i(TAG, "[TDN-STARTUP] ignored cancelled navigation error code=" + errorCode + " failedUrl=" + failedUrl + " currentUrl=" + (view != null ? view.getUrl() : null));
                 return;
             }
 
             lastMainFrameErrorUrl = failedUrl;
+            mainFrameLoadFailed = true;
             handleMainFrameLoadError(lastMainFrameErrorUrl, errorCode);
         }
 
@@ -1446,6 +1523,7 @@ public class MainActivity extends BridgeActivity {
             super.onReceivedHttpError(view, request, errorResponse);
             if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
                 lastMainFrameErrorUrl = request.getUrl().toString();
+                mainFrameLoadFailed = true;
                 Log.e(TAG, "[TDN-STARTUP] main frame http error status=" + errorResponse.getStatusCode() + " reason=" + errorResponse.getReasonPhrase() + " url=" + lastMainFrameErrorUrl);
                 if (!loadingOfflineFallback && !hasNetworkConnection()) {
                     loadOfflineStartup(lastMainFrameErrorUrl);
