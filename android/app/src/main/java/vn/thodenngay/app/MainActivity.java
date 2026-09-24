@@ -86,6 +86,7 @@ public class MainActivity extends BridgeActivity {
     private static final String UPDATE_METADATA_URL = "https://github.com/hoaitv86/thodenngay/releases/latest/download/latest.json";
     private static final String UPDATE_APK_URL = "https://github.com/hoaitv86/thodenngay/releases/latest/download/thodenngay.apk";
     private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
+    private static final long APK_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1_000L;
     private static final int MAX_SNAPSHOT_CHARS = 2_500_000;
     private static final int STARTUP_TIMEOUT_MS = 3_000;
     private static final int STARTUP_RECOVERY_TIMEOUT_MS = 8_000;
@@ -112,6 +113,9 @@ public class MainActivity extends BridgeActivity {
     private String lastMainFrameErrorUrl;
     private boolean updatePromptDismissedThisSession = false;
     private boolean updateDownloadReceiverRegistered = false;
+    private boolean updateCheckInFlight = false;
+    private boolean updateDialogShowing = false;
+    private long lastApkUpdateCheckAt = 0L;
     private long updateDownloadId = -1L;
     private String pendingInstallApkPath;
     private long pendingInstallVersionCode = -1L;
@@ -160,6 +164,7 @@ public class MainActivity extends BridgeActivity {
             pendingInstallApkPath = null;
             openDownloadedUpdateApk(apkPath);
         }
+        checkForApkUpdate();
     }
 
     @Override
@@ -187,6 +192,10 @@ public class MainActivity extends BridgeActivity {
         settings.setAllowFileAccess(true);
         settings.setCacheMode(hasNetworkConnection() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        String currentUserAgent = settings.getUserAgentString();
+        if (currentUserAgent != null && !currentUserAgent.contains("ThoDenNgayAndroid/")) {
+            settings.setUserAgentString(currentUserAgent + " " + getNativeUpdaterUserAgentToken());
+        }
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -765,7 +774,11 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void checkForApkUpdate() {
-        if (!hasNetworkConnection() || updatePromptDismissedThisSession) return;
+        if (!hasNetworkConnection() || updatePromptDismissedThisSession || updateCheckInFlight || updateDialogShowing) return;
+        long now = System.currentTimeMillis();
+        if (lastApkUpdateCheckAt > 0 && now - lastApkUpdateCheckAt < APK_UPDATE_CHECK_INTERVAL_MS) return;
+        lastApkUpdateCheckAt = now;
+        updateCheckInFlight = true;
 
         new Thread(() -> {
             HttpURLConnection connection = null;
@@ -805,6 +818,7 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception error) {
                 Log.w(TAG, "[TDN-UPDATE] update check failed", error);
             } finally {
+                updateCheckInFlight = false;
                 if (connection != null) {
                     connection.disconnect();
                 }
@@ -858,13 +872,13 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void showApkUpdateDialog(UpdateInfo updateInfo) {
-        if (updatePromptDismissedThisSession || isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) return;
+        if (updatePromptDismissedThisSession || updateDialogShowing || isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) return;
 
         String versionName = updateInfo.versionName.length() == 0 ? String.valueOf(updateInfo.versionCode) : updateInfo.versionName;
         String releaseNotes = updateInfo.releaseNotes.length() == 0 ? "Có bản cập nhật mới sẵn sàng." : updateInfo.releaseNotes;
         String message = "Phiên bản mới: " + versionName + "\n\n" + releaseNotes;
 
-        new AlertDialog.Builder(this)
+        AlertDialog updateDialog = new AlertDialog.Builder(this)
             .setTitle("Có phiên bản Thợ Đến Ngay mới")
             .setMessage(message)
             .setNegativeButton("Để sau", (dialog, which) -> {
@@ -873,6 +887,16 @@ public class MainActivity extends BridgeActivity {
             })
             .setPositiveButton("Cập nhật ngay", (dialog, which) -> downloadUpdateApk(updateInfo))
             .show();
+        updateDialogShowing = true;
+        updateDialog.setOnDismissListener(ignored -> updateDialogShowing = false);
+    }
+
+    private String getNativeUpdaterUserAgentToken() {
+        try {
+            return "ThoDenNgayAndroid/" + getInstalledVersionCode() + " NativeUpdater/1";
+        } catch (Exception error) {
+            return "ThoDenNgayAndroid/0 NativeUpdater/1";
+        }
     }
 
     private void downloadUpdateApk(UpdateInfo updateInfo) {

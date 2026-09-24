@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./app.css";
 import OfflineRuntime from "@/app/components/OfflineRuntime";
+import AndroidUpdateFallback from "@/app/components/AndroidUpdateFallback";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -44,6 +45,7 @@ export default function RootLayout({
     <html lang="vi" className="h-full antialiased">
       <body className="min-h-full flex flex-col font-sans">
         <OfflineRuntime />
+        <AndroidUpdateFallback />
         {children}
       </body>
     </html>
