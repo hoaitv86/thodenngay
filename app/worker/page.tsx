@@ -3295,6 +3295,34 @@ useEffect(() => {
       if (item.targetCompletionItemId) warrantyByTarget.set(item.targetCompletionItemId, item);
     });
 
+    const existingWarrantyUpdates = warrantyRows
+      .filter(item => item.targetCompletionItemId?.startsWith("device:"))
+      .map(item => {
+        const months = item.homeWarrantyMonths === 24 ? 24 : 12;
+        const deviceId = item.targetCompletionItemId?.replace("device:", "") || "";
+        return {
+          deviceId,
+          payload: {
+            home_warranty_months: months,
+            home_warranty_start: installedAt,
+            home_warranty_end: getHomeWarrantyEndDate(installedAt, months),
+          },
+        };
+      })
+      .filter(update => update.deviceId);
+
+    for (const update of existingWarrantyUpdates) {
+      const { error } = await supabase
+        .from("worker_customer_devices")
+        .update(update.payload)
+        .eq("id", update.deviceId)
+        .eq("worker_id", worker.id)
+        .eq("customer_id", job.customer_id);
+
+      if (error) {
+        throw new Error("Đã hoàn thành job nhưng chưa lưu được bảo hành tại nhà: " + error.message);
+      }
+    }
     const deviceRows = items
       .filter(item => item.source !== "home_warranty" && (isCameraCompletionItem(item) || warrantyByTarget.has(item.draftItemId || "")))
       .flatMap((item) => {
@@ -6616,7 +6644,7 @@ useEffect(() => {
               )}
 
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-xl border border-outline-variant/40 bg-white/95 p-3 shadow-sm backdrop-blur">
                   <div>
                     <label className="text-sm font-bold text-on-surface block">Nhân công, vật tư và bảo hành</label>
                     <p className="text-xs text-on-surface-variant">Bảo hành tại nhà là dịch vụ bổ sung, không trừ kho.</p>
@@ -6760,7 +6788,7 @@ useEffect(() => {
                             disabled={uploadingImages}
                           />
                         </div>
-                                                <div>
+                        <div>
                           {item.source === "home_warranty" ? (
                             <>
                               <label className="text-[10px] font-bold uppercase text-on-surface-variant">Kỳ hạn</label>
