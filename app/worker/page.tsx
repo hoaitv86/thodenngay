@@ -3393,6 +3393,7 @@ useEffect(() => {
   const completionCustomerPhone = activeJobToComplete?.customer?.phone || "";
   const completionGiftCameraAccountValue = canGiftViettelCamera ? completionCustomerPhone.trim() : "";
   const completionFinancials = calculateCompletionFinancials(completionItems, completionInternetInstallFee + completionInternetReceiptTotal);
+  const completionHomeWarrantyTargetItems = getHomeWarrantyTargetItems();
   const completionCostTotal = completionFinancials.cost;
   const completionGrossProfit = completionFinancials.grossProfit;
   const completionTotal = completionItemsTotal + completionInternetInstallFee + completionInternetReceiptTotal;
@@ -6644,35 +6645,43 @@ useEffect(() => {
               )}
 
               <div className="space-y-3">
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-xl border border-outline-variant/40 bg-white/95 p-3 shadow-sm backdrop-blur">
+                <div className="sticky top-0 z-10 space-y-3 rounded-xl border border-outline-variant/40 bg-white/95 p-3 shadow-sm backdrop-blur">
                   <div>
                     <label className="text-sm font-bold text-on-surface block">Nhân công, vật tư và bảo hành</label>
                     <p className="text-xs text-on-surface-variant">Bảo hành tại nhà là dịch vụ bổ sung, không trừ kho.</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={addInventoryCompletionItem}
-                    className="shrink-0 rounded-lg border border-secondary-container/30 bg-secondary-fixed px-3 py-2 text-xs font-bold text-secondary-container disabled:opacity-50"
-                    disabled={uploadingImages}
-                  >
-                    Thêm vật tư
-                  </button>
-                  <button
-                    type="button"
-                    onClick={addHomeWarrantyCompletionItem}
-                    className="shrink-0 rounded-lg border border-success/30 bg-success-container px-3 py-2 text-xs font-bold text-success disabled:opacity-50"
-                    disabled={uploadingImages}
-                  >
-                    + Thêm bảo hành tại nhà
-                  </button>
-                  <button
-                    type="button"
-                    onClick={addCompletionItem}
-                    className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container"
-                    disabled={uploadingImages}
-                  >
-                    Thêm dòng
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={addInventoryCompletionItem}
+                      className="shrink-0 rounded-lg border border-secondary-container/30 bg-secondary-fixed px-3 py-2 text-xs font-bold text-secondary-container disabled:opacity-50"
+                      disabled={uploadingImages}
+                    >
+                      Thêm vật tư
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addHomeWarrantyCompletionItem}
+                      className="shrink-0 rounded-lg border border-success/30 bg-success-container px-3 py-2 text-xs font-bold text-success disabled:opacity-50"
+                      disabled={uploadingImages || completionHomeWarrantyTargetItems.length === 0}
+                      title={completionHomeWarrantyTargetItems.length === 0 ? "Cần có ít nhất một dòng thiết bị/vật tư để áp dụng bảo hành." : undefined}
+                    >
+                      + Thêm bảo hành tại nhà
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addCompletionItem}
+                      className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container disabled:opacity-50"
+                      disabled={uploadingImages}
+                    >
+                      Thêm dòng
+                    </button>
+                  </div>
+                  {completionHomeWarrantyTargetItems.length === 0 && (
+                    <p className="text-xs font-semibold text-error">
+                      Cần có ít nhất một dòng thiết bị/vật tư để áp dụng bảo hành tại nhà.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-3">
