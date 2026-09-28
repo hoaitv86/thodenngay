@@ -110,6 +110,8 @@ interface ServiceOption {
   name: string;
   description?: string | null;
   base_price?: number | string | null;
+  home_warranty_12m_price?: number | string | null;
+  home_warranty_24m_price?: number | string | null;
   icon?: string | null;
   parent_service_id?: string | null;
   parentName?: string | null;
@@ -143,10 +145,10 @@ type QuickCustomerOption = {
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
 const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
 const WORKER_DASHBOARD_JOB_BASE_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data";
-const WORKER_DASHBOARD_JOB_RELATION_SELECT = "service:services!jobs_service_id_fkey(id, name, description, base_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
+const WORKER_DASHBOARD_JOB_RELATION_SELECT = "service:services!jobs_service_id_fkey(id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
 const WORKER_DASHBOARD_JOB_ATTACHMENTS_SELECT = "task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at)";
 const WORKER_DASHBOARD_JOB_PAYMENTS_SELECT = "payments(id, amount, method, status, paid_at, note)";
-const WORKER_DASHBOARD_JOB_SERVICES_SELECT = "job_services(service:services(id, name, description, base_price, icon, parent_service_id))";
+const WORKER_DASHBOARD_JOB_SERVICES_SELECT = "job_services(service:services(id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, parent_service_id))";
 const WORKER_DASHBOARD_JOB_SELECT_WITHOUT_ATTACHMENTS = `${WORKER_DASHBOARD_JOB_BASE_SELECT}, ${WORKER_DASHBOARD_JOB_RELATION_SELECT}`;
 const WORKER_DASHBOARD_JOB_SELECT = `${WORKER_DASHBOARD_JOB_BASE_SELECT}, ${WORKER_DASHBOARD_JOB_ATTACHMENTS_SELECT}, ${WORKER_DASHBOARD_JOB_RELATION_SELECT}`;
 const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT = `${WORKER_DASHBOARD_JOB_SELECT}, ${WORKER_DASHBOARD_JOB_SERVICES_SELECT}, ${WORKER_DASHBOARD_JOB_PAYMENTS_SELECT}`;
@@ -324,15 +326,20 @@ const buildDirectionsEmbedUrl = (destination: string, origin?: GpsLocation | nul
 interface CompletionItem {
   id: string;
   name: string;
-  quantity: number;
-  unitPrice: number;
+  quantity: number | string;
+  unitPrice: number | string;
   costPrice?: number;
-  warrantyDays: number;
+  warrantyDays: number | string;
   inventoryProductId?: string;
   sku?: string;
   category?: string;
   unit?: string;
-  source?: "manual" | "inventory" | "labor";
+  source?: "manual" | "inventory" | "labor" | "home_warranty";
+  targetCompletionItemId?: string;
+  targetDeviceLabel?: string;
+  homeWarrantyMonths?: 12 | 24;
+  homeWarrantyStart?: string;
+  homeWarrantyEnd?: string;
 }
 
 type StoredCompletionItem = {
@@ -345,13 +352,20 @@ type StoredCompletionItem = {
   sku?: string | null;
   category?: string | null;
   unit?: string | null;
-  source?: "manual" | "inventory" | "labor";
+  source?: "manual" | "inventory" | "labor" | "home_warranty";
+  targetCompletionItemId?: string | null;
+  targetDeviceLabel?: string | null;
+  homeWarrantyMonths?: 12 | 24 | null;
+  homeWarrantyStart?: string | null;
+  homeWarrantyEnd?: string | null;
+  draftItemId?: string;
   deviceQrDrafts?: CompletionQrDraft[];
 };
 
 type JobFinancials = {
   laborRevenue: number;
   materialRevenue: number;
+  homeWarrantyRevenue: number;
   revenue: number;
   cost: number;
   grossProfit: number;
@@ -755,14 +769,51 @@ const makeInventoryCompletionItem = (): CompletionItem => ({
   source: "inventory",
 });
 
+const toCompletionNumber = (value: number | string | null | undefined) => {
+  if (value === "" || value === null || value === undefined) return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const normalizeCompletionNumberInput = (value: number | string | null | undefined, fallback = 0) => {
+  const parsed = toCompletionNumber(value);
+  return String(Math.max(0, parsed || fallback));
+};
+
+const getHomeWarrantyEndDate = (startDate: string, months: 12 | 24) => {
+  const endDate = new Date(startDate + "T00:00:00");
+  endDate.setMonth(endDate.getMonth() + months);
+  return endDate.toISOString().slice(0, 10);
+};
+
+const getHomeWarrantyServicePrice = (service: ServiceOption | null | undefined, months: 12 | 24) => {
+  const price = months === 24 ? service?.home_warranty_24m_price : service?.home_warranty_12m_price;
+  return toCompletionNumber(price);
+};
+
+const makeHomeWarrantyCompletionItem = (service: ServiceOption | null | undefined, target?: CompletionItem): CompletionItem => ({
+  id: crypto.randomUUID(),
+  name: "Bảo hành tại nhà",
+  quantity: 1,
+  unitPrice: getHomeWarrantyServicePrice(service, 12),
+  costPrice: 0,
+  warrantyDays: 0,
+  source: "home_warranty",
+  targetCompletionItemId: target?.id || "",
+  targetDeviceLabel: target?.name || "",
+  homeWarrantyMonths: 12,
+});
+
 const calculateCompletionFinancials = (items: Array<Pick<CompletionItem, "quantity" | "unitPrice" | "costPrice" | "source">>, extraRevenue = 0): JobFinancials => {
   return items.reduce<JobFinancials>((totals, item) => {
-    const quantity = Number(item.quantity) || 0;
-    const lineRevenue = quantity * (Number(item.unitPrice) || 0);
+    const quantity = toCompletionNumber(item.quantity);
+    const lineRevenue = quantity * toCompletionNumber(item.unitPrice);
     const lineCost = item.source === "inventory" ? quantity * (Number(item.costPrice) || 0) : 0;
 
     if (item.source === "inventory") {
       totals.materialRevenue += lineRevenue;
+    } else if (item.source === "home_warranty") {
+      totals.homeWarrantyRevenue += lineRevenue;
     } else {
       totals.laborRevenue += lineRevenue;
     }
@@ -770,7 +821,7 @@ const calculateCompletionFinancials = (items: Array<Pick<CompletionItem, "quanti
     totals.cost += lineCost;
     totals.grossProfit = totals.revenue - totals.cost;
     return totals;
-  }, { laborRevenue: extraRevenue, materialRevenue: 0, revenue: extraRevenue, cost: 0, grossProfit: extraRevenue });
+  }, { laborRevenue: extraRevenue, materialRevenue: 0, homeWarrantyRevenue: 0, revenue: extraRevenue, cost: 0, grossProfit: extraRevenue });
 };
 
 const normalizeBusinessKeyword = (value: string | null | undefined) =>
@@ -781,7 +832,7 @@ const normalizeBusinessKeyword = (value: string | null | undefined) =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/đ/g, "d");
 
-const isCameraCompletionItem = (item: { name?: string | null; category?: string | null; source?: "manual" | "inventory" | "labor" }) => {
+const isCameraCompletionItem = (item: { name?: string | null; category?: string | null; source?: "manual" | "inventory" | "labor" | "home_warranty" }) => {
   if (item.source !== "inventory") return false;
   const category = normalizeBusinessKeyword(item.category);
   const name = normalizeBusinessKeyword(item.name);
@@ -874,6 +925,7 @@ const getStoredJobFinancials = (job: { final_amount?: number | string | null; qu
     return {
       laborRevenue: Number(saved.laborRevenue || 0),
       materialRevenue: Number(saved.materialRevenue || 0),
+      homeWarrantyRevenue: Number(saved.homeWarrantyRevenue || 0),
       revenue,
       cost,
       grossProfit: Number.isFinite(Number(saved.grossProfit)) ? Number(saved.grossProfit) : revenue - cost,
@@ -884,7 +936,7 @@ const getStoredJobFinancials = (job: { final_amount?: number | string | null; qu
   if (items.length > 0) return calculateCompletionFinancials(items);
 
   const revenue = Number(job.final_amount || job.quoted_price || 0);
-  return { laborRevenue: revenue, materialRevenue: 0, revenue, cost: 0, grossProfit: revenue };
+  return { laborRevenue: revenue, materialRevenue: 0, homeWarrantyRevenue: 0, revenue, cost: 0, grossProfit: revenue };
 };
 
 const getCurrentBrowserLocation = () => {
@@ -3093,6 +3145,16 @@ useEffect(() => {
     setCompletionItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
   };
 
+  const updateCompletionItemNumberText = (id: string, key: "quantity" | "unitPrice" | "warrantyDays", value: string) => {
+    setCompletionItems(prev => prev.map(item => item.id === id ? { ...item, [key]: value } : item));
+  };
+
+  const blurCompletionItemNumber = (id: string, key: "quantity" | "unitPrice" | "warrantyDays", fallback = 0) => {
+    setCompletionItems(prev => prev.map(item => item.id === id ? { ...item, [key]: normalizeCompletionNumberInput(item[key], fallback) } : item));
+  };
+
+  const getHomeWarrantyTargetItems = (items = completionItems) =>
+    items.filter(item => item.source !== "home_warranty" && item.name.trim());
   const hasQrDraftData = (draft: CompletionQrDraft | undefined) =>
     Boolean(draft && (draft.qrCode.trim() || draft.serial.trim() || draft.uid.trim() || draft.installLocation.trim()));
 
@@ -3116,7 +3178,11 @@ useEffect(() => {
     setActiveCompletionQrEditor(current => current?.itemId === itemId ? null : current);
   };
 
-  const updateCompletionItemQuantity = (item: CompletionItem, nextValue: number) => {
+  const updateCompletionItemQuantity = (item: CompletionItem, nextValue: string) => {
+    if (nextValue === "") {
+      updateCompletionItem(item.id, { quantity: "" });
+      return;
+    }
     const nextQuantity = Math.max(1, Math.floor(Number(nextValue) || 1));
     if (isCameraCompletionItem(item)) {
       const drafts = completionQrDrafts[item.id] || [];
@@ -3126,7 +3192,7 @@ useEffect(() => {
         return;
       }
     }
-    updateCompletionItem(item.id, { quantity: nextQuantity });
+    updateCompletionItem(item.id, { quantity: String(nextQuantity) });
   };
 
   const removeCompletionQrDraft = (itemId: string, cameraIndex: number) => {
@@ -3171,6 +3237,13 @@ useEffect(() => {
     ]);
   };
 
+  const addHomeWarrantyCompletionItem = () => {
+    setCompletionItems(prev => {
+      const target = getHomeWarrantyTargetItems(prev)[0];
+      return [...prev, makeHomeWarrantyCompletionItem(activeJobToComplete?.service, target)];
+    });
+  };
+
   const updateInventoryCompletionProduct = (id: string, productId: string) => {
     const product = inventoryProducts.find(item => item.id === productId);
     clearCompletionQrDraftsForItem(id);
@@ -3213,52 +3286,70 @@ useEffect(() => {
 
   const createCustomerDevicesFromCompletion = async (job: WorkerJob, items: StoredCompletionItem[]) => {
     if (!worker?.id || !job.customer_id) return;
-    const cameraRows = items
-      .filter(isCameraCompletionItem)
-      .flatMap((item) => Array.from({ length: Math.max(0, Number(item.quantity) || 0) }, (_, index) => ({ item, index })));
-
-    if (cameraRows.length === 0) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     const installedAt = new Date().toISOString().slice(0, 10);
-    const rows = cameraRows.map(({ item, index: itemCameraIndex }, index) => {
-      const qrDraft = item.deviceQrDrafts?.[itemCameraIndex];
-      return {
-      worker_id: worker.id,
-      customer_id: job.customer_id,
-      job_id: job.id,
-      product_id: item.inventoryProductId || null,
-      product_name: item.name,
-      product_sku: item.sku || null,
-      category: item.category || null,
-      device_label: "Camera " + (index + 1),
-      device_index: index + 1,
-      installed_at: installedAt,
-      warranty_months: Math.max(0, Math.round((Number(item.warrantyDays) || 0) / 30)),
-      sale_price: Number(item.unitPrice) || 0,
-      cost_price: Number(item.costPrice) || 0,
-      qr_code: qrDraft?.qrCode?.trim() || null,
-      serial: qrDraft?.serial?.trim() || null,
-      uid: qrDraft?.uid?.trim() || null,
-      install_location: qrDraft?.installLocation?.trim() || null,
-      created_by: user?.id || null,
-    };
+    const warrantyRows = items.filter(item => item.source === "home_warranty" && item.targetCompletionItemId && item.homeWarrantyMonths);
+    const warrantyByTarget = new Map<string, StoredCompletionItem>();
+    warrantyRows.forEach(item => {
+      if (item.targetCompletionItemId) warrantyByTarget.set(item.targetCompletionItemId, item);
     });
 
-    const { error } = await supabase.from("worker_customer_devices").insert(rows);
+    const deviceRows = items
+      .filter(item => item.source !== "home_warranty" && (isCameraCompletionItem(item) || warrantyByTarget.has(item.draftItemId || "")))
+      .flatMap((item) => {
+        const homeWarranty = warrantyByTarget.get(item.draftItemId || "");
+        const warrantyQuantity = homeWarranty ? Math.max(1, Math.floor(Number(homeWarranty.quantity) || 1)) : 0;
+        const itemQuantity = Math.max(1, Math.floor(Number(item.quantity) || 1));
+        const rowCount = isCameraCompletionItem(item) ? itemQuantity : Math.max(itemQuantity, warrantyQuantity);
+        const homeWarrantyMonths = homeWarranty?.homeWarrantyMonths === 24 ? 24 : homeWarranty?.homeWarrantyMonths === 12 ? 12 : null;
+        const homeWarrantyStart = homeWarrantyMonths ? installedAt : null;
+        const homeWarrantyEnd = homeWarrantyMonths ? getHomeWarrantyEndDate(installedAt, homeWarrantyMonths) : null;
+
+        return Array.from({ length: rowCount }, (_, index) => {
+          const qrDraft = item.deviceQrDrafts?.[index];
+          const hasHomeWarranty = Boolean(homeWarrantyMonths && index < Math.max(1, warrantyQuantity));
+          return {
+            worker_id: worker.id,
+            customer_id: job.customer_id,
+            job_id: job.id,
+            product_id: item.inventoryProductId || null,
+            product_name: item.name,
+            product_sku: item.sku || null,
+            category: item.category || null,
+            device_label: isCameraCompletionItem(item) ? "Camera " + (index + 1) : (rowCount > 1 ? `${item.name} ${index + 1}` : item.name),
+            device_index: index + 1,
+            installed_at: installedAt,
+            warranty_months: Math.max(0, Math.round((Number(item.warrantyDays) || 0) / 30)),
+            home_warranty_months: hasHomeWarranty ? homeWarrantyMonths : 0,
+            home_warranty_start: hasHomeWarranty ? homeWarrantyStart : null,
+            home_warranty_end: hasHomeWarranty ? homeWarrantyEnd : null,
+            sale_price: Number(item.unitPrice) || 0,
+            cost_price: Number(item.costPrice) || 0,
+            qr_code: qrDraft?.qrCode?.trim() || null,
+            serial: qrDraft?.serial?.trim() || null,
+            uid: qrDraft?.uid?.trim() || null,
+            install_location: qrDraft?.installLocation?.trim() || null,
+            created_by: user?.id || null,
+          };
+        });
+      });
+
+    if (deviceRows.length === 0) return;
+
+    const { error } = await supabase.from("worker_customer_devices").insert(deviceRows);
     if (error) {
-      if (/worker_customer_devices|schema cache|Could not find|does not exist/i.test(error.message || "")) {
+      if (/worker_customer_devices|schema cache|Could not find|does not exist|home_warranty/i.test(error.message || "")) {
         console.warn("[customer-devices] missing schema", error);
         return;
       }
       throw new Error("Đã hoàn thành job nhưng chưa tạo được thiết bị khách hàng: " + error.message);
     }
   };
-
   const completionItemsTotal = completionItems.reduce((sum, item, index) => {
     if (isInternetCompletionJob && index === 0 && item.source !== "inventory") return sum;
-    const quantity = Number(item.quantity) || 0;
-    const unitPrice = Number(item.unitPrice) || 0;
+    const quantity = toCompletionNumber(item.quantity);
+    const unitPrice = toCompletionNumber(item.unitPrice);
     return sum + quantity * unitPrice;
   }, 0);
   const selectedInternetInstallFee = INTERNET_INSTALL_FEE_OPTIONS.includes(toMoneyNumber(completionInternetInstallFeeInput))
@@ -3286,7 +3377,7 @@ useEffect(() => {
         : toMoneyNumber(completionPaymentAmount);
   const completionRemainingAmount = Math.max(completionTotal - completionPaidAmount, 0);
   const hasCompletionExtraSale = completionItems.some((item, index) =>
-    (index > 0 || item.source === "inventory") && item.name.trim() && (Number(item.quantity) || 0) > 0
+    (index > 0 || item.source === "inventory") && item.name.trim() && toCompletionNumber(item.quantity) > 0
   );
   const completionWarrantyNote = hasCompletionExtraSale ? warrantyNote.trim() : "";
 
@@ -3601,20 +3692,24 @@ useEffect(() => {
       .map(item => ({
         draftItemId: item.id,
         name: item.name.trim(),
-        quantity: Number(item.quantity) || 0,
-        unitPrice: Number(item.unitPrice) || 0,
+        quantity: toCompletionNumber(item.quantity),
+        unitPrice: toCompletionNumber(item.unitPrice),
         costPrice: item.source === "inventory" ? Number(item.costPrice) || 0 : 0,
-        warrantyDays: Number(item.warrantyDays) || 0,
+        warrantyDays: toCompletionNumber(item.warrantyDays),
         inventoryProductId: item.inventoryProductId || null,
         sku: item.sku || null,
         category: item.category || null,
         unit: item.unit || null,
         source: item.source || "manual",
+        targetCompletionItemId: item.targetCompletionItemId || null,
+        targetDeviceLabel: item.targetDeviceLabel || null,
+        homeWarrantyMonths: item.homeWarrantyMonths || null,
       }))
       .filter(item => item.name && item.quantity > 0);
     const cleanedItems = completionItemsWithDraftIds.map(({ draftItemId: _draftItemId, ...item }) => item);
     const itemsForCustomerDevices = completionItemsWithDraftIds.map(({ draftItemId, ...item }) => ({
       ...item,
+      draftItemId,
       deviceQrDrafts: item.source === "inventory" && isCameraCompletionItem(item)
         ? (completionQrDrafts[draftItemId] || []).slice(0, Number(item.quantity) || 0).map(draft => ({
             qrCode: draft?.qrCode?.trim() || "",
@@ -3635,10 +3730,27 @@ useEffect(() => {
       return;
     }
 
+    if (cleanedItems.some(item => item.source === "home_warranty" && (!item.targetCompletionItemId || !item.homeWarrantyMonths))) {
+      showToast("Vui lòng chọn thiết bị và thời hạn cho bảo hành tại nhà.", "error");
+      return;
+    }
+
+    const todayForHomeWarranty = new Date().toISOString().slice(0, 10);
+    const cleanedItemsWithWarrantyDates = cleanedItems.map(item => {
+      if (item.source !== "home_warranty" || !item.homeWarrantyMonths) return item;
+      const months = item.homeWarrantyMonths === 24 ? 24 : 12;
+      return {
+        ...item,
+        homeWarrantyMonths: months,
+        homeWarrantyStart: todayForHomeWarranty,
+        homeWarrantyEnd: getHomeWarrantyEndDate(todayForHomeWarranty, months),
+      };
+    });
+
     setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
-    const financialItems = cleanedItems.filter((item, index) => !(isInternetCompletionJob && index === 0 && item.source !== "inventory"));
+    const financialItems = cleanedItemsWithWarrantyDates.filter((item, index) => !(isInternetCompletionJob && index === 0 && item.source !== "inventory"));
     const financials = calculateCompletionFinancials(financialItems, completionInternetInstallFee + completionInternetReceiptTotal);
     const finalAmount = financials.revenue;
     const paidAmount =
@@ -3769,7 +3881,7 @@ useEffect(() => {
         const { error: completeWithMaterialsError } = await supabase.rpc("complete_worker_job_with_materials", {
           p_job_id: job.id,
           p_images: imageUrls,
-          p_completion_items: cleanedItems,
+          p_completion_items: cleanedItemsWithWarrantyDates,
           p_final_amount: finalAmount,
           p_warranty_days: maxWarrantyDays,
           p_warranty_note: completionWarrantyNote,
@@ -3783,7 +3895,7 @@ useEffect(() => {
             body: JSON.stringify({
               jobId: job.id,
               images: imageUrls,
-              completionItems: cleanedItems,
+              completionItems: cleanedItemsWithWarrantyDates,
               finalAmount,
               warrantyDays: maxWarrantyDays,
               warrantyNote: completionWarrantyNote,
@@ -3805,7 +3917,7 @@ useEffect(() => {
         .update({
           status: 'completed',
           images: imageUrls,
-          completion_items: cleanedItems,
+          completion_items: cleanedItemsWithWarrantyDates,
           final_amount: finalAmount,
           warranty_days: maxWarrantyDays,
           warranty_note: completionWarrantyNote,
@@ -6506,8 +6618,8 @@ useEffect(() => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <label className="text-sm font-bold text-on-surface block">Nhân công và vật tư thực tế</label>
-                    <p className="text-xs text-on-surface-variant">Dòng nhân công tính theo đơn giá dịch vụ × số lượng thiết bị thực tế; vật tư chọn từ kho.</p>
+                    <label className="text-sm font-bold text-on-surface block">Nhân công, vật tư và bảo hành</label>
+                    <p className="text-xs text-on-surface-variant">Bảo hành tại nhà là dịch vụ bổ sung, không trừ kho.</p>
                   </div>
                   <button
                     type="button"
@@ -6516,6 +6628,14 @@ useEffect(() => {
                     disabled={uploadingImages}
                   >
                     Thêm vật tư
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addHomeWarrantyCompletionItem}
+                    className="shrink-0 rounded-lg border border-success/30 bg-success-container px-3 py-2 text-xs font-bold text-success disabled:opacity-50"
+                    disabled={uploadingImages}
+                  >
+                    + Thêm bảo hành tại nhà
                   </button>
                   <button
                     type="button"
@@ -6531,7 +6651,7 @@ useEffect(() => {
                   {completionItems.map((item, index) => (
                     <div key={item.id} className="rounded-xl border border-outline-variant/40 bg-white p-3 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold uppercase text-on-surface-variant">{item.source === "labor" ? "Nhân công" : item.source === "inventory" ? "Vật tư" : "Dòng " + (index + 1)}</span>
+                        <span className="text-xs font-bold uppercase text-on-surface-variant">{item.source === "labor" ? "Nhân công" : item.source === "inventory" ? "Vật tư" : item.source === "home_warranty" ? "Bảo hành tại nhà" : "Dòng " + (index + 1)}</span>
                         <button
                           type="button"
                           onClick={() => removeCompletionItem(item.id)}
@@ -6568,8 +6688,50 @@ useEffect(() => {
                         onChange={(e) => updateCompletionItem(item.id, { name: e.target.value })}
                         className="input-field"
                         placeholder="Tên hạng mục"
-                        disabled={uploadingImages || item.source === "inventory" || item.source === "labor"}
+                        disabled={uploadingImages || item.source === "inventory" || item.source === "labor" || item.source === "home_warranty"}
                       />
+                      {item.source === "home_warranty" && (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="grid gap-1 text-[10px] font-bold uppercase text-on-surface-variant">
+                            Thiết bị áp dụng
+                            <select
+                              className="input-field !py-2 text-sm normal-case"
+                              value={item.targetCompletionItemId || ""}
+                              onChange={(event) => {
+                                const target = getHomeWarrantyTargetItems().find(entry => entry.id === event.target.value);
+                                updateCompletionItem(item.id, {
+                                  targetCompletionItemId: target?.id || "",
+                                  targetDeviceLabel: target?.name || "",
+                                });
+                              }}
+                              disabled={uploadingImages}
+                            >
+                              <option value="">Chọn thiết bị/hạng mục</option>
+                              {getHomeWarrantyTargetItems().map(target => (
+                                <option key={target.id} value={target.id}>{target.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="grid gap-1 text-[10px] font-bold uppercase text-on-surface-variant">
+                            Thời hạn
+                            <select
+                              className="input-field !py-2 text-sm normal-case"
+                              value={item.homeWarrantyMonths || 12}
+                              onChange={(event) => {
+                                const months = Number(event.target.value) === 24 ? 24 : 12;
+                                updateCompletionItem(item.id, {
+                                  homeWarrantyMonths: months,
+                                  unitPrice: String(getHomeWarrantyServicePrice(activeJobToComplete?.service, months)),
+                                });
+                              }}
+                              disabled={uploadingImages}
+                            >
+                              <option value={12}>12 tháng</option>
+                              <option value={24}>24 tháng</option>
+                            </select>
+                          </label>
+                        </div>
+                      )}
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <label className="text-[10px] font-bold uppercase text-on-surface-variant">{item.source === "labor" ? "SL thiết bị" : "SL"}</label>
@@ -6579,7 +6741,8 @@ useEffect(() => {
                             max={item.source === "inventory" && item.inventoryProductId ? inventoryProducts.find(product => product.id === item.inventoryProductId)?.stock_quantity : undefined}
                             step="1"
                             value={item.quantity}
-                            onChange={(e) => updateCompletionItemQuantity(item, Number(e.target.value))}
+                            onChange={(e) => updateCompletionItemQuantity(item, e.target.value)}
+                            onBlur={() => blurCompletionItemNumber(item.id, "quantity", item.source === "home_warranty" ? 1 : 1)}
                             className="input-field mt-1 !px-3"
                             disabled={uploadingImages}
                           />
@@ -6591,22 +6754,35 @@ useEffect(() => {
                             min="0"
                             step="1000"
                             value={item.unitPrice}
-                            onChange={(e) => updateCompletionItem(item.id, { unitPrice: Number(e.target.value) })}
+                            onChange={(e) => updateCompletionItemNumberText(item.id, "unitPrice", e.target.value)}
+                            onBlur={() => blurCompletionItemNumber(item.id, "unitPrice", 0)}
                             className="input-field mt-1 !px-3"
                             disabled={uploadingImages}
                           />
                         </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase text-on-surface-variant">BH ngày</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={item.warrantyDays}
-                            onChange={(e) => updateCompletionItem(item.id, { warrantyDays: Number(e.target.value) })}
-                            className="input-field mt-1 !px-3"
-                            disabled={uploadingImages}
-                          />
+                                                <div>
+                          {item.source === "home_warranty" ? (
+                            <>
+                              <label className="text-[10px] font-bold uppercase text-on-surface-variant">Kỳ hạn</label>
+                              <div className="input-field mt-1 !px-3 text-sm font-bold text-primary-container">
+                                {item.homeWarrantyMonths || 12} tháng
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <label className="text-[10px] font-bold uppercase text-on-surface-variant">BH ngày</label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={item.warrantyDays}
+                                onChange={(e) => updateCompletionItemNumberText(item.id, "warrantyDays", e.target.value)}
+                                onBlur={() => blurCompletionItemNumber(item.id, "warrantyDays", 0)}
+                                className="input-field mt-1 !px-3"
+                                disabled={uploadingImages}
+                              />
+                            </>
+                          )}
                         </div>
                       </div>
                       {item.source === "inventory" && item.inventoryProductId && isCameraCompletionItem(item) && (
@@ -6672,7 +6848,7 @@ useEffect(() => {
                       )}
                       <div className="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2 text-xs">
                         <span className="font-semibold text-on-surface-variant">Thành tiền</span>
-                        <span className="font-bold text-primary-container">{formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</span>
+                        <span className="font-bold text-primary-container">{formatCurrency(toCompletionNumber(item.quantity) * toCompletionNumber(item.unitPrice))}</span>
                       </div>
                     </div>
                   ))}

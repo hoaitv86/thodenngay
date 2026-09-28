@@ -71,6 +71,8 @@ type ServiceItem = {
   name: string;
   description?: string | null;
   base_price?: number | string | null;
+  home_warranty_12m_price?: number | string | null;
+  home_warranty_24m_price?: number | string | null;
   icon?: string | null;
   is_active: boolean;
 };
@@ -79,6 +81,8 @@ type ServiceFormState = {
   name: string;
   description: string;
   base_price: string;
+  home_warranty_12m_price: string;
+  home_warranty_24m_price: string;
   icon: string;
   is_active: boolean;
   parent_service_id: string | null;
@@ -237,6 +241,8 @@ export default function AdminServices() {
     name: "",
     description: "",
     base_price: "0",
+    home_warranty_12m_price: "0",
+    home_warranty_24m_price: "0",
     icon: "WrenchIcon",
     is_active: true,
     parent_service_id: null
@@ -280,7 +286,7 @@ export default function AdminServices() {
 
     const { data } = await supabase
       .from('services')
-      .select('id, name, description, base_price, icon, is_active, parent_service_id, created_at, updated_at')
+      .select('id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, is_active, parent_service_id, created_at, updated_at')
       .order('name', { ascending: true });
     
     if (data) {
@@ -307,6 +313,8 @@ export default function AdminServices() {
       name: "",
       description: "",
       base_price: "0",
+      home_warranty_12m_price: "0",
+      home_warranty_24m_price: "0",
       icon: "WrenchIcon",
       is_active: true,
       parent_service_id: null
@@ -325,6 +333,8 @@ export default function AdminServices() {
       name: "",
       description: "",
       base_price: "0",
+      home_warranty_12m_price: "0",
+      home_warranty_24m_price: "0",
       icon: parentService.icon || "WrenchIcon",
       is_active: true,
       parent_service_id: parentService.id
@@ -339,6 +349,8 @@ export default function AdminServices() {
       name: "",
       description: "",
       base_price: childCategory.base_price != null && Number(childCategory.base_price) > 0 ? String(childCategory.base_price) : "",
+      home_warranty_12m_price: childCategory.home_warranty_12m_price != null ? String(childCategory.home_warranty_12m_price) : "0",
+      home_warranty_24m_price: childCategory.home_warranty_24m_price != null ? String(childCategory.home_warranty_24m_price) : "0",
       icon: childCategory.icon || "WrenchIcon",
       is_active: true,
       parent_service_id: childCategory.id
@@ -353,6 +365,8 @@ export default function AdminServices() {
       name: service.name || "",
       description: service.description || "",
       base_price: service.base_price != null ? String(service.base_price) : "",
+      home_warranty_12m_price: service.home_warranty_12m_price != null ? String(service.home_warranty_12m_price) : "0",
+      home_warranty_24m_price: service.home_warranty_24m_price != null ? String(service.home_warranty_24m_price) : "0",
       icon: service.icon || "WrenchIcon",
       is_active: service.is_active,
       parent_service_id: service.parent_service_id || null
@@ -371,6 +385,8 @@ export default function AdminServices() {
     const trimmedName = serviceForm.name.trim();
     const trimmedDescription = serviceForm.description.trim();
     const basePrice = Number(serviceForm.base_price);
+    const homeWarranty12mPrice = Number(serviceForm.home_warranty_12m_price || 0);
+    const homeWarranty24mPrice = Number(serviceForm.home_warranty_24m_price || 0);
     const parentServiceId = serviceForm.parent_service_id || null;
 
     const parentService = parentServiceId ? serviceById.get(parentServiceId) : null;
@@ -391,6 +407,11 @@ export default function AdminServices() {
       return;
     }
 
+    if (!Number.isFinite(homeWarranty12mPrice) || homeWarranty12mPrice < 0 || !Number.isFinite(homeWarranty24mPrice) || homeWarranty24mPrice < 0) {
+      alert("Giá bảo hành tại nhà không hợp lệ.");
+      return;
+    }
+
     if (editingService && parentServiceId === editingService.id) {
       alert("Danh mục không thể chọn chính nó làm danh mục cha.");
       return;
@@ -400,6 +421,8 @@ export default function AdminServices() {
       name: trimmedName,
       description: trimmedDescription,
       base_price: basePrice,
+      home_warranty_12m_price: homeWarranty12mPrice,
+      home_warranty_24m_price: homeWarranty24mPrice,
       icon: serviceForm.icon,
       is_active: serviceForm.is_active,
       parent_service_id: parentServiceId
@@ -411,14 +434,16 @@ export default function AdminServices() {
         name: payload.name,
         description: payload.description,
         base_price: payload.base_price,
+        home_warranty_12m_price: payload.home_warranty_12m_price,
+        home_warranty_24m_price: payload.home_warranty_24m_price,
         icon: payload.icon,
         is_active: payload.is_active,
       };
 
     setIsSubmitting(true);
     const { data: savedService, error } = editingService
-      ? await supabase.from('services').update(dbPayload).eq('id', editingService.id).select('id, name, description, base_price, icon, is_active, parent_service_id, created_at, updated_at').maybeSingle()
-      : await supabase.from('services').insert(dbPayload).select('id, name, description, base_price, icon, is_active, parent_service_id, created_at, updated_at').single();
+      ? await supabase.from('services').update(dbPayload).eq('id', editingService.id).select('id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, is_active, parent_service_id, created_at, updated_at').maybeSingle()
+      : await supabase.from('services').insert(dbPayload).select('id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, is_active, parent_service_id, created_at, updated_at').single();
 
     setIsSubmitting(false);
 
@@ -963,7 +988,32 @@ export default function AdminServices() {
                       onChange={e => setServiceForm({...serviceForm, base_price: e.target.value})}
                     />
                   </div>
-                )}
+                )}                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-2">
+                      <span className="text-sm font-bold text-on-surface">Bảo hành tại nhà 12 tháng (VNĐ)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        placeholder="VD: 150000"
+                        className="input-field"
+                        value={serviceForm.home_warranty_12m_price}
+                        onChange={e => setServiceForm({...serviceForm, home_warranty_12m_price: e.target.value})}
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-bold text-on-surface">Bảo hành tại nhà 24 tháng (VNĐ)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        placeholder="VD: 250000"
+                        className="input-field"
+                        value={serviceForm.home_warranty_24m_price}
+                        onChange={e => setServiceForm({...serviceForm, home_warranty_24m_price: e.target.value})}
+                      />
+                    </label>
+                  </div>
 
                 {formLevel < 2 && (
                   <input

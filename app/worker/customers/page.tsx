@@ -28,6 +28,9 @@ type CustomerDevice = {
   install_location?: string | null;
   installed_at?: string | null;
   warranty_months?: number | null;
+  home_warranty_months?: number | null;
+  home_warranty_start?: string | null;
+  home_warranty_end?: string | null;
 };
 
 type CustomerProfile = {
@@ -242,7 +245,7 @@ export default function WorkerCustomersPage() {
     let nextCustomers = buildCustomerSummaries(sourceJobs);
     const { data: devicesData, error: devicesError } = await supabase
       .from("worker_customer_devices")
-      .select("id, customer_id, device_label, product_name, product_sku, category, qr_code, serial, uid, install_location, installed_at, warranty_months")
+      .select("id, customer_id, device_label, product_name, product_sku, category, qr_code, serial, uid, install_location, installed_at, warranty_months, home_warranty_months, home_warranty_start, home_warranty_end")
       .eq("worker_id", workerData.id)
       .order("installed_at", { ascending: false });
 
@@ -486,6 +489,9 @@ export default function WorkerCustomersPage() {
                                 <p className="truncate text-sm font-extrabold text-on-surface">{device.device_label}</p>
                                 <p className="mt-1 truncate text-xs font-semibold text-on-surface-variant">{device.product_name}{device.product_sku ? " · " + device.product_sku : ""}</p>
                                 {device.qr_code && <p className="mt-1 text-xs font-bold text-success">Đã có QR</p>}
+                                {device.home_warranty_end && (
+                                  <p className="mt-1 text-xs font-bold text-primary-container">Bảo hành tại nhà đến {new Date(device.home_warranty_end).toLocaleDateString("vi-VN")}</p>
+                                )}
                               </div>
                               <button
                                 type="button"
