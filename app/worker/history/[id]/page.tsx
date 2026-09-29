@@ -73,6 +73,9 @@ type JobWorkflowData = Record<string, unknown> & {
   internetInstall?: Record<string, unknown>;
   billgoAddOn?: Record<string, unknown>;
   completionRunId?: string;
+  legacy_reopened?: boolean;
+  reopened_at?: string;
+  reopened_by?: string | null;
 };
 
 interface WorkerJobDetail {
@@ -208,6 +211,9 @@ export default function WorkerJobDetailPage() {
   const [revertModalOpen, setRevertModalOpen] = useState(false);
   const [revertingCompletion, setRevertingCompletion] = useState(false);
   const [revertFeedback, setRevertFeedback] = useState("");
+  const [legacyReopenModalOpen, setLegacyReopenModalOpen] = useState(false);
+  const [reopeningLegacyJob, setReopeningLegacyJob] = useState(false);
+  const [legacyReopenFeedback, setLegacyReopenFeedback] = useState("");
 
   useEffect(() => {
     const fetchJob = async () => {
@@ -906,6 +912,71 @@ export default function WorkerJobDetailPage() {
     setRevertModalOpen(false);
     setRevertingCompletion(false);
   };
+
+  const reopenLegacyJob = async () => {
+    if (!job || reopeningLegacyJob) return;
+    if (completionRunId) {
+      setLegacyReopenFeedback("Công việc này đã có dữ liệu hoàn tác, hãy dùng Hoàn tác hoàn thành.");
+      return;
+    }
+
+    setReopeningLegacyJob(true);
+    setLegacyReopenFeedback("");
+    const { data: { user } } = await supabase.auth.getUser();
+    const reopenedAt = new Date().toISOString();
+    const nextWorkflowData: JobWorkflowData = {
+      ...(job.workflow_data || {}),
+      legacy_reopened: true,
+      reopened_at: reopenedAt,
+      reopened_by: user?.id || null,
+    };
+
+    const { error: logError } = await supabase.from("job_logs").insert({
+      job_id: job.id,
+      actor_id: user?.id || null,
+      action: "legacy_job_reopened",
+      metadata: {
+        source: "worker_history_detail",
+        previous_status: job.status || "completed",
+        next_status: "in_progress",
+        reopened_at: reopenedAt,
+      },
+    });
+
+    if (logError) {
+      setLegacyReopenFeedback("Không thể ghi nhật ký mở lại công việc: " + logError.message);
+      setReopeningLegacyJob(false);
+      return;
+    }
+
+    const { data: updatedJob, error } = await supabase
+      .from("jobs")
+      .update({
+        status: "in_progress",
+        workflow_data: nextWorkflowData,
+      })
+      .eq("id", job.id)
+      .in("status", ["completed", "done"])
+      .select("status, workflow_data, updated_at")
+      .maybeSingle();
+
+    if (error || !updatedJob) {
+      setLegacyReopenFeedback(error?.message || "Không thể mở lại công việc cũ.");
+      setReopeningLegacyJob(false);
+      return;
+    }
+
+    setJob(current => current ? {
+      ...current,
+      status: updatedJob.status || "in_progress",
+      workflow_data: (updatedJob.workflow_data || nextWorkflowData) as JobWorkflowData,
+      updated_at: updatedJob.updated_at || reopenedAt,
+    } : current);
+    setDetailMessage("Đã mở lại công việc cũ. Dữ liệu lịch sử được giữ nguyên; hoàn thành lại đang bị chặn cho đến khi có cơ chế tách dữ liệu cũ/mới an toàn.");
+    setLegacyReopenModalOpen(false);
+    setReopeningLegacyJob(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -936,6 +1007,7 @@ export default function WorkerJobDetailPage() {
   const isCompleted = job.status === 'completed' || job.status === 'done';
   const completionRunId = typeof job.workflow_data?.completionRunId === "string" ? job.workflow_data.completionRunId : "";
   const canRevertCompletion = isCompleted && Boolean(completionRunId);
+  const canReopenLegacyJob = isCompleted && !completionRunId;
   const customerName = Array.isArray(job.customer) ? job.customer[0]?.full_name : job.customer?.full_name;
   const customerPhone = Array.isArray(job.customer) ? job.customer[0]?.phone : job.customer?.phone;
   const customerAddress = Array.isArray(job.customer) ? job.customer[0]?.address : job.customer?.address;
@@ -1266,14 +1338,16 @@ export default function WorkerJobDetailPage() {
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setRevertFeedback(canRevertCompletion ? "" : "Công việc cũ chưa có dữ liệu theo dõi hoàn tác nên không thể hoàn tác tự động.");
+                    setRevertFeedback("");
+                    setLegacyReopenFeedback("");
                     if (canRevertCompletion) setRevertModalOpen(true);
+                    else if (canReopenLegacyJob) setLegacyReopenModalOpen(true);
                   }}
-                  className={`inline-flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-error/30 bg-error-container px-2 py-2 text-center text-[11px] font-bold leading-tight text-on-error-container transition-colors hover:bg-error-container/80 sm:px-3 sm:text-xs ${canRevertCompletion ? "" : "opacity-60"}`}
-                  aria-disabled={!canRevertCompletion}
-                  title={canRevertCompletion ? "Hoàn tác hoàn thành" : "Công việc cũ chưa có dữ liệu theo dõi hoàn tác"}
+                  className={`inline-flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-error/30 bg-error-container px-2 py-2 text-center text-[11px] font-bold leading-tight text-on-error-container transition-colors hover:bg-error-container/80 sm:px-3 sm:text-xs ${canRevertCompletion || canReopenLegacyJob ? "" : "opacity-60"}`}
+                  aria-disabled={!canRevertCompletion && !canReopenLegacyJob}
+                  title={canRevertCompletion ? "Hoàn tác hoàn thành" : "Mở lại công việc cũ"}
                 >
-                  <span className="truncate">↩ Hoàn tác</span>
+                  <span className="truncate">↩ {canRevertCompletion ? "Hoàn tác" : "Mở lại"}</span>
                 </button>
                 <button
                   type="button"
@@ -1541,6 +1615,54 @@ export default function WorkerJobDetailPage() {
                   disabled={revertingCompletion}
                 >
                   {revertingCompletion ? "Đang hoàn tác..." : "Hoàn tác hoàn thành"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {legacyReopenModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
+            <div className="w-full rounded-t-2xl bg-white p-4 shadow-2xl sm:max-w-md sm:rounded-2xl sm:p-5">
+              <div className="flex items-start justify-between gap-3 border-b border-outline-variant/20 pb-3">
+                <div>
+                  <h3 className="text-lg font-extrabold text-on-surface">Mở lại công việc cũ?</h3>
+                  <p className="mt-2 whitespace-pre-line text-sm font-semibold text-on-surface-variant">
+                    Công việc này được hoàn thành trước khi có chức năng Hoàn tác.{"\n"}Mở lại chỉ thay đổi trạng thái công việc.{"\n"}Các dữ liệu đã phát sinh trước đây sẽ được giữ nguyên.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLegacyReopenModalOpen(false)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-outline-variant/30 text-on-surface-variant"
+                  aria-label="Đóng"
+                  disabled={reopeningLegacyJob}
+                >
+                  <XIcon size={18} />
+                </button>
+              </div>
+
+              {legacyReopenFeedback && (
+                <div className="mt-4 rounded-xl border border-error/20 bg-error-container/60 p-3 text-sm font-semibold text-on-error-container">
+                  {legacyReopenFeedback}
+                </div>
+              )}
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setLegacyReopenModalOpen(false)}
+                  className="rounded-xl border border-outline-variant/35 bg-white px-4 py-3 text-sm font-bold text-on-surface"
+                  disabled={reopeningLegacyJob}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={reopenLegacyJob}
+                  className="rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                  disabled={reopeningLegacyJob}
+                >
+                  {reopeningLegacyJob ? "Đang mở lại..." : "Mở lại"}
                 </button>
               </div>
             </div>

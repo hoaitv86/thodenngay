@@ -205,6 +205,8 @@ interface WorkerJob {
   [key: string]: unknown;
 }
 
+const isLegacyReopenedJob = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
+  Boolean((job?.workflow_data as { legacy_reopened?: unknown } | null | undefined)?.legacy_reopened);
 type WorkerDashboardJobQueryResult = {
   data: WorkerJob[] | null;
   error: { message: string } | null;
@@ -3102,6 +3104,10 @@ useEffect(() => {
   };
 
   const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
+    if (isLegacyReopenedJob(job)) {
+      showToast("Công việc cũ đã mở lại đang bị chặn hoàn thành lại để tránh trừ kho, cộng doanh thu hoặc tạo thiết bị trùng.", "error");
+      return;
+    }
     const workflowBillGo = job.workflow_data?.billgo as { cycle?: BillGoCycle; amount?: number | string } | undefined;
     const isInternetInstallJob = isInternetInstallCompletionJob(job);
     setActiveJobToComplete(job);
@@ -3758,6 +3764,10 @@ useEffect(() => {
 
   const handleConfirmCompleteJob = async () => {
     if (!activeJobToComplete) return;
+    if (isLegacyReopenedJob(activeJobToComplete)) {
+      showToast("Không thể hoàn thành lại công việc cũ đã mở lại cho tới khi có cơ chế tách dữ liệu cũ/mới an toàn.", "error");
+      return;
+    }
 
     const completionItemsWithDraftIds = completionItems
       .map(item => ({
@@ -4414,7 +4424,8 @@ useEffect(() => {
                   const isPendingJob = pendingApprovalJobs.some(item => item.id === job.id);
                   const statusLabel = isNewJob ? "Mới" : isPendingJob ? "Chờ duyệt" : job.status === "in_progress" ? "Đang làm" : "Đã nhận";
                   const statusClass = isNewJob ? "bg-error text-white" : isPendingJob ? "bg-warning text-white" : "bg-primary-fixed text-primary";
-                  const isCompletableJob = !isNewJob && !isPendingJob && ["assigned", "in_progress"].includes(String(job.status));
+                  const isLegacyReopened = isLegacyReopenedJob(job);
+                  const isCompletableJob = !isNewJob && !isPendingJob && !isLegacyReopened && ["assigned", "in_progress"].includes(String(job.status));
                   const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
                   const inlineCustomerName = job.customerName || customer?.full_name || "Khách hàng";
                   const inlineJobTitle = getDashboardInlineJobTitle(job, services);
@@ -4474,6 +4485,10 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={() => {
+                            if (isLegacyReopened) {
+                              showToast("Công việc cũ đã mở lại đang bị chặn hoàn thành lại để tránh tạo dữ liệu trùng.", "error");
+                              return;
+                            }
                             if (!isCompletableJob) {
                               showToast("Chỉ hoàn thành công việc đã nhận hoặc đang làm.", "info");
                               return;
@@ -4482,9 +4497,10 @@ useEffect(() => {
                           }}
                           className={"inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isCompletableJob ? "bg-success text-white" : "bg-surface-container text-on-surface-variant")}
                           aria-disabled={!isCompletableJob}
+                          title={isLegacyReopened ? "Đang chặn hoàn thành lại để tránh phát sinh dữ liệu trùng" : undefined}
                         >
                           <span aria-hidden="true">✓</span>
-                          Hoàn thành
+                          {isLegacyReopened ? "Đang chặn" : "Hoàn thành"}
                         </button>
                       </div>
                     </div>
@@ -5330,6 +5346,7 @@ useEffect(() => {
               {activeJobs.map(job => {
                 const detailOptions = getTechnicalDetailOptions(job.service_id);
                 const selectedDetailName = getServiceName(job.service_detail_id);
+                const isLegacyReopened = isLegacyReopenedJob(job);
                 return (
                   <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
                     <div className="flex items-center justify-between gap-3 border-b border-success/20 bg-success-container px-4 py-3">
@@ -5402,9 +5419,11 @@ useEffect(() => {
                         </button>
                         <button
                           onClick={() => triggerCompleteJob(job)}
-                          className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
+                          className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
+                          aria-disabled={isLegacyReopened}
+                          title={isLegacyReopened ? "Đang chặn hoàn thành lại để tránh phát sinh dữ liệu trùng" : undefined}
                         >
-                          Hoàn thành Job
+                          {isLegacyReopened ? "Đang chặn hoàn thành lại" : "Hoàn thành Job"}
                         </button>
                       </div>
                     </div>
@@ -5912,6 +5931,7 @@ useEffect(() => {
           activeJobs.map(job => {
             const detailOptions = getTechnicalDetailOptions(job.service_id);
             const selectedDetailName = getServiceName(job.service_detail_id);
+            const isLegacyReopened = isLegacyReopenedJob(job);
 
             return (
             <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
@@ -6035,9 +6055,11 @@ useEffect(() => {
                 </button>
                 <button
                   onClick={() => triggerCompleteJob(job)}
-                  className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
+                  className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
+                  aria-disabled={isLegacyReopened}
+                  title={isLegacyReopened ? "Đang chặn hoàn thành lại để tránh phát sinh dữ liệu trùng" : undefined}
                 >
-                  Hoàn thành Job
+                  {isLegacyReopened ? "Đang chặn hoàn thành lại" : "Hoàn thành Job"}
                 </button>
               </div>
               </div>
