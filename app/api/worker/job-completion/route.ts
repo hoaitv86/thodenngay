@@ -29,6 +29,7 @@ type CompleteJobRequest = {
   warrantyNote?: string;
   materialItems?: CompletionMaterialItem[];
   financials?: JobFinancials;
+  completionRunId?: string;
 };
 
 const jsonError = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
     const warrantyDays = Number(body.warrantyDays || 0);
     const warrantyNote = (body.warrantyNote || "").trim();
     const requestedFinancials = body.financials || {};
+    const completionRunId = (body.completionRunId || "").trim() || null;
 
     if (!jobId) return jsonError("Thiếu mã công việc.");
     if (completionItems.length === 0) return jsonError("Vui lòng nhập hạng mục hoàn thành.");
@@ -136,6 +138,7 @@ export async function POST(request: Request) {
         worker_id: visibleJob.worker_id,
         customer_id: visibleJob.customer_id,
         job_id: jobId,
+        completion_run_id: completionRunId,
         sale_code: saleCode,
         total_amount: 0,
         note: "Vat tu su dung cho cong viec",
@@ -211,6 +214,7 @@ export async function POST(request: Request) {
             sales_order_id: order.id,
             sales_order_item_id: orderItem.id,
             job_id: jobId,
+            completion_run_id: completionRunId,
             product_id: product.id,
             product_name: product.name,
             product_sku: product.sku,
@@ -252,6 +256,7 @@ export async function POST(request: Request) {
         warranty_note: warrantyNote || null,
         workflow_data: {
           ...((visibleJob.workflow_data || {}) as Record<string, unknown>),
+          completionRunId,
           financials,
         },
       })
@@ -272,6 +277,7 @@ export async function POST(request: Request) {
           material_count: materialItems.length,
           material_cost: materialCost,
           gross_profit: financials.grossProfit,
+          completion_run_id: completionRunId,
           source: "worker_job_completion_api_fallback",
         },
       });

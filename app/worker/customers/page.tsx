@@ -245,7 +245,7 @@ export default function WorkerCustomersPage() {
     let nextCustomers = buildCustomerSummaries(sourceJobs);
     const { data: devicesData, error: devicesError } = await supabase
       .from("worker_customer_devices")
-      .select("id, customer_id, device_label, product_name, product_sku, category, qr_code, serial, uid, install_location, installed_at, warranty_months, home_warranty_months, home_warranty_start, home_warranty_end")
+      .select("id, customer_id, device_label, product_name, product_sku, category, qr_code, serial, uid, install_location, installed_at, warranty_months, home_warranty_months, home_warranty_start, home_warranty_end, reverted_at")
       .eq("worker_id", workerData.id)
       .order("installed_at", { ascending: false });
 

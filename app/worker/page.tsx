@@ -144,7 +144,7 @@ type QuickCustomerOption = {
 
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
 const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
-const WORKER_DASHBOARD_JOB_BASE_SELECT = "id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data";
+const WORKER_DASHBOARD_JOB_BASE_SELECT = "id, worker_id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data";
 const WORKER_DASHBOARD_JOB_RELATION_SELECT = "service:services!jobs_service_id_fkey(id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
 const WORKER_DASHBOARD_JOB_ATTACHMENTS_SELECT = "task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at)";
 const WORKER_DASHBOARD_JOB_PAYMENTS_SELECT = "payments(id, amount, method, status, paid_at, note)";
@@ -156,6 +156,7 @@ const WORKER_DASHBOARD_JOB_WITH_SERVICES_SELECT_WITHOUT_ATTACHMENTS = `${WORKER_
 
 interface WorkerJob {
   id: string;
+  worker_id?: string | null;
   service_id?: string | null;
   service_detail_id?: string | null;
   job_code?: string;
@@ -3284,7 +3285,7 @@ useEffect(() => {
     setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id && item.source !== "labor") : prev);
   };
 
-  const createCustomerDevicesFromCompletion = async (job: WorkerJob, items: StoredCompletionItem[]) => {
+  const createCustomerDevicesFromCompletion = async (job: WorkerJob, items: StoredCompletionItem[], completionRunId: string) => {
     if (!worker?.id || !job.customer_id) return;
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -3306,12 +3307,40 @@ useEffect(() => {
             home_warranty_months: months,
             home_warranty_start: installedAt,
             home_warranty_end: getHomeWarrantyEndDate(installedAt, months),
+            completion_run_id: completionRunId,
           },
         };
       })
       .filter(update => update.deviceId);
 
     for (const update of existingWarrantyUpdates) {
+      const { data: existingDevice, error: existingDeviceError } = await supabase
+        .from("worker_customer_devices")
+        .select("id, qr_code, serial, uid, install_location, home_warranty_months, home_warranty_start, home_warranty_end, completion_run_id")
+        .eq("id", update.deviceId)
+        .eq("worker_id", worker.id)
+        .eq("customer_id", job.customer_id)
+        .maybeSingle();
+
+      if (existingDeviceError) {
+        throw new Error("Đã hoàn thành job nhưng chưa đọc được thiết bị để lưu snapshot hoàn tác: " + existingDeviceError.message);
+      }
+
+      if (existingDevice?.id) {
+        const { error: snapshotError } = await supabase
+          .from("job_completion_run_device_snapshots")
+          .insert({
+            completion_run_id: completionRunId,
+            job_id: job.id,
+            device_id: existingDevice.id,
+            previous_data: existingDevice,
+          });
+
+        if (snapshotError) {
+          throw new Error("Đã hoàn thành job nhưng chưa lưu được snapshot thiết bị để hoàn tác: " + snapshotError.message);
+        }
+      }
+
       const { error } = await supabase
         .from("worker_customer_devices")
         .update(update.payload)
@@ -3341,6 +3370,7 @@ useEffect(() => {
             worker_id: worker.id,
             customer_id: job.customer_id,
             job_id: job.id,
+            completion_run_id: completionRunId,
             product_id: item.inventoryProductId || null,
             product_name: item.name,
             product_sku: item.sku || null,
@@ -3501,7 +3531,8 @@ useEffect(() => {
       packageName?: string | null;
       packageType?: string | null;
       provider?: string | null;
-    }
+    },
+    completionRunId?: string
   ) => {
     const billgo = billgoOverride || job.workflow_data?.billgo;
     if (!billgo || typeof billgo !== "object" || !worker?.id || !job.customer_id) return false;
@@ -3529,6 +3560,7 @@ useEffect(() => {
       .from("billgo_subscriptions")
       .select("id")
       .eq("job_id", job.id)
+      .neq("status", "deleted")
       .maybeSingle();
 
     let subscriptionId = existingSubscription?.id || null;
@@ -3539,6 +3571,8 @@ useEffect(() => {
           customer_id: job.customer_id,
           worker_id: worker.id,
           job_id: job.id,
+          completion_run_id: completionRunId || null,
+
           service_id: job.service_id || null,
           customer_name: job.customerName || job.customer?.full_name || null,
           phone: job.customer?.phone || null,
@@ -3572,6 +3606,7 @@ useEffect(() => {
       .select("id")
       .eq("job_id", job.id)
       .eq("type", "subscription_fee")
+      .is("deleted_at", null)
       .maybeSingle();
 
     if (existingReceivable) return false;
@@ -3580,6 +3615,8 @@ useEffect(() => {
       customer_id: job.customer_id,
       worker_id: worker.id,
       job_id: job.id,
+      completion_run_id: completionRunId || null,
+
       subscription_id: subscriptionId,
       type: "subscription_fee",
       package_id: billgoData.packageId || null,
@@ -3608,7 +3645,7 @@ useEffect(() => {
     return true;
   };
 
-  const ensureBillGoAddOnFromCompletion = async (job: WorkerJob) => {
+  const ensureBillGoAddOnFromCompletion = async (job: WorkerJob, completionRunId?: string) => {
     if (!selectedCompletionAddOnPackage || !worker?.id || !job.customer_id) return;
 
     const allowedCycles = new Set([
@@ -3630,6 +3667,7 @@ useEffect(() => {
       .eq("job_id", job.id)
       .eq("package_id", selectedCompletionAddOnPackage.id)
       .eq("type", "subscription_fee")
+      .is("deleted_at", null)
       .maybeSingle();
 
     if (existingReceivable) return;
@@ -3652,6 +3690,8 @@ useEffect(() => {
         customer_id: job.customer_id,
         worker_id: worker.id,
         job_id: job.id,
+          completion_run_id: completionRunId || null,
+
         service_id: job.service_id || null,
         customer_name: job.customerName || job.customer?.full_name || null,
         phone: job.customer?.phone || null,
@@ -3682,6 +3722,8 @@ useEffect(() => {
       customer_id: job.customer_id,
       worker_id: worker.id,
       job_id: job.id,
+      completion_run_id: completionRunId || null,
+
       subscription_id: subscription.id,
       type: "subscription_fee",
       package_id: selectedCompletionAddOnPackage.id,
@@ -3882,7 +3924,38 @@ useEffect(() => {
       return;
     }
 
+    let completionRunId: string | null = null;
+    let jobMarkedCompleted = false;
+
     try {
+      const { data: { user: completionUser } } = await supabase.auth.getUser();
+      const previousJobSnapshot = {
+        status: job.status || "in_progress",
+        images: job.images || [],
+        completion_items: job.completion_items || [],
+        final_amount: job.final_amount ?? null,
+        warranty_days: job.warranty_days ?? null,
+        warranty_note: job.warranty_note ?? null,
+        workflow_data: job.workflow_data || {},
+      };
+      const { data: completionRun, error: completionRunError } = await supabase
+        .from("job_completion_runs")
+        .insert({
+          job_id: job.id,
+          worker_id: job.worker_id || worker?.id,
+          completed_by: completionUser?.id || null,
+          previous_status: job.status || "in_progress",
+          previous_job_snapshot: previousJobSnapshot,
+        })
+        .select("id")
+        .single();
+
+      if (completionRunError || !completionRun?.id) {
+        throw new Error("Không thể tạo phiên hoàn thành để theo dõi hoàn tác: " + (completionRunError?.message || "Không xác định"));
+      }
+      const activeCompletionRunId = completionRun.id;
+      completionRunId = activeCompletionRunId;
+
       // 1. Upload images to Supabase Storage if any are selected
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
@@ -3915,6 +3988,7 @@ useEffect(() => {
           p_warranty_days: maxWarrantyDays,
           p_warranty_note: completionWarrantyNote,
           p_material_items: buildSalesRpcItems(materialDraftItems),
+          p_completion_run_id: activeCompletionRunId,
         });
 
         if (completeWithMaterialsError) {
@@ -3930,6 +4004,8 @@ useEffect(() => {
               warrantyNote: completionWarrantyNote,
               materialItems: buildSalesRpcItems(materialDraftItems),
               financials,
+              completionRunId: activeCompletionRunId,
+
             }),
           });
           const fallbackData = await fallbackResponse.json().catch(() => ({}));
@@ -3939,6 +4015,8 @@ useEffect(() => {
           }
         }
       }
+
+      if (materialDraftItems.length > 0) jobMarkedCompleted = true;
 
       // 2. Update job status to completed & save images
       const { data: updatedJobs, error: updateError } = await supabase
@@ -3952,6 +4030,7 @@ useEffect(() => {
           warranty_note: completionWarrantyNote,
           workflow_data: {
             ...(job.workflow_data || {}),
+            completionRunId: activeCompletionRunId,
             ...handoverWorkflowData,
             financials,
             payment: {
@@ -4003,6 +4082,9 @@ useEffect(() => {
         throw new Error("Cập nhật thất bại. Vui lòng kiểm tra chính sách bảo mật RLS hoặc cấu trúc bảng của dữ liệu.");
       }
 
+
+      jobMarkedCompleted = true;
+
       let billGoChanged = false;
       if (addToBillGo || (isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0)) {
         const createdBillGo = await ensureBillGoFromWorkflow(job, isInternetCompletionJob && completionInternetMonthlyFeeNumber > 0 ? {
@@ -4012,12 +4094,12 @@ useEffect(() => {
           packageName: job.serviceName || "Cước Internet",
           packageType: "internet",
           note: "Cước Internet lắp mới",
-        } : undefined);
+        } : undefined, activeCompletionRunId);
         billGoChanged = Boolean(createdBillGo);
       }
 
       if (selectedCompletionAddOnPackage) {
-        await ensureBillGoAddOnFromCompletion(job);
+        await ensureBillGoAddOnFromCompletion(job, activeCompletionRunId);
         billGoChanged = true;
       }
 
@@ -4027,6 +4109,8 @@ useEffect(() => {
           .from("payments")
           .insert({
             job_id: job.id,
+            completion_run_id: activeCompletionRunId,
+
             amount: amountToRecord,
             method: completionPaymentMethod,
             status: "paid",
@@ -4040,7 +4124,7 @@ useEffect(() => {
         }
       }
 
-      await createCustomerDevicesFromCompletion(job, itemsForCustomerDevices);
+      await createCustomerDevicesFromCompletion(job, itemsForCustomerDevices, activeCompletionRunId);
 
       void fetch("/api/notifications/event", {
         method: "POST",
@@ -4091,6 +4175,14 @@ useEffect(() => {
       setCompletionAddOnNote("");
       setAddToBillGo(false);
     } catch (err: unknown) {
+      if (completionRunId && !jobMarkedCompleted) {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase
+          .from("job_completion_runs")
+          .update({ status: "reverted", reverted_at: new Date().toISOString(), reverted_by: user?.id || null })
+          .eq("id", completionRunId)
+          .eq("status", "completed");
+      }
       showToast(err instanceof Error ? err.message : "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
       console.error(err);
     } finally {
