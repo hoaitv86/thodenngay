@@ -1259,33 +1259,41 @@ export default function WorkerJobDetailPage() {
         {/* Invoice & Warranty */}
         {isCompleted && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-label-sm font-bold text-on-surface-variant uppercase tracking-widest">Hóa đơn & bảo hành</h3>
-              <div className="no-print flex shrink-0 items-center gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-label-sm font-bold uppercase tracking-widest text-on-surface-variant">Hóa đơn & bảo hành</h3>
+              <div className="no-print grid w-full min-w-0 grid-cols-3 gap-2 sm:w-auto sm:min-w-[18rem]">
                 <button
                   type="button"
-                  onClick={() => {
-                    setRevertFeedback(completionRunId ? "" : "Công việc cũ chưa có dữ liệu theo dõi hoàn tác nên không thể hoàn tác tự động.");
-                    if (completionRunId) setRevertModalOpen(true);
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setRevertFeedback(canRevertCompletion ? "" : "Công việc cũ chưa có dữ liệu theo dõi hoàn tác nên không thể hoàn tác tự động.");
+                    if (canRevertCompletion) setRevertModalOpen(true);
                   }}
-                  className="rounded-lg border border-error/30 bg-error-container px-3 py-2 text-xs font-bold text-on-error-container transition-colors hover:bg-error-container/80 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={!canRevertCompletion}
+                  className={`inline-flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-error/30 bg-error-container px-2 py-2 text-center text-[11px] font-bold leading-tight text-on-error-container transition-colors hover:bg-error-container/80 sm:px-3 sm:text-xs ${canRevertCompletion ? "" : "opacity-60"}`}
+                  aria-disabled={!canRevertCompletion}
+                  title={canRevertCompletion ? "Hoàn tác hoàn thành" : "Công việc cũ chưa có dữ liệu theo dõi hoàn tác"}
                 >
-                  ↩ Hoàn tác hoàn thành
+                  <span className="truncate">↩ Hoàn tác</span>
                 </button>
                 <button
                   type="button"
-                  onClick={openEditReceipt}
-                  className="rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEditReceipt();
+                  }}
+                  className="inline-flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-outline-variant/40 bg-white px-2 py-2 text-center text-[11px] font-bold leading-tight text-on-surface transition-colors hover:bg-surface-container-low sm:px-3 sm:text-xs"
                 >
-                  Sửa phiếu
+                  <span className="truncate">Sửa</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    window.print();
+                  }}
+                  className="inline-flex min-h-11 min-w-0 items-center justify-center rounded-lg border border-primary-container/30 bg-primary-fixed px-2 py-2 text-center text-[11px] font-bold leading-tight text-primary-container sm:px-3 sm:text-xs"
                 >
-                  In / Xuất hóa đơn
+                  <span className="truncate">In</span>
                 </button>
               </div>
             </div>
