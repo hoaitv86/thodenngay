@@ -205,8 +205,23 @@ interface WorkerJob {
   [key: string]: unknown;
 }
 
+const getLegacyReopenWorkflow = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
+  (job?.workflow_data || {}) as WorkflowData & {
+    legacy_reopened?: unknown;
+    legacy_reopen_baseline?: LegacyReopenBaseline;
+  };
+
+const getLegacyReopenBaseline = (job?: Pick<WorkerJob, "workflow_data"> | null) => {
+  const workflow = getLegacyReopenWorkflow(job);
+  if (!workflow.legacy_reopened || workflow.legacy_reopen_baseline?.version !== 1) return null;
+  return workflow.legacy_reopen_baseline;
+};
+
 const isLegacyReopenedJob = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
-  Boolean((job?.workflow_data as { legacy_reopened?: unknown } | null | undefined)?.legacy_reopened);
+  Boolean(getLegacyReopenWorkflow(job).legacy_reopened);
+
+const hasValidLegacyReopenBaseline = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
+  Boolean(getLegacyReopenBaseline(job));
 type WorkerDashboardJobQueryResult = {
   data: WorkerJob[] | null;
   error: { message: string } | null;
@@ -365,6 +380,20 @@ type StoredCompletionItem = {
   deviceQrDrafts?: CompletionQrDraft[];
 };
 
+type LegacyReopenBaseline = {
+  version?: number;
+  completionItems?: StoredCompletionItem[];
+  finalAmount?: number;
+  materialQuantities?: Record<string, number>;
+  paidAmount?: number;
+  paymentIds?: string[];
+  salesOrderIds?: string[];
+  deviceIds?: string[];
+  deviceKeys?: string[];
+  warrantyIds?: string[];
+  billGoSubscriptionIds?: string[];
+  billGoReceivableIds?: string[];
+};
 type JobFinancials = {
   laborRevenue: number;
   materialRevenue: number;
@@ -835,6 +864,24 @@ const normalizeBusinessKeyword = (value: string | null | undefined) =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/đ/g, "d");
 
+const getDeltaInventoryCompletionItems = <T extends { source?: string; inventoryProductId?: string | null; quantity: number; deviceQrDrafts?: CompletionQrDraft[] }>(items: T[], baseline?: LegacyReopenBaseline | null): T[] => {
+  if (!baseline) return items;
+  const remainingBaseline = { ...(baseline.materialQuantities || {}) };
+  return items.flatMap(item => {
+    if (item.source !== "inventory" || !item.inventoryProductId) return [item];
+    const quantity = Math.max(0, Number(item.quantity || 0));
+    const baselineQuantity = Math.max(0, Number(remainingBaseline[item.inventoryProductId] || 0));
+    const consumedFromThisItem = Math.min(quantity, baselineQuantity);
+    remainingBaseline[item.inventoryProductId] = Math.max(0, baselineQuantity - quantity);
+    const deltaQuantity = quantity - consumedFromThisItem;
+    if (deltaQuantity <= 0) return [];
+    return [{
+      ...item,
+      quantity: deltaQuantity,
+      deviceQrDrafts: item.deviceQrDrafts?.slice(Math.floor(consumedFromThisItem), Math.floor(quantity)),
+    }];
+  });
+};
 const isCameraCompletionItem = (item: { name?: string | null; category?: string | null; source?: "manual" | "inventory" | "labor" | "home_warranty" }) => {
   if (item.source !== "inventory") return false;
   const category = normalizeBusinessKeyword(item.category);
@@ -1249,6 +1296,7 @@ export default function WorkerDashboard() {
   const [cancelReason, setCancelReason] = useState("Khách hàng từ chối lắp đặt/sửa chữa");
   const [requestingCancel, setRequestingCancel] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const completionSubmitInFlightRef = React.useRef(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [completionItems, setCompletionItems] = useState<CompletionItem[]>([]);
@@ -3104,8 +3152,8 @@ useEffect(() => {
   };
 
   const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
-    if (isLegacyReopenedJob(job)) {
-      showToast("Công việc cũ đã mở lại đang bị chặn hoàn thành lại để tránh trừ kho, cộng doanh thu hoặc tạo thiết bị trùng.", "error");
+    if (isLegacyReopenedJob(job) && !hasValidLegacyReopenBaseline(job)) {
+      showToast("Công việc cũ đã mở lại nhưng thiếu baseline an toàn. Vui lòng mở lại từ màn Lịch sử để chụp baseline trước khi hoàn thành.", "error");
       return;
     }
     const workflowBillGo = job.workflow_data?.billgo as { cycle?: BillGoCycle; amount?: number | string } | undefined;
@@ -3763,12 +3811,13 @@ useEffect(() => {
   };
 
   const handleConfirmCompleteJob = async () => {
-    if (!activeJobToComplete) return;
-    if (isLegacyReopenedJob(activeJobToComplete)) {
-      showToast("Không thể hoàn thành lại công việc cũ đã mở lại cho tới khi có cơ chế tách dữ liệu cũ/mới an toàn.", "error");
+    if (!activeJobToComplete || uploadingImages || completionSubmitInFlightRef.current) return;
+    if (isLegacyReopenedJob(activeJobToComplete) && !hasValidLegacyReopenBaseline(activeJobToComplete)) {
+      showToast("Không thể hoàn thành lại công việc cũ vì thiếu baseline legacy an toàn.", "error");
       return;
     }
 
+    const legacyBaseline = getLegacyReopenBaseline(activeJobToComplete);
     const completionItemsWithDraftIds = completionItems
       .map(item => ({
         draftItemId: item.id,
@@ -3828,7 +3877,6 @@ useEffect(() => {
       };
     });
 
-    setUploadingImages(true);
     const job = activeJobToComplete;
     const imageUrls: string[] = [];
     const financialItems = cleanedItemsWithWarrantyDates.filter((item, index) => !(isInternetCompletionJob && index === 0 && item.source !== "inventory"));
@@ -3841,7 +3889,7 @@ useEffect(() => {
           ? 0
           : toMoneyNumber(completionPaymentAmount);
     const remainingAmount = Math.max(finalAmount - paidAmount, 0);
-    const existingPaidAmount = (job.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const existingPaidAmount = (job.payments || []).filter(payment => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const amountToRecord = Math.max(paidAmount - existingPaidAmount, 0);
     const maxWarrantyDays = cleanedItems.reduce((max, item) => Math.max(max, item.warrantyDays), 0);
     const handoverWorkflowData = sanitizeCameraDevicesWorkflowData(pruneWorkflowData(
@@ -3849,7 +3897,9 @@ useEffect(() => {
       getWorkflowServicesForJob(job),
       { includeSectionKeys: completionHandoverSectionKeys }
     ));
-    const materialDraftItems: SalesDraftItem[] = cleanedItems
+    const materialSourceItems = getDeltaInventoryCompletionItems(cleanedItemsWithWarrantyDates, legacyBaseline);
+    const itemsForCustomerDevicesDelta = getDeltaInventoryCompletionItems(itemsForCustomerDevices, legacyBaseline);
+    const materialDraftItems: SalesDraftItem[] = materialSourceItems
       .filter(item => item.source === "inventory")
       .map(item => ({
         draftId: crypto.randomUUID(),
@@ -3934,6 +3984,8 @@ useEffect(() => {
       return;
     }
 
+    completionSubmitInFlightRef.current = true;
+    setUploadingImages(true);
     let completionRunId: string | null = null;
     let jobMarkedCompleted = false;
 
@@ -4041,6 +4093,7 @@ useEffect(() => {
           workflow_data: {
             ...(job.workflow_data || {}),
             completionRunId: activeCompletionRunId,
+            ...(legacyBaseline ? { legacy_reopened: false, legacy_reopen_resolved_at: new Date().toISOString() } : {}),
             ...handoverWorkflowData,
             financials,
             payment: {
@@ -4134,7 +4187,7 @@ useEffect(() => {
         }
       }
 
-      await createCustomerDevicesFromCompletion(job, itemsForCustomerDevices, activeCompletionRunId);
+      await createCustomerDevicesFromCompletion(job, itemsForCustomerDevicesDelta, activeCompletionRunId);
 
       void fetch("/api/notifications/event", {
         method: "POST",
@@ -4196,6 +4249,7 @@ useEffect(() => {
       showToast(err instanceof Error ? err.message : "Đã xảy ra lỗi khi hoàn thành công việc.", "error");
       console.error(err);
     } finally {
+      completionSubmitInFlightRef.current = false;
       setUploadingImages(false);
     }
   };
@@ -4425,7 +4479,7 @@ useEffect(() => {
                   const statusLabel = isNewJob ? "Mới" : isPendingJob ? "Chờ duyệt" : job.status === "in_progress" ? "Đang làm" : "Đã nhận";
                   const statusClass = isNewJob ? "bg-error text-white" : isPendingJob ? "bg-warning text-white" : "bg-primary-fixed text-primary";
                   const isLegacyReopened = isLegacyReopenedJob(job);
-                  const isCompletableJob = !isNewJob && !isPendingJob && !isLegacyReopened && ["assigned", "in_progress"].includes(String(job.status));
+                  const isCompletableJob = !isNewJob && !isPendingJob && (!isLegacyReopened || hasValidLegacyReopenBaseline(job)) && ["assigned", "in_progress"].includes(String(job.status));
                   const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
                   const inlineCustomerName = job.customerName || customer?.full_name || "Khách hàng";
                   const inlineJobTitle = getDashboardInlineJobTitle(job, services);
@@ -4497,10 +4551,10 @@ useEffect(() => {
                           }}
                           className={"inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isCompletableJob ? "bg-success text-white" : "bg-surface-container text-on-surface-variant")}
                           aria-disabled={!isCompletableJob}
-                          title={isLegacyReopened ? "Đang chặn hoàn thành lại để tránh phát sinh dữ liệu trùng" : undefined}
+                          title={isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline an toàn để hoàn thành lại" : undefined}
                         >
                           <span aria-hidden="true">✓</span>
-                          {isLegacyReopened ? "Đang chặn" : "Hoàn thành"}
+                          {isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline" : "Hoàn thành"}
                         </button>
                       </div>
                     </div>
@@ -5419,11 +5473,11 @@ useEffect(() => {
                         </button>
                         <button
                           onClick={() => triggerCompleteJob(job)}
-                          className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
-                          aria-disabled={isLegacyReopened}
-                          title={isLegacyReopened ? "Đang chặn hoàn thành lại để tránh phát sinh dữ liệu trùng" : undefined}
+                          className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
+                          aria-disabled={isLegacyReopened && !hasValidLegacyReopenBaseline(job)}
+                          title={isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline an toàn để hoàn thành lại" : undefined}
                         >
-                          {isLegacyReopened ? "Đang chặn hoàn thành lại" : "Hoàn thành Job"}
+                          {isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline" : "Hoàn thành Job"}
                         </button>
                       </div>
                     </div>
@@ -6055,11 +6109,11 @@ useEffect(() => {
                 </button>
                 <button
                   onClick={() => triggerCompleteJob(job)}
-                  className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
-                  aria-disabled={isLegacyReopened}
-                  title={isLegacyReopened ? "Đang chặn hoàn thành lại để tránh phát sinh dữ liệu trùng" : undefined}
+                  className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
+                  aria-disabled={isLegacyReopened && !hasValidLegacyReopenBaseline(job)}
+                  title={isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline an toàn để hoàn thành lại" : undefined}
                 >
-                  {isLegacyReopened ? "Đang chặn hoàn thành lại" : "Hoàn thành Job"}
+                  {isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline" : "Hoàn thành Job"}
                 </button>
               </div>
               </div>

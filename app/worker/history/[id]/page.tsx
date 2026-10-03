@@ -74,8 +74,31 @@ type JobWorkflowData = Record<string, unknown> & {
   billgoAddOn?: Record<string, unknown>;
   completionRunId?: string;
   legacy_reopened?: boolean;
+  legacy_reopen_resolved_at?: string | null;
+  legacy_reopen_baseline?: LegacyReopenBaseline;
   reopened_at?: string;
   reopened_by?: string | null;
+};
+
+type LegacyReopenBaseline = {
+  version: 1;
+  capturedAt: string;
+  capturedBy?: string | null;
+  status?: string | null;
+  completionItems: CompletionItem[];
+  finalAmount: number;
+  warrantyDays: number;
+  warrantyNote?: string | null;
+  workflowData: Record<string, unknown>;
+  materialQuantities: Record<string, number>;
+  paidAmount: number;
+  paymentIds: string[];
+  salesOrderIds: string[];
+  deviceIds: string[];
+  deviceKeys: string[];
+  warrantyIds: string[];
+  billGoSubscriptionIds: string[];
+  billGoReceivableIds: string[];
 };
 
 interface WorkerJobDetail {
@@ -178,6 +201,22 @@ const isInitialInternetServiceItem = (job: WorkerJobDetail, item: CompletionItem
   );
 };
 
+const getLegacyMaterialQuantities = (items: CompletionItem[]) => {
+  return items.reduce<Record<string, number>>((totals, item) => {
+    const productId = typeof (item as CompletionItem & { inventoryProductId?: unknown }).inventoryProductId === "string"
+      ? (item as CompletionItem & { inventoryProductId?: string }).inventoryProductId
+      : "";
+    if (!productId) return totals;
+    totals[productId] = (totals[productId] || 0) + Math.max(0, Number(item.quantity || 0));
+    return totals;
+  }, {});
+};
+
+const getLegacyDeviceKey = (device: { qr_code?: unknown; serial?: unknown; uid?: unknown; product_id?: unknown; device_label?: unknown }) =>
+  [device.qr_code, device.serial, device.uid, device.product_id, device.device_label]
+    .map(value => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join("|");
 export default function WorkerJobDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -624,6 +663,17 @@ export default function WorkerJobDetailPage() {
       return;
     }
 
+    if (previousWorkflow.legacy_reopened && previousWorkflow.legacy_reopen_baseline) {
+      setJob({
+        ...job,
+        completion_items: cleanedItems,
+        final_amount: nextAmount,
+        warranty_days: nextWarrantyDays,
+        workflow_data: nextWorkflow,
+      });
+      setEditModalOpen(false);
+      return;
+    }
     if (isInternetInstallReceipt && editInternetMonthlyFeeNumber > 0 && job.customer_id && (currentWorkerId || job.worker_id)) {
       const startDate = getStringValue(nextWorkflow.billgo?.startDate) || new Date().toISOString().slice(0, 10);
       const billingPeriod = getBillGoBillingPeriod(startDate, editInternetCycle);
@@ -924,9 +974,51 @@ export default function WorkerJobDetailPage() {
     setLegacyReopenFeedback("");
     const { data: { user } } = await supabase.auth.getUser();
     const reopenedAt = new Date().toISOString();
+    const [paymentsResult, salesOrdersResult, devicesResult, warrantiesResult, subscriptionsResult, receivablesResult] = await Promise.all([
+      supabase.from("payments").select("id, amount, status").eq("job_id", job.id),
+      supabase.from("worker_sales_orders").select("id, status, total_amount, completion_run_id").eq("job_id", job.id),
+      supabase.from("worker_customer_devices").select("id, product_id, qr_code, serial, uid, install_location, device_label, completion_run_id").eq("job_id", job.id),
+      supabase.from("worker_product_warranties").select("id, product_id, status, completion_run_id").eq("job_id", job.id),
+      supabase.from("billgo_subscriptions").select("id, package_id, service_type, status, completion_run_id").eq("job_id", job.id),
+      supabase.from("billgo_receivables").select("id, package_id, type, status, total_amount, completion_run_id").eq("job_id", job.id),
+    ]);
+    const baselineError = [paymentsResult, salesOrdersResult, devicesResult, warrantiesResult, subscriptionsResult, receivablesResult]
+      .find(result => result.error)?.error;
+    if (baselineError) {
+      setLegacyReopenFeedback("Không thể chụp baseline legacy trước khi mở lại: " + baselineError.message);
+      setReopeningLegacyJob(false);
+      return;
+    }
+
+    const baselineItems = Array.isArray(job.completion_items) ? job.completion_items : [];
+    const legacyBaseline: LegacyReopenBaseline = {
+      version: 1,
+      capturedAt: reopenedAt,
+      capturedBy: user?.id || null,
+      status: job.status || "completed",
+      completionItems: baselineItems,
+      finalAmount: Number(job.final_amount || calculateItemsTotal(baselineItems)),
+      warrantyDays: Number(job.warranty_days || 0),
+      warrantyNote: job.warranty_note || null,
+      workflowData: job.workflow_data || {},
+      materialQuantities: getLegacyMaterialQuantities(baselineItems),
+      paidAmount: (paymentsResult.data || [])
+        .filter(payment => payment.status === "paid")
+        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+      paymentIds: (paymentsResult.data || []).map(row => row.id).filter(Boolean),
+      salesOrderIds: (salesOrdersResult.data || []).map(row => row.id).filter(Boolean),
+      deviceIds: (devicesResult.data || []).map(row => row.id).filter(Boolean),
+      deviceKeys: (devicesResult.data || []).map(getLegacyDeviceKey).filter(Boolean),
+      warrantyIds: (warrantiesResult.data || []).map(row => row.id).filter(Boolean),
+      billGoSubscriptionIds: (subscriptionsResult.data || []).map(row => row.id).filter(Boolean),
+      billGoReceivableIds: (receivablesResult.data || []).map(row => row.id).filter(Boolean),
+    };
+
     const nextWorkflowData: JobWorkflowData = {
       ...(job.workflow_data || {}),
       legacy_reopened: true,
+      legacy_reopen_resolved_at: null,
+      legacy_reopen_baseline: legacyBaseline,
       reopened_at: reopenedAt,
       reopened_by: user?.id || null,
     };
@@ -940,6 +1032,15 @@ export default function WorkerJobDetailPage() {
         previous_status: job.status || "completed",
         next_status: "in_progress",
         reopened_at: reopenedAt,
+        baseline: {
+          completion_items: legacyBaseline.completionItems.length,
+          payments: legacyBaseline.paymentIds.length,
+          sales_orders: legacyBaseline.salesOrderIds.length,
+          devices: legacyBaseline.deviceIds.length,
+          warranties: legacyBaseline.warrantyIds.length,
+          billgo_subscriptions: legacyBaseline.billGoSubscriptionIds.length,
+          billgo_receivables: legacyBaseline.billGoReceivableIds.length,
+        },
       },
     });
 
@@ -972,7 +1073,7 @@ export default function WorkerJobDetailPage() {
       workflow_data: (updatedJob.workflow_data || nextWorkflowData) as JobWorkflowData,
       updated_at: updatedJob.updated_at || reopenedAt,
     } : current);
-    setDetailMessage("Đã mở lại công việc cũ. Dữ liệu lịch sử được giữ nguyên; hoàn thành lại đang bị chặn cho đến khi có cơ chế tách dữ liệu cũ/mới an toàn.");
+    setDetailMessage("Đã mở lại công việc cũ và chụp baseline lịch sử. Bạn có thể sửa rồi hoàn thành lại; hệ thống chỉ ghi phần phát sinh mới.");
     setLegacyReopenModalOpen(false);
     setReopeningLegacyJob(false);
   };
