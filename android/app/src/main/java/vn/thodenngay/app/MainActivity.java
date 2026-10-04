@@ -91,6 +91,9 @@ public class MainActivity extends BridgeActivity {
     private static final int STARTUP_MIN_SPLASH_MS = 5_000;
     private static final int STARTUP_ERROR_TIMEOUT_MS = 25_000;
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
+    private static final int MAIN_FRAME_AUTO_RETRY_MAX_ATTEMPTS = 4;
+    private static final long MAIN_FRAME_AUTO_RETRY_INITIAL_DELAY_MS = 3_000;
+    private static final long MAIN_FRAME_AUTO_RETRY_MAX_DELAY_MS = 30_000;
     private static final int BRAND_NAVY = 0xFF0F3D63;
     private static final int BRAND_BLUE = 0xFF1478C8;
     private static final int BRAND_ORANGE = 0xFFFF8A00;
@@ -115,6 +118,9 @@ public class MainActivity extends BridgeActivity {
     private long startupSplashShownAt = 0L;
     private int freshReloadSequence = 0;
     private String lastMainFrameErrorUrl;
+    private String lastMainFrameStartedUrl;
+    private int mainFrameAutoRetryAttempts = 0;
+    private int mainFrameAutoRetryGeneration = 0;
     private boolean updatePromptDismissedThisSession = false;
     private boolean updateDownloadReceiverRegistered = false;
     private boolean updateCheckInFlight = false;
@@ -281,6 +287,7 @@ public class MainActivity extends BridgeActivity {
 
     private boolean isValidBackHistoryUrl(String url) {
         if (url == null || url.length() == 0) return false;
+        if (lastMainFrameErrorUrl != null && lastMainFrameErrorUrl.equals(url)) return false;
         if (isAndroidLoginUrl(url)) return false;
         if ("about:blank".equals(url)) return false;
         return isRemoteAppUrl(url) || url.startsWith("data:text/html");
@@ -316,16 +323,9 @@ public class MainActivity extends BridgeActivity {
         Button retry = new Button(this);
         retry.setText(getString(R.string.network_error_retry));
         retry.setOnClickListener(v -> {
-            resetStartupSplashForRetry();
-            loadingOfflineFallback = false;
-            startupRecoveryAttempted = false;
-            mainFrameLoadFailed = false;
-            lastMainFrameErrorUrl = null;
-            configureCacheModeForNetwork();
-            webView.loadUrl(ANDROID_START_URL);
-            scheduleStartupWatchdog();
+            mainFrameAutoRetryAttempts = 0;
+            performMainFrameRetry("manual");
         });
-
         errorView.addView(title);
         errorView.addView(message);
         errorView.addView(retry);
@@ -1374,13 +1374,75 @@ public class MainActivity extends BridgeActivity {
         return isRemoteAppUrl(currentUrl) || currentUrl.startsWith("data:text/html");
     }
 
+
+    private String getMainFrameRetryUrl(String reason) {
+        String failedOrStartedUrl = lastMainFrameErrorUrl != null ? lastMainFrameErrorUrl : lastMainFrameStartedUrl;
+        String baseUrl = getFallbackUrl(failedOrStartedUrl);
+        try {
+            return Uri.parse(baseUrl)
+                .buildUpon()
+                .appendQueryParameter("nativeRetry", reason)
+                .appendQueryParameter("t", String.valueOf(System.currentTimeMillis()))
+                .build()
+                .toString();
+        } catch (Exception error) {
+            return ANDROID_START_URL;
+        }
+    }
+
+    private void performMainFrameRetry(String reason) {
+        if (webView == null) return;
+        mainFrameAutoRetryGeneration++;
+        String retryUrl = getMainFrameRetryUrl(reason);
+        resetStartupSplashForRetry();
+        loadingOfflineFallback = false;
+        startupRecoveryAttempted = false;
+        mainFrameLoadFailed = false;
+        lastMainFrameErrorUrl = null;
+        configureCacheModeForNetwork();
+        Log.i(TAG, "[TDN-STARTUP] retrying main frame reason=" + reason + " url=" + retryUrl + " online=" + hasNetworkConnection());
+        try {
+            webView.stopLoading();
+        } catch (Exception ignored) {
+            // Retrying should continue even if WebView is already idle.
+        }
+        webView.loadUrl(retryUrl);
+        scheduleStartupWatchdog();
+    }
+
+    private void scheduleMainFrameAutoRetry(String failedUrl) {
+        if (mainFrameAutoRetryAttempts >= MAIN_FRAME_AUTO_RETRY_MAX_ATTEMPTS) {
+            Log.w(TAG, "[TDN-STARTUP] main frame auto retry exhausted failedUrl=" + failedUrl);
+            return;
+        }
+        int attempt = ++mainFrameAutoRetryAttempts;
+        int retryGeneration = ++mainFrameAutoRetryGeneration;
+        long delay = Math.min(
+            MAIN_FRAME_AUTO_RETRY_MAX_DELAY_MS,
+            MAIN_FRAME_AUTO_RETRY_INITIAL_DELAY_MS * (1L << Math.max(0, attempt - 1))
+        );
+        Log.i(TAG, "[TDN-STARTUP] scheduling main frame auto retry attempt=" + attempt + " delayMs=" + delay + " failedUrl=" + failedUrl);
+        mainHandler.postDelayed(() -> {
+            if (retryGeneration != mainFrameAutoRetryGeneration || !mainFrameLoadFailed) return;
+            performMainFrameRetry("auto-" + attempt);
+        }, delay);
+    }
+
+    private void markMainFrameLoadSucceeded() {
+        mainFrameLoadFailed = false;
+        lastMainFrameErrorUrl = null;
+        mainFrameAutoRetryAttempts = 0;
+        mainFrameAutoRetryGeneration++;
+    }
+
     private void handleMainFrameLoadError(String failedUrl, int errorCode) {
         Log.e(TAG, "[TDN-STARTUP] main frame load error code=" + errorCode + " failedUrl=" + failedUrl + " offlineFallback=" + loadingOfflineFallback + " online=" + hasNetworkConnection());
         if (isStartupSplashVisible()) {
             showNetworkError();
+            scheduleMainFrameAutoRetry(failedUrl);
             return;
         }
-        if (isLikelyNetworkError(errorCode)) {
+        if (!hasNetworkConnection() && isLikelyNetworkError(errorCode)) {
             if (!loadingOfflineFallback) {
                 loadOfflineStartup(failedUrl);
                 return;
@@ -1390,6 +1452,7 @@ public class MainActivity extends BridgeActivity {
             }
         }
         showNetworkError();
+        scheduleMainFrameAutoRetry(failedUrl);
     }
 
     private void downloadFile(String url, String userAgent, String contentDisposition, String mimeType) {
@@ -1453,6 +1516,7 @@ public class MainActivity extends BridgeActivity {
 
         @Override
         public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            lastMainFrameStartedUrl = url;
             mainFrameLoadFailed = false;
             if (isStartupSplashVisible()) {
                 webStartupReady = false;
@@ -1481,6 +1545,7 @@ public class MainActivity extends BridgeActivity {
                 }, remaining);
                 return;
             }
+            markMainFrameLoadSucceeded();
             hideNetworkError();
             hideStartupSplashWhenWebAppReady(view, url);
             inspectWebRuntimeState(view);
@@ -1504,10 +1569,7 @@ public class MainActivity extends BridgeActivity {
             String failedUrl = request.getUrl() != null ? request.getUrl().toString() : null;
             int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
             CharSequence description = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getDescription() : null;
-            if (isStartupSplashVisible() && isAndroidLoginUrl(failedUrl) && hasNetworkConnection() && errorCode == WebViewClient.ERROR_UNKNOWN) {
-                Log.i(TAG, "[TDN-STARTUP] waiting through transient login load error description=" + description + " failedUrl=" + failedUrl);
-                return;
-            }
+            Log.w(TAG, "[TDN-STARTUP] main frame received error description=" + description + " failedUrl=" + failedUrl + " code=" + errorCode);
             if (isLikelyNavigationCancellation(view, failedUrl, errorCode)) {
                 Log.i(TAG, "[TDN-STARTUP] ignored cancelled navigation error code=" + errorCode + " failedUrl=" + failedUrl + " currentUrl=" + (view != null ? view.getUrl() : null));
                 return;
@@ -1530,6 +1592,7 @@ public class MainActivity extends BridgeActivity {
                     return;
                 }
                 showNetworkError();
+                scheduleMainFrameAutoRetry(lastMainFrameErrorUrl);
             }
         }
 
