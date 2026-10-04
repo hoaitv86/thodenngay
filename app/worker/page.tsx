@@ -225,6 +225,9 @@ const isLegacyReopenedJob = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
 
 const hasValidLegacyReopenBaseline = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
   Boolean(getLegacyReopenBaseline(job));
+
+const isLegacyReopenedWithoutBaseline = (job?: Pick<WorkerJob, "workflow_data"> | null) =>
+  isLegacyReopenedJob(job) && !hasValidLegacyReopenBaseline(job);
 type WorkerDashboardJobQueryResult = {
   data: WorkerJob[] | null;
   error: { message: string } | null;
@@ -3188,9 +3191,8 @@ useEffect(() => {
   };
 
   const triggerCompleteJob = (job: WorkerJob, startWithMaterial = false) => {
-    if (isLegacyReopenedJob(job) && !hasValidLegacyReopenBaseline(job)) {
-      showToast("Công việc cũ đã mở lại nhưng thiếu baseline an toàn. Vui lòng mở lại từ màn Lịch sử để chụp baseline trước khi hoàn thành.", "error");
-      return;
+    if (isLegacyReopenedWithoutBaseline(job)) {
+      showToast("Công việc cũ thiếu baseline, hệ thống sẽ hoàn thành bằng luồng tương thích cũ.", "info");
     }
     const workflowBillGo = job.workflow_data?.billgo as { cycle?: BillGoCycle; amount?: number | string } | undefined;
     const isInternetInstallJob = isInternetInstallCompletionJob(job);
@@ -3947,12 +3949,8 @@ useEffect(() => {
 
   const handleConfirmCompleteJob = async () => {
     if (!activeJobToComplete || uploadingImages || completionSubmitInFlightRef.current) return;
-    if (isLegacyReopenedJob(activeJobToComplete) && !hasValidLegacyReopenBaseline(activeJobToComplete)) {
-      showToast("Không thể hoàn thành lại công việc cũ vì thiếu baseline legacy an toàn.", "error");
-      return;
-    }
-
     const legacyBaseline = getLegacyReopenBaseline(activeJobToComplete);
+    const useLegacyMissingBaselineFallback = isLegacyReopenedWithoutBaseline(activeJobToComplete);
     const completionItemsWithDraftIds = completionItems
       .map(item => ({
         draftItemId: item.id,
@@ -4228,7 +4226,7 @@ useEffect(() => {
           workflow_data: {
             ...(job.workflow_data || {}),
             completionRunId: activeCompletionRunId,
-            ...(legacyBaseline ? { legacy_reopened: false, legacy_reopen_resolved_at: new Date().toISOString() } : {}),
+            ...((legacyBaseline || useLegacyMissingBaselineFallback) ? { legacy_reopened: false, legacy_reopen_resolved_at: new Date().toISOString(), ...(useLegacyMissingBaselineFallback ? { legacy_reopen_fallback: "missing_baseline_legacy_completion" } : {}) } : {}),
             ...handoverWorkflowData,
             financials,
             payment: {
@@ -4613,8 +4611,7 @@ useEffect(() => {
                   const isPendingJob = pendingApprovalJobs.some(item => item.id === job.id);
                   const statusLabel = isNewJob ? "Mới" : isPendingJob ? "Chờ duyệt" : job.status === "in_progress" ? "Đang làm" : "Đã nhận";
                   const statusClass = isNewJob ? "bg-error text-white" : isPendingJob ? "bg-warning text-white" : "bg-primary-fixed text-primary";
-                  const isLegacyReopened = isLegacyReopenedJob(job);
-                  const isCompletableJob = !isNewJob && !isPendingJob && (!isLegacyReopened || hasValidLegacyReopenBaseline(job)) && ["assigned", "in_progress"].includes(String(job.status));
+                  const isCompletableJob = !isNewJob && !isPendingJob && ["assigned", "in_progress"].includes(String(job.status));
                   const customer = Array.isArray(job.customer) ? job.customer[0] : job.customer;
                   const inlineCustomerName = job.customerName || customer?.full_name || "Khách hàng";
                   const inlineJobTitle = getDashboardInlineJobTitle(job, services);
@@ -4674,10 +4671,6 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={() => {
-                            if (isLegacyReopened) {
-                              showToast("Công việc cũ đã mở lại đang bị chặn hoàn thành lại để tránh tạo dữ liệu trùng.", "error");
-                              return;
-                            }
                             if (!isCompletableJob) {
                               showToast("Chỉ hoàn thành công việc đã nhận hoặc đang làm.", "info");
                               return;
@@ -4686,10 +4679,10 @@ useEffect(() => {
                           }}
                           className={"inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isCompletableJob ? "bg-success text-white" : "bg-surface-container text-on-surface-variant")}
                           aria-disabled={!isCompletableJob}
-                          title={isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline an toàn để hoàn thành lại" : undefined}
+                          title={isLegacyReopenedWithoutBaseline(job) ? "Job cũ thiếu baseline sẽ dùng luồng hoàn thành tương thích cũ." : undefined}
                         >
                           <span aria-hidden="true">✓</span>
-                          {isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline" : "Hoàn thành"}
+                          Hoàn thành
                         </button>
                       </div>
                     </div>
@@ -5535,7 +5528,6 @@ useEffect(() => {
               {activeJobs.map(job => {
                 const detailOptions = getTechnicalDetailOptions(job.service_id);
                 const selectedDetailName = getServiceName(job.service_detail_id);
-                const isLegacyReopened = isLegacyReopenedJob(job);
                 return (
                   <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
                     <div className="flex items-center justify-between gap-3 border-b border-success/20 bg-success-container px-4 py-3">
@@ -5608,11 +5600,11 @@ useEffect(() => {
                         </button>
                         <button
                           onClick={() => triggerCompleteJob(job)}
-                          className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
-                          aria-disabled={isLegacyReopened && !hasValidLegacyReopenBaseline(job)}
-                          title={isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline an toàn để hoàn thành lại" : undefined}
+                          className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
+                          aria-disabled={false}
+                          title={isLegacyReopenedWithoutBaseline(job) ? "Job cũ thiếu baseline sẽ dùng luồng hoàn thành tương thích cũ." : undefined}
                         >
-                          {isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline" : "Hoàn thành Job"}
+                          Hoàn thành Job
                         </button>
                       </div>
                     </div>
@@ -6120,7 +6112,6 @@ useEffect(() => {
           activeJobs.map(job => {
             const detailOptions = getTechnicalDetailOptions(job.service_id);
             const selectedDetailName = getServiceName(job.service_detail_id);
-            const isLegacyReopened = isLegacyReopenedJob(job);
 
             return (
             <div key={job.id} className="overflow-hidden rounded-xl border border-success/20 bg-white shadow-sm">
@@ -6244,11 +6235,11 @@ useEffect(() => {
                 </button>
                 <button
                   onClick={() => triggerCompleteJob(job)}
-                  className={"rounded-lg px-5 py-3.5 text-sm font-extrabold shadow-sm transition-all active:scale-[0.98] " + (isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "bg-surface-container text-on-surface-variant" : "bg-success text-white hover:brightness-110")}
-                  aria-disabled={isLegacyReopened && !hasValidLegacyReopenBaseline(job)}
-                  title={isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline an toàn để hoàn thành lại" : undefined}
+                  className="rounded-lg bg-success px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
+                  aria-disabled={false}
+                  title={isLegacyReopenedWithoutBaseline(job) ? "Job cũ thiếu baseline sẽ dùng luồng hoàn thành tương thích cũ." : undefined}
                 >
-                  {isLegacyReopened && !hasValidLegacyReopenBaseline(job) ? "Thiếu baseline" : "Hoàn thành Job"}
+                  Hoàn thành Job
                 </button>
               </div>
               </div>
