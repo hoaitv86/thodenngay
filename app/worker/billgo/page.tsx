@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -28,7 +28,6 @@ import {
   BillGoCycle,
   formatBillGoCurrency,
   getBillGoBillingModel,
-  getBillGoBillingPeriod,
   getBillGoCollectableAmount,
   getBillGoCycleOption,
   getBillGoNextPeriodStartDate,
@@ -460,19 +459,13 @@ const createOfflineMutationId = (prefix: string) =>
   `${prefix}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`}`;
 
 const statusOptions = [
-  { value: "all", label: "Tất cả trạng thái" },
-  { value: "pending_cycle", label: "Chưa thiết lập chu kỳ" },
   { value: "unpaid", label: "Chưa thu" },
-  { value: "paid", label: "Đã thu" },
-  { value: "partial", label: "Thu thiếu" },
   { value: "overdue", label: "Quá hạn" },
-  { value: "promo", label: "Khuyến mại" },
+  { value: "partial", label: "Thu thiếu" },
+  { value: "paid", label: "Đã thu" },
 ];
 
-const dueFilterOptions = [
-  { value: "all", label: "Tất cả hạn thu" },
-  { value: "due_this_month", label: "Đến hạn tháng này" },
-];
+const primaryStatusValues = new Set(statusOptions.map(option => option.value));
 
 const normalizeImportHeader = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -766,8 +759,6 @@ const getInternetPackageOptions = (packages: BillGoPackage[], search: string) =>
   });
 };
 
-const normalizeLocationText = (value: string | null | undefined) =>
-  String(value || "").trim().toLocaleLowerCase("vi");
 
 const uniqueAddressParts = (...values: Array<string | null | undefined>) => {
   const seen = new Set<string>();
@@ -790,22 +781,7 @@ const buildCustomerAddressInput = (subscription: Subscription | null | undefined
     subscription?.legacy_address,
   ).join(", ");
 
-const isSameMonth = (dateValue: string | null | undefined, monthValue: string) =>
-  !!dateValue && dateValue.slice(0, 7) === monthValue;
 
-const isFutureDate = (dateValue: string | null | undefined) => {
-  if (!dateValue) return false;
-  const date = new Date(dateValue);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
-};
-
-const matchesBillGoStatusFilter = (status: string, filter: string) => {
-  if (filter === "all") return true;
-  if (filter === "unpaid") return status === "unpaid" || status === "partial" || status === "overdue";
-  return status === filter;
-};
 
 const getPaymentReceipts = (payment: Payment): BillGoReceipt[] => {
   const receipts = payment.billgo_receipts;
@@ -867,9 +843,9 @@ export default function WorkerBillGoPage() {
   const [viewMode, setViewMode] = useState<"cycle" | "area">("cycle");
   const [activeTab, setActiveTab] = useState<BillGoCycle | typeof BILLGO_ALL_TAB>(BILLGO_ALL_TAB);
   const [monthFilter, setMonthFilter] = useState(monthInput());
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("unpaid");
   const [dueFilter, setDueFilter] = useState("all");
-  const [areaStatusFilter, setAreaStatusFilter] = useState("all");
+  const [areaStatusFilter, setAreaStatusFilter] = useState("unpaid");
   const [selectedAreaId, setSelectedAreaId] = useState("");
   const [selectedSubAreaId, setSelectedSubAreaId] = useState("");
   const [viewStateHydrated, setViewStateHydrated] = useState(false);
@@ -933,6 +909,8 @@ export default function WorkerBillGoPage() {
     effectivePeriodStart: todayInput(),
     note: "",
   });
+  const lastBillGoFilterKeyRef = useRef("");
+  const inFlightBillGoRequestKeyRef = useRef("");
 
   const applyBillGoListResult = useCallback((result: BillGoListCacheResult) => {
     setRows(normalizeRows(result.rows || []));
@@ -1008,9 +986,9 @@ export default function WorkerBillGoPage() {
         } else if (saved.monthFilter === monthInput()) {
           setMonthFilter(saved.monthFilter);
         }
-        if (saved.statusFilter && saved.statusFilter !== "not_due") setStatusFilter(saved.statusFilter);
-        if (saved.dueFilter && saved.dueFilter !== "not_due") setDueFilter(saved.dueFilter);
-        if (saved.areaStatusFilter && saved.areaStatusFilter !== "not_due") setAreaStatusFilter(saved.areaStatusFilter);
+        if (typeof saved.statusFilter === "string" && (saved.statusFilter === "pending_cycle" || primaryStatusValues.has(saved.statusFilter))) setStatusFilter(saved.statusFilter);
+        setDueFilter("all");
+        if (typeof saved.areaStatusFilter === "string" && primaryStatusValues.has(saved.areaStatusFilter)) setAreaStatusFilter(saved.areaStatusFilter);
         if (typeof saved.selectedAreaId === "string") setSelectedAreaId(saved.selectedAreaId);
         if (typeof saved.selectedSubAreaId === "string") setSelectedSubAreaId(saved.selectedSubAreaId);
         if (typeof saved.query === "string") setQuery(saved.query);
@@ -1101,13 +1079,9 @@ export default function WorkerBillGoPage() {
     if (cacheKey) void setCachedDataset(cacheKey, nextPackages, { dataset: "packages", userId: cacheScope?.userId, workerId: cacheScope?.workerId, storeId: cacheScope?.storeId || null });
   }, [loadBillGoOfflineScope, supabase]);
 
-  const fetchBillGo = useCallback(async () => {
-    setLoading(true);
-    setMessage("");
-
+  const billGoFilterKey = useMemo(() => {
     const params = new URLSearchParams({
       month: monthFilter,
-      page: String(page),
       limit: String(BILLGO_PAGE_SIZE),
       due: dueFilter,
       q: query.trim(),
@@ -1119,8 +1093,21 @@ export default function WorkerBillGoPage() {
       if (selectedAreaId) params.set("areaId", selectedAreaId);
       if (selectedSubAreaId) params.set("subAreaId", selectedSubAreaId);
     }
+    return params.toString();
+  }, [activeServiceType, activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+
+  const fetchBillGo = useCallback(async () => {
+    setLoading(true);
+    setMessage("");
+
+    const params = new URLSearchParams(billGoFilterKey);
+    params.set("page", String(page));
 
     const requestKey = params.toString();
+    if (inFlightBillGoRequestKeyRef.current === requestKey) {
+      return;
+    }
+    inFlightBillGoRequestKeyRef.current = requestKey;
     const cacheScope = await loadBillGoOfflineScope();
     const cacheKey = cacheScope ? makeWorkerDatasetKey("billgo", cacheScope, requestKey) : null;
     const offline = isBrowserOffline();
@@ -1137,6 +1124,9 @@ export default function WorkerBillGoPage() {
         setMessage("Chưa có dữ liệu BillGo offline. Hãy mở màn này khi có mạng ít nhất một lần.");
       }
       setLoading(false);
+      if (inFlightBillGoRequestKeyRef.current === requestKey) {
+        inFlightBillGoRequestKeyRef.current = "";
+      }
       logOfflineDebug("server fetch skipped", { dataset: "billgo", cacheKey, reason: "offline" });
       return;
     }
@@ -1162,15 +1152,23 @@ export default function WorkerBillGoPage() {
       setTotalRows(0);
       setServerTotals(emptyBillGoTotals);
     } finally {
+      if (inFlightBillGoRequestKeyRef.current === requestKey) {
+        inFlightBillGoRequestKeyRef.current = "";
+      }
       setLoading(false);
     }
-  }, [activeServiceType, activeTab, applyBillGoListResult, areaStatusFilter, dueFilter, loadBillGoOfflineScope, monthFilter, page, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode]);
+  }, [applyBillGoListResult, billGoFilterKey, loadBillGoOfflineScope, page]);
 
   useEffect(() => {
     if (!viewStateHydrated) return;
+    if (lastBillGoFilterKeyRef.current && lastBillGoFilterKeyRef.current !== billGoFilterKey && page !== 1) {
+      setPage(1);
+      return;
+    }
+    lastBillGoFilterKeyRef.current = billGoFilterKey;
     const timeoutId = window.setTimeout(() => void fetchBillGo(), 0);
     return () => window.clearTimeout(timeoutId);
-  }, [fetchBillGo, viewStateHydrated]);
+  }, [billGoFilterKey, fetchBillGo, page, viewStateHydrated]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchAreas(), 0);
@@ -1182,11 +1180,6 @@ export default function WorkerBillGoPage() {
     return () => window.clearTimeout(timeoutId);
   }, [fetchPackages]);
 
-  useEffect(() => {
-    if (!viewStateHydrated) return;
-    const timeoutId = window.setTimeout(() => setPage(1), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [activeServiceType, activeTab, areaStatusFilter, dueFilter, monthFilter, query, selectedAreaId, selectedSubAreaId, statusFilter, viewMode, viewStateHydrated]);
 
   const getBillGoAddress = useCallback((subscription?: Subscription | null) => {
     const subAreaName = areas
@@ -1224,28 +1217,6 @@ export default function WorkerBillGoPage() {
     return BILLGO_SERVICE_ICON_TYPES.map(type => stats.get(type)!).filter(item => item.count > 0 || item.type === "internet");
   }, [rowViews]);
 
-  const matchesSearch = useCallback((row: RowView) => {
-    const normalizedQuery = query.trim().toLocaleLowerCase("vi");
-    if (!normalizedQuery) return true;
-    return [
-        row.customerName,
-        row.account,
-        row.item.subscription?.phone,
-        row.item.subscription?.tv360_account,
-        getBillGoAddress(row.item.subscription),
-
-        row.item.subscription?.provider,
-        row.item.subscription?.package_name,
-      ].filter(Boolean).join(" ").toLocaleLowerCase("vi").includes(normalizedQuery);
-  }, [getBillGoAddress, query]);
-
-  const matchesDueFilter = useCallback((row: RowView) => {
-    if (dueFilter === "due_this_month") return isSameMonth(row.item.due_date, monthFilter);
-    if (dueFilter === "not_due") {
-      return row.summary.status === "not_due" || (row.summary.status !== "paid" && row.summary.status !== "promo" && isFutureDate(row.item.due_date));
-    }
-    return true;
-  }, [dueFilter, monthFilter]);
 
   const filteredRows = useMemo(() => rowViews, [rowViews]);
 
@@ -1332,6 +1303,8 @@ export default function WorkerBillGoPage() {
 
   const totals = serverTotals;
   const totalUncollectedCustomers = totals.unpaid + totals.partial + totals.overdue;
+  const pendingCycleShortcutCount = statusFilter === "pending_cycle" ? totalRows : totals.pendingCycle;
+  const isPendingCycleShortcutActive = statusFilter === "pending_cycle";
   const currentMonthFilter = monthInput();
   const currentPeriodSummary = monthFilter === currentMonthFilter && totalUncollectedCustomers > 0
     ? {
@@ -1357,7 +1330,7 @@ export default function WorkerBillGoPage() {
   const clearBillingPeriodFilter = () => {
     setBillingPeriodFilter(null);
     setMonthFilter(monthInput());
-    setStatusFilter("all");
+    setStatusFilter("unpaid");
     setDueFilter("all");
     setPage(1);
     setSelectedReceivableIds([]);
@@ -2621,7 +2594,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
                 setActiveServiceType(type);
                 setViewMode("cycle");
                 setActiveTab(BILLGO_ALL_TAB);
-                setStatusFilter("all");
+                setStatusFilter("unpaid");
                 setDueFilter("all");
                 setPage(1);
                 setSelectedReceivableIds([]);
@@ -2672,6 +2645,23 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
             </p>
           )}
         </div>
+      )}
+      {(pendingCycleShortcutCount > 0 || isPendingCycleShortcutActive) && (
+        <button
+          type="button"
+          onClick={() => {
+            setBillingPeriodFilter(null);
+            setViewMode("cycle");
+            setActiveTab(BILLGO_ALL_TAB);
+            setStatusFilter("pending_cycle");
+            setDueFilter("all");
+            setPage(1);
+            setSelectedReceivableIds([]);
+          }}
+          className={`mt-4 w-full rounded-lg border px-3 py-2 text-left text-sm font-extrabold ${isPendingCycleShortcutActive ? "border-warning bg-warning-container text-warning" : "border-warning/30 bg-white text-warning hover:bg-warning-container/40"}`}
+        >
+          ⚠ {pendingCycleShortcutCount} khách chưa thiết lập chu kỳ
+        </button>
       )}
       <section className="mt-4 rounded-lg border border-outline-variant/50 bg-white p-3 shadow-sm">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -3151,7 +3141,7 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
         </section>
       )}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto_auto]">
+      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <label className="relative block">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
@@ -3165,12 +3155,6 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
         <label className="relative block">
           <select className="input-field appearance-none pr-10" value={statusFilter} onChange={e => { setBillingPeriodFilter(null); setStatusFilter(e.target.value); setPage(1); }}>
             {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-        </label>
-        <label className="relative block">
-          <select className="input-field appearance-none pr-10" value={dueFilter} onChange={e => { setBillingPeriodFilter(null); setDueFilter(e.target.value); setPage(1); }}>
-            {dueFilterOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
         </label>
