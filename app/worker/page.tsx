@@ -144,6 +144,9 @@ type QuickCustomerOption = {
 
 const WORKER_DASHBOARD_JOB_LIMIT = 100;
 const WORKER_DASHBOARD_BILLGO_LIMIT = 300;
+const WORKER_DASHBOARD_INITIAL_INVENTORY_LIMIT = 20;
+const COMPLETION_PRODUCT_SEARCH_LIMIT = 15;
+const INVENTORY_PRODUCT_SELECT = "id, worker_id, name, sku, category, purchase_price, default_sale_price, stock_quantity, unit, warranty_months, is_recurring_billgo, recurring_cycle, note, created_at, updated_at";
 const WORKER_DASHBOARD_JOB_BASE_SELECT = "id, worker_id, service_id, service_detail_id, job_code, status, customer_id, gps_location, customer_gps_location, worker_gps_location, description, created_at, assigned_at, scheduled_at, quoted_price, address, images, completion_items, final_amount, warranty_days, warranty_note, workflow_data";
 const WORKER_DASHBOARD_JOB_RELATION_SELECT = "service:services!jobs_service_id_fkey(id, name, description, base_price, home_warranty_12m_price, home_warranty_24m_price, icon, parent_service_id), customer:profiles!customer_id(id, full_name, phone, address, gps_location)";
 const WORKER_DASHBOARD_JOB_ATTACHMENTS_SELECT = "task_attachments(id, task_id, original_name, storage_path, mime_type, file_size, created_at)";
@@ -801,6 +804,20 @@ const makeInventoryCompletionItem = (): CompletionItem => ({
   source: "inventory",
 });
 
+const makeInventoryCompletionItemFromProduct = (product: InventoryProduct): CompletionItem => ({
+  id: crypto.randomUUID(),
+  name: product.name,
+  quantity: 1,
+  unitPrice: Number(product.default_sale_price || 0),
+  costPrice: Number(product.purchase_price || 0),
+  warrantyDays: Number(product.warranty_months || 0) * 30,
+  inventoryProductId: product.id,
+  sku: product.sku,
+  category: product.category,
+  unit: product.unit,
+  source: "inventory",
+});
+
 const toCompletionNumber = (value: number | string | null | undefined) => {
   if (value === "" || value === null || value === undefined) return 0;
   const parsed = Number(value);
@@ -864,6 +881,18 @@ const normalizeBusinessKeyword = (value: string | null | undefined) =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/đ/g, "d");
 
+const normalizeInventorySearchTerm = (value: string) =>
+  value.trim().replace(/[,%()]/g, " ").replace(/\s+/g, " ");
+
+const buildInventorySearchFilter = (searchTerm: string) => {
+  const pattern = `%${searchTerm}%`;
+  return [
+    `name.ilike.${pattern}`,
+    `sku.ilike.${pattern}`,
+    `category.ilike.${pattern}`,
+    `note.ilike.${pattern}`,
+  ].join(",");
+};
 const getDeltaInventoryCompletionItems = <T extends { source?: string; inventoryProductId?: string | null; quantity: number; deviceQrDrafts?: CompletionQrDraft[] }>(items: T[], baseline?: LegacyReopenBaseline | null): T[] => {
   if (!baseline) return items;
   const remainingBaseline = { ...(baseline.materialQuantities || {}) };
@@ -1324,6 +1353,12 @@ export default function WorkerDashboard() {
   const [activeCompletionQrEditor, setActiveCompletionQrEditor] = useState<{ itemId: string; cameraIndex: number } | null>(null);
   const [completionQrReading, setCompletionQrReading] = useState(false);
   const [completionQrStatus, setCompletionQrStatus] = useState("");
+  const [completionProductPickerOpen, setCompletionProductPickerOpen] = useState(false);
+  const [completionProductSearchQuery, setCompletionProductSearchQuery] = useState("");
+  const [completionProductSearchResults, setCompletionProductSearchResults] = useState<InventoryProduct[]>([]);
+  const [completionProductSearchLoading, setCompletionProductSearchLoading] = useState(false);
+  const [completionProductSearchError, setCompletionProductSearchError] = useState("");
+  const [completionSelectedProductIds, setCompletionSelectedProductIds] = useState<string[]>([]);
   const billGoRows = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1707,10 +1742,11 @@ useEffect(() => {
 
       const { data: inventoryData, error: inventoryError } = await supabase
         .from("worker_inventory_products")
-        .select("id, worker_id, name, sku, category, purchase_price, default_sale_price, stock_quantity, unit, warranty_months, is_recurring_billgo, recurring_cycle, note, created_at, updated_at")
+        .select(INVENTORY_PRODUCT_SELECT)
         .eq("worker_id", workerData.id)
         .gt("stock_quantity", 0)
-        .order("name", { ascending: true });
+        .order("name", { ascending: true })
+        .limit(WORKER_DASHBOARD_INITIAL_INVENTORY_LIMIT)
 
       if (inventoryError) {
         if (!isMissingWorkerInventorySchemaError(inventoryError) && !isBackground) {
@@ -3281,15 +3317,114 @@ useEffect(() => {
     }
   };
 
-  const addCompletionItem = () => {
-    setCompletionItems(prev => [...prev, makeCompletionItem()]);
+  const mergeInventoryProducts = React.useCallback((products: InventoryProduct[]) => {
+    if (products.length === 0) return;
+    setDashboardData(prev => {
+      const byId = new Map(prev.inventoryProducts.map(product => [product.id, product]));
+      products.forEach(product => byId.set(product.id, product));
+      return {
+        ...prev,
+        inventoryProducts: Array.from(byId.values()).sort((a, b) => (a.name || "").localeCompare(b.name || "", "vi")),
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!completionProductPickerOpen || !worker?.id) return;
+
+    const searchTerm = normalizeInventorySearchTerm(completionProductSearchQuery);
+    if (searchTerm.length < 2) return;
+
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setCompletionProductSearchLoading(true);
+      setCompletionProductSearchError("");
+
+      void (async () => {
+        const { data, error } = await supabase
+          .from("worker_inventory_products")
+          .select(INVENTORY_PRODUCT_SELECT)
+          .eq("worker_id", worker.id)
+          .gt("stock_quantity", 0)
+          .or(buildInventorySearchFilter(searchTerm))
+          .order("name", { ascending: true })
+          .limit(COMPLETION_PRODUCT_SEARCH_LIMIT);
+
+        if (cancelled) return;
+        if (error) {
+          setCompletionProductSearchResults([]);
+          setCompletionProductSearchError(isMissingWorkerInventorySchemaError(error) ? "Kho hàng chưa sẵn sàng." : "Không thể tìm kho hàng: " + error.message);
+        } else {
+          const products = (data || []) as InventoryProduct[];
+          setCompletionProductSearchResults(products);
+          mergeInventoryProducts(products);
+        }
+        setCompletionProductSearchLoading(false);
+      })();
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [completionProductPickerOpen, completionProductSearchQuery, mergeInventoryProducts, supabase, worker?.id]);
+
+  const findInventoryProduct = (productId: string) =>
+    completionProductSearchResults.find(product => product.id === productId) ||
+    inventoryProducts.find(product => product.id === productId) ||
+    null;
+
+  const openCompletionProductPicker = () => {
+    setCompletionProductPickerOpen(true);
+    setCompletionSelectedProductIds([]);
+    setCompletionProductSearchQuery("");
+    setCompletionProductSearchResults([]);
+    setCompletionProductSearchError("");
   };
 
-  const addInventoryCompletionItem = () => {
-    setCompletionItems(prev => [
-      ...prev,
-      inventoryProducts.length > 0 ? makeInventoryCompletionItem() : makeCompletionItem("Vật tư", 0),
-    ]);
+  const closeCompletionProductPicker = () => {
+    setCompletionProductPickerOpen(false);
+    setCompletionSelectedProductIds([]);
+  };
+
+  const toggleCompletionSelectedProduct = (productId: string) => {
+    setCompletionSelectedProductIds(current => current.includes(productId)
+      ? current.filter(id => id !== productId)
+      : [...current, productId]
+    );
+  };
+
+  const addInventoryProductsToCompletion = (products: InventoryProduct[]) => {
+    if (products.length === 0) return;
+    mergeInventoryProducts(products);
+    setCompletionItems(prev => {
+      const next = [...prev];
+      products.forEach(product => {
+        const emptyInventoryIndex = next.findIndex(item => item.source === "inventory" && !item.inventoryProductId && !item.name.trim());
+        const existingIndex = next.findIndex(item => item.source === "inventory" && item.inventoryProductId === product.id);
+        if (existingIndex >= 0) {
+          const currentQuantity = Math.max(0, Number(next[existingIndex].quantity) || 0);
+          const maxStock = Math.max(1, Number(product.stock_quantity) || 1);
+          next[existingIndex] = { ...next[existingIndex], quantity: String(Math.min(currentQuantity + 1, maxStock)) };
+        } else if (emptyInventoryIndex >= 0) {
+          next[emptyInventoryIndex] = makeInventoryCompletionItemFromProduct(product);
+        } else {
+          next.push(makeInventoryCompletionItemFromProduct(product));
+        }
+      });
+      return next;
+    });
+  };
+
+  const addSelectedCompletionProducts = () => {
+    const selectedProducts = completionSelectedProductIds
+      .map(findInventoryProduct)
+      .filter((product): product is InventoryProduct => Boolean(product));
+    addInventoryProductsToCompletion(selectedProducts);
+    closeCompletionProductPicker();
+  };
+  const addCompletionItem = () => {
+    setCompletionItems(prev => [...prev, makeCompletionItem()]);
   };
 
   const addHomeWarrantyCompletionItem = () => {
@@ -3300,7 +3435,7 @@ useEffect(() => {
   };
 
   const updateInventoryCompletionProduct = (id: string, productId: string) => {
-    const product = inventoryProducts.find(item => item.id === productId);
+    const product = findInventoryProduct(productId);
     clearCompletionQrDraftsForItem(id);
     setCompletionItems(prev => prev.map(item => {
       if (item.id !== id) return item;
@@ -6815,17 +6950,25 @@ useEffect(() => {
               <div className="space-y-3">
                 <div className="sticky top-0 z-10 space-y-3 rounded-xl border border-outline-variant/40 bg-white/95 p-3 shadow-sm backdrop-blur">
                   <div>
-                    <label className="text-sm font-bold text-on-surface block">Nhân công, vật tư và bảo hành</label>
-                    <p className="text-xs text-on-surface-variant">Bảo hành tại nhà là dịch vụ bổ sung, không trừ kho.</p>
+                    <label className="text-sm font-bold text-on-surface block">Vật tư & thiết bị sử dụng</label>
+                    <p className="text-xs text-on-surface-variant">Tìm trong kho rồi chọn một hoặc nhiều vật tư/thiết bị, không tải toàn bộ kho lên màn hình.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={addInventoryCompletionItem}
+                      onClick={openCompletionProductPicker}
                       className="shrink-0 rounded-lg border border-secondary-container/30 bg-secondary-fixed px-3 py-2 text-xs font-bold text-secondary-container disabled:opacity-50"
                       disabled={uploadingImages}
                     >
-                      Thêm vật tư
+                      + Thêm vật tư
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openCompletionProductPicker}
+                      className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container disabled:opacity-50"
+                      disabled={uploadingImages}
+                    >
+                      + Thêm thiết bị
                     </button>
                     <button
                       type="button"
@@ -6839,12 +6982,76 @@ useEffect(() => {
                     <button
                       type="button"
                       onClick={addCompletionItem}
-                      className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container disabled:opacity-50"
+                      className="shrink-0 rounded-lg border border-outline/40 bg-white px-3 py-2 text-xs font-bold text-on-surface-variant disabled:opacity-50"
                       disabled={uploadingImages}
                     >
                       Thêm dòng
                     </button>
                   </div>
+                  {completionProductPickerOpen && (
+                    <div className="space-y-3 rounded-xl border border-primary-container/30 bg-surface-container-lowest p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-extrabold uppercase text-primary-container">Tìm vật tư / thiết bị</p>
+                          <p className="text-[11px] font-semibold text-on-surface-variant">Nhập tên, SKU, model hoặc danh mục. Hiển thị tối đa {COMPLETION_PRODUCT_SEARCH_LIMIT} kết quả.</p>
+                        </div>
+                        <button type="button" onClick={closeCompletionProductPicker} className="rounded-lg border border-outline/40 px-3 py-2 text-xs font-extrabold text-on-surface-variant" disabled={uploadingImages}>
+                          Đóng
+                        </button>
+                      </div>
+                      <input
+                        value={completionProductSearchQuery}
+                        onChange={(event) => setCompletionProductSearchQuery(event.target.value)}
+                        className="input-field !py-2 text-sm"
+                        placeholder="Tìm camera, H8C, wifi, RG-EW1200..."
+                        disabled={uploadingImages}
+                        autoFocus
+                      />
+                      {normalizeInventorySearchTerm(completionProductSearchQuery).length < 2 ? (
+                        <p className="text-xs font-semibold text-on-surface-variant">Nhập ít nhất 2 ký tự để tìm trong kho.</p>
+                      ) : completionProductSearchLoading ? (
+                        <p className="text-xs font-bold text-primary-container">Đang tìm...</p>
+                      ) : completionProductSearchError ? (
+                        <p className="text-xs font-bold text-error">{completionProductSearchError}</p>
+                      ) : completionProductSearchResults.length === 0 ? (
+                        <p className="text-xs font-bold text-on-surface-variant">Không tìm thấy vật tư/thiết bị phù hợp.</p>
+                      ) : (
+                        <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                          {completionProductSearchResults.map(product => {
+                            const checked = completionSelectedProductIds.includes(product.id);
+                            const alreadyAdded = completionItems.some(item => item.source === "inventory" && item.inventoryProductId === product.id);
+                            return (
+                              <label key={product.id} className="flex items-start gap-3 rounded-lg border border-outline-variant/40 bg-white p-3 text-left">
+                                <input
+                                  type="checkbox"
+                                  className="mt-1 h-4 w-4 accent-primary"
+                                  checked={checked}
+                                  onChange={() => toggleCompletionSelectedProduct(product.id)}
+                                  disabled={uploadingImages}
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-extrabold text-on-surface">{product.name}</span>
+                                  <span className="mt-1 block text-xs font-semibold text-on-surface-variant">
+                                    {product.sku || "Chưa có SKU"} · {product.category || "Chưa phân loại"} · Tồn {product.stock_quantity} {product.unit}
+                                  </span>
+                                  <span className="mt-1 block text-xs font-bold text-primary-container">{formatCurrency(Number(product.default_sale_price || 0))}</span>
+                                </span>
+                                {alreadyAdded && <span className="rounded-full bg-success-container px-2 py-1 text-[10px] font-extrabold text-success">Đã có</span>}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={addSelectedCompletionProducts}
+                        className="btn-primary w-full !py-2 text-sm disabled:opacity-50"
+                        disabled={uploadingImages || completionSelectedProductIds.length === 0}
+                      >
+                        Thêm đã chọn ({completionSelectedProductIds.length})
+                      </button>
+                    </div>
+                  )}
                   {completionHomeWarrantyTargetItems.length === 0 && (
                     <p className="text-xs font-semibold text-error">
                       Cần có ít nhất một dòng thiết bị/vật tư để áp dụng bảo hành tại nhà.
