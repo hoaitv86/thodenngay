@@ -6949,18 +6949,10 @@ useEffect(() => {
                     <button
                       type="button"
                       onClick={openCompletionProductPicker}
-                      className="shrink-0 rounded-lg border border-secondary-container/30 bg-secondary-fixed px-3 py-2 text-xs font-bold text-secondary-container disabled:opacity-50"
-                      disabled={uploadingImages}
-                    >
-                      + Thêm vật tư
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openCompletionProductPicker}
                       className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-bold text-primary-container disabled:opacity-50"
                       disabled={uploadingImages}
                     >
-                      + Thêm thiết bị
+                      + Thêm vật tư & thiết bị
                     </button>
                     <button
                       type="button"
