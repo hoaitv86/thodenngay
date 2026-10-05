@@ -400,6 +400,8 @@ const methodLabels: Record<string, string> = {
 };
 
 const providerSuggestions = ["Viettel", "VNPT", "FPT"];
+const electricityAccountHint = "Ví dụ: PA..., PB..., PD..., PE..., PQ...";
+
 const electricityProviderOptions = [
   { label: "EVN Hà Nội", prefix: "PD" },
   { label: "EVN TP. Hồ Chí Minh", prefix: "PE" },
@@ -2418,6 +2420,8 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     }
   };
 
+  const clearInputButtonClass = "absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-lg font-extrabold text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface";
+
   const renderRow = (row: RowView) => {
     const { item, summary } = row;
     const itemServiceType = item.subscription?.service_type || activeServiceType;
@@ -2932,7 +2936,11 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <input className="input-field" placeholder="Số điện thoại" value={form.phone} onChange={e => updateForm("phone", e.target.value)} />
               {!isMobileForm && (
                 <>
-                  <input required list="billgo-account-suggestions" className="input-field" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? "Mã khách hàng điện" : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
+                  <div className="relative">
+                    <input required list="billgo-account-suggestions" className="input-field pr-12" placeholder={isInternetForm ? "Account Internet" : form.serviceType === "electricity" ? electricityAccountHint : form.serviceType === "installment" ? "Mã hợp đồng" : `Mã/tài khoản ${selectedFormServiceConfig.label}`} value={form.account} onChange={e => updateForm("account", e.target.value)} />
+                    {form.serviceType === "electricity" && form.account && <button type="button" aria-label="Xóa mã khách hàng" onClick={() => updateForm("account", "")} className={clearInputButtonClass}>×</button>}
+                  </div>
+                  {form.serviceType === "electricity" && <p className="-mt-2 text-xs font-semibold text-on-surface-variant sm:col-span-2 xl:col-span-3">Quy ước EVN: Hà Nội PD, TP.HCM PE, miền Bắc PA, miền Trung PQ, miền Nam PB.</p>}
                   <datalist id="billgo-account-suggestions">
                     {BILLGO_ACCOUNT_SUGGESTIONS.map(account => <option key={account} value={account} />)}
                   </datalist>
@@ -3144,7 +3152,8 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
       <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <label className="relative block">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
-          <input className="input-field !pl-10" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
+          <input className="input-field !pl-10 pr-12" value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm tên, account, địa chỉ, gói cước..." />
+          {query && <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setQuery("")} className={clearInputButtonClass}>×</button>}
         </label>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <input type="month" className="input-field" value={monthFilter} onChange={e => { setBillingPeriodFilter(null); setMonthFilter(e.target.value || monthInput()); setPage(1); }} />
@@ -3545,7 +3554,11 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <input required className="input-field" placeholder="Tên khách hàng" value={editForm.customerName} onChange={e => setEditForm(prev => ({ ...prev, customerName: e.target.value }))} />
                 <input className="input-field" placeholder="Số điện thoại" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} />
-                <input required list="billgo-account-suggestions" className="input-field" placeholder="Account" value={editForm.account} onChange={e => setEditForm(prev => ({ ...prev, account: e.target.value }))} />
+                <div className="relative">
+                  <input required list="billgo-account-suggestions" className="input-field pr-12" placeholder={getBillGoServiceIconType(actionTarget.subscription?.service_type) === "electricity" ? electricityAccountHint : "Account"} value={editForm.account} onChange={e => setEditForm(prev => ({ ...prev, account: e.target.value }))} />
+                  {getBillGoServiceIconType(actionTarget.subscription?.service_type) === "electricity" && editForm.account && <button type="button" aria-label="Xóa mã khách hàng" onClick={() => setEditForm(prev => ({ ...prev, account: "" }))} className={clearInputButtonClass}>×</button>}
+                </div>
+                {getBillGoServiceIconType(actionTarget.subscription?.service_type) === "electricity" && <p className="-mt-2 text-xs font-semibold text-on-surface-variant sm:col-span-2">Quy ước EVN: Hà Nội PD, TP.HCM PE, miền Bắc PA, miền Trung PQ, miền Nam PB.</p>}
                 <select className="input-field" value={editForm.provider} onChange={e => setEditForm(prev => ({ ...prev, provider: e.target.value }))}>
                   {providerSuggestions.map(provider => <option key={provider} value={provider}>{provider}</option>)}
                 </select>
