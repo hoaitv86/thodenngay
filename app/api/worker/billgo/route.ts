@@ -50,7 +50,7 @@ const allowedListStatuses = new Set(["all", "pending_cycle", "not_due", "unpaid"
 const allowedDueFilters = new Set(["all", "due_this_month", "not_due"]);
 const billGoSubscriptionBaseSelect = "id, customer_id, worker_id, customer_name, phone, internet_account, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date";
 const billGoSubscriptionTv360Select = "id, customer_id, worker_id, parent_subscription_id, customer_name, phone, internet_account, tv360_account, tv360_service_type, customer_address, area_id, sub_area_id, address_detail, legacy_address, provider, package_id, package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee, next_period_start, next_due_date, covered_until, status, note, created_at, start_date";
-const billGoReceivableListSelect = "id, total_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_period_start, next_due_date, paid_amount, paid_at, payment_method, status, note, subscription_id";
+const billGoReceivableListSelect = "id, total_amount, mobile_adjustment_amount, due_date, period_start, period_end, collection_month, usage_month, billing_month, billing_year, cycle_at_collection, billing_months, bonus_months, service_months, next_period_start, next_due_date, paid_amount, monthly_fee_at_collection, paid_at, payment_method, status, note, subscription_id";
 const billGoReceivableDetailBaseSelect = `${billGoReceivableListSelect}, subscription:billgo_subscriptions(${billGoSubscriptionBaseSelect})`;
 const billGoReceivableDetailTv360Select = `${billGoReceivableListSelect}, subscription:billgo_subscriptions(${billGoSubscriptionTv360Select})`;
 
@@ -296,7 +296,7 @@ const matchesBillGoStatusFilter = (status: string, filter: string) => {
   return status === filter;
 };
 
-const previousUnpaidReceivableSelect = "id, subscription_id, total_amount, paid_amount, due_date, period_start, period_end, collection_month, billing_month, billing_year, status";
+const previousUnpaidReceivableSelect = "id, subscription_id, total_amount, mobile_adjustment_amount, paid_amount, due_date, period_start, period_end, collection_month, billing_month, billing_year, status";
 
 const getRowSearchText = (row: {
   subscription?: {
@@ -366,6 +366,7 @@ const buildReceivableDraft = (
     package_name_at_collection: subscription.package_name || serviceLabel,
     title: `Thu ${serviceLabel} ${subscription.package_name || ""}`.trim(),
     total_amount: getBillGoServiceCollectableAmount(monthlyFee, cycle, serviceType),
+    mobile_adjustment_amount: 0,
     due_date: billing.dueDate,
     period_start: billing.periodStart,
     period_end: billing.periodEnd,
@@ -2119,6 +2120,45 @@ export async function PATCH(request: Request) {
     }));
     if (historyRows.length > 0) await admin.from("billgo_area_changes").insert(historyRows);
     return NextResponse.json({ ok: true, updated: subscriptionIds.length });
+  }
+
+  if (action === "update_mobile_adjustment") {
+    if (!canManageBillGoScope(scope)) return jsonError("Bạn không có quyền sửa phát sinh BillGo.", 403);
+    const receivableId = asText(body.receivableId);
+    const adjustmentAmount = Math.max(0, toMoneyNumber(body.amount));
+    if (!receivableId) return jsonError("Thiếu kỳ cước cần sửa phát sinh.");
+
+    const { data: receivable, error: receivableError } = await admin
+      .from("billgo_receivables")
+      .select("id, worker_id, subscription_id, total_amount, due_date, paid_amount, status, monthly_fee_at_collection, cycle_at_collection, subscription:billgo_subscriptions(id, service_type, current_cycle, cycle, monthly_fee, amount_per_cycle, area_id, sub_area_id, address_detail)")
+      .eq("id", receivableId)
+      .eq("worker_id", workerId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (receivableError) return jsonError("Không thể tải kỳ cước: " + receivableError.message);
+    if (!receivable) return jsonError("Không tìm thấy kỳ cước.", 404);
+
+    const subscription = firstRelation((receivable as { subscription?: unknown }).subscription as never) as BillGoSubscriptionListRow | null;
+    const serviceType = String(subscription?.service_type || "internet");
+    if (!serviceType.includes("mobile")) return jsonError("Phát sinh chỉ áp dụng cho BillGo Di động.", 400);
+    if (toMoneyNumber(receivable.paid_amount) > 0 || receivable.status === "paid" || receivable.status === "promo") {
+      return jsonError("Kỳ đã thu không thể sửa phát sinh.", 409);
+    }
+
+    const cycle = String(receivable.cycle_at_collection || subscription?.current_cycle || subscription?.cycle || "monthly") as BillGoCycle;
+    const monthlyFee = toMoneyNumber(receivable.monthly_fee_at_collection ?? subscription?.monthly_fee ?? subscription?.amount_per_cycle);
+    const baseAmount = getBillGoServiceCollectableAmount(monthlyFee, cycle, serviceType);
+    const totalAmount = baseAmount + adjustmentAmount;
+    const nextStatus = getBillGoStoredStatus(totalAmount, 0, receivable.due_date);
+    const { error: updateError } = await admin
+      .from("billgo_receivables")
+      .update({ mobile_adjustment_amount: adjustmentAmount, total_amount: totalAmount, status: nextStatus })
+      .eq("id", receivable.id)
+      .eq("worker_id", workerId)
+      .eq("paid_amount", 0);
+    if (updateError) return jsonError("Không thể lưu phát sinh: " + updateError.message);
+
+    return NextResponse.json({ ok: true, mobileAdjustmentAmount: adjustmentAmount, baseAmount, totalAmount, status: nextStatus });
   }
 
   if (action === "reverse_collection") {

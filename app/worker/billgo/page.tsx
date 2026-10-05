@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -87,6 +87,8 @@ type BillGoReceipt = {
 type Receivable = {
   id: string;
   total_amount?: number | string | null;
+  mobile_adjustment_amount?: number | string | null;
+  monthly_fee_at_collection?: number | string | null;
   due_date?: string | null;
   period_start?: string | null;
   period_end?: string | null;
@@ -110,6 +112,7 @@ type Receivable = {
   previous_unpaid_receivables?: Array<{
     id: string;
     total_amount?: number | string | null;
+    mobile_adjustment_amount?: number | string | null;
     paid_amount?: number | string | null;
     due_date?: string | null;
     period_start?: string | null;
@@ -879,6 +882,8 @@ export default function WorkerBillGoPage() {
   const [actionMode, setActionMode] = useState<ActionMode | null>(null);
   const [receiptTarget, setReceiptTarget] = useState<Receivable | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+  const [mobileAdjustmentDrafts, setMobileAdjustmentDrafts] = useState<Record<string, string>>({});
+  const [mobileAdjustmentSavingId, setMobileAdjustmentSavingId] = useState<string | null>(null);
   const [collectForm, setCollectForm] = useState({
     amount: "",
     paidAt: todayInput(),
@@ -2420,6 +2425,48 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     }
   };
 
+  const getMobileChargeParts = (item: Receivable, draftValue?: string) => {
+    const serviceType = item.subscription?.service_type || activeServiceType;
+    const cycle = getBillGoRowCycle(item) || "monthly";
+    const baseAmount = getBillGoServiceCollectableAmount(item.monthly_fee_at_collection ?? item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle, cycle, serviceType);
+    const storedAdjustment = toMoneyNumber(item.mobile_adjustment_amount);
+    const adjustmentAmount = draftValue === undefined ? storedAdjustment : Math.max(0, toMoneyNumber(draftValue));
+    return { baseAmount, adjustmentAmount, totalAmount: baseAmount + adjustmentAmount };
+  };
+
+  const saveMobileAdjustment = async (item: Receivable) => {
+    const draftValue = mobileAdjustmentDrafts[item.id] ?? String(toMoneyNumber(item.mobile_adjustment_amount));
+    const amount = Math.max(0, toMoneyNumber(draftValue));
+    setMobileAdjustmentSavingId(item.id);
+    setMessage("");
+    try {
+      const response = await fetch("/api/worker/billgo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_mobile_adjustment", receivableId: item.id, amount }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể lưu phát sinh di động.");
+      setRows(previous => previous.map(row => row.id === item.id ? {
+        ...row,
+        mobile_adjustment_amount: result.mobileAdjustmentAmount,
+        total_amount: result.totalAmount,
+        status: result.status || row.status,
+      } : row));
+      setMobileAdjustmentDrafts(previous => {
+        const next = { ...previous };
+        delete next[item.id];
+        return next;
+      });
+      setMessage("Đã lưu phát sinh di động.");
+      await refreshBillGoKeepingScroll();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể lưu phát sinh di động.");
+    } finally {
+      setMobileAdjustmentSavingId(null);
+    }
+  };
+
   const clearInputButtonClass = "absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-lg font-extrabold text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface";
 
   const renderRow = (row: RowView) => {
@@ -2427,14 +2474,20 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
     const itemServiceType = item.subscription?.service_type || activeServiceType;
     const cycle = row.cycle ? getBillGoServiceCycleOption(row.cycle, itemServiceType) : null;
     const isNoAmountRow = isBillGoNoAmountServiceType(itemServiceType);
-    const isInstallmentRow = getBillGoServiceIconType(itemServiceType) === "installment";
+    const itemIconType = getBillGoServiceIconType(itemServiceType);
+    const isMobileRow = itemIconType === "mobile";
+    const mobileAdjustmentDraft = mobileAdjustmentDrafts[item.id] ?? String(toMoneyNumber(item.mobile_adjustment_amount));
+    const mobileChargeParts = isMobileRow ? getMobileChargeParts(item, mobileAdjustmentDraft) : null;
+    const mobileAdjustmentChanged = mobileChargeParts ? mobileChargeParts.adjustmentAmount !== toMoneyNumber(item.mobile_adjustment_amount) : false;
+    const canEditMobileAdjustment = isMobileRow && toMoneyNumber(item.paid_amount) <= 0 && summary.status !== "paid" && summary.status !== "promo";
+    const isInstallmentRow = itemIconType === "installment";
     const statusLabel = isNoAmountRow
       ? summary.status === "paid"
         ? isInstallmentRow ? "Đã đóng" : "Đã thu"
         : isInstallmentRow ? "Chưa đóng" : "Chưa thu"
       : summary.statusLabel;
     const collectLabel = isInstallmentRow ? "Xác nhận đóng" : isNoAmountRow ? "Xác nhận thu" : "Thu";
-    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo";
+    const canCollect = summary.status !== "pending_cycle" && summary.status !== "not_due" && summary.status !== "paid" && summary.status !== "promo" && !mobileAdjustmentChanged;
     const receiptEntries = getReceiptEntries(item);
     const canOpenReceiptHistory = receiptEntries.length > 0 || summary.paid > 0 || summary.status === "paid" || summary.status === "partial";
     const previousUnpaidReceivables = getPreviousUnpaidReceivables(item);
@@ -2521,10 +2574,42 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
             </>
           ) : (
             <>
-              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
-              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
+              {mobileChargeParts ? (
+                <>
+                  <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cước gói<br /><strong>{formatBillGoCurrency(mobileChargeParts.baseAmount)}</strong><p className="mt-1 text-xs text-on-surface-variant">Phát sinh {formatBillGoCurrency(mobileChargeParts.adjustmentAmount)}</p></div>
+                  <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">
+                    Tổng phải thu<br /><strong>{formatBillGoCurrency(mobileChargeParts.totalAmount)}</strong>
+                    <label className="mt-2 grid gap-1 text-xs font-bold text-on-surface-variant">
+                      Phát sinh thêm
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        disabled={!canEditMobileAdjustment || mobileAdjustmentSavingId === item.id}
+                        className="input-field !h-10 !py-2 text-sm disabled:opacity-60"
+                        value={mobileAdjustmentDraft}
+                        onChange={event => setMobileAdjustmentDrafts(previous => ({ ...previous, [item.id]: event.target.value }))}
+                        onKeyDown={event => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            if (canEditMobileAdjustment && mobileAdjustmentChanged) void saveMobileAdjustment(item);
+                          }
+                        }}
+                      />
+                    </label>
+                    <button type="button" disabled={!canEditMobileAdjustment || !mobileAdjustmentChanged || mobileAdjustmentSavingId === item.id} onClick={() => void saveMobileAdjustment(item)} className="btn-outline mt-2 !w-full !px-3 !py-2 text-xs disabled:opacity-45">
+                      {mobileAdjustmentSavingId === item.id ? "Đang lưu..." : "Lưu phát sinh"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Gói tháng<br /><strong>{formatBillGoCurrency(item.subscription?.monthly_fee ?? item.subscription?.amount_per_cycle)}</strong></div>
+                  <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Cần thu<br /><strong>{formatBillGoCurrency(summary.receivable)}</strong></div>
+                </>
+              )}
               <div className="rounded-lg bg-surface-container-low p-3 lg:hidden">Đã thu<br /><strong className="text-success">{formatBillGoCurrency(summary.paid)}</strong></div>
-              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
+              <div className="rounded-lg bg-surface-container-low p-3 lg:rounded-none lg:bg-transparent lg:p-0">Còn lại<br /><strong className="text-error">{formatBillGoCurrency(mobileChargeParts ? Math.max(mobileChargeParts.totalAmount - summary.paid, 0) : summary.debt)}</strong><p className="text-xs text-on-surface-variant">Đã thu {formatBillGoCurrency(summary.paid)}</p></div>
             </>
           )}
         </div>
@@ -3427,7 +3512,14 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
               </div>
               <div className="mt-4 grid gap-2 text-sm">
                 <div className="rounded-lg bg-surface-container-low p-3">Kỳ cước: <strong>{collecting.period_start} - {collecting.period_end}</strong></div>
-                <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
+                {getBillGoServiceIconType(collecting.subscription?.service_type || activeServiceType) === "mobile" ? (
+                  <>
+                    <div className="rounded-lg bg-surface-container-low p-3">Cước gói: <strong>{formatBillGoCurrency(getMobileChargeParts(collecting).baseAmount)}</strong></div>
+                    <div className="rounded-lg bg-surface-container-low p-3">Phát sinh: <strong>{formatBillGoCurrency(getMobileChargeParts(collecting).adjustmentAmount)}</strong></div>
+                  </>
+                ) : (
+                  <div className="rounded-lg bg-surface-container-low p-3">Gói cước hàng tháng: <strong>{formatBillGoCurrency(collecting.subscription?.monthly_fee ?? collecting.subscription?.amount_per_cycle)}</strong></div>
+                )}
                 <div className="rounded-lg bg-surface-container-low p-3">Chu kỳ: <strong>{getBillGoCycleOption(getBillGoRowCycle(collecting)).label}</strong></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-surface-container-low p-3">Số tháng tính tiền<br /><strong>{collecting.billing_months || 0}</strong></div>
