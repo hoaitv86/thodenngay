@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -3198,20 +3198,25 @@ Tổng số tiền cần xác nhận thu: ${formatBillGoCurrency(selectedCollect
       </div>}
 
       {visibleRows.length > 0 && (
-        <div className="mt-4 flex flex-col gap-2 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 rounded-lg border border-outline-variant/40 bg-white p-3 shadow-sm">
           <label className="flex items-center gap-2 text-sm font-bold text-on-surface">
             <input type="checkbox" className="h-5 w-5 accent-primary" checked={allVisibleSelected} onChange={toggleVisibleSelection} />
             {allVisibleSelected ? "Bo chon trang hien tai" : "Chon tat ca tren trang"}
           </label>
+        </div>
+      )}
+
+      {selectedVisibleRows.length > 0 && (
+        <div className="sticky top-16 z-30 mt-3 flex flex-col gap-2 rounded-lg border border-primary/25 bg-white/95 p-3 shadow-lg backdrop-blur lg:top-20 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-extrabold text-on-surface">Đã chọn {selectedVisibleRows.length} khách</p>
+            <p className="mt-0.5 text-xs font-bold text-on-surface-variant">Tổng tiền: {formatBillGoCurrency(selectedCollectionTotal)}</p>
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <span className="text-sm font-bold text-on-surface-variant">Da chon {selectedReceivableIds.length} khach</span>
             <button type="button" disabled={saving || selectedCollectableRows.length === 0} onClick={() => void submitBulkCollection()} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
-              <CheckCircle2 size={16} /> {activeServiceType === "installment" ? "Xác nhận đã đóng" : "Xác nhận đã thu"}
+              <CheckCircle2 size={16} /> Xác nhận thu
             </button>
-            <button type="button" disabled={selectedCycleSubscriptionIds.length === 0} onClick={() => setShowBulkCycle(true)} className="btn-primary !w-full !px-4 !py-2 disabled:opacity-45 sm:!w-auto">
-              <RotateCcw size={16} /> Gan chu ky
-            </button>
-            {selectedReceivableIds.length > 0 && <button type="button" onClick={() => setSelectedReceivableIds([])} className="btn-outline !w-full !px-4 !py-2 sm:!w-auto">Bo chon</button>}
+            <button type="button" onClick={() => setSelectedReceivableIds([])} className="btn-outline !w-full !px-4 !py-2 sm:!w-auto">Bỏ chọn</button>
           </div>
         </div>
       )}
