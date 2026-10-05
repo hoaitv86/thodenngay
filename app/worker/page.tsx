@@ -415,6 +415,31 @@ type CompletionQrDraft = {
   uid: string;
   installLocation: string;
 };
+type CompletionRepairCameraDevice = {
+  id: string;
+  product_id?: string | null;
+  product_name?: string | null;
+  product_sku?: string | null;
+  category?: string | null;
+  device_label?: string | null;
+  device_index?: number | null;
+  qr_code?: string | null;
+  serial?: string | null;
+  uid?: string | null;
+  install_location?: string | null;
+  installed_at?: string | null;
+  warranty_months?: number | null;
+  home_warranty_months?: number | null;
+  home_warranty_start?: string | null;
+  home_warranty_end?: string | null;
+  completion_run_id?: string | null;
+};
+
+type CompletionRepairCameraQrDraft = CompletionQrDraft & {
+  id: string;
+  deviceId: string;
+  deviceLabel: string;
+};
 
 interface WorkerCreateJobResponse {
   error?: string;
@@ -597,6 +622,12 @@ const INTERNET_COMPLETION_CYCLES: BillGoCycle[] = ["monthly", "two_months", "thr
 const completionHandoverSectionKeys = handoverWorkflowSectionKeys.filter(key => key !== "camera_devices");
 const MAX_COMPLETION_QR_DECODE_EDGE = 900;
 const emptyCompletionQrDraft: CompletionQrDraft = { qrCode: "", serial: "", uid: "", installLocation: "" };
+const makeCompletionRepairCameraQrDraft = (device?: CompletionRepairCameraDevice | null): CompletionRepairCameraQrDraft => ({
+  id: crypto.randomUUID(),
+  deviceId: device?.id || "",
+  deviceLabel: device?.device_label || device?.product_name || "",
+  ...emptyCompletionQrDraft,
+});
 
 const getMonthKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
@@ -1356,6 +1387,11 @@ export default function WorkerDashboard() {
   const [activeCompletionQrEditor, setActiveCompletionQrEditor] = useState<{ itemId: string; cameraIndex: number } | null>(null);
   const [completionQrReading, setCompletionQrReading] = useState(false);
   const [completionQrStatus, setCompletionQrStatus] = useState("");
+  const [completionRepairCameraDevices, setCompletionRepairCameraDevices] = useState<CompletionRepairCameraDevice[]>([]);
+  const [completionRepairCameraDevicesLoading, setCompletionRepairCameraDevicesLoading] = useState(false);
+  const [completionRepairCameraDevicesError, setCompletionRepairCameraDevicesError] = useState("");
+  const [completionRepairCameraQrDrafts, setCompletionRepairCameraQrDrafts] = useState<CompletionRepairCameraQrDraft[]>([]);
+  const [completionRepairCameraQrStatus, setCompletionRepairCameraQrStatus] = useState("");
   const [completionProductPickerOpen, setCompletionProductPickerOpen] = useState(false);
   const [completionProductSearchQuery, setCompletionProductSearchQuery] = useState("");
   const [completionProductSearchResults, setCompletionProductSearchResults] = useState<InventoryProduct[]>([]);
@@ -1455,6 +1491,61 @@ export default function WorkerDashboard() {
   const isInternetCompletionJob = React.useMemo(() => {
     return activeJobToComplete ? isInternetInstallCompletionJob(activeJobToComplete) : false;
   }, [activeJobToComplete, isInternetInstallCompletionJob]);
+  const isCameraRepairCompletionJob = React.useMemo(() => {
+    if (!activeJobToComplete) return false;
+    const serviceText = normalizeServiceText([
+      activeJobToComplete.serviceName,
+      activeJobToComplete.service?.name,
+      activeJobToComplete.service?.parentName,
+      ...completionWorkflowServices.flatMap(service => [service.name, service.parentName]),
+    ].filter(Boolean).join(" "));
+    const hasCameraSignal = /camera|cctv|dau ghi|dvr|nvr/.test(serviceText);
+    const hasInstallSignal = /lap moi|lap dat|install|setup/.test(serviceText);
+    const hasRepairSignal = /sua|bao tri|ve sinh|repair|maintenance|khong|mat|loi|hong|mo|nhieu|soc|offline|ngoai tuyen|cau hinh|tai khoan|thay|nang cap/.test(serviceText);
+    return hasCameraSignal && hasRepairSignal && !hasInstallSignal;
+  }, [activeJobToComplete, completionWorkflowServices]);
+  useEffect(() => {
+    if (!activeJobToComplete || !isCameraRepairCompletionJob || !worker?.id || !activeJobToComplete.customer_id) return;
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      setCompletionRepairCameraDevicesLoading(true);
+      setCompletionRepairCameraDevicesError("");
+
+      void (async () => {
+        const { data, error } = await supabase
+          .from("worker_customer_devices")
+          .select("id, product_id, product_name, product_sku, category, device_label, device_index, qr_code, serial, uid, install_location, installed_at, warranty_months, home_warranty_months, home_warranty_start, home_warranty_end, completion_run_id")
+          .eq("worker_id", worker.id)
+          .eq("customer_id", activeJobToComplete.customer_id)
+          .is("reverted_at", null)
+          .order("installed_at", { ascending: false });
+
+        if (cancelled) return;
+        if (error) {
+          if (/worker_customer_devices|schema cache|Could not find|does not exist|reverted_at/i.test(error.message || "")) {
+            setCompletionRepairCameraDevices([]);
+            setCompletionRepairCameraDevicesError("");
+          } else {
+            setCompletionRepairCameraDevices([]);
+            setCompletionRepairCameraDevicesError("Không thể tải camera của khách: " + error.message);
+          }
+        } else {
+          const cameraDevices = ((data || []) as CompletionRepairCameraDevice[]).filter(device => {
+            const text = normalizeBusinessKeyword([device.category, device.product_name, device.device_label].filter(Boolean).join(" "));
+            return /camera|cctv|dau ghi|dvr|nvr/.test(text);
+          });
+          setCompletionRepairCameraDevices(cameraDevices);
+        }
+        setCompletionRepairCameraDevicesLoading(false);
+      })();
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeJobToComplete, isCameraRepairCompletionJob, supabase, worker?.id]);
   const billGoTotals = useMemo(
     () => billGoRows.reduce(
       (acc, row) => {
@@ -3214,6 +3305,9 @@ useEffect(() => {
     setActiveCompletionQrEditor(null);
     setCompletionQrStatus("");
     setCompletionQrReading(false);
+    setCompletionRepairCameraQrDrafts([]);
+    setCompletionRepairCameraQrStatus("");
+    setCompletionRepairCameraDevicesError("");
     try {
       setCompletionHandoverData(pruneWorkflowData(
         job.workflow_data || {},
@@ -3319,6 +3413,50 @@ useEffect(() => {
     }
   };
 
+  const hasCompletionRepairCameraQrDraftData = (draft: CompletionRepairCameraQrDraft) =>
+    Boolean(draft.deviceId || draft.deviceLabel.trim() || draft.qrCode.trim() || draft.serial.trim() || draft.uid.trim() || draft.installLocation.trim());
+
+  const addCompletionRepairCameraQrDraft = () => {
+    setCompletionRepairCameraQrDrafts(current => [...current, makeCompletionRepairCameraQrDraft(completionRepairCameraDevices.length === 1 ? completionRepairCameraDevices[0] : null)]);
+    setCompletionRepairCameraQrStatus("");
+  };
+
+  const updateCompletionRepairCameraQrDraft = (draftId: string, patch: Partial<CompletionRepairCameraQrDraft>) => {
+    setCompletionRepairCameraQrDrafts(current => current.map(draft => draft.id === draftId ? { ...draft, ...patch } : draft));
+  };
+
+  const selectCompletionRepairCameraDevice = (draftId: string, deviceId: string) => {
+    const device = completionRepairCameraDevices.find(item => item.id === deviceId);
+    updateCompletionRepairCameraQrDraft(draftId, {
+      deviceId,
+      deviceLabel: device?.device_label || device?.product_name || "",
+      qrCode: device?.qr_code || "",
+      serial: device?.serial || "",
+      uid: device?.uid || "",
+      installLocation: device?.install_location || "",
+    });
+  };
+
+  const removeCompletionRepairCameraQrDraft = (draftId: string) => {
+    setCompletionRepairCameraQrDrafts(current => current.filter(draft => draft.id !== draftId));
+    setCompletionRepairCameraQrStatus("Đã xoá QR nháp cho camera sửa chữa.");
+  };
+
+  const handleCompletionRepairCameraQrImage = async (draftId: string, file: File | undefined) => {
+    if (!file) return;
+    setCompletionQrReading(true);
+    setCompletionRepairCameraQrStatus("Đang đọc mã QR...");
+    try {
+      const qrCode = await decodeCompletionQrImage(file);
+      updateCompletionRepairCameraQrDraft(draftId, { qrCode });
+      setCompletionRepairCameraQrStatus("Đã lấy mã QR từ ảnh.");
+    } catch (error) {
+      console.error("[completion-repair-camera-qr] decode failed", error);
+      setCompletionRepairCameraQrStatus(error instanceof Error ? error.message : "Không thể đọc mã QR.");
+    } finally {
+      setCompletionQrReading(false);
+    }
+  };
   const mergeInventoryProducts = React.useCallback((products: InventoryProduct[]) => {
     if (products.length === 0) return;
     setDashboardData(prev => {
@@ -3476,6 +3614,124 @@ useEffect(() => {
     setCompletionItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id && item.source !== "labor") : prev);
   };
 
+  const saveRepairCameraQrDraftsFromCompletion = async (job: WorkerJob, completionRunId: string) => {
+    if (!worker?.id || !job.customer_id) return;
+    const drafts = completionRepairCameraQrDrafts
+      .map(draft => ({
+        ...draft,
+        deviceLabel: draft.deviceLabel.trim(),
+        qrCode: draft.qrCode.trim(),
+        serial: draft.serial.trim(),
+        uid: draft.uid.trim(),
+        installLocation: draft.installLocation.trim(),
+      }))
+      .filter(hasCompletionRepairCameraQrDraftData);
+
+    if (drafts.length === 0) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const installedAt = new Date().toISOString().slice(0, 10);
+    const { data: existingData, error: existingError } = await supabase
+      .from("worker_customer_devices")
+      .select("id, product_id, product_name, product_sku, category, device_label, device_index, qr_code, serial, uid, install_location, installed_at, warranty_months, home_warranty_months, home_warranty_start, home_warranty_end, completion_run_id")
+      .eq("worker_id", worker.id)
+      .eq("customer_id", job.customer_id)
+      .is("reverted_at", null);
+
+    if (existingError) {
+      if (/worker_customer_devices|schema cache|Could not find|does not exist|reverted_at/i.test(existingError.message || "")) {
+        console.warn("[repair-camera-qr] missing schema", existingError);
+        return;
+      }
+      throw new Error("Đã hoàn thành job nhưng chưa đọc được camera của khách để lưu QR: " + existingError.message);
+    }
+
+    const existingDevices = ((existingData || []) as CompletionRepairCameraDevice[]).filter(device => {
+      const text = normalizeBusinessKeyword([device.category, device.product_name, device.device_label].filter(Boolean).join(" "));
+      return /camera|cctv|dau ghi|dvr|nvr/.test(text);
+    });
+    const usedDeviceIds = new Set<string>();
+
+    for (const draft of drafts) {
+      const matchedDevice = existingDevices.find(device => device.id === draft.deviceId) || existingDevices.find(device => {
+        if (usedDeviceIds.has(device.id)) return false;
+        return Boolean(
+          (draft.qrCode && device.qr_code?.trim() === draft.qrCode) ||
+          (draft.serial && device.serial?.trim() === draft.serial) ||
+          (draft.uid && device.uid?.trim() === draft.uid)
+        );
+      });
+
+
+      if (matchedDevice?.id) {
+        usedDeviceIds.add(matchedDevice.id);
+        const { error: snapshotError } = await supabase
+          .from("job_completion_run_device_snapshots")
+          .upsert({
+            completion_run_id: completionRunId,
+            job_id: job.id,
+            device_id: matchedDevice.id,
+            previous_data: matchedDevice,
+          }, { onConflict: "completion_run_id,device_id", ignoreDuplicates: true });
+
+        if (snapshotError) {
+          throw new Error("Đã hoàn thành job nhưng chưa lưu được snapshot QR camera để hoàn tác: " + snapshotError.message);
+        }
+
+        const { error: updateError } = await supabase
+          .from("worker_customer_devices")
+          .update({
+            completion_run_id: completionRunId,
+            qr_code: draft.qrCode || null,
+            serial: draft.serial || null,
+            uid: draft.uid || null,
+            install_location: draft.installLocation || null,
+          })
+          .eq("id", matchedDevice.id)
+          .eq("worker_id", worker.id)
+          .eq("customer_id", job.customer_id);
+
+        if (updateError) {
+          throw new Error("Đã hoàn thành job nhưng chưa cập nhật được QR camera của khách: " + updateError.message);
+        }
+        continue;
+      }
+
+      const deviceLabel = draft.deviceLabel || "Camera khách hàng";
+      const { error: insertError } = await supabase
+        .from("worker_customer_devices")
+        .insert({
+          worker_id: worker.id,
+          customer_id: job.customer_id,
+          job_id: job.id,
+          completion_run_id: completionRunId,
+          product_id: null,
+          product_name: deviceLabel,
+          product_sku: null,
+          category: "Camera",
+          device_label: deviceLabel,
+          device_index: existingDevices.length + usedDeviceIds.size + 1,
+          installed_at: installedAt,
+          warranty_months: 0,
+          home_warranty_months: 0,
+          sale_price: 0,
+          cost_price: 0,
+          qr_code: draft.qrCode || null,
+          serial: draft.serial || null,
+          uid: draft.uid || null,
+          install_location: draft.installLocation || null,
+          created_by: user?.id || null,
+        });
+
+      if (insertError) {
+        if (/worker_customer_devices|schema cache|Could not find|does not exist|home_warranty|completion_run_id/i.test(insertError.message || "")) {
+          console.warn("[repair-camera-qr] missing schema", insertError);
+          return;
+        }
+        throw new Error("Đã hoàn thành job nhưng chưa tạo được camera của khách để lưu QR: " + insertError.message);
+      }
+    }
+  };
   const createCustomerDevicesFromCompletion = async (job: WorkerJob, items: StoredCompletionItem[], completionRunId: string) => {
     if (!worker?.id || !job.customer_id) return;
 
@@ -4320,6 +4576,7 @@ useEffect(() => {
         }
       }
 
+      await saveRepairCameraQrDraftsFromCompletion(job, activeCompletionRunId);
       await createCustomerDevicesFromCompletion(job, itemsForCustomerDevicesDelta, activeCompletionRunId);
 
       void fetch("/api/notifications/event", {
@@ -6701,6 +6958,10 @@ useEffect(() => {
                     setCompletionQrDrafts({});
                     setActiveCompletionQrEditor(null);
                     setCompletionQrStatus("");
+                    setCompletionRepairCameraQrDrafts([]);
+                    setCompletionRepairCameraQrStatus("");
+                    setCompletionRepairCameraDevices([]);
+                    setCompletionRepairCameraDevicesError("");
                     setCompletionInternetInstallFeeInput("300000");
                     setCompletionGiftCamera("");
                     setCompletionGiftCameraPassword("");
@@ -7034,6 +7295,77 @@ useEffect(() => {
                       >
                         Thêm đã chọn ({completionSelectedProductIds.length})
                       </button>
+                    </div>
+                  )}
+                  {isCameraRepairCompletionJob && (
+                    <div className="space-y-3 rounded-xl border border-primary-container/20 bg-surface-container-lowest p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-extrabold uppercase text-primary-container">Mã QR camera sửa chữa</p>
+                          <p className="text-[11px] font-semibold text-on-surface-variant">Chọn camera đã lưu của khách hoặc tạo camera mới nếu chưa có.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addCompletionRepairCameraQrDraft}
+                          className="shrink-0 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container disabled:opacity-50"
+                          disabled={uploadingImages || completionRepairCameraDevicesLoading}
+                        >
+                          + Thêm mã QR
+                        </button>
+                      </div>
+                      {completionRepairCameraDevicesLoading && <p className="text-xs font-bold text-primary-container">Đang tải camera của khách...</p>}
+                      {completionRepairCameraDevicesError && <p className="text-xs font-bold text-error">{completionRepairCameraDevicesError}</p>}
+                      {completionRepairCameraQrDrafts.length > 0 && (
+                        <div className="space-y-2">
+                          {completionRepairCameraQrDrafts.map((draft, draftIndex) => (
+                            <div key={draft.id} className="space-y-2 rounded-lg border border-outline-variant/30 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-bold text-on-surface">Camera QR {draftIndex + 1}</p>
+                                <button type="button" onClick={() => removeCompletionRepairCameraQrDraft(draft.id)} className="rounded-lg px-2 py-1 text-xs font-bold text-error hover:bg-error-container" disabled={uploadingImages || completionQrReading}>
+                                  Xóa
+                                </button>
+                              </div>
+                              <select
+                                className="input-field !py-2 text-sm"
+                                value={draft.deviceId}
+                                onChange={event => selectCompletionRepairCameraDevice(draft.id, event.target.value)}
+                                disabled={uploadingImages || completionQrReading}
+                              >
+                                <option value="">Tạo camera mới / chưa có trong danh sách</option>
+                                {completionRepairCameraDevices.map(device => (
+                                  <option key={device.id} value={device.id}>
+                                    {(device.device_label || device.product_name || "Camera") + (device.install_location ? ` - ${device.install_location}` : "")}
+                                  </option>
+                                ))}
+                              </select>
+                              {!draft.deviceId && (
+                                <input className="input-field !py-2 text-sm" value={draft.deviceLabel} onChange={event => updateCompletionRepairCameraQrDraft(draft.id, { deviceLabel: event.target.value })} placeholder="Tên camera" disabled={uploadingImages || completionQrReading} />
+                              )}
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <input className="input-field !py-2 text-sm sm:col-span-2" value={draft.qrCode} onChange={event => updateCompletionRepairCameraQrDraft(draft.id, { qrCode: event.target.value })} placeholder="Mã QR" disabled={uploadingImages || completionQrReading} />
+                                <input className="input-field !py-2 text-sm" value={draft.serial} onChange={event => updateCompletionRepairCameraQrDraft(draft.id, { serial: event.target.value })} placeholder="Serial" disabled={uploadingImages || completionQrReading} />
+                                <input className="input-field !py-2 text-sm" value={draft.uid} onChange={event => updateCompletionRepairCameraQrDraft(draft.id, { uid: event.target.value })} placeholder="UID" disabled={uploadingImages || completionQrReading} />
+                                <input className="input-field !py-2 text-sm sm:col-span-2" value={draft.installLocation} onChange={event => updateCompletionRepairCameraQrDraft(draft.id, { installLocation: event.target.value })} placeholder="Vị trí lắp" disabled={uploadingImages || completionQrReading} />
+                              </div>
+                              <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary-container/30 bg-primary-fixed px-3 py-2 text-xs font-extrabold text-primary-container disabled:opacity-50">
+                                <ImageUp size={14} />
+                                {completionQrReading ? "Đang đọc QR..." : "Upload ảnh QR"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  disabled={uploadingImages || completionQrReading}
+                                  onChange={event => {
+                                    const input = event.currentTarget;
+                                    void handleCompletionRepairCameraQrImage(draft.id, input.files?.[0]).finally(() => { input.value = ""; });
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {completionRepairCameraQrStatus && <p className="text-xs font-semibold text-on-surface-variant">{completionRepairCameraQrStatus}</p>}
                     </div>
                   )}
                   {completionHomeWarrantyTargetItems.length === 0 && (
