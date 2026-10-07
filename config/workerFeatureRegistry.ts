@@ -154,7 +154,7 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     icon: "cart",
     order: 70,
     enabled: true,
-    placements: ["sidebar", "mobileMore"],
+    placements: [],
     group: "commerce",
     roles: ["owner", "manager", "technician", "bill_collector", "sales_inventory", "worker"],
     featureFlag: "sales",
