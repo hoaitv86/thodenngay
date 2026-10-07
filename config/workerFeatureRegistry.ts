@@ -149,8 +149,8 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
   {
     id: "sales",
     label: "Bán hàng",
-    route: "/worker/sales",
-    href: "/worker/sales",
+    route: "/worker/inventory",
+    href: "/worker/inventory?section=sales",
     icon: "cart",
     order: 70,
     enabled: true,

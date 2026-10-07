@@ -4,7 +4,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Trash2, X } from "lucide-react";
+import { Plus, Save, Search, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
 import {
@@ -40,6 +40,8 @@ type RawKnownCustomerJob = {
   }> | null;
 };
 
+const SALES_PRODUCT_PAGE_SIZE = 20;
+
 const getCustomerProfile = (customer: RawKnownCustomerJob["customer"]) => {
   if (Array.isArray(customer)) return customer[0] || null;
   return customer || null;
@@ -56,6 +58,9 @@ export default function NewWorkerSalesOrderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [productQuery, setProductQuery] = useState("");
+  const [productCategory, setProductCategory] = useState("all");
+  const [visibleProductCount, setVisibleProductCount] = useState(SALES_PRODUCT_PAGE_SIZE);
 
   const fetchFormData = useCallback(async () => {
     setLoading(true);
@@ -133,6 +138,32 @@ export default function NewWorkerSalesOrderPage() {
     return () => window.clearTimeout(timeoutId);
   }, [fetchFormData]);
 
+  const productCategories = useMemo(
+    () => [...new Set(products.map(product => product.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")),
+    [products]
+  );
+
+  const filteredProducts = useMemo(() => {
+    const normalized = productQuery.trim().toLocaleLowerCase("vi");
+    return products.filter(product => {
+      const matchesCategory = productCategory === "all" || product.category === productCategory;
+      const haystack = [product.name, product.sku, product.category, product.unit, product.note]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("vi");
+      return matchesCategory && (!normalized || haystack.includes(normalized));
+    });
+  }, [productCategory, productQuery, products]);
+
+  useEffect(() => {
+    setVisibleProductCount(SALES_PRODUCT_PAGE_SIZE);
+  }, [productCategory, productQuery]);
+
+  const visibleProducts = useMemo(
+    () => filteredProducts.slice(0, visibleProductCount),
+    [filteredProducts, visibleProductCount]
+  );
+
   const totalAmount = useMemo(() => getSalesDraftTotal(items), [items]);
 
   const updateItem = (draftId: string, patch: Partial<SalesDraftItem>) => {
@@ -182,7 +213,7 @@ export default function NewWorkerSalesOrderPage() {
       return;
     }
 
-    router.push("/worker/sales");
+    router.push("/worker/inventory?section=sales");
     router.refresh();
   };
 
@@ -204,7 +235,7 @@ export default function NewWorkerSalesOrderPage() {
             Chọn khách hàng, chọn sản phẩm từ kho, nhập số lượng và giá bán thực tế. Khi lưu, hệ thống sẽ tự động trừ tồn kho.
           </p>
         </div>
-        <Link href="/worker/sales" className="btn-outline !w-auto !px-4">
+        <Link href="/worker/inventory?section=sales" className="btn-outline !w-auto !px-4">
           <X size={18} />
           Hủy
         </Link>
@@ -253,8 +284,24 @@ export default function NewWorkerSalesOrderPage() {
               </div>
             ) : (
               <div className="space-y-3">
+                <div className="grid gap-3 rounded-lg border border-outline-variant/30 bg-white p-3 md:grid-cols-[1fr_220px]">
+                  <label className="relative block">
+                    <Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+                    <input value={productQuery} onChange={event => setProductQuery(event.target.value)} className="input-field !pl-10" placeholder="Tìm tên, mã sản phẩm, ghi chú..." />
+                  </label>
+                  <select value={productCategory} onChange={event => setProductCategory(event.target.value)} className="input-field">
+                    <option value="all">Tất cả danh mục</option>
+                    {productCategories.map(category => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </div>
+                {filteredProducts.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-outline-variant p-8 text-center text-sm text-on-surface-variant">Không có sản phẩm phù hợp với bộ lọc.</div>
+                )}
                 {items.map(item => {
                   const product = getDraftProduct(item, products);
+                  const productOptions = product && !visibleProducts.some(option => option.id === product.id)
+                    ? [product, ...visibleProducts]
+                    : visibleProducts;
                   return (
                     <div key={item.draftId} className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
                       <div className="grid gap-3 lg:grid-cols-[1fr_120px_150px_44px] lg:items-end">
@@ -262,7 +309,7 @@ export default function NewWorkerSalesOrderPage() {
                           <span className="mb-1.5 block text-xs font-bold uppercase text-on-surface-variant">Sản phẩm</span>
                           <select required value={item.productId} onChange={event => updateItem(item.draftId, { productId: event.target.value })} className="input-field">
                             <option value="">Chọn sản phẩm</option>
-                            {products.map(productOption => (
+                            {productOptions.map(productOption => (
                               <option key={productOption.id} value={productOption.id}>
                                 {productOption.name} - tồn {productOption.stock_quantity} {productOption.unit}
                               </option>
