@@ -91,6 +91,8 @@ type LegacyReopenBaseline = {
   warrantyNote?: string | null;
   workflowData: Record<string, unknown>;
   materialQuantities: Record<string, number>;
+  inventoryRestored?: boolean;
+  inventoryRestoredAt?: string | null;
   paidAmount: number;
   paymentIds: string[];
   salesOrderIds: string[];
@@ -1002,6 +1004,8 @@ export default function WorkerJobDetailPage() {
       warrantyNote: job.warranty_note || null,
       workflowData: job.workflow_data || {},
       materialQuantities: getLegacyMaterialQuantities(baselineItems),
+      inventoryRestored: false,
+      inventoryRestoredAt: null,
       paidAmount: (paymentsResult.data || [])
         .filter(payment => payment.status === "paid")
         .reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
@@ -1023,57 +1027,24 @@ export default function WorkerJobDetailPage() {
       reopened_by: user?.id || null,
     };
 
-    const { error: logError } = await supabase.from("job_logs").insert({
-      job_id: job.id,
-      actor_id: user?.id || null,
-      action: "legacy_job_reopened",
-      metadata: {
-        source: "worker_history_detail",
-        previous_status: job.status || "completed",
-        next_status: "in_progress",
-        reopened_at: reopenedAt,
-        baseline: {
-          completion_items: legacyBaseline.completionItems.length,
-          payments: legacyBaseline.paymentIds.length,
-          sales_orders: legacyBaseline.salesOrderIds.length,
-          devices: legacyBaseline.deviceIds.length,
-          warranties: legacyBaseline.warrantyIds.length,
-          billgo_subscriptions: legacyBaseline.billGoSubscriptionIds.length,
-          billgo_receivables: legacyBaseline.billGoReceivableIds.length,
-        },
-      },
+    const { data: reopenedJob, error } = await supabase.rpc("reopen_legacy_job_with_inventory", {
+      p_job_id: job.id,
+      p_workflow_data: nextWorkflowData,
     });
 
-    if (logError) {
-      setLegacyReopenFeedback("Không thể ghi nhật ký mở lại công việc: " + logError.message);
-      setReopeningLegacyJob(false);
-      return;
-    }
-
-    const { data: updatedJob, error } = await supabase
-      .from("jobs")
-      .update({
-        status: "in_progress",
-        workflow_data: nextWorkflowData,
-      })
-      .eq("id", job.id)
-      .in("status", ["completed", "done"])
-      .select("status, workflow_data, updated_at")
-      .maybeSingle();
-
-    if (error || !updatedJob) {
-      setLegacyReopenFeedback(error?.message || "Không thể mở lại công việc cũ.");
+    if (error) {
+      setLegacyReopenFeedback(error.message || "Không thể mở lại công việc cũ.");
       setReopeningLegacyJob(false);
       return;
     }
 
     setJob(current => current ? {
       ...current,
-      status: updatedJob.status || "in_progress",
-      workflow_data: (updatedJob.workflow_data || nextWorkflowData) as JobWorkflowData,
-      updated_at: updatedJob.updated_at || reopenedAt,
+      status: typeof reopenedJob === "object" && reopenedJob && "status" in reopenedJob ? String((reopenedJob as { status?: unknown }).status || "in_progress") : "in_progress",
+      workflow_data: typeof reopenedJob === "object" && reopenedJob && "workflow_data" in reopenedJob ? ((reopenedJob as { workflow_data?: unknown }).workflow_data || nextWorkflowData) as JobWorkflowData : nextWorkflowData,
+      updated_at: typeof reopenedJob === "object" && reopenedJob && "updated_at" in reopenedJob ? String((reopenedJob as { updated_at?: unknown }).updated_at || reopenedAt) : reopenedAt,
     } : current);
-    setDetailMessage("Đã mở lại công việc cũ và chụp baseline lịch sử. Bạn có thể sửa rồi hoàn thành lại; hệ thống chỉ ghi phần phát sinh mới.");
+    setDetailMessage("Đã mở lại công việc cũ và hoàn trả vật tư về kho. Bạn có thể sửa rồi hoàn thành lại; hệ thống sẽ trừ kho lại đúng một lần.");
     setLegacyReopenModalOpen(false);
     setReopeningLegacyJob(false);
   };
@@ -1728,7 +1699,7 @@ export default function WorkerJobDetailPage() {
                 <div>
                   <h3 className="text-lg font-extrabold text-on-surface">Mở lại công việc cũ?</h3>
                   <p className="mt-2 whitespace-pre-line text-sm font-semibold text-on-surface-variant">
-                    Công việc này được hoàn thành trước khi có chức năng Hoàn tác.{"\n"}Mở lại chỉ thay đổi trạng thái công việc.{"\n"}Các dữ liệu đã phát sinh trước đây sẽ được giữ nguyên.
+                    Công việc này được hoàn thành trước khi có chức năng Hoàn tác.{"\n"}Mở lại sẽ đưa công việc về trạng thái đang xử lý và hoàn trả vật tư đã trừ về kho.{"\n"}Các dữ liệu phát sinh khác trước đây vẫn được giữ nguyên.
                   </p>
                 </div>
                 <button

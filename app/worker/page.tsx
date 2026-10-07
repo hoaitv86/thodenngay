@@ -391,6 +391,8 @@ type LegacyReopenBaseline = {
   completionItems?: StoredCompletionItem[];
   finalAmount?: number;
   materialQuantities?: Record<string, number>;
+  inventoryRestored?: boolean;
+  inventoryRestoredAt?: string | null;
   paidAmount?: number;
   paymentIds?: string[];
   salesOrderIds?: string[];
@@ -929,6 +931,7 @@ const buildInventorySearchFilter = (searchTerm: string) => {
 };
 const getDeltaInventoryCompletionItems = <T extends { source?: string; inventoryProductId?: string | null; quantity: number; deviceQrDrafts?: CompletionQrDraft[] }>(items: T[], baseline?: LegacyReopenBaseline | null): T[] => {
   if (!baseline) return items;
+  if (baseline.inventoryRestored) return items;
   const remainingBaseline = { ...(baseline.materialQuantities || {}) };
   return items.flatMap(item => {
     if (item.source !== "inventory" || !item.inventoryProductId) return [item];
