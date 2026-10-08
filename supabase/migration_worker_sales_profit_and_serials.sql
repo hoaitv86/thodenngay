@@ -353,3 +353,83 @@ REVOKE ALL ON FUNCTION public.create_worker_sales_order(UUID, TEXT, JSONB, BOOLE
 GRANT EXECUTE ON FUNCTION public.create_worker_sales_order(UUID, TEXT, JSONB, BOOLEAN, TEXT, DATE) TO authenticated;
 REVOKE ALL ON FUNCTION public.cancel_worker_sales_order(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cancel_worker_sales_order(UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.cancel_worker_inventory_receipt(p_receipt_id UUID)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_receipt RECORD;
+  v_item RECORD;
+  v_product RECORD;
+  v_blocked_serial_count INTEGER;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Ban chua dang nhap.';
+  END IF;
+
+  SELECT * INTO v_receipt
+  FROM public.worker_inventory_receipts
+  WHERE id = p_receipt_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Khong tim thay phieu nhap.';
+  END IF;
+
+  IF NOT public.current_user_can_access_worker_data(v_receipt.worker_id, ARRAY['owner','manager','sales_inventory']::TEXT[]) THEN
+    RAISE EXCEPTION 'Ban khong co quyen huy phieu nhap nay.';
+  END IF;
+
+  IF v_receipt.status = 'canceled' THEN
+    RETURN v_receipt.id;
+  END IF;
+
+  FOR v_item IN SELECT * FROM public.worker_inventory_receipt_items WHERE receipt_id = v_receipt.id
+  LOOP
+    SELECT COUNT(*) INTO v_blocked_serial_count
+    FROM public.worker_inventory_receipt_item_serials
+    WHERE receipt_item_id = v_item.id
+      AND status <> 'in_stock';
+
+    IF v_blocked_serial_count > 0 THEN
+      RAISE EXCEPTION 'Khong the huy phieu nhap vi serial/QR cua san pham % da duoc xu ly.', v_item.product_name;
+    END IF;
+
+    IF v_receipt.status = 'confirmed' AND v_receipt.stock_applied_at IS NOT NULL THEN
+      SELECT * INTO v_product
+      FROM public.worker_inventory_products
+      WHERE id = v_item.product_id AND worker_id = v_receipt.worker_id
+      FOR UPDATE;
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Khong tim thay san pham % de tru ton khi huy.', v_item.product_name;
+      END IF;
+
+      IF v_product.stock_quantity < v_item.quantity THEN
+        RAISE EXCEPTION 'Ton kho % khong du de huy phieu nhap an toan.', v_product.name;
+      END IF;
+
+      UPDATE public.worker_inventory_products
+      SET stock_quantity = stock_quantity - v_item.quantity
+      WHERE id = v_product.id;
+    END IF;
+
+    UPDATE public.worker_inventory_receipt_item_serials
+    SET status = 'canceled'
+    WHERE receipt_item_id = v_item.id
+      AND status = 'in_stock';
+  END LOOP;
+
+  UPDATE public.worker_inventory_receipts
+  SET status = 'canceled', canceled_at = NOW(), stock_applied_at = NULL
+  WHERE id = v_receipt.id;
+
+  RETURN v_receipt.id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.cancel_worker_inventory_receipt(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cancel_worker_inventory_receipt(UUID) TO authenticated;
