@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Boxes, Check, Edit, Package, Plus, Search, ShieldCheck, ShoppingCart, Trash2, Truck, X } from "lucide-react";
@@ -29,7 +30,7 @@ const inventorySections: Array<{ id: InventorySection; label: string; descriptio
   { id: "receiving", label: "Nhập hàng", description: "Khung cho phiếu nhập và điều chỉnh tồn." },
   { id: "sales", label: "Bán hàng", description: "Tạo đơn bán và xem lịch sử bán từ kho." },
   { id: "warranty", label: "Bảo hành", description: "Khung theo dõi bảo hành sản phẩm đã bán." },
-  { id: "suppliers", label: "Nhà cung cấp", description: "Khung lưu nguồn hàng và thông tin liên hệ." },
+  { id: "suppliers", label: "Nhà cung cấp", description: "Nguồn hàng, liên hệ và chính sách bảo hành." },
 ];
 
 function getInitialSection(value: string | null): InventorySection {
@@ -41,6 +42,69 @@ type WorkerProfileCache = {
   storeId?: string | null;
 };
 
+type InventorySupplier = {
+  id: string;
+  worker_id: string;
+  name: string;
+  contact_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  tax_code?: string | null;
+  warranty_policy?: string | null;
+  note?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type SupplierFormValues = {
+  name: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  address: string;
+  taxCode: string;
+  warrantyPolicy: string;
+  note: string;
+};
+
+const emptySupplierForm: SupplierFormValues = {
+  name: "",
+  contactName: "",
+  phone: "",
+  email: "",
+  address: "",
+  taxCode: "",
+  warrantyPolicy: "",
+  note: "",
+};
+
+function supplierToFormValues(supplier: InventorySupplier): SupplierFormValues {
+  return {
+    name: supplier.name || "",
+    contactName: supplier.contact_name || "",
+    phone: supplier.phone || "",
+    email: supplier.email || "",
+    address: supplier.address || "",
+    taxCode: supplier.tax_code || "",
+    warrantyPolicy: supplier.warranty_policy || "",
+    note: supplier.note || "",
+  };
+}
+
+function buildSupplierPayload(values: SupplierFormValues, currentWorkerId: string) {
+  return {
+    worker_id: currentWorkerId,
+    name: values.name.trim(),
+    contact_name: values.contactName.trim() || null,
+    phone: values.phone.trim() || null,
+    email: values.email.trim() || null,
+    address: values.address.trim() || null,
+    tax_code: values.taxCode.trim() || null,
+    warranty_policy: values.warrantyPolicy.trim() || null,
+    note: values.note.trim() || null,
+  };
+}
 export default function WorkerInventoryPage() {
   const supabase = useMemo(() => createClient(), []);
   const [activeSection, setActiveSection] = useState<InventorySection>("stock");
@@ -58,6 +122,13 @@ export default function WorkerInventoryPage() {
   const [editingCategory, setEditingCategory] = useState("");
   const [categoryDraft, setCategoryDraft] = useState("");
   const [categorySaving, setCategorySaving] = useState(false);
+  const [suppliers, setSuppliers] = useState<InventorySupplier[]>([]);
+  const [suppliersLoading, setSuppliersLoading] = useState(true);
+  const [supplierMessage, setSupplierMessage] = useState("");
+  const [supplierQuery, setSupplierQuery] = useState("");
+  const [supplierForm, setSupplierForm] = useState<SupplierFormValues>(emptySupplierForm);
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [supplierSaving, setSupplierSaving] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -240,6 +311,57 @@ export default function WorkerInventoryPage() {
     return () => window.clearTimeout(timeoutId);
   }, [fetchSalesOrders]);
 
+  const fetchSuppliers = useCallback(async () => {
+    setSuppliersLoading(true);
+    setSupplierMessage("");
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setSuppliers([]);
+      setSuppliersLoading(false);
+      return;
+    }
+
+    const { data: worker, error: workerError } = await supabase
+      .from("workers")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (workerError || !worker) {
+      setSupplierMessage("Không tìm thấy hồ sơ thợ.");
+      setSuppliers([]);
+      setSuppliersLoading(false);
+      return;
+    }
+
+    const scope = await resolveWorkerUnitScope(supabase, user.id, worker.id);
+    const scopedWorkerId = scope?.scopedWorkerId || worker.id;
+    setWorkerId(scopedWorkerId);
+
+    const { data, error } = await supabase
+      .from("worker_inventory_suppliers")
+      .select("*")
+      .eq("worker_id", scopedWorkerId)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      setSupplierMessage(isMissingWorkerInventorySchemaError(error)
+        ? missingWorkerInventorySchemaMessage
+        : "Không thể tải danh sách nhà cung cấp: " + error.message);
+      setSuppliers([]);
+    } else {
+      setSuppliers((data || []) as InventorySupplier[]);
+    }
+
+    setSuppliersLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void fetchSuppliers(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchSuppliers]);
+
   const categories = useMemo(
     () => [...new Set(products.map(product => product.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")),
     [products]
@@ -286,6 +408,25 @@ export default function WorkerInventoryPage() {
       return haystack.includes(normalized);
     });
   }, [orders, salesQuery]);
+
+  const filteredSuppliers = useMemo(() => {
+    const normalized = supplierQuery.trim().toLocaleLowerCase("vi");
+    if (!normalized) return suppliers;
+
+    return suppliers.filter(supplier => {
+      const haystack = [
+        supplier.name,
+        supplier.contact_name,
+        supplier.phone,
+        supplier.email,
+        supplier.address,
+        supplier.tax_code,
+        supplier.warranty_policy,
+        supplier.note,
+      ].filter(Boolean).join(" ").toLocaleLowerCase("vi");
+      return haystack.includes(normalized);
+    });
+  }, [supplierQuery, suppliers]);
 
   const stats = useMemo(() => products.reduce(
     (acc, product) => {
@@ -364,6 +505,69 @@ export default function WorkerInventoryPage() {
     setCategorySaving(false);
   };
 
+
+  const startEditSupplier = (supplier: InventorySupplier) => {
+    setEditingSupplierId(supplier.id);
+    setSupplierForm(supplierToFormValues(supplier));
+    setSupplierMessage("");
+  };
+
+  const resetSupplierForm = () => {
+    setEditingSupplierId(null);
+    setSupplierForm(emptySupplierForm);
+    setSupplierMessage("");
+  };
+
+  const updateSupplierField = (field: keyof SupplierFormValues, value: string) => {
+    setSupplierForm(current => ({ ...current, [field]: value }));
+  };
+
+  const saveSupplier = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supplierForm.name.trim()) {
+      setSupplierMessage("Vui lòng nhập tên nhà cung cấp.");
+      return;
+    }
+    if (!workerId) {
+      setSupplierMessage("Không tìm thấy hồ sơ thợ để lưu nhà cung cấp.");
+      return;
+    }
+
+    setSupplierSaving(true);
+    setSupplierMessage("");
+
+    const payload = buildSupplierPayload(supplierForm, workerId);
+    const request = editingSupplierId
+      ? supabase
+        .from("worker_inventory_suppliers")
+        .update(payload)
+        .eq("id", editingSupplierId)
+        .eq("worker_id", workerId)
+        .select("*")
+        .single()
+      : supabase
+        .from("worker_inventory_suppliers")
+        .insert(payload)
+        .select("*")
+        .single();
+
+    const { data, error } = await request;
+    if (error) {
+      setSupplierMessage(isMissingWorkerInventorySchemaError(error)
+        ? missingWorkerInventorySchemaMessage
+        : "Không thể lưu nhà cung cấp: " + error.message);
+      setSupplierSaving(false);
+      return;
+    }
+
+    const nextSupplier = data as InventorySupplier;
+    setSuppliers(current => editingSupplierId
+      ? current.map(item => item.id === nextSupplier.id ? nextSupplier : item)
+      : [nextSupplier, ...current]
+    );
+    resetSupplierForm();
+    setSupplierSaving(false);
+  };
   return (
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in lg:p-6">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -371,7 +575,7 @@ export default function WorkerInventoryPage() {
           <p className="text-xs font-bold uppercase text-primary">Kho hàng</p>
           <h1 className="text-2xl font-extrabold text-on-surface">Quản lý kho hàng</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
-            Quản lý tồn kho và bán hàng trên cùng một khu vực. Nhập hàng, bảo hành và nhà cung cấp đang giữ khung để hoàn thiện tiếp.
+            Quản lý tồn kho, bán hàng và nhà cung cấp trên cùng một khu vực. Nhập hàng và bảo hành đang giữ khung để hoàn thiện tiếp.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -554,7 +758,127 @@ export default function WorkerInventoryPage() {
         </section>
       )}
 
-      {activeSection !== "stock" && activeSection !== "sales" && <section className="mt-4 rounded-lg border border-dashed border-outline-variant bg-white p-10 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed text-primary">{activeSection === "receiving" ? <Truck size={28} /> : activeSection === "warranty" ? <ShieldCheck size={28} /> : <Boxes size={28} />}</div><p className="mt-4 font-bold text-on-surface">{inventorySections.find(section => section.id === activeSection)?.label}</p><p className="mt-1 text-sm text-on-surface-variant">Đã tạo khung trong Kho hàng. Phiên này ưu tiên hoàn thiện Tồn kho và gộp Bán hàng.</p></section>}
+      {activeSection === "suppliers" && (
+        <section className="mt-4 grid gap-4 lg:grid-cols-[1fr_380px]">
+          <div className="space-y-4">
+            <div className="rounded-lg border border-outline-variant/30 bg-white p-3 shadow-sm">
+              <label className="relative block">
+                <Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+                <input
+                  value={supplierQuery}
+                  onChange={event => setSupplierQuery(event.target.value)}
+                  className="input-field !pl-10"
+                  placeholder="Tìm tên, SĐT, email, địa chỉ, chính sách bảo hành..."
+                />
+              </label>
+            </div>
+
+            {supplierMessage && (
+              <div className="rounded-lg border border-error/20 bg-error-container p-3 text-sm font-bold text-error">
+                {supplierMessage}
+              </div>
+            )}
+
+            {suppliersLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-container border-t-transparent" />
+              </div>
+            ) : filteredSuppliers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-outline-variant bg-white p-10 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+                  <Boxes size={28} />
+                </div>
+                <p className="mt-4 font-bold text-on-surface">Chưa có nhà cung cấp phù hợp</p>
+                <p className="mt-1 text-sm text-on-surface-variant">Thêm nhà cung cấp hoặc thử đổi từ khóa tìm kiếm.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredSuppliers.map(supplier => (
+                  <article key={supplier.id} className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h2 className="text-lg font-extrabold text-on-surface">{supplier.name}</h2>
+                        <p className="mt-1 text-sm font-bold text-on-surface-variant">
+                          {supplier.contact_name || "Chưa có người liên hệ"}
+                          {supplier.phone ? ` · ${supplier.phone}` : ""}
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => startEditSupplier(supplier)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-outline-variant/50 text-primary transition-colors hover:bg-primary-fixed" title="Sửa nhà cung cấp">
+                        <Edit size={17} />
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-on-surface-variant sm:grid-cols-2">
+                      {supplier.email && <p><span className="font-bold text-on-surface">Email:</span> {supplier.email}</p>}
+                      {supplier.tax_code && <p><span className="font-bold text-on-surface">MST:</span> {supplier.tax_code}</p>}
+                      {supplier.address && <p className="sm:col-span-2"><span className="font-bold text-on-surface">Địa chỉ:</span> {supplier.address}</p>}
+                      {supplier.warranty_policy && <p className="sm:col-span-2"><span className="font-bold text-on-surface">Bảo hành:</span> {supplier.warranty_policy}</p>}
+                      {supplier.note && <p className="sm:col-span-2"><span className="font-bold text-on-surface">Ghi chú:</span> {supplier.note}</p>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={saveSupplier} className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:self-start">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase text-primary">Nhà cung cấp</p>
+                <h2 className="text-lg font-extrabold text-on-surface">{editingSupplierId ? "Sửa thông tin" : "Thêm nhà cung cấp"}</h2>
+              </div>
+              {editingSupplierId && (
+                <button type="button" onClick={resetSupplierForm} className="flex h-10 w-10 items-center justify-center rounded-lg border border-outline-variant/50 text-on-surface-variant" title="Hủy sửa">
+                  <X size={17} />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Tên nhà cung cấp</span>
+                <input value={supplierForm.name} onChange={event => updateSupplierField("name", event.target.value)} className="input-field" placeholder="Ví dụ: Công ty vật tư A" required />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Người liên hệ</span>
+                <input value={supplierForm.contactName} onChange={event => updateSupplierField("contactName", event.target.value)} className="input-field" placeholder="Tên người phụ trách" />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Số điện thoại</span>
+                  <input value={supplierForm.phone} onChange={event => updateSupplierField("phone", event.target.value)} className="input-field" placeholder="SĐT" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Email</span>
+                  <input value={supplierForm.email} onChange={event => updateSupplierField("email", event.target.value)} className="input-field" placeholder="email@domain.com" type="email" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Địa chỉ</span>
+                <input value={supplierForm.address} onChange={event => updateSupplierField("address", event.target.value)} className="input-field" placeholder="Địa chỉ nhận hàng/bảo hành" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Mã số thuế</span>
+                <input value={supplierForm.taxCode} onChange={event => updateSupplierField("taxCode", event.target.value)} className="input-field" placeholder="MST nếu có" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Chính sách bảo hành</span>
+                <textarea value={supplierForm.warrantyPolicy} onChange={event => updateSupplierField("warrantyPolicy", event.target.value)} className="input-field min-h-24 resize-y" placeholder="Điều kiện bảo hành, đầu mối tiếp nhận..." />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Ghi chú</span>
+                <textarea value={supplierForm.note} onChange={event => updateSupplierField("note", event.target.value)} className="input-field min-h-20 resize-y" placeholder="Công nợ, thời gian giao hàng, lưu ý khác..." />
+              </label>
+            </div>
+
+            <button type="submit" disabled={supplierSaving} className="btn-primary mt-4 !w-full disabled:opacity-60">
+              <Check size={18} />
+              {supplierSaving ? "Đang lưu..." : editingSupplierId ? "Lưu thay đổi" : "Thêm nhà cung cấp"}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {activeSection !== "stock" && activeSection !== "sales" && activeSection !== "suppliers" && <section className="mt-4 rounded-lg border border-dashed border-outline-variant bg-white p-10 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed text-primary">{activeSection === "receiving" ? <Truck size={28} /> : <ShieldCheck size={28} />}</div><p className="mt-4 font-bold text-on-surface">{inventorySections.find(section => section.id === activeSection)?.label}</p><p className="mt-1 text-sm text-on-surface-variant">Đã tạo khung trong Kho hàng. Phiên này chưa làm Nhập hàng/Bảo hành.</p></section>}
     </div>
   );
 }

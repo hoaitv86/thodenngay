@@ -249,7 +249,7 @@ export function isMissingWorkerInventorySchemaError(error: { code?: string; mess
   return (
     error?.code === "PGRST205" ||
     (
-      /worker_inventory_products|worker_sales_orders|worker_sales_order_items/.test(message) &&
+      /worker_inventory_products|worker_inventory_suppliers|worker_sales_orders|worker_sales_order_items/.test(message) &&
       /schema cache|Could not find|does not exist/i.test(message)
     )
   );
