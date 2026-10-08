@@ -3,8 +3,9 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Boxes, Check, Edit, Package, Plus, Search, ShieldCheck, ShoppingCart, Trash2, Truck, X } from "lucide-react";
+import { Boxes, Check, Edit, Package, Plus, Search, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { ReceivingSection } from "./ReceivingSection";
 import { getCachedDataset, logOfflineDebug, setCachedDataset } from "@/lib/offline/cache";
 import { makeWorkerDatasetKey, makeWorkerUserDatasetKey, type WorkerOfflineScope } from "@/lib/offline/worker-data";
 import { resolveWorkerUnitScope } from "@/lib/worker-unit-server";
@@ -27,7 +28,7 @@ type InventorySection = "stock" | "receiving" | "sales" | "warranty" | "supplier
 
 const inventorySections: Array<{ id: InventorySection; label: string; description: string }> = [
   { id: "stock", label: "Tồn kho", description: "Sản phẩm, tồn hiện tại và giá vốn." },
-  { id: "receiving", label: "Nhập hàng", description: "Khung cho phiếu nhập và điều chỉnh tồn." },
+  { id: "receiving", label: "Nhập hàng", description: "Phiếu nhập, giá vốn và serial thiết bị." },
   { id: "sales", label: "Bán hàng", description: "Tạo đơn bán và xem lịch sử bán từ kho." },
   { id: "warranty", label: "Bảo hành", description: "Khung theo dõi bảo hành sản phẩm đã bán." },
   { id: "suppliers", label: "Nhà cung cấp", description: "Nguồn hàng, liên hệ và chính sách bảo hành." },
@@ -575,7 +576,7 @@ export default function WorkerInventoryPage() {
           <p className="text-xs font-bold uppercase text-primary">Kho hàng</p>
           <h1 className="text-2xl font-extrabold text-on-surface">Quản lý kho hàng</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
-            Quản lý tồn kho, bán hàng và nhà cung cấp trên cùng một khu vực. Nhập hàng và bảo hành đang giữ khung để hoàn thiện tiếp.
+            Quản lý tồn kho, nhập hàng, bán hàng và nhà cung cấp trên cùng một khu vực. Bảo hành đang giữ khung để hoàn thiện tiếp.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -728,6 +729,10 @@ export default function WorkerInventoryPage() {
 
       </>)}
 
+      {activeSection === "receiving" && (
+        <ReceivingSection workerId={workerId} products={products} suppliers={suppliers} onInventoryChanged={fetchProducts} />
+      )}
+
       {activeSection === "sales" && (
         <section className="mt-4">
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -878,7 +883,7 @@ export default function WorkerInventoryPage() {
         </section>
       )}
 
-      {activeSection !== "stock" && activeSection !== "sales" && activeSection !== "suppliers" && <section className="mt-4 rounded-lg border border-dashed border-outline-variant bg-white p-10 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed text-primary">{activeSection === "receiving" ? <Truck size={28} /> : <ShieldCheck size={28} />}</div><p className="mt-4 font-bold text-on-surface">{inventorySections.find(section => section.id === activeSection)?.label}</p><p className="mt-1 text-sm text-on-surface-variant">Đã tạo khung trong Kho hàng. Phiên này chưa làm Nhập hàng/Bảo hành.</p></section>}
+      {activeSection !== "stock" && activeSection !== "receiving" && activeSection !== "sales" && activeSection !== "suppliers" && <section className="mt-4 rounded-lg border border-dashed border-outline-variant bg-white p-10 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary-fixed text-primary"><ShieldCheck size={28} /></div><p className="mt-4 font-bold text-on-surface">{inventorySections.find(section => section.id === activeSection)?.label}</p><p className="mt-1 text-sm text-on-surface-variant">Đã tạo khung trong Kho hàng. Phiên này chưa làm Bảo hành.</p></section>}
     </div>
   );
 }
