@@ -249,7 +249,7 @@ export function isMissingWorkerInventorySchemaError(error: { code?: string; mess
   return (
     error?.code === "PGRST205" ||
     (
-      /worker_inventory_products|worker_inventory_suppliers|worker_inventory_receipts|worker_inventory_receipt_items|worker_inventory_receipt_item_serials|save_worker_inventory_receipt|cancel_worker_inventory_receipt|worker_sales_orders|worker_sales_order_items/.test(message) &&
+      /worker_inventory_products|worker_inventory_suppliers|worker_inventory_receipts|worker_inventory_receipt_items|worker_inventory_receipt_item_serials|save_worker_inventory_receipt|cancel_worker_inventory_receipt|cancel_worker_sales_order|worker_sales_orders|worker_sales_order_items/.test(message) &&
       /schema cache|Could not find|does not exist/i.test(message)
     )
   );

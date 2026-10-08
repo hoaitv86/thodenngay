@@ -18,6 +18,9 @@ export type WorkerSalesOrderItem = {
   quantity: number;
   unit_price: number | string;
   line_total: number | string;
+  unit_cost?: number | string | null;
+  cost_total?: number | string | null;
+  gross_profit?: number | string | null;
 };
 
 export type WorkerSalesOrder = {
@@ -27,6 +30,8 @@ export type WorkerSalesOrder = {
   sale_code: string;
   status: string;
   total_amount: number | string;
+  cost_total?: number | string | null;
+  gross_profit?: number | string | null;
   note?: string | null;
   sold_at: string;
   customer?: { full_name?: string | null; phone?: string | null; address?: string | null } | null;
@@ -87,6 +92,7 @@ export function buildSalesRpcItems(items: SalesDraftItem[]): SalesOrderRpcItem[]
 }
 
 export function getWarrantyStatusLabel(warranty: Pick<WorkerProductWarranty, "status" | "warranty_end">) {
+  if (warranty.status === "cancelled") return "Đã hủy";
   if (warranty.status === "serviced") return "Đã bảo hành";
   if (warranty.status === "active" && new Date(warranty.warranty_end) >= new Date(new Date().toISOString().slice(0, 10))) {
     return "Còn bảo hành";

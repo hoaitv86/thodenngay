@@ -281,7 +281,7 @@ export default function WorkerInventoryPage() {
         note,
         sold_at,
         customer:profiles!customer_id(full_name, phone, address),
-        items:worker_sales_order_items(id, order_id, product_id, product_name, product_sku, category, unit, quantity, unit_price, line_total),
+        items:worker_sales_order_items(id, order_id, product_id, product_name, product_sku, category, unit, quantity, unit_price, line_total, unit_cost, cost_total, gross_profit),
         warranties:worker_product_warranties(id, product_name, product_sku, warranty_end, status)
       `)
       .eq("worker_id", scopedWorkerId)
@@ -440,14 +440,45 @@ export default function WorkerInventoryPage() {
     { totalProducts: 0, totalUnits: 0, stockValue: 0, outOfStock: 0 }
   ), [products]);
 
+  const getLocalDateKey = (date: Date) => {
+    if (Number.isNaN(date.getTime())) return "";
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-${day}`;
+  };
+
   const salesStats = useMemo(() => orders.reduce(
     (acc, order) => {
+      if (order.status === "cancelled") return acc;
+
+      const revenue = Number(order.total_amount || 0);
+      const cost = Number(order.cost_total || 0);
+      const grossProfit = Number(order.gross_profit ?? (revenue - cost));
+      const soldDate = new Date(order.sold_at);
+      const todayKey = getLocalDateKey(new Date());
+      const soldDayKey = getLocalDateKey(soldDate);
+      const soldMonthKey = soldDayKey.slice(0, 7);
+      const currentMonthKey = todayKey.slice(0, 7);
+
       acc.totalOrders += 1;
-      acc.totalRevenue += Number(order.total_amount || 0);
+      acc.totalRevenue += revenue;
+      acc.totalCost += cost;
+      acc.totalGrossProfit += grossProfit;
       acc.totalItems += (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
+      if (soldDayKey === todayKey) {
+        acc.todayRevenue += revenue;
+        acc.todayCost += cost;
+        acc.todayGrossProfit += grossProfit;
+      }
+      if (soldMonthKey === currentMonthKey) {
+        acc.monthlyRevenue += revenue;
+        acc.monthlyCost += cost;
+        acc.monthlyGrossProfit += grossProfit;
+      }
       return acc;
     },
-    { totalOrders: 0, totalRevenue: 0, totalItems: 0 }
+    { totalOrders: 0, totalRevenue: 0, totalCost: 0, totalGrossProfit: 0, totalItems: 0, todayRevenue: 0, todayCost: 0, todayGrossProfit: 0, monthlyRevenue: 0, monthlyCost: 0, monthlyGrossProfit: 0 }
   ), [orders]);
 
   const warrantyCount = useMemo(
@@ -569,6 +600,21 @@ export default function WorkerInventoryPage() {
     resetSupplierForm();
     setSupplierSaving(false);
   };
+
+  const cancelSalesOrder = async (order: WorkerSalesOrder) => {
+    if (!window.confirm(`Hủy đơn bán ${order.sale_code}? Hệ thống sẽ hoàn tồn kho và hủy bảo hành liên quan.`)) return;
+
+    setOrdersMessage("");
+    const { error } = await supabase.rpc("cancel_worker_sales_order", { p_order_id: order.id });
+    if (error) {
+      setOrdersMessage(isMissingWorkerInventorySchemaError(error)
+        ? missingWorkerInventorySchemaMessage
+        : "Không thể hủy đơn bán: " + error.message);
+      return;
+    }
+
+    await Promise.allSettled([fetchSalesOrders(), fetchProducts()]);
+  };
   return (
     <div className="min-h-[calc(100dvh-8rem)] bg-surface p-4 animate-fade-in lg:p-6">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -608,7 +654,7 @@ export default function WorkerInventoryPage() {
         })}
       </nav>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {[
           ["Sản phẩm", String(stats.totalProducts)],
           ["Tổng tồn", String(stats.totalUnits)],
@@ -735,8 +781,8 @@ export default function WorkerInventoryPage() {
 
       {activeSection === "sales" && (
         <section className="mt-4">
-          <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            {[["Đơn bán", String(salesStats.totalOrders), ShoppingCart], ["Sản phẩm đã bán", String(salesStats.totalItems), Package], ["Doanh thu bán hàng", formatSalesCurrency(salesStats.totalRevenue), ShoppingCart]].map(([label, value, Icon]) => (
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            {[["Đơn bán", String(salesStats.totalOrders), ShoppingCart], ["DT hôm nay", formatSalesCurrency(salesStats.todayRevenue), ShoppingCart], ["Lãi hôm nay", formatSalesCurrency(salesStats.todayGrossProfit), Package], ["DT tháng", formatSalesCurrency(salesStats.monthlyRevenue), ShoppingCart], ["Giá vốn tháng", formatSalesCurrency(salesStats.monthlyCost), Package], ["Lãi tháng", formatSalesCurrency(salesStats.monthlyGrossProfit), Package]].map(([label, value, Icon]) => (
               <div key={String(label)} className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
                 <Icon size={18} className="text-primary" />
                 <p className="mt-3 text-xs font-bold uppercase text-on-surface-variant">{label as string}</p>
@@ -753,8 +799,8 @@ export default function WorkerInventoryPage() {
             <div className="space-y-3">
               {filteredOrders.map(order => (
                 <article key={order.id} className="rounded-lg border border-outline-variant/30 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="font-mono text-sm font-extrabold text-primary-container">{order.sale_code}</h2><span className="rounded-full bg-success-container px-2.5 py-1 text-xs font-bold text-success">Đã lưu</span></div><p className="mt-2 font-bold text-on-surface">{order.customer?.full_name || "Khách hàng"}</p><p className="text-sm text-on-surface-variant">{order.customer?.phone || "Chưa có số điện thoại"} · {new Date(order.sold_at).toLocaleString("vi-VN")}</p></div><p className="text-xl font-extrabold text-primary">{formatSalesCurrency(order.total_amount)}</p></div>
-                  <div className="mt-3 overflow-hidden rounded-lg border border-outline-variant/30">{(order.items || []).map(item => <div key={item.id} className="grid gap-2 border-b border-outline-variant/20 px-3 py-2 last:border-b-0 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div className="min-w-0"><p className="truncate text-sm font-bold text-on-surface">{item.product_name}</p><p className="font-mono text-xs text-on-surface-variant">{item.product_sku}</p></div><p className="text-sm font-bold text-on-surface-variant">{item.quantity} {item.unit} x {formatSalesCurrency(item.unit_price)}</p><p className="text-sm font-extrabold text-on-surface">{formatSalesCurrency(item.line_total)}</p></div>)}</div>
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="font-mono text-sm font-extrabold text-primary-container">{order.sale_code}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${order.status === "cancelled" ? "bg-error-container text-error" : "bg-success-container text-success"}`}>{order.status === "cancelled" ? "Đã hủy" : "Đã lưu"}</span></div><p className="mt-2 font-bold text-on-surface">{order.customer?.full_name || "Khách hàng"}</p><p className="text-sm text-on-surface-variant">{order.customer?.phone || "Chưa có số điện thoại"} · {new Date(order.sold_at).toLocaleString("vi-VN")}</p></div><div className="text-right"><p className="text-xl font-extrabold text-primary">{formatSalesCurrency(order.total_amount)}</p><p className="text-xs font-bold text-on-surface-variant">Giá vốn {formatSalesCurrency(order.cost_total || 0)} · Lãi {formatSalesCurrency(order.gross_profit ?? (Number(order.total_amount || 0) - Number(order.cost_total || 0)))}</p>{order.status !== "cancelled" && <button type="button" onClick={() => void cancelSalesOrder(order)} className="mt-2 rounded-md border border-error/25 px-3 py-1.5 text-xs font-bold text-error hover:bg-error-container">Hủy đơn</button>}</div></div>
+                  <div className="mt-3 overflow-hidden rounded-lg border border-outline-variant/30">{(order.items || []).map(item => <div key={item.id} className="grid gap-2 border-b border-outline-variant/20 px-3 py-2 last:border-b-0 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"><div className="min-w-0"><p className="truncate text-sm font-bold text-on-surface">{item.product_name}</p><p className="font-mono text-xs text-on-surface-variant">{item.product_sku}</p></div><p className="text-sm font-bold text-on-surface-variant">{item.quantity} {item.unit} x {formatSalesCurrency(item.unit_price)}</p><p className="text-sm font-bold text-on-surface-variant">GV {formatSalesCurrency(item.cost_total || 0)}</p><p className="text-sm font-extrabold text-on-surface">{formatSalesCurrency(item.line_total)}</p></div>)}</div>
                   {order.warranties && order.warranties.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{order.warranties.map(warranty => <span key={warranty.id} className="rounded-full bg-success-container px-2.5 py-1 text-xs font-bold text-success">{warranty.product_name}: {getWarrantyStatusLabel(warranty)}</span>)}</div>}
                 </article>
               ))}

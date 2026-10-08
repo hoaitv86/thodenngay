@@ -151,6 +151,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "success">("error");
   const [query, setQuery] = useState("");
   const [form, setForm] = useState<ReceiptForm>(() => createEmptyForm());
   const [saving, setSaving] = useState(false);
@@ -189,6 +190,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
       .range(0, RECEIPT_LIMIT - 1);
 
     if (error) {
+      setMessageTone("error");
       setMessage(isMissingWorkerInventorySchemaError(error)
         ? missingWorkerInventorySchemaMessage
         : "Không thể tải lịch sử nhập hàng: " + error.message);
@@ -355,6 +357,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
   const saveReceipt = async (nextStatus: ReceiptStatus) => {
     const validationMessage = validateForm(nextStatus);
     if (validationMessage) {
+      setMessageTone("error");
       setMessage(validationMessage);
       return;
     }
@@ -374,6 +377,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
     });
 
     if (error) {
+      setMessageTone("error");
       setMessage(isMissingWorkerInventorySchemaError(error)
         ? missingWorkerInventorySchemaMessage
         : "Không thể lưu phiếu nhập: " + error.message);
@@ -384,6 +388,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
     setSelectedReceiptId(typeof data === "string" ? data : null);
     resetForm();
     await Promise.allSettled([fetchReceipts(), onInventoryChanged()]);
+    setMessageTone("success");
     setMessage(nextStatus === "confirmed" ? "Đã xác nhận phiếu nhập và cộng tồn kho." : "Đã lưu phiếu nhập nháp.");
     setSaving(false);
   };
@@ -397,6 +402,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
     const { error } = await supabase.rpc("cancel_worker_inventory_receipt", { p_receipt_id: receipt.id });
 
     if (error) {
+      setMessageTone("error");
       setMessage(isMissingWorkerInventorySchemaError(error)
         ? missingWorkerInventorySchemaMessage
         : "Không thể hủy phiếu nhập: " + error.message);
@@ -405,6 +411,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
     }
 
     await Promise.allSettled([fetchReceipts(), onInventoryChanged()]);
+    setMessageTone("success");
     setMessage("Đã hủy phiếu nhập và xử lý tồn kho an toàn.");
     setSaving(false);
   };
@@ -424,7 +431,7 @@ export function ReceivingSection({ workerId, products, suppliers, onInventoryCha
             </button>
           </div>
 
-          {message && <div className="mb-4 rounded-lg border border-error/20 bg-error-container p-3 text-sm font-bold text-error">{message}</div>}
+          {message && <div className={`mb-4 rounded-lg border p-3 text-sm font-bold ${messageTone === "success" ? "border-success/20 bg-success-container text-success" : "border-error/20 bg-error-container text-error"}`}>{message}</div>}
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
