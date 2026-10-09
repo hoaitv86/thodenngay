@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle,
   DatabaseBackup,
+  Download,
   History,
   Loader2,
   RotateCcw,
@@ -45,6 +46,7 @@ export default function AdminBackupsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [restoreConfirmId, setRestoreConfirmId] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState("");
@@ -71,6 +73,35 @@ export default function AdminBackupsPage() {
       showMessage("error", getErrorMessage(error));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const downloadBackupSql = async (backup: BackupRecord) => {
+    setDownloadingId(backup.id);
+    try {
+      const response = await fetch(`/api/admin/backups/${backup.id}/download`, { cache: "no-store" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Không thể tải backup SQL.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const filenameMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] || `${backup.label || "backup"}-${backup.id.slice(0, 8)}-data-only.sql`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      showMessage("success", "Đã tải backup SQL dữ liệu.");
+    } catch (error: unknown) {
+      showMessage("error", getErrorMessage(error));
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -131,8 +162,8 @@ export default function AdminBackupsPage() {
         <div>
           <h1 className="text-headline-md font-bold text-on-surface">Sao lưu & Khôi phục</h1>
           <p className="mt-1 max-w-3xl text-body-sm leading-6 text-on-surface-variant">
-            Tạo snapshot trực tiếp trong Supabase/PostgreSQL cho toàn bộ bảng public. Dữ liệu backup được lưu trong database,
-            không tải ra file JSON hoặc CSV.
+            Tạo snapshot dữ liệu trực tiếp trong Supabase/PostgreSQL cho toàn bộ bảng public. Có thể tải SQL dữ liệu từ snapshot,
+            nhưng file tải về không phải full PostgreSQL dump và không bao gồm schema, role, policy, trigger hoặc extension.
           </p>
         </div>
         <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning-container px-4 py-3 text-sm text-warning xl:max-w-md">
@@ -155,7 +186,7 @@ export default function AdminBackupsPage() {
           </div>
           <button type="submit" disabled={creating} className="btn-primary !w-auto !px-5 !py-2.5">
             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseBackup className="h-4 w-4" />}
-            {creating ? "Đang sao lưu..." : "Tạo backup PostgreSQL"}
+            {creating ? "Đang sao lưu..." : "Tạo backup dữ liệu"}
           </button>
         </div>
       </form>
@@ -164,7 +195,7 @@ export default function AdminBackupsPage() {
         <div className="flex items-center justify-between gap-3 border-b border-outline-variant/30 p-4">
           <div>
             <h2 className="text-lg font-extrabold text-on-surface">Lịch sử backup</h2>
-            <p className="mt-1 text-xs text-on-surface-variant">30 bản backup gần nhất trong PostgreSQL.</p>
+            <p className="mt-1 text-xs text-on-surface-variant">30 bản backup dữ liệu gần nhất. File SQL tải về là data-only export.</p>
           </div>
           <button type="button" onClick={loadBackups} className="btn-outline !w-auto !px-4 !py-2" disabled={loading}>
             <History className="h-4 w-4" />
@@ -202,18 +233,29 @@ export default function AdminBackupsPage() {
                     </p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRestoreConfirmId(backup.id);
-                    setConfirmText("");
-                  }}
-                  className="btn-outline !w-auto !border-warning/40 !px-4 !py-2 !text-warning"
-                  disabled={backup.status !== "completed" || restoringId === backup.id}
-                >
-                  {restoringId === backup.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                  Khôi phục
-                </button>
+                <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void downloadBackupSql(backup)}
+                    className="btn-outline !w-auto !px-4 !py-2"
+                    disabled={backup.status !== "completed" || downloadingId === backup.id}
+                  >
+                    {downloadingId === backup.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    Tải SQL dữ liệu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRestoreConfirmId(backup.id);
+                      setConfirmText("");
+                    }}
+                    className="btn-outline !w-auto !border-warning/40 !px-4 !py-2 !text-warning"
+                    disabled={backup.status !== "completed" || restoringId === backup.id}
+                  >
+                    {restoringId === backup.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    Khôi phục
+                  </button>
+                </div>
               </div>
             ))}
           </div>
