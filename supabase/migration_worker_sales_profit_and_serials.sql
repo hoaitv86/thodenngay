@@ -31,18 +31,10 @@ CREATE INDEX IF NOT EXISTS worker_inventory_receipt_item_serials_status_idx
 CREATE INDEX IF NOT EXISTS worker_inventory_receipt_item_serials_sales_item_idx
   ON public.worker_inventory_receipt_item_serials(sales_order_item_id);
 
-UPDATE public.worker_sales_order_items item
-SET unit_cost = COALESCE(product.purchase_price, 0),
-    cost_total = item.quantity * COALESCE(product.purchase_price, 0),
-    gross_profit = item.line_total - (item.quantity * COALESCE(product.purchase_price, 0))
-FROM public.worker_inventory_products product
-WHERE item.product_id = product.id
-  AND item.unit_cost = 0
-  AND item.cost_total = 0;
-
 UPDATE public.worker_sales_order_items
 SET gross_profit = line_total - cost_total
-WHERE gross_profit = 0 AND (line_total <> cost_total OR cost_total <> 0);
+WHERE cost_total <> 0
+  AND gross_profit = 0;
 
 UPDATE public.worker_sales_orders sales_order
 SET cost_total = COALESCE(item_totals.cost_total, 0),
@@ -52,7 +44,8 @@ FROM (
   FROM public.worker_sales_order_items
   GROUP BY order_id
 ) item_totals
-WHERE item_totals.order_id = sales_order.id;
+WHERE item_totals.order_id = sales_order.id
+  AND COALESCE(item_totals.cost_total, 0) <> 0;
 
 CREATE OR REPLACE FUNCTION public.create_worker_sales_order(
   p_customer_id UUID,
@@ -87,6 +80,7 @@ DECLARE
   v_billgo_period_end DATE;
   v_billgo_due_date DATE;
   v_subscription_id UUID;
+  v_total_serial_count INTEGER;
   v_available_serial_count INTEGER;
   v_marked_serial_count INTEGER;
 BEGIN
@@ -164,12 +158,16 @@ BEGIN
       RAISE EXCEPTION 'San pham % khong du ton kho.', v_product.name;
     END IF;
 
+    SELECT COUNT(*) INTO v_total_serial_count
+    FROM public.worker_inventory_receipt_item_serials serial
+    WHERE serial.product_id = v_product.id;
+
     SELECT COUNT(*) INTO v_available_serial_count
     FROM public.worker_inventory_receipt_item_serials serial
     WHERE serial.product_id = v_product.id
       AND serial.status = 'in_stock';
 
-    IF v_available_serial_count > 0 AND v_available_serial_count < v_quantity THEN
+    IF v_total_serial_count > 0 AND v_available_serial_count < v_quantity THEN
       RAISE EXCEPTION 'Serial/QR cua san pham % khong du de ban.', v_product.name;
     END IF;
 
@@ -194,7 +192,7 @@ BEGIN
     )
     RETURNING id INTO v_item_id;
 
-    IF v_available_serial_count > 0 THEN
+    IF v_total_serial_count > 0 THEN
       WITH selected_serials AS (
         SELECT id
         FROM public.worker_inventory_receipt_item_serials
@@ -337,7 +335,7 @@ BEGIN
       note = COALESCE(note, '') || CASE WHEN COALESCE(note, '') = '' THEN '' ELSE E'\n' END || 'Huy don ban ' || v_order.sale_code,
       updated_at = NOW()
   WHERE sales_order_id = v_order.id
-    AND status <> 'cancelled';
+    AND status = 'active';
 
   UPDATE public.worker_sales_orders
   SET status = 'cancelled',
@@ -387,12 +385,21 @@ BEGIN
     RETURN v_receipt.id;
   END IF;
 
-  FOR v_item IN SELECT * FROM public.worker_inventory_receipt_items WHERE receipt_id = v_receipt.id
+  FOR v_item IN
+    SELECT * FROM public.worker_inventory_receipt_items
+    WHERE receipt_id = v_receipt.id
+    ORDER BY created_at, id
+    FOR UPDATE
   LOOP
+    WITH locked_serials AS (
+      SELECT id, status
+      FROM public.worker_inventory_receipt_item_serials
+      WHERE receipt_item_id = v_item.id
+      FOR UPDATE
+    )
     SELECT COUNT(*) INTO v_blocked_serial_count
-    FROM public.worker_inventory_receipt_item_serials
-    WHERE receipt_item_id = v_item.id
-      AND status <> 'in_stock';
+    FROM locked_serials
+    WHERE status <> 'in_stock';
 
     IF v_blocked_serial_count > 0 THEN
       RAISE EXCEPTION 'Khong the huy phieu nhap vi serial/QR cua san pham % da duoc xu ly.', v_item.product_name;
