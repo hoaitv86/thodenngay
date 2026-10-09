@@ -33,28 +33,84 @@ BEGIN
     RAISE EXCEPTION 'Refusing to run: set app.worker_inventory_test.allow=true on an isolated test database first.';
   END IF;
 
-  SELECT worker.id, worker.user_id
-  INTO v_worker_id, v_worker_user_id
-  FROM public.workers worker
-  WHERE worker.status = 'active'
-  ORDER BY worker.created_at DESC
-  LIMIT 1;
+  v_worker_user_id := uuid_generate_v4();
+  v_customer_id := uuid_generate_v4();
 
-  IF v_worker_id IS NULL THEN
-    RAISE EXCEPTION 'No active worker found in test database.';
-  END IF;
+  INSERT INTO auth.users (
+    id,
+    aud,
+    role,
+    email,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at
+  )
+  VALUES
+    (
+      v_worker_user_id,
+      'authenticated',
+      'authenticated',
+      lower(v_sku) || '-worker@example.test',
+      NOW(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      NOW(),
+      NOW()
+    ),
+    (
+      v_customer_id,
+      'authenticated',
+      'authenticated',
+      lower(v_sku) || '-customer@example.test',
+      NOW(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      NOW(),
+      NOW()
+    );
 
-  SELECT job.customer_id
-  INTO v_customer_id
-  FROM public.jobs job
-  WHERE job.worker_id = v_worker_id
-    AND job.customer_id IS NOT NULL
-  ORDER BY job.created_at DESC
-  LIMIT 1;
+  INSERT INTO public.profiles (id, email, phone, full_name, address, role)
+  VALUES
+    (v_worker_user_id, lower(v_sku) || '-worker@example.test', '0900000001', 'Staging Inventory Worker', 'Test address', 'worker'),
+    (v_customer_id, lower(v_sku) || '-customer@example.test', '0900000002', 'Staging Inventory Customer', 'Test address', 'customer');
 
-  IF v_customer_id IS NULL THEN
-    RAISE EXCEPTION 'No served customer/job found for worker % in test database.', v_worker_id;
-  END IF;
+  INSERT INTO public.workers (user_id, specialties, status, is_available, approved_at)
+  VALUES (v_worker_user_id, ARRAY['Kho hang test'], 'active', TRUE, NOW())
+  RETURNING id INTO v_worker_id;
+
+  WITH test_service AS (
+    INSERT INTO public.services (name, description, base_price, is_active)
+    VALUES ('Staging Inventory Test Service', 'Synthetic service for transaction rollback test', 0, TRUE)
+    RETURNING id
+  )
+  INSERT INTO public.jobs (
+    job_code,
+    customer_id,
+    worker_id,
+    service_id,
+    address,
+    scheduled_at,
+    description,
+    quoted_price,
+    status,
+    source,
+    created_by
+  )
+  SELECT
+    'JOB-' || v_sku,
+    v_customer_id,
+    v_worker_id,
+    test_service.id,
+    'Test address',
+    NOW(),
+    'Synthetic job for inventory transaction rollback test',
+    0,
+    'completed',
+    'app',
+    v_customer_id
+  FROM test_service;
 
   PERFORM set_config('request.jwt.claim.sub', v_worker_user_id::TEXT, TRUE);
   PERFORM set_config('request.jwt.claim.role', 'authenticated', TRUE);
