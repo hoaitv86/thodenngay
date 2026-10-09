@@ -31,6 +31,41 @@ CREATE INDEX IF NOT EXISTS worker_inventory_receipt_item_serials_status_idx
 CREATE INDEX IF NOT EXISTS worker_inventory_receipt_item_serials_sales_item_idx
   ON public.worker_inventory_receipt_item_serials(sales_order_item_id);
 
+DO $$
+DECLARE
+  constraint_record RECORD;
+BEGIN
+  IF to_regclass('public.worker_inventory_products') IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'worker_inventory_products'
+        AND column_name = 'recurring_cycle'
+    )
+  THEN
+    RETURN;
+  END IF;
+
+  FOR constraint_record IN
+    SELECT constraint_name
+    FROM information_schema.constraint_column_usage
+    WHERE table_schema = 'public'
+      AND table_name = 'worker_inventory_products'
+      AND column_name = 'recurring_cycle'
+  LOOP
+    EXECUTE format(
+      'ALTER TABLE public.worker_inventory_products DROP CONSTRAINT IF EXISTS %I',
+      constraint_record.constraint_name
+    );
+  END LOOP;
+
+  ALTER TABLE public.worker_inventory_products
+    ADD CONSTRAINT worker_inventory_products_recurring_cycle_check
+    CHECK (recurring_cycle IN ('monthly', 'two_months', 'three_months', 'six_months', 'yearly'));
+END;
+$$;
+
 UPDATE public.worker_sales_order_items
 SET gross_profit = line_total - cost_total
 WHERE cost_total <> 0
@@ -79,6 +114,12 @@ DECLARE
   v_billgo_total NUMERIC(14, 2) := 0;
   v_billgo_period_end DATE;
   v_billgo_due_date DATE;
+  v_billgo_collection_month DATE;
+  v_billgo_next_period_start DATE;
+  v_billgo_next_due_date DATE;
+  v_billgo_paid_months INTEGER := 1;
+  v_billgo_bonus_months INTEGER := 0;
+  v_billgo_service_months INTEGER := 1;
   v_subscription_id UUID;
   v_total_serial_count INTEGER;
   v_available_serial_count INTEGER;
@@ -109,7 +150,7 @@ BEGIN
     RAISE EXCEPTION 'Khong tim thay ho so tho hoac don vi duoc cap quyen.';
   END IF;
 
-  IF p_billgo_cycle NOT IN ('monthly', 'three_months', 'six_months', 'yearly') THEN
+  IF p_billgo_cycle NOT IN ('monthly', 'two_months', 'three_months', 'six_months', 'yearly') THEN
     RAISE EXCEPTION 'Chu ky BillGo khong hop le.';
   END IF;
 
@@ -239,35 +280,55 @@ BEGIN
   WHERE id = v_order_id;
 
   IF p_create_billgo AND v_billgo_total > 0 THEN
-    v_billgo_period_end := CASE p_billgo_cycle
-      WHEN 'three_months' THEN (p_billgo_start_date + INTERVAL '3 months')::DATE
-      WHEN 'six_months' THEN (p_billgo_start_date + INTERVAL '6 months')::DATE
-      WHEN 'yearly' THEN (p_billgo_start_date + INTERVAL '12 months')::DATE
-      ELSE (p_billgo_start_date + INTERVAL '1 month')::DATE
+    v_billgo_paid_months := CASE p_billgo_cycle
+      WHEN 'two_months' THEN 2
+      WHEN 'three_months' THEN 3
+      WHEN 'six_months' THEN 6
+      WHEN 'yearly' THEN 12
+      ELSE 1
     END;
-    v_billgo_due_date := (date_trunc('month', v_billgo_period_end)::DATE + INTERVAL '1 month 19 days')::DATE;
+    v_billgo_bonus_months := CASE p_billgo_cycle WHEN 'yearly' THEN 1 ELSE 0 END;
+    v_billgo_service_months := v_billgo_paid_months + v_billgo_bonus_months;
+    v_billgo_period_end := (p_billgo_start_date + make_interval(months => v_billgo_service_months) - INTERVAL '1 day')::DATE;
+    v_billgo_due_date := (date_trunc('month', v_billgo_period_end + INTERVAL '1 month')::DATE + 18);
+    v_billgo_collection_month := date_trunc('month', v_billgo_period_end + INTERVAL '1 month')::DATE;
+    v_billgo_next_period_start := (v_billgo_period_end + INTERVAL '1 day')::DATE;
+    v_billgo_next_due_date := (
+      date_trunc(
+        'month',
+        (v_billgo_next_period_start + make_interval(months => v_billgo_service_months) - INTERVAL '1 day') + INTERVAL '1 month'
+      )::DATE + 18
+    );
 
     INSERT INTO public.billgo_subscriptions (
       customer_id, worker_id, customer_name, internet_account, customer_address,
-      package_name, service_type, cycle, amount_per_cycle, start_date, next_due_date, note, created_by
+      package_name, service_type, cycle, current_cycle, amount_per_cycle, monthly_fee,
+      start_date, next_due_date, next_period_start, note, created_by, last_changed_by
     )
     SELECT
       p_customer_id, v_worker_id, profiles.full_name, 'SALE-' || v_order_id::TEXT, profiles.address,
-      'Thu dinh ky don ' || v_sale_code, 'sales_recurring', p_billgo_cycle, v_billgo_total,
-      p_billgo_start_date, v_billgo_due_date, 'Tao tu don ban ' || v_sale_code, auth.uid()
+      'Thu dinh ky don ' || v_sale_code, 'sales_recurring', p_billgo_cycle, p_billgo_cycle,
+      v_billgo_total, v_billgo_total, p_billgo_start_date, v_billgo_due_date,
+      p_billgo_start_date, 'Tao tu don ban ' || v_sale_code, auth.uid(), auth.uid()
     FROM public.profiles
     WHERE profiles.id = p_customer_id
     RETURNING id INTO v_subscription_id;
 
     INSERT INTO public.billgo_receivables (
       customer_id, worker_id, subscription_id, type, title, total_amount, due_date,
-      period_start, period_end, billing_months, status, note, created_by
+      period_start, period_end, collection_month, usage_month, billing_month, billing_year,
+      cycle_at_collection, billing_months, bonus_months, service_months, paid_amount,
+      monthly_fee_at_collection, next_period_start, next_due_date, status, note, created_by
     )
     VALUES (
       p_customer_id, v_worker_id, v_subscription_id, 'subscription_fee',
       'Thu dinh ky don ' || v_sale_code, v_billgo_total, v_billgo_due_date,
-      p_billgo_start_date, v_billgo_period_end,
-      CASE p_billgo_cycle WHEN 'three_months' THEN 3 WHEN 'six_months' THEN 6 WHEN 'yearly' THEN 12 ELSE 1 END,
+      p_billgo_start_date, v_billgo_period_end, v_billgo_collection_month,
+      date_trunc('month', p_billgo_start_date)::DATE,
+      EXTRACT(MONTH FROM v_billgo_collection_month)::INTEGER,
+      EXTRACT(YEAR FROM v_billgo_collection_month)::INTEGER,
+      p_billgo_cycle, v_billgo_paid_months, v_billgo_bonus_months, v_billgo_service_months, 0,
+      v_billgo_total, v_billgo_next_period_start, v_billgo_next_due_date,
       'unpaid', 'Tao tu don ban ' || v_sale_code, auth.uid()
     );
   END IF;
