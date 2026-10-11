@@ -537,7 +537,7 @@ WITH duplicate_receivables AS (
     AND to_jsonb(receivable)->>'deleted_at' IS NULL
     AND receivable.status NOT IN ('cancelled', 'deleted')
 ),
-overlaps AS (
+period_overlaps AS (
   SELECT
     worker_id,
     account_key,
@@ -569,7 +569,7 @@ SELECT
     WHEN paid_amount > 0 THEN 'NO_GO_PAID_REVENUE_OVERLAP'
     ELSE 'REVIEW_UNPAID_OVERLAP'
   END AS classification
-FROM overlaps
+FROM period_overlaps
 ORDER BY paid_amount DESC, total_amount DESC, worker_id, account_key, period_key;
 
 WITH active_receivables AS (
