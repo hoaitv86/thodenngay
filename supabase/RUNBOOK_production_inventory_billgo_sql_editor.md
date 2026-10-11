@@ -8,8 +8,10 @@ have the PostgreSQL password. Do not use the staging bootstrap on production.
 ## Files
 
 - Read-only preflight: `supabase/preflight_production_inventory_billgo.sql`
+- RPC body export: `supabase/preflight_production_rpc_body_export.sql`
 - Migration 1: `supabase/migration_reopen_legacy_job_inventory_restore.sql`
 - Migration 2: `supabase/migration_worker_sales_profit_and_serials.sql`
+- Read-only post-check: `supabase/postcheck_production_inventory_billgo.sql`
 
 ## Final Migration Order
 
@@ -55,6 +57,9 @@ GO only if:
   reviewed against `function_body_for_manual_compare`. It is expected that
   production may not yet match the final body before migration; do not treat a
   mismatch as PASS until the function body has been inspected.
+- `preflight_production_rpc_body_export.sql` has been run and the full
+  production function bodies, hashes, search paths, and EXECUTE grants have
+  been saved for rollback/comparison.
 - BillGo duplicate checks ignore TV360 child subscriptions, standalone
   `customer_id IS NULL` BillGo customers, and deleted/cancelled subscriptions
   unless they also create active root Internet or paid-period overlap risk.
@@ -65,12 +70,18 @@ GO only if:
 
 Preferred independent backup:
 
-1. Ask the Supabase project owner to create a dashboard backup or PITR restore
-   point immediately before deployment.
-2. Ask the owner to restore that backup into a separate project, branch, or
-   temporary database.
-3. In the restored environment, verify the affected tables exist and row counts
-   are plausible.
+1. Ask the Supabase project owner to open Dashboard > Database > Backups and
+   record the production project's actual backup capability for its plan:
+   daily backups, PITR add-on, Restore to a New Project, downloadable backup, or
+   none available in dashboard.
+2. Do not assume PITR or database branching exists. If PITR is not enabled,
+   choose the closest available dashboard backup before the maintenance window.
+3. Ask the owner to restore the selected backup into a separate Supabase project
+   or another isolated Postgres database. This must not overwrite production.
+4. In the restored environment, verify the affected tables exist, row counts are
+   plausible, and the four RPC definitions can be read.
+5. Record the restore target project/database, restore start and finish time,
+   source backup timestamp, row-count evidence, and who performed the drill.
 
 Minimum SQL Editor evidence to capture before migration:
 
@@ -81,12 +92,13 @@ Minimum SQL Editor evidence to capture before migration:
   `worker_inventory_receipt_items`, `worker_inventory_receipt_item_serials`,
   `worker_product_warranties`, `jobs`, `job_logs`, `billgo_subscriptions`,
   `billgo_receivables`, `billgo_receipts`.
-- Save function definitions from the preflight
-  `function_body_for_manual_compare` section.
+- Save function definitions from `preflight_production_rpc_body_export.sql`,
+  especially `04_full_function_body_export`.
 
-Restore drill is not satisfied by screenshots alone. If the account does not
-allow dashboard backup restore or branching, the deployment remains NO-GO until
-the project owner performs and verifies a restore in a separate environment.
+Restore drill is not satisfied by screenshots alone. If the plan/dashboard does
+not allow restoring to a separate environment and no owner with database
+credentials can produce an independent logical backup plus restore test, the
+deployment remains NO-GO.
 
 ## Preflight
 
@@ -107,17 +119,25 @@ Expected behavior:
 
 Copy or screenshot the final `GO/NO-GO summary`.
 
+Then run `preflight_production_rpc_body_export.sql` and export every result set.
+Manually compare `04_full_function_body_export` with the two migration files.
+The expected shape probes are not full equivalence checks; a body can pass the
+probe and still contain a production hotfix that must be preserved.
+
 ## Deployment
 
 Run during a maintenance window.
 
 1. Reconfirm backup/restore drill evidence.
-2. Run `migration_reopen_legacy_job_inventory_restore.sql`.
-3. Run `migration_worker_sales_profit_and_serials.sql`.
-4. Run `preflight_production_inventory_billgo.sql` again.
-5. Compare BillGo baseline counts before/after. Counts should not change merely
+2. Reconfirm production RPC bodies were exported and reviewed.
+3. Run `migration_reopen_legacy_job_inventory_restore.sql`.
+4. Run `migration_worker_sales_profit_and_serials.sql`.
+5. Run `postcheck_production_inventory_billgo.sql`.
+6. Run `preflight_production_inventory_billgo.sql` again if any post-check
+   result is unclear or if you need the broader lock/data quality snapshot.
+7. Compare BillGo baseline counts before/after. Counts should not change merely
    from these migrations.
-6. Confirm the final `GO/NO-GO summary` remains all `GO`.
+8. Confirm the final `GO/NO-GO summary` remains all `GO`.
 
 Do not run the next step if production RPC bodies could not be captured or if
 `function_body_for_manual_compare` reveals a custom production hotfix that would
@@ -153,8 +173,9 @@ BillGo write risk:
 Preferred rollback:
 
 1. Stop writes that use worker inventory/sales/BillGo.
-2. Restore the independent dashboard/PITR backup into production, or fail over to
-   the verified restored environment, per the project owner's Supabase process.
+2. Restore using the verified backup path for the project's actual plan, or fail
+   over to the verified restored environment, per the project owner's Supabase
+   process.
 
 Function-only fallback, only if no data was written after migration:
 
@@ -162,12 +183,22 @@ Function-only fallback, only if no data was written after migration:
 - This is not a full rollback if new columns, constraints, indexes, or post-
   migration writes exist.
 
+App rollback:
+
+- If database post-checks are GO but the deployed app fails, roll back Vercel to
+  the previous deployment and keep the database migration in place unless a data
+  issue is confirmed.
+- If database post-checks are NO-GO, stop inventory/sales/BillGo writes first,
+  then use the verified database restore path. Function-only rollback is only a
+  temporary containment step.
+
 Do not drop newly added columns after users have created sales, serial links, or
 BillGo rows using the new RPCs.
 
 ## Post-Check
 
-Run `preflight_production_inventory_billgo.sql` again.
+Run `postcheck_production_inventory_billgo.sql` first, then rerun
+`preflight_production_inventory_billgo.sql` if needed for the wider report.
 
 Additional manual checks:
 
@@ -175,6 +206,7 @@ Additional manual checks:
 - Confirm final sales RPC has `search_path=public, extensions`.
 - Confirm `function_body_for_manual_compare` now matches the deployed function
   intent from the two migration files.
+- Confirm `postcheck_go_no_go_summary` has all `GO`.
 - Confirm serial link consistency counters are zero.
 - Confirm no invalid recurring cycle or serial status rows.
 - Confirm BillGo duplicate/overlap result sets are empty or informational only,
