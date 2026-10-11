@@ -153,7 +153,7 @@ CREATE OR REPLACE FUNCTION public.save_worker_inventory_receipt(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   v_receipt_id UUID;

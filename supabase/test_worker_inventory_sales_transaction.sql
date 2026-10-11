@@ -74,7 +74,13 @@ BEGIN
   INSERT INTO public.profiles (id, email, phone, full_name, address, role)
   VALUES
     (v_worker_user_id, lower(v_sku) || '-worker@example.test', '0900000001', 'Staging Inventory Worker', 'Test address', 'worker'),
-    (v_customer_id, lower(v_sku) || '-customer@example.test', '0900000002', 'Staging Inventory Customer', 'Test address', 'customer');
+    (v_customer_id, lower(v_sku) || '-customer@example.test', '0900000002', 'Staging Inventory Customer', 'Test address', 'customer')
+  ON CONFLICT (id) DO UPDATE
+  SET email = EXCLUDED.email,
+      phone = EXCLUDED.phone,
+      full_name = EXCLUDED.full_name,
+      address = EXCLUDED.address,
+      role = EXCLUDED.role;
 
   INSERT INTO public.workers (user_id, specialties, status, is_available, approved_at)
   VALUES (v_worker_user_id, ARRAY['Kho hang test'], 'active', TRUE, NOW())

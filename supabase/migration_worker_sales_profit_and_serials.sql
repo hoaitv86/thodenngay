@@ -93,7 +93,7 @@ CREATE OR REPLACE FUNCTION public.create_worker_sales_order(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   v_worker_id UUID;
