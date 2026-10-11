@@ -253,6 +253,29 @@ SELECT
 FROM fn
 ORDER BY proname, oid::regprocedure::text;
 
+WITH fn AS (
+  SELECT
+    p.proname,
+    p.oid,
+    pg_get_functiondef(p.oid) AS body
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname IN (
+      'create_worker_sales_order',
+      'cancel_worker_sales_order',
+      'cancel_worker_inventory_receipt',
+      'reopen_legacy_job_with_inventory'
+    )
+)
+SELECT
+  'function_body_for_manual_compare' AS section,
+  proname,
+  oid::regprocedure AS signature,
+  body
+FROM fn
+ORDER BY proname, oid::regprocedure::text;
+
 SELECT
   'constraints_and_indexes' AS section,
   item,
@@ -398,15 +421,196 @@ SELECT
   (SELECT COUNT(*) FROM public.billgo_receivables WHERE note LIKE 'Tao tu don ban %') AS sale_generated_receivables;
 
 SELECT
-  'billgo_duplicate_risk' AS section,
-  COUNT(*) AS duplicate_internet_account_groups
+  'billgo_active_root_internet_duplicate_risk' AS section,
+  COUNT(*) AS duplicate_worker_account_groups,
+  COALESCE(SUM(subscription_count), 0) AS duplicate_subscription_rows,
+  COALESCE(SUM(receivable_count), 0) AS linked_receivable_rows,
+  COALESCE(SUM(receivable_total_amount), 0) AS linked_receivable_total_amount,
+  COALESCE(SUM(receivable_paid_amount), 0) AS linked_receivable_paid_amount
 FROM (
-  SELECT internet_account
-  FROM public.billgo_subscriptions
-  WHERE internet_account IS NOT NULL
-  GROUP BY internet_account
+  SELECT
+    subscription.worker_id,
+    lower(trim(subscription.internet_account)) AS account_key,
+    COUNT(*) AS subscription_count,
+    COALESCE(SUM(receivable_totals.receivable_count), 0) AS receivable_count,
+    COALESCE(SUM(receivable_totals.total_amount), 0) AS receivable_total_amount,
+    COALESCE(SUM(receivable_totals.paid_amount), 0) AS receivable_paid_amount
+  FROM public.billgo_subscriptions subscription
+  LEFT JOIN LATERAL (
+    SELECT
+      COUNT(*) AS receivable_count,
+      SUM(COALESCE(receivable.total_amount, 0)) AS total_amount,
+      SUM(COALESCE(receivable.paid_amount, 0)) AS paid_amount
+    FROM public.billgo_receivables receivable
+    WHERE receivable.subscription_id = subscription.id
+      AND to_jsonb(receivable)->>'deleted_at' IS NULL
+      AND receivable.status NOT IN ('cancelled', 'deleted')
+  ) receivable_totals ON TRUE
+  WHERE subscription.worker_id IS NOT NULL
+    AND subscription.internet_account IS NOT NULL
+    AND trim(subscription.internet_account) <> ''
+    AND to_jsonb(subscription)->>'deleted_at' IS NULL
+    AND subscription.status NOT IN ('cancelled', 'deleted')
+    AND to_jsonb(subscription)->>'parent_subscription_id' IS NULL
+    AND COALESCE(subscription.service_type, 'internet') = 'internet'
+  GROUP BY subscription.worker_id, lower(trim(subscription.internet_account))
   HAVING COUNT(*) > 1
 ) duplicate_accounts;
+
+WITH duplicate_accounts AS (
+  SELECT
+    subscription.worker_id,
+    lower(trim(subscription.internet_account)) AS account_key
+  FROM public.billgo_subscriptions subscription
+  WHERE subscription.worker_id IS NOT NULL
+    AND subscription.internet_account IS NOT NULL
+    AND trim(subscription.internet_account) <> ''
+    AND to_jsonb(subscription)->>'deleted_at' IS NULL
+    AND subscription.status NOT IN ('cancelled', 'deleted')
+    AND to_jsonb(subscription)->>'parent_subscription_id' IS NULL
+    AND COALESCE(subscription.service_type, 'internet') = 'internet'
+  GROUP BY subscription.worker_id, lower(trim(subscription.internet_account))
+  HAVING COUNT(*) > 1
+)
+SELECT
+  'billgo_active_root_internet_duplicate_detail' AS section,
+  duplicate_account.worker_id,
+  worker_profile.full_name AS worker_name,
+  duplicate_account.account_key,
+  COUNT(subscription.id) AS subscription_count,
+  COUNT(*) FILTER (WHERE subscription.customer_id IS NULL) AS null_customer_id_count,
+  COALESCE(SUM(receivable_totals.receivable_count), 0) AS receivable_count,
+  COALESCE(SUM(receivable_totals.total_amount), 0) AS receivable_total_amount,
+  COALESCE(SUM(receivable_totals.paid_amount), 0) AS receivable_paid_amount,
+  array_agg(subscription.id ORDER BY subscription.created_at, subscription.id) AS subscription_ids,
+  array_agg(DISTINCT COALESCE(subscription.status, '[null]') ORDER BY COALESCE(subscription.status, '[null]')) AS statuses,
+  array_agg(DISTINCT COALESCE(subscription.service_type, '[null]') ORDER BY COALESCE(subscription.service_type, '[null]')) AS service_types
+FROM duplicate_accounts duplicate_account
+JOIN public.billgo_subscriptions subscription
+  ON subscription.worker_id = duplicate_account.worker_id
+ AND lower(trim(subscription.internet_account)) = duplicate_account.account_key
+ AND to_jsonb(subscription)->>'deleted_at' IS NULL
+ AND subscription.status NOT IN ('cancelled', 'deleted')
+ AND to_jsonb(subscription)->>'parent_subscription_id' IS NULL
+ AND COALESCE(subscription.service_type, 'internet') = 'internet'
+LEFT JOIN public.workers worker
+  ON worker.id = subscription.worker_id
+LEFT JOIN public.profiles worker_profile
+  ON worker_profile.id = worker.user_id
+LEFT JOIN LATERAL (
+  SELECT
+    COUNT(*) AS receivable_count,
+    SUM(COALESCE(receivable.total_amount, 0)) AS total_amount,
+    SUM(COALESCE(receivable.paid_amount, 0)) AS paid_amount
+  FROM public.billgo_receivables receivable
+  WHERE receivable.subscription_id = subscription.id
+    AND to_jsonb(receivable)->>'deleted_at' IS NULL
+    AND receivable.status NOT IN ('cancelled', 'deleted')
+) receivable_totals ON TRUE
+GROUP BY duplicate_account.worker_id, worker_profile.full_name, duplicate_account.account_key
+ORDER BY receivable_paid_amount DESC, receivable_total_amount DESC, duplicate_account.account_key;
+
+WITH duplicate_receivables AS (
+  SELECT
+    subscription.worker_id,
+    lower(trim(subscription.internet_account)) AS account_key,
+    subscription.id AS subscription_id,
+    receivable.id AS receivable_id,
+    COALESCE(
+      receivable.period_start,
+      make_date(COALESCE(receivable.billing_year, 2000), COALESCE(receivable.billing_month, 1), 1),
+      receivable.collection_month
+    ) AS period_key,
+    receivable.total_amount,
+    receivable.paid_amount,
+    receivable.status
+  FROM public.billgo_subscriptions subscription
+  JOIN public.billgo_receivables receivable
+    ON receivable.subscription_id = subscription.id
+  WHERE subscription.worker_id IS NOT NULL
+    AND subscription.internet_account IS NOT NULL
+    AND trim(subscription.internet_account) <> ''
+    AND to_jsonb(subscription)->>'deleted_at' IS NULL
+    AND subscription.status NOT IN ('cancelled', 'deleted')
+    AND to_jsonb(subscription)->>'parent_subscription_id' IS NULL
+    AND COALESCE(subscription.service_type, 'internet') = 'internet'
+    AND to_jsonb(receivable)->>'deleted_at' IS NULL
+    AND receivable.status NOT IN ('cancelled', 'deleted')
+),
+overlaps AS (
+  SELECT
+    worker_id,
+    account_key,
+    period_key,
+    COUNT(*) AS receivable_count,
+    COUNT(DISTINCT subscription_id) AS subscription_count,
+    SUM(COALESCE(total_amount, 0)) AS total_amount,
+    SUM(COALESCE(paid_amount, 0)) AS paid_amount,
+    array_agg(DISTINCT subscription_id ORDER BY subscription_id) AS subscription_ids,
+    array_agg(receivable_id ORDER BY receivable_id) AS receivable_ids,
+    array_agg(DISTINCT COALESCE(status, '[null]') ORDER BY COALESCE(status, '[null]')) AS statuses
+  FROM duplicate_receivables
+  GROUP BY worker_id, account_key, period_key
+  HAVING COUNT(DISTINCT subscription_id) > 1
+)
+SELECT
+  'billgo_revenue_overlap_by_account_period' AS section,
+  worker_id,
+  account_key,
+  period_key,
+  receivable_count,
+  subscription_count,
+  total_amount,
+  paid_amount,
+  subscription_ids,
+  receivable_ids,
+  statuses,
+  CASE
+    WHEN paid_amount > 0 THEN 'NO_GO_PAID_REVENUE_OVERLAP'
+    ELSE 'REVIEW_UNPAID_OVERLAP'
+  END AS classification
+FROM overlaps
+ORDER BY paid_amount DESC, total_amount DESC, worker_id, account_key, period_key;
+
+WITH active_receivables AS (
+  SELECT *
+  FROM public.billgo_receivables receivable
+  WHERE receivable.subscription_id IS NOT NULL
+    AND to_jsonb(receivable)->>'deleted_at' IS NULL
+    AND receivable.status NOT IN ('cancelled', 'deleted')
+),
+duplicate_periods AS (
+  SELECT
+    subscription_id,
+    COALESCE(
+      period_start,
+      make_date(COALESCE(billing_year, 2000), COALESCE(billing_month, 1), 1),
+      collection_month
+    ) AS period_key,
+    COUNT(*) AS receivable_count,
+    SUM(COALESCE(total_amount, 0)) AS total_amount,
+    SUM(COALESCE(paid_amount, 0)) AS paid_amount,
+    array_agg(id ORDER BY created_at, id) AS receivable_ids,
+    array_agg(DISTINCT COALESCE(status, '[null]') ORDER BY COALESCE(status, '[null]')) AS statuses
+  FROM active_receivables
+  GROUP BY subscription_id, COALESCE(period_start, make_date(COALESCE(billing_year, 2000), COALESCE(billing_month, 1), 1), collection_month)
+  HAVING COUNT(*) > 1
+)
+SELECT
+  'billgo_duplicate_periods_by_subscription' AS section,
+  subscription_id,
+  period_key,
+  receivable_count,
+  total_amount,
+  paid_amount,
+  receivable_ids,
+  statuses,
+  CASE
+    WHEN paid_amount > 0 THEN 'NO_GO_DUPLICATE_PAID_PERIOD'
+    ELSE 'REVIEW_DUPLICATE_UNPAID_PERIOD'
+  END AS classification
+FROM duplicate_periods
+ORDER BY paid_amount DESC, total_amount DESC, subscription_id, period_key;
 
 SELECT
   'billgo_cycle_distribution' AS section,
@@ -522,15 +726,69 @@ WITH checks AS (
     'Invalid serial status values would make the CHECK constraint fail.'
   UNION ALL
   SELECT
-    'BillGo internet_account has no duplicates',
+    'BillGo has no duplicate active root Internet accounts per worker',
     NOT EXISTS (
       SELECT 1
-      FROM public.billgo_subscriptions
-      WHERE internet_account IS NOT NULL
-      GROUP BY internet_account
+      FROM public.billgo_subscriptions subscription
+      WHERE subscription.worker_id IS NOT NULL
+        AND subscription.internet_account IS NOT NULL
+        AND trim(subscription.internet_account) <> ''
+        AND to_jsonb(subscription)->>'deleted_at' IS NULL
+        AND subscription.status NOT IN ('cancelled', 'deleted')
+        AND to_jsonb(subscription)->>'parent_subscription_id' IS NULL
+        AND COALESCE(subscription.service_type, 'internet') = 'internet'
+      GROUP BY subscription.worker_id, lower(trim(subscription.internet_account))
       HAVING COUNT(*) > 1
     ),
-    'The new sales RPC creates SALE-<order_id> accounts; duplicates indicate existing BillGo data needs review.'
+    'Only root active Internet subscriptions with the same worker/account block deployment. TV360 child rows, standalone customer_id NULL rows, and deleted/cancelled subscriptions do not block by themselves.'
+  UNION ALL
+  SELECT
+    'BillGo has no paid revenue overlap across duplicate root account periods',
+    NOT EXISTS (
+      SELECT 1
+      FROM (
+        SELECT
+          subscription.worker_id,
+          lower(trim(subscription.internet_account)) AS account_key,
+          COALESCE(
+            receivable.period_start,
+            make_date(COALESCE(receivable.billing_year, 2000), COALESCE(receivable.billing_month, 1), 1),
+            receivable.collection_month
+          ) AS period_key,
+          COUNT(DISTINCT subscription.id) AS subscription_count,
+          SUM(COALESCE(receivable.paid_amount, 0)) AS paid_amount
+        FROM public.billgo_subscriptions subscription
+        JOIN public.billgo_receivables receivable
+          ON receivable.subscription_id = subscription.id
+        WHERE subscription.worker_id IS NOT NULL
+          AND subscription.internet_account IS NOT NULL
+          AND trim(subscription.internet_account) <> ''
+          AND to_jsonb(subscription)->>'deleted_at' IS NULL
+          AND subscription.status NOT IN ('cancelled', 'deleted')
+          AND to_jsonb(subscription)->>'parent_subscription_id' IS NULL
+          AND COALESCE(subscription.service_type, 'internet') = 'internet'
+          AND to_jsonb(receivable)->>'deleted_at' IS NULL
+          AND receivable.status NOT IN ('cancelled', 'deleted')
+        GROUP BY subscription.worker_id, lower(trim(subscription.internet_account)), COALESCE(receivable.period_start, make_date(COALESCE(receivable.billing_year, 2000), COALESCE(receivable.billing_month, 1), 1), receivable.collection_month)
+        HAVING COUNT(DISTINCT subscription.id) > 1
+           AND SUM(COALESCE(receivable.paid_amount, 0)) > 0
+      ) paid_overlaps
+    ),
+    'Paid overlap means two active root subscriptions for the same worker/account carry paid receivables in the same period; review accounting source of truth before deployment.'
+  UNION ALL
+  SELECT
+    'BillGo has no duplicate paid periods within one subscription',
+    NOT EXISTS (
+      SELECT 1
+      FROM public.billgo_receivables receivable
+      WHERE receivable.subscription_id IS NOT NULL
+        AND to_jsonb(receivable)->>'deleted_at' IS NULL
+        AND receivable.status NOT IN ('cancelled', 'deleted')
+      GROUP BY receivable.subscription_id, COALESCE(receivable.period_start, make_date(COALESCE(receivable.billing_year, 2000), COALESCE(receivable.billing_month, 1), 1), receivable.collection_month)
+      HAVING COUNT(*) > 1
+         AND SUM(COALESCE(receivable.paid_amount, 0)) > 0
+    ),
+    'Duplicate paid periods within one subscription can double count revenue and must be reviewed before deployment.'
   UNION ALL
   SELECT
     'current sales RPC body captured for manual review',

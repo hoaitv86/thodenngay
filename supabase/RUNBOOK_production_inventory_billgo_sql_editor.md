@@ -39,7 +39,11 @@ NO-GO if any of these are true:
 - `worker_inventory_products.recurring_cycle` contains values outside
   `monthly`, `two_months`, `three_months`, `six_months`, `yearly`.
 - Existing serial status values are outside `in_stock`, `sold`, `canceled`.
-- BillGo `internet_account` has duplicates.
+- BillGo has duplicate active root Internet subscriptions for the same
+  `worker_id` and normalized `internet_account`.
+- BillGo has paid revenue overlap for the same active root Internet
+  `worker_id`/account/period, or duplicate paid periods within one
+  subscription.
 - Table sizes/traffic are too high for a normal-hours DDL window.
 
 GO only if:
@@ -48,8 +52,12 @@ GO only if:
 - `preflight_production_inventory_billgo.sql` finishes successfully.
 - Every final summary row says `GO`.
 - The current RPC bodies shown in `function_body_probe` have been manually
-  reviewed. It is expected that production may not yet match the final body
-  before migration.
+  reviewed against `function_body_for_manual_compare`. It is expected that
+  production may not yet match the final body before migration; do not treat a
+  mismatch as PASS until the function body has been inspected.
+- BillGo duplicate checks ignore TV360 child subscriptions, standalone
+  `customer_id IS NULL` BillGo customers, and deleted/cancelled subscriptions
+  unless they also create active root Internet or paid-period overlap risk.
 - A short maintenance window is available.
 - The owner/operator is ready to restore or revert functions if post-checks fail.
 
@@ -73,7 +81,8 @@ Minimum SQL Editor evidence to capture before migration:
   `worker_inventory_receipt_items`, `worker_inventory_receipt_item_serials`,
   `worker_product_warranties`, `jobs`, `job_logs`, `billgo_subscriptions`,
   `billgo_receivables`, `billgo_receipts`.
-- Save function definitions from the preflight `function_body_probe` section.
+- Save function definitions from the preflight
+  `function_body_for_manual_compare` section.
 
 Restore drill is not satisfied by screenshots alone. If the account does not
 allow dashboard backup restore or branching, the deployment remains NO-GO until
@@ -88,6 +97,11 @@ Expected behavior:
 
 - It starts with `BEGIN READ ONLY`.
 - It returns catalog, function, data-quality, BillGo, and lock-risk result sets.
+- It includes read-only BillGo duplicate and revenue-overlap result sets:
+  `billgo_active_root_internet_duplicate_risk`,
+  `billgo_active_root_internet_duplicate_detail`,
+  `billgo_revenue_overlap_by_account_period`, and
+  `billgo_duplicate_periods_by_subscription`.
 - It ends with `COMMIT`.
 - It performs no writes.
 
@@ -104,6 +118,10 @@ Run during a maintenance window.
 5. Compare BillGo baseline counts before/after. Counts should not change merely
    from these migrations.
 6. Confirm the final `GO/NO-GO summary` remains all `GO`.
+
+Do not run the next step if production RPC bodies could not be captured or if
+`function_body_for_manual_compare` reveals a custom production hotfix that would
+be overwritten by the migration.
 
 ## Expected Locks and Data Touches
 
@@ -155,8 +173,12 @@ Additional manual checks:
 
 - Confirm no BillGo row counts changed solely due to migration.
 - Confirm final sales RPC has `search_path=public, extensions`.
+- Confirm `function_body_for_manual_compare` now matches the deployed function
+  intent from the two migration files.
 - Confirm serial link consistency counters are zero.
 - Confirm no invalid recurring cycle or serial status rows.
+- Confirm BillGo duplicate/overlap result sets are empty or informational only,
+  and that final `GO/NO-GO summary` has all `GO`.
 - Confirm table size/row count results match expectations for lock risk.
 
 ## Report Template
