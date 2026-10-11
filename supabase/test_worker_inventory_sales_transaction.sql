@@ -15,11 +15,18 @@ DECLARE
   v_worker_id UUID;
   v_worker_user_id UUID;
   v_customer_id UUID;
+  v_job_id UUID;
   v_receipt_id UUID;
   v_product_id UUID;
+  v_cancel_receipt_id UUID;
+  v_cancel_product_id UUID;
   v_order_id UUID;
   v_sale_item_id UUID;
   v_sku TEXT := 'TXN-INV-' || upper(substr(replace(uuid_generate_v4()::TEXT, '-', ''), 1, 10));
+  v_cancel_sku TEXT := 'TXN-CANCEL-' || upper(substr(replace(uuid_generate_v4()::TEXT, '-', ''), 1, 10));
+  v_reopen_order_id UUID;
+  v_reopen_item_id UUID;
+  v_reopen_result JSONB;
   v_cycle TEXT;
   v_expected_billing_months INTEGER;
   v_expected_bonus_months INTEGER;
@@ -113,10 +120,11 @@ BEGIN
     NOW(),
     'Synthetic job for inventory transaction rollback test',
     0,
-    'completed',
+    'in_progress',
     'app',
     v_customer_id
-  FROM test_service;
+  FROM test_service
+  RETURNING id INTO v_job_id;
 
   PERFORM set_config('request.jwt.claim.sub', v_worker_user_id::TEXT, TRUE);
   PERFORM set_config('request.jwt.claim.role', 'authenticated', TRUE);
@@ -255,6 +263,19 @@ BEGIN
     ) THEN
       RAISE EXCEPTION 'Sales item profit mismatch for cycle %.', v_cycle;
     END IF;
+
+    IF (
+      SELECT COUNT(*)
+      FROM public.worker_inventory_receipt_item_serials
+      WHERE product_id = v_product_id
+        AND status = 'sold'
+        AND sales_order_id = v_order_id
+        AND sales_order_item_id = v_sale_item_id
+        AND serial_code IS NOT NULL
+        AND qr_code IS NOT NULL
+    ) <> 1 THEN
+      RAISE EXCEPTION 'Serial/QR was not linked to the sale item for cycle %.', v_cycle;
+    END IF;
   END LOOP;
 
   IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_product_id) <> 0 THEN
@@ -283,6 +304,108 @@ BEGIN
 
   IF (SELECT COUNT(*) FROM public.worker_inventory_receipt_item_serials WHERE product_id = v_product_id AND status = 'in_stock') <> 1 THEN
     RAISE EXCEPTION 'Cancel sales RPC did not restore one serial.';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.worker_inventory_receipt_item_serials
+    WHERE product_id = v_product_id
+      AND status = 'in_stock'
+      AND (sales_order_id IS NOT NULL OR sales_order_item_id IS NOT NULL OR sold_at IS NOT NULL)
+  ) THEN
+    RAISE EXCEPTION 'Cancel sales RPC did not unlink restored serials from the sale.';
+  END IF;
+
+  SELECT public.save_worker_inventory_receipt(
+    v_worker_id,
+    NULL,
+    NULL,
+    'TEST-CANCEL-' || v_cancel_sku,
+    CURRENT_DATE,
+    'transaction test receipt for reopen and double cancel',
+    'confirmed',
+    jsonb_build_array(jsonb_build_object(
+      'name', 'Transaction Test Reopen Device',
+      'sku', v_cancel_sku,
+      'category', 'Test',
+      'unit', 'cai',
+      'quantity', 2,
+      'unitCost', 80000,
+      'defaultSalePrice', 120000,
+      'warrantyMonths', 0,
+      'serials', '[]'::jsonb
+    ))
+  )
+  INTO v_cancel_receipt_id;
+
+  SELECT id
+  INTO v_cancel_product_id
+  FROM public.worker_inventory_products
+  WHERE worker_id = v_worker_id
+    AND sku = v_cancel_sku;
+
+  IF v_cancel_product_id IS NULL THEN
+    RAISE EXCEPTION 'Receipt RPC did not create the reopen/double-cancel test product.';
+  END IF;
+
+  SELECT public.complete_worker_job_with_materials(
+    v_job_id,
+    ARRAY[]::TEXT[],
+    jsonb_build_array(jsonb_build_object('title', 'Legacy reopen completion')),
+    120000::NUMERIC,
+    0::INTEGER,
+    NULL::TEXT,
+    jsonb_build_array(jsonb_build_object(
+      'productId', v_cancel_product_id,
+      'quantity', 1,
+      'unitPrice', 120000
+    )),
+    NULL::UUID
+  )
+  INTO v_reopen_order_id;
+
+  SELECT id
+  INTO v_reopen_item_id
+  FROM public.worker_sales_order_items
+  WHERE order_id = v_reopen_order_id
+    AND product_id = v_cancel_product_id;
+
+  IF v_reopen_order_id IS NULL OR v_reopen_item_id IS NULL THEN
+    RAISE EXCEPTION 'Job completion RPC did not create the linked material sale.';
+  END IF;
+
+  IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_cancel_product_id) <> 1 THEN
+    RAISE EXCEPTION 'Job completion RPC did not decrement linked material stock before reopen.';
+  END IF;
+
+  SELECT public.reopen_legacy_job_with_inventory(
+    v_job_id,
+    jsonb_build_object('legacy_reopen_baseline', jsonb_build_object())
+  )
+  INTO v_reopen_result;
+
+  IF (v_reopen_result->>'ok')::BOOLEAN IS DISTINCT FROM TRUE
+    OR (v_reopen_result->>'restored_unit_count')::INTEGER <> 1
+    OR (SELECT status FROM public.jobs WHERE id = v_job_id) <> 'in_progress'
+    OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_cancel_product_id) <> 2
+  THEN
+    RAISE EXCEPTION 'Legacy reopen RPC did not restore linked inventory correctly.';
+  END IF;
+
+  PERFORM public.cancel_worker_inventory_receipt(v_cancel_receipt_id);
+
+  IF (SELECT status FROM public.worker_inventory_receipts WHERE id = v_cancel_receipt_id) <> 'canceled' THEN
+    RAISE EXCEPTION 'Receipt cancel RPC did not cancel the standalone receipt.';
+  END IF;
+
+  IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_cancel_product_id) <> 0 THEN
+    RAISE EXCEPTION 'Receipt cancel RPC did not remove standalone receipt stock.';
+  END IF;
+
+  PERFORM public.cancel_worker_inventory_receipt(v_cancel_receipt_id);
+
+  IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_cancel_product_id) <> 0 THEN
+    RAISE EXCEPTION 'Receipt cancel RPC double-restored or double-decremented stock.';
   END IF;
 
   BEGIN
