@@ -33,7 +33,11 @@ DECLARE
   v_roundtrip_sku TEXT := 'TXN-ROUNDTRIP-' || upper(substr(replace(uuid_generate_v4()::TEXT, '-', ''), 1, 10));
   v_roundtrip_run_id UUID;
   v_roundtrip_order_id UUID;
+  v_roundtrip_item_id UUID;
   v_roundtrip_result JSONB;
+  v_blocked_no_history BOOLEAN := FALSE;
+  v_blocked_fractional_quantity BOOLEAN := FALSE;
+  v_blocked_mismatched_history BOOLEAN := FALSE;
   v_cycle TEXT;
   v_expected_billing_months INTEGER;
   v_expected_bonus_months INTEGER;
@@ -481,6 +485,166 @@ BEGIN
     RAISE EXCEPTION 'Roundtrip setup did not decrement stock 10 -> 8.';
   END IF;
 
+  BEGIN
+    PERFORM public.reopen_legacy_job_with_inventory(
+      v_roundtrip_job_id,
+      jsonb_build_object(
+        'legacy_reopened', TRUE,
+        'legacy_reopen_baseline', jsonb_build_object(
+          'version', 1,
+          'materialQuantities', jsonb_build_object(v_roundtrip_product_id::TEXT, 2),
+          'inventoryRestored', FALSE
+        )
+      )
+    );
+  EXCEPTION
+    WHEN OTHERS THEN
+      v_blocked_no_history := TRUE;
+  END;
+
+  IF NOT v_blocked_no_history
+    OR (SELECT status FROM public.jobs WHERE id = v_roundtrip_job_id) <> 'completed'
+    OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 8
+  THEN
+    RAISE EXCEPTION 'Legacy reopen without deduction history should fail and leave stock unchanged.';
+  END IF;
+
+  UPDATE public.jobs
+  SET completion_items = jsonb_build_array(jsonb_build_object(
+        'name', 'Roundtrip fractional material',
+        'source', 'inventory',
+        'inventoryProductId', v_roundtrip_product_id,
+        'quantity', 1.5,
+        'unitPrice', 120000
+      ))
+  WHERE id = v_roundtrip_job_id;
+
+  BEGIN
+    PERFORM public.reopen_legacy_job_with_inventory(
+      v_roundtrip_job_id,
+      jsonb_build_object(
+        'legacy_reopened', TRUE,
+        'legacy_reopen_baseline', jsonb_build_object(
+          'version', 1,
+          'materialQuantities', jsonb_build_object(v_roundtrip_product_id::TEXT, 1.5),
+          'inventoryRestored', FALSE
+        )
+      )
+    );
+  EXCEPTION
+    WHEN OTHERS THEN
+      v_blocked_fractional_quantity := TRUE;
+  END;
+
+  IF NOT v_blocked_fractional_quantity
+    OR (SELECT status FROM public.jobs WHERE id = v_roundtrip_job_id) <> 'completed'
+    OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 8
+  THEN
+    RAISE EXCEPTION 'Legacy reopen with fractional material quantity should fail and leave stock unchanged.';
+  END IF;
+
+  UPDATE public.jobs
+  SET completion_items = jsonb_build_array(jsonb_build_object(
+        'name', 'Roundtrip legacy material',
+        'source', 'inventory',
+        'inventoryProductId', v_roundtrip_product_id,
+        'quantity', 2,
+        'unitPrice', 120000
+      ))
+  WHERE id = v_roundtrip_job_id;
+
+  INSERT INTO public.worker_sales_orders (
+    worker_id,
+    customer_id,
+    job_id,
+    completion_run_id,
+    sale_code,
+    total_amount,
+    note,
+    created_by
+  )
+  VALUES (
+    v_worker_id,
+    v_customer_id,
+    NULL,
+    NULL,
+    'JOBSALE-MISMATCH-' || upper(substr(replace(uuid_generate_v4()::TEXT, '-', ''), 1, 10)),
+    120000,
+    'transaction test mismatched legacy material evidence',
+    v_worker_user_id
+  )
+  RETURNING id INTO v_roundtrip_order_id;
+
+  INSERT INTO public.job_logs (job_id, actor_id, action, metadata)
+  VALUES (
+    v_roundtrip_job_id,
+    v_worker_user_id,
+    'completed_with_materials',
+    jsonb_build_object(
+      'sales_order_id', v_roundtrip_order_id,
+      'source', 'transaction_test_job_log_link',
+      'material_count', 1
+    )
+  );
+
+  INSERT INTO public.worker_sales_order_items (
+    order_id,
+    product_id,
+    product_name,
+    product_sku,
+    category,
+    unit,
+    quantity,
+    unit_price,
+    line_total
+  )
+  VALUES (
+    v_roundtrip_order_id,
+    v_roundtrip_product_id,
+    'Transaction Test Roundtrip Device',
+    v_roundtrip_sku,
+    'Test',
+    'cai',
+    1,
+    120000,
+    120000
+  )
+  RETURNING id INTO v_roundtrip_item_id;
+
+  BEGIN
+    PERFORM public.reopen_legacy_job_with_inventory(
+      v_roundtrip_job_id,
+      jsonb_build_object(
+        'legacy_reopened', TRUE,
+        'legacy_reopen_baseline', jsonb_build_object(
+          'version', 1,
+          'materialQuantities', jsonb_build_object(v_roundtrip_product_id::TEXT, 2),
+          'inventoryRestored', FALSE
+        )
+      )
+    );
+  EXCEPTION
+    WHEN OTHERS THEN
+      v_blocked_mismatched_history := TRUE;
+  END;
+
+  IF NOT v_blocked_mismatched_history
+    OR (SELECT status FROM public.jobs WHERE id = v_roundtrip_job_id) <> 'completed'
+    OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 8
+  THEN
+    RAISE EXCEPTION 'Legacy reopen with partial sales evidence should fail and leave stock unchanged.';
+  END IF;
+
+  UPDATE public.worker_sales_order_items
+  SET quantity = 2,
+      line_total = 240000
+  WHERE id = v_roundtrip_item_id;
+
+  UPDATE public.worker_sales_orders
+  SET total_amount = 240000,
+      note = 'transaction test matching legacy material evidence'
+  WHERE id = v_roundtrip_order_id;
+
   SELECT public.reopen_legacy_job_with_inventory(
     v_roundtrip_job_id,
     jsonb_build_object(
@@ -496,12 +660,12 @@ BEGIN
 
   IF (v_roundtrip_result->>'ok')::BOOLEAN IS DISTINCT FROM TRUE
     OR (v_roundtrip_result->>'restored_unit_count')::INTEGER <> 2
-    OR (v_roundtrip_result->>'restore_source') <> 'completion_items'
+    OR (v_roundtrip_result->>'restore_source') <> 'sales_order'
     OR (SELECT status FROM public.jobs WHERE id = v_roundtrip_job_id) <> 'in_progress'
     OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 10
     OR COALESCE((SELECT (workflow_data->'legacy_reopen_baseline'->>'inventoryRestored')::BOOLEAN FROM public.jobs WHERE id = v_roundtrip_job_id), FALSE) IS DISTINCT FROM TRUE
   THEN
-    RAISE EXCEPTION 'Legacy reopen completion_items fallback did not restore stock 8 -> 10.';
+    RAISE EXCEPTION 'Legacy reopen with matching sales evidence did not restore stock 8 -> 10.';
   END IF;
 
   INSERT INTO public.job_completion_runs (
