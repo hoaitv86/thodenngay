@@ -396,7 +396,7 @@ BEGIN
       note = COALESCE(note, '') || CASE WHEN COALESCE(note, '') = '' THEN '' ELSE E'\n' END || 'Huy don ban ' || v_order.sale_code,
       updated_at = NOW()
   WHERE sales_order_id = v_order.id
-    AND status = 'active';
+    AND status <> 'cancelled';
 
   UPDATE public.worker_sales_orders
   SET status = 'cancelled',
