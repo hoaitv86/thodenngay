@@ -27,6 +27,13 @@ DECLARE
   v_reopen_order_id UUID;
   v_reopen_item_id UUID;
   v_reopen_result JSONB;
+  v_roundtrip_job_id UUID;
+  v_roundtrip_receipt_id UUID;
+  v_roundtrip_product_id UUID;
+  v_roundtrip_sku TEXT := 'TXN-ROUNDTRIP-' || upper(substr(replace(uuid_generate_v4()::TEXT, '-', ''), 1, 10));
+  v_roundtrip_run_id UUID;
+  v_roundtrip_order_id UUID;
+  v_roundtrip_result JSONB;
   v_cycle TEXT;
   v_expected_billing_months INTEGER;
   v_expected_bonus_months INTEGER;
@@ -390,6 +397,178 @@ BEGIN
     OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_cancel_product_id) <> 2
   THEN
     RAISE EXCEPTION 'Legacy reopen RPC did not restore linked inventory correctly.';
+  END IF;
+
+  INSERT INTO public.jobs (
+    job_code,
+    customer_id,
+    worker_id,
+    service_id,
+    address,
+    scheduled_at,
+    description,
+    quoted_price,
+    status,
+    source,
+    created_by
+  )
+  SELECT
+    'JOB-' || v_roundtrip_sku,
+    v_customer_id,
+    v_worker_id,
+    jobs.service_id,
+    'Test address',
+    NOW(),
+    'Synthetic job for 10-8-10-8-10 inventory reopen test',
+    0,
+    'completed',
+    'app',
+    v_customer_id
+  FROM public.jobs
+  WHERE id = v_job_id
+  RETURNING id INTO v_roundtrip_job_id;
+
+  SELECT public.save_worker_inventory_receipt(
+    v_worker_id,
+    NULL,
+    NULL,
+    'TEST-' || v_roundtrip_sku,
+    CURRENT_DATE,
+    'transaction test receipt for exact reopen roundtrip',
+    'confirmed',
+    jsonb_build_array(jsonb_build_object(
+      'name', 'Transaction Test Roundtrip Device',
+      'sku', v_roundtrip_sku,
+      'category', 'Test',
+      'unit', 'cai',
+      'quantity', 10,
+      'unitCost', 80000,
+      'defaultSalePrice', 120000,
+      'warrantyMonths', 0,
+      'serials', '[]'::jsonb
+    ))
+  )
+  INTO v_roundtrip_receipt_id;
+
+  SELECT id
+  INTO v_roundtrip_product_id
+  FROM public.worker_inventory_products
+  WHERE worker_id = v_worker_id
+    AND sku = v_roundtrip_sku;
+
+  IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 10 THEN
+    RAISE EXCEPTION 'Roundtrip receipt did not create stock 10.';
+  END IF;
+
+  UPDATE public.worker_inventory_products
+  SET stock_quantity = stock_quantity - 2
+  WHERE id = v_roundtrip_product_id;
+
+  UPDATE public.jobs
+  SET completion_items = jsonb_build_array(jsonb_build_object(
+        'name', 'Roundtrip legacy material',
+        'source', 'inventory',
+        'inventoryProductId', v_roundtrip_product_id,
+        'quantity', 2,
+        'unitPrice', 120000
+      )),
+      final_amount = 240000,
+      warranty_days = 0,
+      workflow_data = '{}'::jsonb
+  WHERE id = v_roundtrip_job_id;
+
+  IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 8 THEN
+    RAISE EXCEPTION 'Roundtrip setup did not decrement stock 10 -> 8.';
+  END IF;
+
+  SELECT public.reopen_legacy_job_with_inventory(
+    v_roundtrip_job_id,
+    jsonb_build_object(
+      'legacy_reopened', TRUE,
+      'legacy_reopen_baseline', jsonb_build_object(
+        'version', 1,
+        'materialQuantities', jsonb_build_object(v_roundtrip_product_id::TEXT, 2),
+        'inventoryRestored', FALSE
+      )
+    )
+  )
+  INTO v_roundtrip_result;
+
+  IF (v_roundtrip_result->>'ok')::BOOLEAN IS DISTINCT FROM TRUE
+    OR (v_roundtrip_result->>'restored_unit_count')::INTEGER <> 2
+    OR (v_roundtrip_result->>'restore_source') <> 'completion_items'
+    OR (SELECT status FROM public.jobs WHERE id = v_roundtrip_job_id) <> 'in_progress'
+    OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 10
+    OR COALESCE((SELECT (workflow_data->'legacy_reopen_baseline'->>'inventoryRestored')::BOOLEAN FROM public.jobs WHERE id = v_roundtrip_job_id), FALSE) IS DISTINCT FROM TRUE
+  THEN
+    RAISE EXCEPTION 'Legacy reopen completion_items fallback did not restore stock 8 -> 10.';
+  END IF;
+
+  INSERT INTO public.job_completion_runs (
+    job_id,
+    worker_id,
+    completed_by,
+    previous_status,
+    previous_job_snapshot
+  )
+  SELECT
+    jobs.id,
+    jobs.worker_id,
+    v_worker_user_id,
+    jobs.status,
+    jsonb_build_object(
+      'status', jobs.status,
+      'images', COALESCE(to_jsonb(jobs.images), '[]'::jsonb),
+      'completion_items', COALESCE(jobs.completion_items, '[]'::jsonb),
+      'final_amount', jobs.final_amount,
+      'warranty_days', jobs.warranty_days,
+      'warranty_note', jobs.warranty_note,
+      'workflow_data', COALESCE(jobs.workflow_data, '{}'::jsonb)
+    )
+  FROM public.jobs
+  WHERE jobs.id = v_roundtrip_job_id
+  RETURNING id INTO v_roundtrip_run_id;
+
+  SELECT public.complete_worker_job_with_materials(
+    v_roundtrip_job_id,
+    ARRAY[]::TEXT[],
+    jsonb_build_array(jsonb_build_object(
+      'name', 'Roundtrip completed material',
+      'source', 'inventory',
+      'inventoryProductId', v_roundtrip_product_id,
+      'quantity', 2,
+      'unitPrice', 120000
+    )),
+    240000::NUMERIC,
+    0::INTEGER,
+    NULL::TEXT,
+    jsonb_build_array(jsonb_build_object(
+      'productId', v_roundtrip_product_id,
+      'quantity', 2,
+      'unitPrice', 120000
+    )),
+    v_roundtrip_run_id
+  )
+  INTO v_roundtrip_order_id;
+
+  UPDATE public.jobs
+  SET workflow_data = COALESCE(workflow_data, '{}'::jsonb) || jsonb_build_object('completionRunId', v_roundtrip_run_id)
+  WHERE id = v_roundtrip_job_id;
+
+  IF v_roundtrip_order_id IS NULL
+    OR (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 8
+  THEN
+    RAISE EXCEPTION 'Roundtrip completion rerun did not decrement stock 10 -> 8 exactly once.';
+  END IF;
+
+  SELECT public.revert_job_completion(v_roundtrip_job_id)
+  INTO v_roundtrip_result;
+
+  IF (SELECT stock_quantity FROM public.worker_inventory_products WHERE id = v_roundtrip_product_id) <> 10
+    OR (SELECT status FROM public.jobs WHERE id = v_roundtrip_job_id) <> 'in_progress'
+    OR (SELECT status FROM public.job_completion_runs WHERE id = v_roundtrip_run_id) <> 'reverted'
+  THEN
+    RAISE EXCEPTION 'Roundtrip revert did not restore stock 8 -> 10.';
   END IF;
 
   PERFORM public.cancel_worker_inventory_receipt(v_cancel_receipt_id);

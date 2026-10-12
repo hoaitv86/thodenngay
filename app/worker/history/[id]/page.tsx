@@ -947,8 +947,8 @@ export default function WorkerJobDetailPage() {
       return;
     }
 
-    const restoredStatus = typeof data === "object" && data && "restored_status" in data
-      ? String((data as { restored_status?: unknown }).restored_status || "in_progress")
+    const restoredStatus = typeof data === "object" && data && ("restoredStatus" in data || "restored_status" in data)
+      ? String((data as { restoredStatus?: unknown; restored_status?: unknown }).restoredStatus || (data as { restored_status?: unknown }).restored_status || "in_progress")
       : "in_progress";
     setJob(current => current ? {
       ...current,
