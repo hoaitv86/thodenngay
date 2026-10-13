@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle, MoreHorizontal, Package, Plus, ShoppingCart } from "lucide-react";
+import { BookOpen, MessageCircle, MoreHorizontal, Package, Plus, ShoppingCart } from "lucide-react";
 import {
   resolveWorkerMenuByPlacement,
   type WorkerFeatureContext,
@@ -68,6 +68,7 @@ const workerFeatureIcons: Record<WorkerFeatureIconKey, NavIcon> = {
   package: Package,
   cart: ShoppingCart,
   money: DollarSignIcon,
+  help: BookOpen,
   chat: MessageCircle,
   briefcase: BriefcaseIcon,
   user: UserIcon,

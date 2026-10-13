@@ -11,6 +11,7 @@ export type WorkerFeatureId =
   | "chat"
   | "history"
   | "wallet"
+  | "help"
   | "profile"
   | "more";
 
@@ -23,6 +24,7 @@ export type WorkerFeatureIconKey =
   | "package"
   | "cart"
   | "money"
+  | "help"
   | "chat"
   | "briefcase"
   | "user"
@@ -197,6 +199,18 @@ export const workerFeatureRegistry: WorkerFeatureDefinition[] = [
     group: "account",
     roles: ["owner", "manager"],
     featureFlag: "wallet",
+  },
+  {
+    id: "help",
+    label: "Hướng dẫn sử dụng",
+    route: "/huong-dan",
+    href: "/huong-dan",
+    icon: "help",
+    order: 105,
+    enabled: true,
+    placements: ["sidebar", "mobileMore"],
+    group: "more",
+    roles: ["owner", "manager", "technician", "bill_collector", "sales_inventory", "worker", "admin"],
   },
   {
     id: "profile",

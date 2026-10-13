@@ -867,6 +867,9 @@ export default async function HomePage() {
               <Link href="/hanh-trinh" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Hành trình
               </Link>
+              <Link href="/huong-dan" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
+                Hướng dẫn sử dụng
+              </Link>
               <a href="#reviews" className="text-sm font-bold text-on-surface-variant transition-colors hover:text-primary-container">
                 Đánh giá
               </a>
@@ -896,6 +899,7 @@ export default async function HomePage() {
             <a href="#services" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Dịch vụ</a>
             <a href="#how-it-works" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Cách hoạt động</a>
             <Link href="/hanh-trinh" className="shrink-0 rounded-full bg-primary-fixed px-3 py-1.5 text-xs font-extrabold text-primary-container">Hành trình</Link>
+            <Link href="/huong-dan" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Hướng dẫn sử dụng</Link>
             <a href="#reviews" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Đánh giá</a>
             <a href="#download-app" className="shrink-0 rounded-full bg-surface-container px-3 py-1.5 text-xs font-extrabold text-on-surface-variant">Tải app</a>
           </nav>

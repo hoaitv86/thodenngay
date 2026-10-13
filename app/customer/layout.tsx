@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageCircle } from "lucide-react";
+import { BookOpen, MessageCircle } from "lucide-react";
 import {
   BellIcon,
   BriefcaseIcon,
@@ -23,6 +23,7 @@ const navItems = [
   { href: "/customer/jobs", label: "Công việc", icon: BriefcaseIcon },
   { href: "/customer/booking", label: "Đặt thợ", icon: PlusIcon, isPrimary: true },
   { href: "/customer/chat", label: "Tin nhắn", icon: MessageCircle },
+  { href: "/huong-dan", label: "Hướng dẫn sử dụng", icon: BookOpen },
   { href: "/customer/profile", label: "Tài khoản", icon: UserIcon },
 ];
 
@@ -240,7 +241,7 @@ export default function CustomerLayout({
         </main>
 
         <nav className="customer-bottom-nav fixed bottom-0 left-1/2 z-30 w-full max-w-md -translate-x-1/2 border-t border-white/55 bg-white/82 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_28px_rgba(15,35,66,0.1)] backdrop-blur-xl lg:hidden">
-          <div className="grid h-[4.5rem] grid-cols-5 gap-1">
+          <div className="grid h-[4.5rem] grid-cols-6 gap-1">
             {navItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
               return (
