@@ -36,7 +36,7 @@ export type HelpArticle = {
 };
 
 export const helpAudienceLabels: Record<HelpAudience, string> = {
-  PUBLIC: "Public",
+  PUBLIC: "Công khai (không cần đăng nhập)",
   CUSTOMER: "Khách hàng",
   WORKER: "Thợ",
   MANAGER: "Quản lý",
@@ -73,12 +73,13 @@ export function getYoutubeEmbedUrl(value?: string | null) {
   try {
     const url = new URL(value);
     if (url.hostname.includes("youtube.com")) {
-      const videoId = url.searchParams.get("v");
+      const parts = url.pathname.split("/").filter(Boolean);
+      const videoId = url.searchParams.get("v") || (parts[0] === "shorts" ? parts[1] : null);
       return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
     }
 
     if (url.hostname === "youtu.be") {
-      const videoId = url.pathname.replace("/", "");
+      const videoId = url.pathname.split("/").filter(Boolean)[0];
       return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
     }
 

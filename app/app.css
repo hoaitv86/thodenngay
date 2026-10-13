@@ -875,6 +875,20 @@ textarea {
   line-height: 1.3;
 }
 
+.cms-editor h1 {
+  margin: 1.5rem 0 0.75rem;
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.cms-editor h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .cms-editor p {
   margin: 0.65rem 0;
 }
