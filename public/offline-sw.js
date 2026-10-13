@@ -1,6 +1,6 @@
 const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const IS_LOCAL_DEV_HOST = LOCAL_DEV_HOSTS.has(self.location.hostname);
-const CACHE_VERSION = "tdn-app-shell-v11";
+const CACHE_VERSION = "tdn-app-shell-v12";
 const APP_SHELL_FALLBACK_URL = "/login";
 const PRECACHE_URLS = [
   "/",
@@ -92,6 +92,10 @@ function shouldCacheAsset(requestUrl) {
       || requestUrl.pathname.endsWith(".webmanifest"));
 }
 
+function shouldMatchAssetExactly(requestUrl) {
+  return requestUrl.pathname.startsWith("/_next/static/");
+}
+
 function getWorkerNavigationFallbacks(pathname) {
   const fallbacks = [];
   const matched = WORKER_DYNAMIC_NAVIGATION_FALLBACKS.find((item) => item.pattern.test(pathname));
@@ -123,10 +127,13 @@ async function matchAny(cache, paths) {
 }
 
 async function matchCachedUrl(cache, requestUrl, request) {
-  return (request ? await cache.match(request, { ignoreSearch: false }) : null)
+  const exactMatch = (request ? await cache.match(request, { ignoreSearch: false }) : null)
     || await cache.match(requestUrl.href, { ignoreSearch: false })
-    || await cache.match(requestUrl.pathname + requestUrl.search, { ignoreSearch: false })
-    || await cache.match(requestUrl.pathname, { ignoreSearch: true });
+    || await cache.match(requestUrl.pathname + requestUrl.search, { ignoreSearch: false });
+
+  if (exactMatch || shouldMatchAssetExactly(requestUrl)) return exactMatch;
+
+  return await cache.match(requestUrl.pathname, { ignoreSearch: true });
 }
 
 async function warmHtmlAssets(cache, response, options = {}) {
@@ -236,18 +243,21 @@ async function staleWhileRevalidateNavigation(event) {
   const requestUrl = new URL(request.url);
   const cached = (await cache.match(request))
     || (await cache.match(requestUrl.pathname, { ignoreSearch: true }));
-  const refreshed = refreshNavigationCache(request, cache).catch(() => getNavigationFallback(cache, requestUrl));
-  if (cached) {
-    event.waitUntil(refreshed.then(() => undefined));
-    return cached;
+
+  try {
+    const refreshed = await refreshNavigationCache(request, cache);
+    if (refreshed) return refreshed;
+  } catch {
+    // Fall through to cached shells only when the network path really failed.
   }
-  return refreshed.then((response) => response || Response.error());
+
+  return cached || (await getNavigationFallback(cache, requestUrl)) || Response.error();
 }
 
 async function cacheFirstAsset(request) {
   const cache = await caches.open(CACHE_VERSION);
-  const cached = await cache.match(request, { ignoreSearch: false })
-    || await cache.match(new URL(request.url).pathname, { ignoreSearch: true });
+  const requestUrl = new URL(request.url);
+  const cached = await matchCachedUrl(cache, requestUrl, request);
   if (cached) return cached;
 
   const response = await fetch(request);

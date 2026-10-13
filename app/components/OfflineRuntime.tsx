@@ -12,6 +12,7 @@ const APP_SHELL_WARM_SIGNATURE_KEY = "tdn.offline.appShellWarmSignature.v1";
 const DEPLOY_VERSION_ENDPOINT = "/api/app-version";
 const DEPLOY_VERSION_STORAGE_KEY = "tdn.webDeploy.version.v1";
 const DEPLOY_RELOAD_SESSION_KEY = "tdn.webDeploy.reloadOnce.v1";
+const DEPLOY_ASSET_RECOVERY_SESSION_KEY = "tdn.webDeploy.assetRecoveryOnce.v1";
 const DEPLOY_VERSION_CHECK_INTERVAL_MS = 60_000;
 const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const LOCAL_DEV_SW_RELOAD_KEY = "tdn.localDev.swCleanupReloaded.v1";
@@ -239,6 +240,75 @@ async function refreshDeployCache(registration: ServiceWorkerRegistration) {
   removeSessionValue(APP_SHELL_WARM_SIGNATURE_KEY);
 }
 
+function isNextStaticAssetUrl(value: string) {
+  try {
+    const url = new URL(value, window.location.href);
+    return url.origin === window.location.origin
+      && url.pathname.startsWith("/_next/static/")
+      && /\.(?:js|css)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function getErrorText(error: unknown) {
+  if (!error) return "";
+  if (error instanceof Error) return `${error.name} ${error.message}`;
+  if (typeof error === "object") {
+    const record = error as { name?: unknown; message?: unknown; stack?: unknown };
+    return [record.name, record.message, record.stack].filter(Boolean).join(" ");
+  }
+  return String(error);
+}
+
+function isLikelyDeployAssetError(error: unknown) {
+  return /ChunkLoadError|Loading chunk \d+ failed|Loading CSS chunk \d+ failed|Failed to fetch dynamically imported module|Importing a module script failed|net::ERR_FAILED/i.test(
+    getErrorText(error)
+  );
+}
+
+function hasPotentialUnsavedFormData() {
+  try {
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) return true;
+
+    return Array.from(document.querySelectorAll("input, textarea, select")).some((element) => {
+      if (element instanceof HTMLInputElement) {
+        if (["hidden", "button", "submit", "reset", "checkbox", "radio"].includes(element.type)) return false;
+        return element.value.trim().length > 0;
+      }
+      if (element instanceof HTMLTextAreaElement) return element.value.trim().length > 0;
+      if (element instanceof HTMLSelectElement) return element.selectedIndex > 0;
+      return false;
+    });
+  } catch {
+    return true;
+  }
+}
+
+async function recoverFromDeployAssetError(reason: string, detail: Record<string, unknown> = {}) {
+  if (isLocalDevHost() || !window.navigator.onLine || !("serviceWorker" in navigator)) return;
+
+  const nextVersion = await fetchDeployVersion().catch(() => null);
+  const currentVersion = readLocalValue(DEPLOY_VERSION_STORAGE_KEY);
+  const recoveryToken = `${currentVersion || "unknown"}->${nextVersion || "unknown"}:${window.location.pathname}`;
+
+  if (readSessionValue(DEPLOY_ASSET_RECOVERY_SESSION_KEY) === recoveryToken) return;
+  writeSessionValue(DEPLOY_ASSET_RECOVERY_SESSION_KEY, recoveryToken);
+  if (nextVersion) writeLocalValue(DEPLOY_VERSION_STORAGE_KEY, nextVersion);
+
+  const registration = await navigator.serviceWorker.ready;
+  await refreshDeployCache(registration);
+
+  console.warn("[TDN-OFFLINE] deploy asset recovery", { reason, currentVersion, nextVersion, ...detail });
+  if (hasPotentialUnsavedFormData()) {
+    console.warn("[TDN-OFFLINE] deploy asset recovery reload skipped", { reason: "possible-unsaved-form-data" });
+    return;
+  }
+
+  window.setTimeout(() => window.location.reload(), 250);
+}
+
 function checkForWebDeployUpdate(reason: string, force = false) {
   if (isLocalDevHost() || !window.navigator.onLine || !("serviceWorker" in navigator)) return;
 
@@ -305,8 +375,33 @@ export default function OfflineRuntime() {
       if (document.visibilityState === "visible") checkForWebDeployUpdate("resume");
     };
     const handlePageShow = () => checkForWebDeployUpdate("pageshow");
+    const handleResourceError = (event: Event) => {
+      const target = event.target;
+      const assetUrl =
+        target instanceof HTMLScriptElement
+          ? target.src
+          : target instanceof HTMLLinkElement
+            ? target.href
+            : "";
+      if (!assetUrl || !isNextStaticAssetUrl(assetUrl)) return;
+      void recoverFromDeployAssetError("resource-error", { assetUrl });
+    };
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (!isLikelyDeployAssetError(event.reason)) return;
+      void recoverFromDeployAssetError("unhandled-rejection", { error: getErrorText(event.reason) });
+    };
+    const handleRuntimeError = (event: ErrorEvent) => {
+      if (!isLikelyDeployAssetError(event.error || event.message || event.filename)) return;
+      void recoverFromDeployAssetError("runtime-error", {
+        error: getErrorText(event.error || event.message),
+        source: event.filename || null,
+      });
+    };
     window.addEventListener("focus", handleVisibleOrResumed);
     window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("error", handleResourceError, true);
+    window.addEventListener("error", handleRuntimeError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
     document.addEventListener("visibilitychange", handleVisibleOrResumed);
 
     const supabase = createClient();
@@ -354,6 +449,9 @@ export default function OfflineRuntime() {
       window.removeEventListener("offline", handleOnlineStateChange);
       window.removeEventListener("focus", handleVisibleOrResumed);
       window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("error", handleResourceError, true);
+      window.removeEventListener("error", handleRuntimeError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
       document.removeEventListener("visibilitychange", handleVisibleOrResumed);
     };
   }, []);

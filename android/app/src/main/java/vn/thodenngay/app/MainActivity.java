@@ -92,6 +92,7 @@ public class MainActivity extends BridgeActivity {
     private static final int STARTUP_ERROR_TIMEOUT_MS = 25_000;
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
     private static final int MAIN_FRAME_AUTO_RETRY_MAX_ATTEMPTS = 4;
+    private static final int DEPLOY_RESOURCE_RECOVERY_MAX_ATTEMPTS = 1;
     private static final long MAIN_FRAME_AUTO_RETRY_INITIAL_DELAY_MS = 3_000;
     private static final long MAIN_FRAME_AUTO_RETRY_MAX_DELAY_MS = 30_000;
     private static final int BRAND_NAVY = 0xFF0F3D63;
@@ -121,6 +122,7 @@ public class MainActivity extends BridgeActivity {
     private String lastMainFrameStartedUrl;
     private int mainFrameAutoRetryAttempts = 0;
     private int mainFrameAutoRetryGeneration = 0;
+    private int deployResourceRecoveryAttempts = 0;
     private boolean updatePromptDismissedThisSession = false;
     private boolean updateDownloadReceiverRegistered = false;
     private boolean updateCheckInFlight = false;
@@ -1374,6 +1376,35 @@ public class MainActivity extends BridgeActivity {
         return isRemoteAppUrl(currentUrl) || currentUrl.startsWith("data:text/html");
     }
 
+    private boolean isLikelyDeployResourceUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            String path = uri.getPath();
+            if (!APP_HOST.equalsIgnoreCase(uri.getHost()) || path == null) return false;
+            String lowerPath = path.toLowerCase();
+            return lowerPath.startsWith("/_next/static/") && (lowerPath.endsWith(".js") || lowerPath.endsWith(".css"));
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private void handleSubresourceLoadError(String failedUrl, int errorCode) {
+        if (!isStartupSplashVisible() || !hasNetworkConnection() || !isLikelyDeployResourceUrl(failedUrl)) return;
+        if (deployResourceRecoveryAttempts >= DEPLOY_RESOURCE_RECOVERY_MAX_ATTEMPTS) {
+            Log.w(TAG, "[TDN-STARTUP] deploy resource recovery exhausted failedUrl=" + failedUrl + " code=" + errorCode);
+            return;
+        }
+
+        deployResourceRecoveryAttempts++;
+        Log.w(TAG, "[TDN-STARTUP] deploy resource failed during startup; refreshing app shell failedUrl=" + failedUrl + " code=" + errorCode);
+        reloadFreshAfterCacheInvalidation("deploy-resource-error");
+    }
+
+    private void handleSubresourceHttpError(String failedUrl, int statusCode) {
+        if (statusCode != 404 && statusCode != 410 && statusCode < 500) return;
+        handleSubresourceLoadError(failedUrl, statusCode);
+    }
+
 
     private String getMainFrameRetryUrl(String reason) {
         String failedOrStartedUrl = lastMainFrameErrorUrl != null ? lastMainFrameErrorUrl : lastMainFrameStartedUrl;
@@ -1432,6 +1463,7 @@ public class MainActivity extends BridgeActivity {
         mainFrameLoadFailed = false;
         lastMainFrameErrorUrl = null;
         mainFrameAutoRetryAttempts = 0;
+        deployResourceRecoveryAttempts = 0;
         mainFrameAutoRetryGeneration++;
     }
 
@@ -1562,6 +1594,9 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             if (!request.isForMainFrame()) {
+                String failedUrl = request.getUrl() != null ? request.getUrl().toString() : null;
+                int errorCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? error.getErrorCode() : WebViewClient.ERROR_UNKNOWN;
+                handleSubresourceLoadError(failedUrl, errorCode);
                 super.onReceivedError(view, request, error);
                 return;
             }
@@ -1583,6 +1618,10 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
             super.onReceivedHttpError(view, request, errorResponse);
+            if (!request.isForMainFrame()) {
+                handleSubresourceHttpError(request.getUrl().toString(), errorResponse.getStatusCode());
+                return;
+            }
             if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
                 lastMainFrameErrorUrl = request.getUrl().toString();
                 mainFrameLoadFailed = true;
