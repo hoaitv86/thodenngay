@@ -1,11 +1,15 @@
 import type { NextConfig } from "next";
 
+const deploymentId = (
+  process.env.COMMIT_REF ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.DEPLOY_ID ||
+  process.env.NEXT_PUBLIC_APP_VERSION ||
+  ""
+).slice(0, 32) || undefined;
+
 const nextConfig: NextConfig = {
-  deploymentId:
-    process.env.COMMIT_REF ||
-    process.env.VERCEL_GIT_COMMIT_SHA ||
-    process.env.DEPLOY_ID ||
-    process.env.NEXT_PUBLIC_APP_VERSION,
+  deploymentId,
   turbopack: {
     root: process.cwd(),
   },
