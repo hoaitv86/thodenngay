@@ -254,3 +254,329 @@ SELECT 'customer' AS help_v1_group, COUNT(*) AS seeded_or_existing
 FROM public.help_articles
 WHERE help_context LIKE 'help-v1-customer-%'
    OR help_context = 'help-v1-public-dang-ky-lam-tho';
+
+BEGIN;
+
+WITH seed_articles(primary_group, help_context, category_slug, slug, title, description, content_html, sort_order, audiences, is_featured) AS (
+  VALUES
+    (
+      'worker',
+      'help-v1-worker-chuyen-che-do-online',
+      'bat-dau-tai-khoan',
+      'tho-chuyen-che-do-va-trang-thai-online',
+      'Thợ: chuyển chế độ và trạng thái online',
+      'Cách vào khu vực thợ, chuyển lại khách hàng và bật/tắt trạng thái online.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Khi tài khoản thợ đã được duyệt, giao diện thợ có nút chuyển sang chế độ khách hàng và trạng thái online/offline ngay trên đầu trang.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Đăng nhập bằng tài khoản đã được duyệt làm thợ.</li><li>Vào khu vực <strong>Thợ</strong> hoặc dùng nút <strong>Chế độ Thợ</strong> nếu đang ở hồ sơ khách hàng.</li><li>Trên trang thợ, kiểm tra trạng thái <strong>Đang online</strong> hoặc <strong>Đang offline</strong>.</li><li>Bấm trạng thái để yêu cầu đổi online/offline.</li><li>Nếu cần quay lại đặt dịch vụ như khách hàng, chọn <strong>Chế độ Khách hàng</strong>.</li></ol>
+<h2>Lưu ý</h2>
+<p>Trạng thái online hỗ trợ điều phối công việc, nhưng tài khoản vẫn phải ở trạng thái active trong hồ sơ thợ.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp header trang thợ, trạng thái online/offline và nút Chế độ Khách hàng.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video chuyển chế độ thợ vào trường YouTube URL.</p>
+$html$,
+      2010,
+      ARRAY['WORKER']::TEXT[],
+      TRUE
+    ),
+    (
+      'worker',
+      'help-v1-worker-trang-chu-tao-viec-nhanh',
+      'dat-lich-cong-viec',
+      'tho-trang-chu-va-tao-viec-nhanh',
+      'Thợ: trang chủ và tạo việc nhanh',
+      'Dùng trang chủ thợ, nút tạo việc trên mobile và khu vực quick job nếu có quyền.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Trang chủ thợ là điểm vào chính để xem thông tin nhanh và mở khu vực tạo việc nhanh. Trên mobile, nút tạo việc nằm ở thanh điều hướng dưới.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Trang chủ</strong> trong khu vực thợ.</li><li>Nếu dùng điện thoại, bấm nút dấu cộng <strong>Tạo việc</strong> ở thanh dưới.</li><li>Điền thông tin khách, dịch vụ và mô tả theo form đang hiển thị.</li><li>Kiểm tra dữ liệu trước khi lưu.</li><li>Sau khi tạo, theo dõi việc trong danh sách việc của thợ.</li></ol>
+<h2>Lưu ý</h2>
+<p>Menu tạo việc chỉ hiển thị cho các vai trò thợ kỹ thuật, quản lý hoặc chủ đơn vị theo registry hiện có.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp trang chủ thợ, nút Tạo việc trên mobile và form quick job.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video tạo việc nhanh vào trường YouTube URL.</p>
+$html$,
+      2020,
+      ARRAY['WORKER']::TEXT[],
+      TRUE
+    ),
+    (
+      'worker',
+      'help-v1-worker-danh-sach-viec',
+      'dat-lich-cong-viec',
+      'tho-xem-ton-viec-va-viec-cua-toi',
+      'Thợ: xem tồn việc và việc của tôi',
+      'Theo dõi danh sách việc trong menu thợ và mở chi tiết khi cần xử lý.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Menu thợ có mục <strong>Tồn việc</strong> hoặc <strong>Việc của tôi</strong> trên mobile để theo dõi các công việc liên quan đến tài khoản.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Tồn việc</strong> hoặc <strong>Việc của tôi</strong>.</li><li>Lọc hoặc tìm công việc nếu giao diện đang có bộ lọc.</li><li>Mở công việc cần xử lý.</li><li>Kiểm tra khách hàng, dịch vụ, trạng thái và ghi chú.</li><li>Cập nhật theo đúng các nút hành động đang có trên màn hình.</li></ol>
+<h2>Lưu ý</h2>
+<p>Thợ chỉ thấy dữ liệu được phân quyền theo tài khoản hoặc đơn vị. Không tự ý thao tác ngoài quy trình hiển thị trong màn hình.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp danh sách việc và màn hình chi tiết công việc.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video theo dõi việc vào trường YouTube URL.</p>
+$html$,
+      2030,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-hoan-thanh-viec',
+      'dat-lich-cong-viec',
+      'tho-cap-nhat-va-hoan-thanh-cong-viec',
+      'Thợ: cập nhật và hoàn thành công việc',
+      'Các điểm cần kiểm tra trước khi cập nhật trạng thái hoặc hoàn tất job.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Các màn hình công việc của thợ cho phép xử lý theo trạng thái và dữ liệu job. Một số luồng có phần nghiệm thu, vật tư hoặc đính kèm tùy cấu hình migration đã chạy.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Mở chi tiết công việc từ danh sách việc.</li><li>Đọc kỹ thông tin khách hàng, địa chỉ, dịch vụ và ghi chú.</li><li>Thực hiện các nút cập nhật trạng thái đang có trên màn hình.</li><li>Nếu có form hoàn thành, nhập thông tin thực tế và kiểm tra trước khi gửi.</li><li>Sau khi hoàn tất, xem lại trong lịch sử công việc.</li></ol>
+<h2>Lưu ý</h2>
+<p>Không bịa thêm vật tư, chi phí hoặc bước nghiệm thu nếu form hiện tại không yêu cầu. Luôn nhập theo dữ liệu thật tại hiện trường.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp chi tiết công việc, nút trạng thái và form hoàn thành nếu có.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video xử lý công việc vào trường YouTube URL.</p>
+$html$,
+      2040,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-lich-su',
+      'dat-lich-cong-viec',
+      'tho-xem-lich-su-cong-viec',
+      'Thợ: xem lịch sử công việc',
+      'Dùng mục Lịch sử để tra lại công việc đã xử lý.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Mục <strong>Lịch sử</strong> trong menu thợ giúp tra lại các công việc đã có dữ liệu lịch sử theo quyền của tài khoản.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Lịch sử</strong> trong menu thợ.</li><li>Xem danh sách các công việc đã ghi nhận.</li><li>Mở một dòng để xem chi tiết nếu màn hình cho phép.</li><li>Đối chiếu thông tin khách, dịch vụ và trạng thái.</li><li>Quay lại danh sách để tiếp tục tra cứu.</li></ol>
+<h2>Lưu ý</h2>
+<p>Lịch sử dùng để tra cứu, không thay thế quy trình cập nhật job đang mở.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp danh sách lịch sử và một chi tiết lịch sử.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video tra cứu lịch sử vào trường YouTube URL.</p>
+$html$,
+      2050,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-khach-hang',
+      'dat-lich-cong-viec',
+      'tho-quan-ly-khach-hang',
+      'Thợ: xem khách hàng liên quan',
+      'Dùng mục Khách hàng trong khu vực thợ để tra cứu khách theo quyền.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Menu thợ có mục <strong>Khách hàng</strong> cho các vai trò được hiển thị. Dữ liệu khách hàng phụ thuộc vào job hoặc đơn vị mà tài khoản được phép xem.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Khách hàng</strong> trong menu thợ.</li><li>Tìm khách theo thông tin đang có trên màn hình.</li><li>Mở khách cần kiểm tra nếu giao diện hỗ trợ chi tiết.</li><li>Đối chiếu lịch sử, địa chỉ hoặc thông tin liên hệ trước khi tạo/cập nhật việc.</li><li>Dùng chat hoặc gọi theo thông tin được phép khi cần trao đổi.</li></ol>
+<h2>Lưu ý</h2>
+<p>Không sao chép dữ liệu khách hàng ra ngoài hệ thống nếu không cần thiết cho công việc.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp mục Khách hàng trong menu và danh sách khách.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video tra cứu khách hàng vào trường YouTube URL.</p>
+$html$,
+      2060,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-chat',
+      'chat-thong-bao',
+      'tho-su-dung-chat',
+      'Thợ: sử dụng chat',
+      'Trao đổi với khách hàng hoặc admin từ khu vực thợ.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Thợ có mục <strong>Chat</strong> trong menu khi vai trò được phép. Chat dùng để trao đổi về công việc và hỗ trợ vận hành.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Chat</strong> trong khu vực thợ.</li><li>Chọn cuộc trò chuyện hoặc đối tượng đang hiển thị.</li><li>Nhập nội dung ngắn gọn, gắn với mã việc nếu cần.</li><li>Gửi tin nhắn và theo dõi phản hồi.</li><li>Quay lại job để cập nhật trạng thái nếu trao đổi dẫn đến thay đổi công việc.</li></ol>
+<h2>Lưu ý</h2>
+<p>Super Admin chỉ được mô tả trong code là xem/kiểm tra chat, không tạo đối tượng chat riêng như người dùng thường.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp màn hình danh sách chat và khung nhập tin nhắn.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video sử dụng chat vào trường YouTube URL.</p>
+$html$,
+      2070,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-thong-bao',
+      'chat-thong-bao',
+      'tho-xem-thong-bao-va-cai-dat',
+      'Thợ: xem thông báo và cài đặt',
+      'Xem tin mới, việc cần làm và vào trang cài đặt thông báo của thợ.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Header thợ có biểu tượng thông báo. Danh sách thông báo hiển thị tin mới và có liên kết tới trang cài đặt thông báo của thợ.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Bấm biểu tượng chuông trên header thợ.</li><li>Đọc các thông báo chưa xem trong danh sách.</li><li>Bấm thông báo có liên kết để đi tới màn hình liên quan.</li><li>Chọn <strong>Cài đặt</strong> nếu muốn mở trang thông báo của thợ.</li><li>Đóng hộp thông báo sau khi xem xong.</li></ol>
+<h2>Lưu ý</h2>
+<p>Thông báo có thể được đánh dấu đã đọc khi mở danh sách. Nếu offline hoặc tài khoản chưa active, danh sách có thể trống.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp biểu tượng chuông, popup thông báo và trang cài đặt.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video quản lý thông báo vào trường YouTube URL.</p>
+$html$,
+      2080,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-ho-so',
+      'bat-dau-tai-khoan',
+      'tho-cap-nhat-ho-so',
+      'Thợ: cập nhật hồ sơ cá nhân',
+      'Kiểm tra thông tin thợ, chuyên môn và trạng thái tài khoản.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Mục <strong>Hồ sơ</strong> trong khu vực thợ dùng để xem và cập nhật thông tin cá nhân, trạng thái tài khoản và các thông tin liên quan đến thợ.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Hồ sơ</strong> trong menu thợ.</li><li>Kiểm tra họ tên, số điện thoại, địa chỉ và thông tin hiển thị.</li><li>Cập nhật những trường màn hình cho phép chỉnh sửa.</li><li>Kiểm tra trạng thái hồ sơ thợ nếu có.</li><li>Lưu thay đổi rồi quay lại trang chủ thợ.</li></ol>
+<h2>Lưu ý</h2>
+<p>Việc duyệt, khóa hoặc reset mật khẩu thợ thuộc quyền admin trong màn hình Quản lý Thợ.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp trang hồ sơ thợ và phần thông tin có thể chỉnh sửa.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video cập nhật hồ sơ thợ vào trường YouTube URL.</p>
+$html$,
+      2090,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-billgo-thu-cuoc',
+      'billgo',
+      'tho-su-dung-billgo-thu-cuoc',
+      'Thợ: sử dụng BillGo thu cước',
+      'Truy cập BillGo khi tài khoản có chuyên môn Internet/WiFi hoặc quyền liên quan.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Menu <strong>Thu Cước</strong> xuất hiện khi tính năng BillGo được bật theo logic hiện có. BillGo phục vụ quản lý công nợ, gói cước và thanh toán.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Thu Cước</strong> trong khu vực thợ nếu menu đang hiển thị.</li><li>Xem danh sách khách hoặc khoản thu theo màn hình hiện tại.</li><li>Mở một khoản để kiểm tra kỳ hạn, số tiền và trạng thái.</li><li>Ghi nhận thanh toán hoặc cập nhật dữ liệu theo nút đang có trên màn hình.</li><li>Kiểm tra lại biên nhận hoặc trạng thái sau khi thao tác.</li></ol>
+<h2>Lưu ý</h2>
+<p>BillGo chỉ nên dùng cho dữ liệu thu cước thật. Nếu menu không hiển thị, kiểm tra chuyên môn hoặc quyền đơn vị với quản lý/admin.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp menu Thu Cước, danh sách khoản thu và màn hình chi tiết thanh toán.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video BillGo thợ vào trường YouTube URL.</p>
+$html$,
+      2100,
+      ARRAY['WORKER']::TEXT[],
+      TRUE
+    ),
+    (
+      'worker',
+      'help-v1-worker-kho-ban-hang',
+      'kho-ban-hang',
+      'tho-kho-hang-va-ban-hang',
+      'Thợ: kho hàng và bán hàng',
+      'Dùng mục Kho hàng, phần bán hàng và sản phẩm khi menu được bật.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Menu <strong>Kho hàng</strong> xuất hiện trong khu vực thợ và có thể chứa các phần sản phẩm, nhập hàng hoặc bán hàng tùy màn hình hiện tại.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Kho hàng</strong> trong khu vực thợ.</li><li>Xem danh sách sản phẩm hoặc tồn kho.</li><li>Dùng nút thêm/sửa nếu vai trò có quyền và màn hình đang hiển thị.</li><li>Với bán hàng, mở phần bán hàng trong kho nếu có tham số hoặc tab tương ứng.</li><li>Kiểm tra dữ liệu trước khi lưu để tránh sai tồn kho hoặc đơn bán.</li></ol>
+<h2>Lưu ý</h2>
+<p>Theo code hiện tại, inventory và sales được bật trong trạng thái module thợ; quyền dữ liệu vẫn phụ thuộc vai trò đơn vị và RLS.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp danh sách sản phẩm, form sản phẩm và phần bán hàng nếu có.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video kho/bán hàng vào trường YouTube URL.</p>
+$html$,
+      2110,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    ),
+    (
+      'worker',
+      'help-v1-worker-vi-tho',
+      'bat-dau-tai-khoan',
+      'tho-vi-tho-sap-mo',
+      'Thợ: ví thợ đang sắp mở',
+      'Hiểu đúng trạng thái hiện tại của màn hình Ví thợ.',
+      $html$
+<h2>Giới thiệu</h2>
+<p>Mục <strong>Ví</strong> trong menu thợ hiện hiển thị nội dung <strong>Sắp mở quản lý thu nhập</strong>. Vì vậy bài này chỉ hướng dẫn cách nhận biết trạng thái, không mô tả thao tác rút tiền chưa triển khai.</p>
+<h2>Hướng dẫn từng bước</h2>
+<ol><li>Vào <strong>Ví</strong> nếu menu hiển thị cho tài khoản của bạn.</li><li>Đọc thông báo sắp mở trên màn hình.</li><li>Không nhập yêu cầu rút tiền vì giao diện hiện chưa có form rút tiền thật.</li><li>Theo dõi thông báo từ admin khi tính năng được mở.</li><li>Quay lại trang chủ hoặc lịch sử để xem dữ liệu công việc hiện có.</li></ol>
+<h2>Lưu ý</h2>
+<p>Không hứa hẹn quy trình doanh thu, sao kê hoặc rút tiền trước khi màn hình được triển khai đầy đủ.</p>
+<h2>Vị trí bổ sung ảnh</h2>
+<p><strong>[Ảnh cần bổ sung]</strong> Chụp màn hình Ví thợ với thông báo sắp mở.</p>
+<h2>Link YouTube</h2>
+<p><strong>[Video cần bổ sung]</strong> Dán video giới thiệu khi tính năng ví đã hoàn thiện.</p>
+$html$,
+      2120,
+      ARRAY['WORKER']::TEXT[],
+      FALSE
+    )
+)
+INSERT INTO public.help_articles (
+  category_id,
+  slug,
+  title,
+  description,
+  content_html,
+  cover_image_url,
+  image_urls,
+  video_url,
+  sort_order,
+  status,
+  is_featured,
+  audiences,
+  help_context,
+  published_at
+)
+SELECT
+  category.id,
+  article.slug,
+  article.title,
+  article.description,
+  article.content_html,
+  NULL,
+  ARRAY[]::TEXT[],
+  NULL,
+  article.sort_order,
+  'draft',
+  article.is_featured,
+  article.audiences,
+  article.help_context,
+  NULL
+FROM seed_articles article
+LEFT JOIN public.help_categories category ON category.slug = article.category_slug
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.help_articles existing
+  WHERE existing.help_context = article.help_context
+     OR existing.slug = article.slug
+);
+
+COMMIT;
+
+SELECT 'worker' AS help_v1_group, COUNT(*) AS seeded_or_existing
+FROM public.help_articles
+WHERE help_context LIKE 'help-v1-worker-%';
