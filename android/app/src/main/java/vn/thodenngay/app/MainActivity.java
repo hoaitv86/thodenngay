@@ -67,6 +67,10 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.json.JSONTokener;
 import org.json.JSONObject;
 
@@ -93,8 +97,12 @@ public class MainActivity extends BridgeActivity {
     private static final int VERSION_CHECK_TIMEOUT_MS = 3_000;
     private static final int MAIN_FRAME_AUTO_RETRY_MAX_ATTEMPTS = 4;
     private static final int DEPLOY_RESOURCE_RECOVERY_MAX_ATTEMPTS = 1;
+    private static final int DEPLOY_SAFE_REFRESH_MAX_ATTEMPTS = 5;
     private static final long MAIN_FRAME_AUTO_RETRY_INITIAL_DELAY_MS = 3_000;
     private static final long MAIN_FRAME_AUTO_RETRY_MAX_DELAY_MS = 30_000;
+    private static final long DEPLOY_SAFE_REFRESH_INITIAL_DELAY_MS = 5_000;
+    private static final long DEPLOY_SAFE_REFRESH_MAX_DELAY_MS = 90_000;
+    private static final Pattern NEXT_STATIC_ASSET_PATTERN = Pattern.compile("(?:src|href)=[\"']([^\"']*/_next/static/[^\"']+\\.(?:js|css))(?:\\?[^\"']*)?[\"']", Pattern.CASE_INSENSITIVE);
     private static final int BRAND_NAVY = 0xFF0F3D63;
     private static final int BRAND_BLUE = 0xFF1478C8;
     private static final int BRAND_ORANGE = 0xFFFF8A00;
@@ -123,6 +131,9 @@ public class MainActivity extends BridgeActivity {
     private int mainFrameAutoRetryAttempts = 0;
     private int mainFrameAutoRetryGeneration = 0;
     private int deployResourceRecoveryAttempts = 0;
+    private String pendingDeployVersion;
+    private boolean deploySafeRefreshInFlight = false;
+    private int deploySafeRefreshAttempts = 0;
     private boolean updatePromptDismissedThisSession = false;
     private boolean updateDownloadReceiverRegistered = false;
     private boolean updateCheckInFlight = false;
@@ -180,6 +191,9 @@ public class MainActivity extends BridgeActivity {
             String apkPath = pendingInstallApkPath;
             pendingInstallApkPath = null;
             openDownloadedUpdateApk(apkPath);
+        }
+        if (pendingDeployVersion != null && hasNetworkConnection()) {
+            scheduleSafeDeployRefresh(pendingDeployVersion, 0L);
         }
         checkForApkUpdate();
     }
@@ -820,10 +834,12 @@ public class MainActivity extends BridgeActivity {
                 if (nextVersion.length() == 0) return;
 
                 String currentVersion = offlinePrefs.getString(KEY_WEB_DEPLOY_VERSION, null);
-                offlinePrefs.edit().putString(KEY_WEB_DEPLOY_VERSION, nextVersion).apply();
                 if (currentVersion != null && !nextVersion.equals(currentVersion)) {
-                    mainHandler.post(() -> reloadFreshAfterCacheInvalidation("deploy-version-change"));
+                    Log.i(TAG, "[TDN-DEPLOY] web deploy version changed current=" + currentVersion + " next=" + nextVersion);
+                    scheduleSafeDeployRefresh(nextVersion, 0L);
+                    return;
                 }
+                offlinePrefs.edit().putString(KEY_WEB_DEPLOY_VERSION, nextVersion).apply();
             } catch (Exception ignored) {
                 // Startup must never depend on the version endpoint.
             } finally {
@@ -832,6 +848,146 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         }).start();
+    }
+
+    private void scheduleSafeDeployRefresh(String nextVersion, long delayMs) {
+        if (nextVersion == null || nextVersion.length() == 0) return;
+        mainHandler.postDelayed(() -> {
+            if (!hasNetworkConnection()) {
+                pendingDeployVersion = nextVersion;
+                Log.i(TAG, "[TDN-DEPLOY] safe refresh deferred offline version=" + nextVersion);
+                return;
+            }
+            if (deploySafeRefreshInFlight) {
+                pendingDeployVersion = nextVersion;
+                return;
+            }
+            pendingDeployVersion = nextVersion;
+            deploySafeRefreshInFlight = true;
+            new Thread(() -> verifyDeployThenRefresh(nextVersion)).start();
+        }, Math.max(0L, delayMs));
+    }
+
+    private void verifyDeployThenRefresh(String nextVersion) {
+        boolean ready = false;
+        try {
+            ready = isDeployVersionReady();
+        } finally {
+            final boolean deployReady = ready;
+            mainHandler.post(() -> {
+                deploySafeRefreshInFlight = false;
+                if (!nextVersion.equals(pendingDeployVersion)) {
+                    scheduleSafeDeployRefresh(pendingDeployVersion, 0L);
+                    return;
+                }
+
+                if (!deployReady) {
+                    deploySafeRefreshAttempts++;
+                    if (deploySafeRefreshAttempts >= DEPLOY_SAFE_REFRESH_MAX_ATTEMPTS) {
+                        Log.w(TAG, "[TDN-DEPLOY] safe refresh postponed; deploy assets not ready version=" + nextVersion + " attempts=" + deploySafeRefreshAttempts);
+                        return;
+                    }
+                    long delay = Math.min(
+                        DEPLOY_SAFE_REFRESH_MAX_DELAY_MS,
+                        DEPLOY_SAFE_REFRESH_INITIAL_DELAY_MS * (1L << Math.max(0, deploySafeRefreshAttempts - 1))
+                    );
+                    Log.i(TAG, "[TDN-DEPLOY] deploy assets not ready; retrying version=" + nextVersion + " delayMs=" + delay + " attempt=" + deploySafeRefreshAttempts);
+                    scheduleSafeDeployRefresh(nextVersion, delay);
+                    return;
+                }
+
+                deploySafeRefreshAttempts = 0;
+                pendingDeployVersion = null;
+                offlinePrefs.edit().putString(KEY_WEB_DEPLOY_VERSION, nextVersion).apply();
+                Log.i(TAG, "[TDN-DEPLOY] deploy verified; safe refresh starting version=" + nextVersion);
+                reloadFreshAfterCacheInvalidation("deploy-version-change");
+            });
+        }
+    }
+
+    private boolean isDeployVersionReady() {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(WORKER_START_URL + "?nativeDeployProbe=1&t=" + System.currentTimeMillis());
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(VERSION_CHECK_TIMEOUT_MS);
+            connection.setReadTimeout(VERSION_CHECK_TIMEOUT_MS);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty("Pragma", "no-cache");
+            connection.setRequestProperty("Accept", "text/html");
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 400) {
+                Log.w(TAG, "[TDN-DEPLOY] shell probe failed status=" + status);
+                return false;
+            }
+
+            StringBuilder body = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null && body.length() < 700_000) {
+                    body.append(line);
+                }
+            }
+
+            String html = body.toString();
+            if (!html.contains("__next")) {
+                Log.w(TAG, "[TDN-DEPLOY] shell probe missing next marker");
+                return false;
+            }
+
+            Set<String> assets = extractNextStaticAssets(html);
+            if (assets.isEmpty()) {
+                Log.w(TAG, "[TDN-DEPLOY] shell probe found no next static assets");
+                return false;
+            }
+
+            for (String assetUrl : assets) {
+                if (!isAssetReachable(assetUrl)) return false;
+            }
+            return true;
+        } catch (Exception error) {
+            Log.w(TAG, "[TDN-DEPLOY] deploy readiness probe failed " + error.getClass().getSimpleName());
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private Set<String> extractNextStaticAssets(String html) {
+        Set<String> assets = new LinkedHashSet<>();
+        Matcher matcher = NEXT_STATIC_ASSET_PATTERN.matcher(html);
+        while (matcher.find() && assets.size() < 16) {
+            try {
+                URL assetUrl = new URL(new URL(HOME_URL), matcher.group(1));
+                assets.add(assetUrl.toString());
+            } catch (Exception ignored) {
+                // Ignore malformed asset URLs in the probe response.
+            }
+        }
+        return assets;
+    }
+
+    private boolean isAssetReachable(String assetUrl) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(assetUrl);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(VERSION_CHECK_TIMEOUT_MS);
+            connection.setReadTimeout(VERSION_CHECK_TIMEOUT_MS);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Cache-Control", "no-cache");
+            connection.setRequestProperty("Pragma", "no-cache");
+            int status = connection.getResponseCode();
+            if (status >= 200 && status < 400) return true;
+            Log.w(TAG, "[TDN-DEPLOY] asset probe failed status=" + status + " url=" + assetUrl);
+            return false;
+        } catch (Exception error) {
+            Log.w(TAG, "[TDN-DEPLOY] asset probe failed " + error.getClass().getSimpleName() + " url=" + assetUrl);
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     private void checkForApkUpdate() {
@@ -1216,12 +1372,15 @@ public class MainActivity extends BridgeActivity {
         hideNetworkError();
         configureCacheModeForNetwork();
         webView.stopLoading();
-        String refreshUrl = Uri.parse(ANDROID_START_URL)
+        String currentUrl = webView.getUrl();
+        String baseUrl = getFallbackUrl(currentUrl != null ? currentUrl : lastMainFrameStartedUrl);
+        String refreshUrl = Uri.parse(baseUrl)
             .buildUpon()
             .appendQueryParameter("nativeRefresh", reason)
             .appendQueryParameter("t", String.valueOf(System.currentTimeMillis()))
             .build()
             .toString();
+        Log.i(TAG, "[TDN-STARTUP] safe refresh url=" + refreshUrl + " baseUrl=" + baseUrl);
         webView.loadUrl(refreshUrl);
     }
 
@@ -1292,6 +1451,15 @@ public class MainActivity extends BridgeActivity {
             return APP_HOST.equalsIgnoreCase(uri.getHost())
                 && "/login".equals(uri.getPath())
                 && "android".equals(uri.getQueryParameter("app"));
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private boolean isNativeRefreshUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            return APP_HOST.equalsIgnoreCase(uri.getHost()) && uri.getQueryParameter("nativeRefresh") != null;
         } catch (Exception error) {
             return false;
         }
@@ -1470,7 +1638,15 @@ public class MainActivity extends BridgeActivity {
     private void handleMainFrameLoadError(String failedUrl, int errorCode) {
         Log.e(TAG, "[TDN-STARTUP] main frame load error code=" + errorCode + " failedUrl=" + failedUrl + " offlineFallback=" + loadingOfflineFallback + " online=" + hasNetworkConnection());
         if (isStartupSplashVisible()) {
+            if (isNativeRefreshUrl(failedUrl) && loadCachedHtmlSnapshot(failedUrl)) {
+                scheduleMainFrameAutoRetry(failedUrl);
+                return;
+            }
             showNetworkError();
+            scheduleMainFrameAutoRetry(failedUrl);
+            return;
+        }
+        if (isNativeRefreshUrl(failedUrl) && loadCachedHtmlSnapshot(failedUrl)) {
             scheduleMainFrameAutoRetry(failedUrl);
             return;
         }

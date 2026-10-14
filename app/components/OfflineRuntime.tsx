@@ -267,6 +267,67 @@ function isLikelyDeployAssetError(error: unknown) {
   );
 }
 
+function collectNextStaticAssets(html: string) {
+  const urls = new Set<string>();
+  try {
+    const document = new DOMParser().parseFromString(html, "text/html");
+    document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>("script[src],link[href]").forEach((element) => {
+      const value = element instanceof HTMLScriptElement ? element.src : element.href;
+      if (isNextStaticAssetUrl(value)) urls.add(new URL(value, window.location.origin).href);
+    });
+  } catch {
+    const pattern = /\b(?:src|href)=["']([^"']*\/_next\/static\/[^"']+\.(?:js|css))(?:\?[^"']*)?["']/gi;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(html))) {
+      try {
+        const url = new URL(match[1], window.location.origin);
+        if (isNextStaticAssetUrl(url.href)) urls.add(url.href);
+      } catch {
+        // Ignore malformed asset URLs in a deploy probe response.
+      }
+    }
+  }
+  return Array.from(urls).slice(0, 24);
+}
+
+async function fetchOk(url: string) {
+  const response = await fetch(url, {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { "Cache-Control": "no-cache" },
+  });
+  return response.ok;
+}
+
+async function verifyDeployReady(nextVersion: string) {
+  const probeUrl = new URL(window.location.href);
+  probeUrl.searchParams.delete(NATIVE_REFRESH_QUERY_PARAM);
+  probeUrl.searchParams.delete("t");
+  probeUrl.searchParams.set("deployProbe", nextVersion);
+  probeUrl.searchParams.set("t", String(Date.now()));
+
+  const response = await fetch(probeUrl.href, {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { "Cache-Control": "no-cache", Accept: "text/html" },
+  });
+  if (!response.ok) return { ready: false, reason: `shell-status-${response.status}` };
+
+  const html = await response.text();
+  if (!html.includes("__next")) return { ready: false, reason: "missing-next-shell" };
+
+  const assets = collectNextStaticAssets(html);
+  if (assets.length === 0) return { ready: false, reason: "missing-next-assets" };
+
+  const checks = await Promise.all(
+    assets.map(async (assetUrl) => ({ assetUrl, ok: await fetchOk(assetUrl).catch(() => false) }))
+  );
+  const failed = checks.find((check) => !check.ok);
+  if (failed) return { ready: false, reason: "asset-unavailable", assetUrl: failed.assetUrl };
+
+  return { ready: true, reason: "ok", assetCount: assets.length };
+}
+
 function hasPotentialUnsavedFormData() {
   try {
     const active = document.activeElement;
@@ -335,17 +396,30 @@ function checkForWebDeployUpdate(reason: string, force = false) {
 
       const reloadToken = `${currentVersion}->${nextVersion}`;
       if (readSessionValue(DEPLOY_RELOAD_SESSION_KEY) === reloadToken) {
-        writeLocalValue(DEPLOY_VERSION_STORAGE_KEY, nextVersion);
+        console.info("[TDN-OFFLINE]", "web deploy reload already attempted", { from: currentVersion, to: nextVersion, reason });
         return;
       }
 
       writeSessionValue(DEPLOY_RELOAD_SESSION_KEY, reloadToken);
-      writeLocalValue(DEPLOY_VERSION_STORAGE_KEY, nextVersion);
+
+      if (hasPotentialUnsavedFormData()) {
+        console.info("[TDN-OFFLINE]", "web deploy refresh deferred", { from: currentVersion, to: nextVersion, reason: "possible-unsaved-form-data" });
+        removeSessionValue(DEPLOY_RELOAD_SESSION_KEY);
+        return;
+      }
+
+      const readiness = await verifyDeployReady(nextVersion);
+      if (!readiness.ready) {
+        console.warn("[TDN-OFFLINE] web deploy refresh deferred", { from: currentVersion, to: nextVersion, reason, readiness });
+        removeSessionValue(DEPLOY_RELOAD_SESSION_KEY);
+        return;
+      }
 
       const registration = await navigator.serviceWorker.ready;
       await refreshDeployCache(registration);
 
-      console.info("[TDN-OFFLINE]", "web deploy update detected", { from: currentVersion, to: nextVersion, reason });
+      writeLocalValue(DEPLOY_VERSION_STORAGE_KEY, nextVersion);
+      console.info("[TDN-OFFLINE]", "web deploy update verified", { from: currentVersion, to: nextVersion, reason, readiness });
       window.setTimeout(() => window.location.reload(), 250);
     } catch (error) {
       console.warn("[TDN-OFFLINE] web deploy update check failed", error);
